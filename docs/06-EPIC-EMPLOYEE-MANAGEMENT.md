@@ -7,14 +7,18 @@
 **Priority:** P0 (Must-have for MVP)
 
 **Source Documents:**
-- `03-DATABASE-SCHEMA.md` - Tables: employees, positions, assignments, employee_salaries
 - `01-CONSTRAINTS-AND-RULES.md` - Multi-tenancy, effective dating, validation rules
 - `02-ARCHITECTURE-OVERVIEW.md` - Bounded contexts, event-driven patterns
+- `03-DATABASE-SCHEMA.md` - Tables: employees, positions, assignments, employee_salaries
+- `04-DOMAIN-MODELS.md` - Business entities, validation rules, domain events
+- `HCI-DESIGN-PRINCIPLES.md` - **UX design principles for low digital literacy**
+- `09-EPIC-WORKFLOW-AUTOMATION.md` - Alerts, batch operations for employees
 
 **Dependencies:**
 - Multi-tenant infrastructure (RLS policies)
 - Authentication system (user context)
 - Position management (for assignments)
+- Multi-country configuration (countries table with SMIG/minimum wage)
 
 **Dependent Systems:**
 - Payroll (reads employee data, salaries)
@@ -50,15 +54,22 @@
 - [ ] Validate required fields (first name, last name, email, hire date, position, base salary)
 - [ ] Generate unique employee_number (format: tenant prefix + sequential number)
 - [ ] Validate email uniqueness within tenant
-- [ ] Validate base salary >= SMIG (75,000 FCFA)
+- [ ] Validate base salary >= country-specific SMIG (from countries.minimum_wage)
 - [ ] Create employee record with status 'active'
 - [ ] Create initial salary record (effective from hire date)
 - [ ] Create position assignment (effective from hire date)
+- [ ] Set payroll-specific fields (fiscal_parts, sector_code from tenant defaults)
 - [ ] Encrypt PII fields (national_id, bank_account)
 - [ ] Set tenant_id from authenticated user context
 - [ ] Create audit log entry
 - [ ] Emit event: `employee.hired`
 - [ ] Return employee with generated ID
+
+**Multi-Country Note:**
+- SMIG minimum varies by country: CI=75,000 FCFA, SN=60,000 FCFA, etc.
+- Load minimum wage from `countries` table based on `tenant.country_code`
+- fiscal_parts defaults to 1.0 (single, no children) - required for tax calculations
+- sector_code inherited from tenant - used for work accident contribution rates
 
 **Test Cases:**
 ```typescript
@@ -80,7 +91,8 @@ describe('Create Employee', () => {
     expect(result.hire_date).toEqual(new Date('2025-01-15'));
   });
 
-  it('should reject salary below SMIG', async () => {
+  it('should reject salary below country SMIG', async () => {
+    // Tenant is in CI with SMIG = 75,000 FCFA
     await expect(
       caller.employees.create({
         firstName: 'Test',
@@ -88,9 +100,25 @@ describe('Create Employee', () => {
         email: 'test@example.com',
         hireDate: new Date('2025-01-15'),
         positionId: position.id,
-        baseSalary: 50000, // Below SMIG
+        baseSalary: 50000, // Below CI SMIG
       })
     ).rejects.toThrow('Le salaire doit être supérieur ou égal au SMIG (75000 FCFA)');
+  });
+
+  it('should validate against correct country SMIG', async () => {
+    // For Senegal tenant, SMIG is 60,000 FCFA
+    const snTenant = await createTenant({ countryCode: 'SN' });
+
+    const result = await caller.employees.create({
+      firstName: 'Fatou',
+      lastName: 'Diop',
+      email: 'fatou@example.com',
+      hireDate: new Date('2025-01-15'),
+      positionId: position.id,
+      baseSalary: 65000, // Valid for SN (>60k), would be invalid for CI (<75k)
+    });
+
+    expect(result.base_salary).toBe(65000);
   });
 
   it('should reject duplicate email within tenant', async () => {
