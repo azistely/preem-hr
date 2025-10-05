@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, date, timestamp, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, date, timestamp, integer, jsonb, pgPolicy } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { tenants } from './tenants';
 
 export const employees = pgTable('employees', {
@@ -52,4 +53,13 @@ export const employees = pgTable('employees', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   createdBy: uuid('created_by'),
   updatedBy: uuid('updated_by'),
-});
+}, (table) => [
+  // RLS Policy: Tenant Isolation
+  // Users can only access employees from their own tenant
+  pgPolicy('tenant_isolation_policy', {
+    as: 'permissive',
+    for: 'all',
+    to: 'authenticated',
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);
