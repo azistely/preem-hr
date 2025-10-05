@@ -63,14 +63,15 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
 
 /**
  * Super admin procedure - requires super_admin role
+ * TODO: Enable when authentication is implemented
  */
-export const superAdminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  if (ctx.user.role !== 'super_admin') {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Accès refusé'
-    });
-  }
+// export const superAdminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+//   if (ctx.user.role !== 'super_admin') {
+//     throw new TRPCError({
+//       code: 'FORBIDDEN',
+//       message: 'Accès refusé'
+//     });
+//   }
 
-  return next({ ctx });
-});
+//   return next({ ctx });
+// });
