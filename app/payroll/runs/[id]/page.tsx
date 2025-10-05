@@ -29,6 +29,10 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle,
+  FileText,
+  FileSpreadsheet,
+  Building2,
+  Landmark,
 } from 'lucide-react';
 import { api } from '@/trpc/react';
 
@@ -98,6 +102,7 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const [isCalculating, setIsCalculating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState<string | null>(null);
 
   // Unwrap params promise (Next.js 15)
   const { id: runId } = use(params);
@@ -143,9 +148,34 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     },
   });
 
+  // Export mutations
+  const exportCNPS = api.payroll.exportCNPS.useMutation();
+  const exportCMU = api.payroll.exportCMU.useMutation();
+  const exportEtat301 = api.payroll.exportEtat301.useMutation();
+  const exportBankTransfer = api.payroll.exportBankTransfer.useMutation();
+
   const formatCurrency = (amount: number | string) => {
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
     return new Intl.NumberFormat('fr-FR').format(Math.round(num));
+  };
+
+  // Helper to download base64 file
+  const downloadFile = (base64Data: string, filename: string, contentType: string) => {
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: contentType });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   };
 
   const handleCalculate = async () => {
@@ -192,6 +222,58 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
 
   const handleBack = () => {
     router.push('/payroll/runs');
+  };
+
+  const handleExportCNPS = async () => {
+    if (!run) return;
+    setIsExporting('cnps');
+    try {
+      const result = await exportCNPS.mutateAsync({ runId: run.id });
+      downloadFile(result.data, result.filename, result.contentType);
+    } catch (error: any) {
+      alert(`Erreur: ${error.message}`);
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
+  const handleExportCMU = async () => {
+    if (!run) return;
+    setIsExporting('cmu');
+    try {
+      const result = await exportCMU.mutateAsync({ runId: run.id });
+      downloadFile(result.data, result.filename, result.contentType);
+    } catch (error: any) {
+      alert(`Erreur: ${error.message}`);
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
+  const handleExportEtat301 = async () => {
+    if (!run) return;
+    setIsExporting('etat301');
+    try {
+      const result = await exportEtat301.mutateAsync({ runId: run.id });
+      downloadFile(result.data, result.filename, result.contentType);
+    } catch (error: any) {
+      alert(`Erreur: ${error.message}`);
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
+  const handleExportBankTransfer = async () => {
+    if (!run) return;
+    setIsExporting('bank');
+    try {
+      const result = await exportBankTransfer.mutateAsync({ runId: run.id });
+      downloadFile(result.data, result.filename, result.contentType);
+    } catch (error: any) {
+      alert(`Erreur: ${error.message}`);
+    } finally {
+      setIsExporting(null);
+    }
   };
 
   if (isLoading) {
@@ -383,10 +465,84 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
         )}
 
         {status === 'approved' && (
-          <Button disabled variant="outline" className="gap-2" size="lg">
-            <Download className="h-5 w-5" />
-            Exporter (Bientôt)
-          </Button>
+          <>
+            <Button
+              onClick={handleExportCNPS}
+              disabled={isExporting !== null}
+              variant="outline"
+              className="gap-2"
+              size="lg"
+            >
+              {isExporting === 'cnps' ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Export...
+                </>
+              ) : (
+                <>
+                  <Building2 className="h-5 w-5" />
+                  Export CNPS
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleExportCMU}
+              disabled={isExporting !== null}
+              variant="outline"
+              className="gap-2"
+              size="lg"
+            >
+              {isExporting === 'cmu' ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Export...
+                </>
+              ) : (
+                <>
+                  <FileSpreadsheet className="h-5 w-5" />
+                  Export CMU
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleExportEtat301}
+              disabled={isExporting !== null}
+              variant="outline"
+              className="gap-2"
+              size="lg"
+            >
+              {isExporting === 'etat301' ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Export...
+                </>
+              ) : (
+                <>
+                  <FileText className="h-5 w-5" />
+                  Export État 301
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleExportBankTransfer}
+              disabled={isExporting !== null}
+              variant="outline"
+              className="gap-2"
+              size="lg"
+            >
+              {isExporting === 'bank' ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Export...
+                </>
+              ) : (
+                <>
+                  <Landmark className="h-5 w-5" />
+                  Export Virement
+                </>
+              )}
+            </Button>
+          </>
         )}
 
         {status === 'draft' && (
