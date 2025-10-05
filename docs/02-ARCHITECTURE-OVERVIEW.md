@@ -359,9 +359,30 @@ src/features/
 │   ├── api/
 │   ├── services/
 │   │   ├── countries.ts     # Country rules config
-│   │   ├── tax-rates.ts     # Tax/contribution rates
+│   │   ├── tax-systems.ts   # Tax system & brackets management
+│   │   ├── social-schemes.ts # Social security schemes
 │   │   └── tenants.ts       # Tenant management
 │   └── types.ts
+│
+├── payroll-config/          # Multi-country payroll configuration
+│   ├── api/
+│   ├── repositories/
+│   │   ├── country-rules.repository.ts  # Query country rules
+│   │   ├── tax-brackets.repository.ts   # Query tax brackets
+│   │   └── social-schemes.repository.ts # Query social security
+│   ├── strategies/
+│   │   ├── tax/
+│   │   │   ├── progressive-monthly.ts   # CI, BJ
+│   │   │   ├── progressive-annual.ts    # SN
+│   │   │   └── index.ts
+│   │   └── social/
+│   │       ├── cnps-calculator.ts       # CI, BF, BJ, TG
+│   │       ├── css-calculator.ts        # SN
+│   │       └── index.ts
+│   └── services/
+│       ├── rule-loader.ts               # Load rules from DB
+│       ├── tax-calculator.ts            # Tax calculation with strategies
+│       └── social-calculator.ts         # Social security calculations
 │
 └── shared/                  # Shared utilities
     ├── db/                  # Drizzle ORM client
@@ -375,8 +396,10 @@ src/features/
 | From → To | Allowed | Method |
 |-----------|---------|--------|
 | `payroll` → `employees` | ❌ Direct import | ✅ Read via query, listen to events |
+| `payroll` → `payroll-config` | ✅ Direct import | ✅ RuleLoader service, repositories |
 | `employees` → `payroll` | ❌ Direct import | ✅ Emit event: `employee.hired` |
 | `time-tracking` → `payroll` | ❌ Direct import | ✅ Event: `overtime.recorded` |
+| `super-admin` → `payroll-config` | ✅ Direct import | ✅ Manage country rules via repositories |
 | `workflows` → Any module | ✅ Orchestration | ✅ Call APIs, emit commands |
 | Any module → `shared` | ✅ Direct import | ✅ Utilities, types, DB client |
 
@@ -971,13 +994,46 @@ logger.info('User data', { nationalId: '...' }); // FORBIDDEN
 
 ---
 
-## 10. Next Steps
+## 10. Multi-Country Payroll Architecture
+
+**IMPORTANT:** The payroll system is designed to support multiple West African countries through a configuration-driven architecture.
+
+### Key Principles:
+
+1. **Country Rules are Database-Driven**: Tax brackets, social security rates, and other rules are stored in the database, not hardcoded
+2. **Strategy Pattern**: Different countries use different calculation strategies (e.g., progressive monthly vs annual)
+3. **Temporal Accuracy**: All rules are effective-dated to support historical payroll calculations
+4. **Extensibility**: Adding a new country requires database configuration, not code changes
+
+### Related Documents:
+
+- **multi-country-payroll-architecture.md** - Complete architecture for supporting multiple countries
+- **country-config-schema.ts** - TypeScript types and Zod schemas for country configuration
+- **03-DATABASE-SCHEMA.md** - Tables 13-21 define multi-country payroll tables
+
+### Current Implementation (Côte d'Ivoire):
+
+- ✅ ITS tax: 6 progressive brackets, monthly calculation, family deductions
+- ✅ CNPS social security: Pension (6.3%/7.7%), Family (5.0%), Work Accident (2-5% by sector)
+- ✅ CMU health coverage: Fixed amounts (1,000 employee, 500-5,000 employer)
+- ✅ FDFP training taxes: TAP (0.4%) + TFPC (1.2%) = 1.6% employer cost
+- ✅ Sector-specific rates: Services, Industry, Construction with different work accident rates
+
+### Adding New Countries:
+
+See `multi-country-payroll-architecture.md` for step-by-step guide to add Senegal, Burkina Faso, Mali, Benin, Togo, or Guinea.
+
+---
+
+## 11. Next Steps
 
 After understanding this architecture, read:
 
-1. **03-DATABASE-SCHEMA.md** - Complete database design
-2. **04-DOMAIN-MODELS.md** - Business entities and rules
-3. **05-EPIC-PAYROLL.md** - Start implementing payroll
+1. **03-DATABASE-SCHEMA.md** - Complete database design (includes multi-country tables 13-21)
+2. **multi-country-payroll-architecture.md** - Multi-country architecture and implementation guide
+3. **country-config-schema.ts** - Country configuration types and schemas
+4. **04-DOMAIN-MODELS.md** - Business entities and rules
+5. **05-EPIC-PAYROLL.md** - Start implementing payroll
 
 ---
 

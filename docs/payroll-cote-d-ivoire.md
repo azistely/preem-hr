@@ -1,6 +1,25 @@
-Gestion de la paie en Côte d’Ivoire – Guide exhaustif (2025)
+Gestion de la paie en Côte d'Ivoire – Guide exhaustif (2025)
 
-Ce guide en français fournit une vue d’ensemble complète du calcul et de la gestion de la paie dans le secteur privé ivoirien. Il couvre le cadre légal, la structure de la rémunération, les contributions sociales, l’impôt sur les traitements et salaires (ITS) ainsi que les différents événements susceptibles d’influer sur la paie. L’objectif est d’apporter un outil de référence aux responsables des ressources humaines, aux comptables et aux dirigeants pour établir des bulletins de paie conformes aux lois en vigueur en 2025.
+> **⚠️ NOTE IMPORTANTE - CORRECTIONS RÉGLEMENTAIRES**
+>
+> Ce document contient des informations qui ont été mises à jour suite à des recherches approfondies. Les corrections suivantes s'appliquent :
+>
+> **ITS (Impôt sur les Traitements et Salaires) :**
+> - ✅ **Barème correct :** 6 tranches progressives (0%, 16%, 21%, 24%, 28%, 32%) - calcul MENSUEL
+> - ❌ **Anciennes données incorrectes :** 8 tranches annuelles jusqu'à 60% (source : iCalculator™)
+> - ✅ **Réductions familiales :** Déductions forfaitaires de 0 à 44,000 FCFA selon parts fiscales
+>
+> **CNPS (Caisse Nationale de Prévoyance Sociale) :**
+> - ✅ **Prestations familiales :** 5.0% (pas 5.75%) - inclut maternité
+> - ✅ **Accidents du travail :** Variable 2-5% selon secteur (pas fixe 3%)
+>
+> **FDFP (Taxes de formation) :**
+> - ✅ **TAP :** 0.4% du brut imposable (employeur)
+> - ✅ **TFPC :** 1.2% du brut imposable (employeur)
+>
+> **Pour les données réglementaires officielles, consulter :** `payroll-research-findings.md`
+
+Ce guide en français fournit une vue d'ensemble complète du calcul et de la gestion de la paie dans le secteur privé ivoirien. Il couvre le cadre légal, la structure de la rémunération, les contributions sociales, l'impôt sur les traitements et salaires (ITS) ainsi que les différents événements susceptibles d'influer sur la paie. L'objectif est d'apporter un outil de référence aux responsables des ressources humaines, aux comptables et aux dirigeants pour établir des bulletins de paie conformes aux lois en vigueur en 2025.
 
 1. Cadre juridique et sources réglementaires
 

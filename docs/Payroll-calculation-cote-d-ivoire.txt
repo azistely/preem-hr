@@ -1,0 +1,611 @@
+# Payroll System Implementation Documentation
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Employee Information Structure](#employee-information-structure)
+3. [Salary Components](#salary-components)
+4. [Tax Calculations](#tax-calculations)
+5. [Social Security Contributions](#social-security-contributions)
+6. [Net Pay Calculation](#net-pay-calculation)
+7. [Rule Engine Components](#rule-engine-components)
+8. [Implementation Guidelines](#implementation-guidelines)
+9. [Data Model](#data-model)
+10. [Calculation Formulas](#calculation-formulas)
+
+## Overview
+
+This documentation provides a complete specification for implementing a payroll system based on the French-African payroll structure (appears to be Ivory Coast based on the tax rates and social security structure). The system calculates gross pay, deductions, employer contributions, and net pay.
+
+## Employee Information Structure
+
+### Basic Employee Data
+- **Matricule** (Employee ID): Unique identifier (e.g., "0001")
+- **Service** (Department): Numeric department code
+- **Emploi** (Job Title): Text description (e.g., "Vendeuse Boutique")
+- **Catégorie** (Category): Employee category classification
+- **Parts RICF**: Number of family parts for tax calculation (e.g., 1)
+- **CNPS N°**: Social security number
+- **Date d'embauche** (Hire Date): Employment start date
+- **Ancienneté** (Seniority): Calculated years of service
+
+## Salary Components
+
+### 1. Base Salary Components (Gains)
+
+#### Fixed Components
+- **11 - Salaire catégoriel** (Category Salary): Base salary by category
+- **12 - Sursalaire** (Over-salary): Additional fixed salary component
+- **21 - Prime d'ancienneté** (Seniority Bonus): Based on years of service
+- **22 - Prime de transport** (Transport Allowance): Fixed transport compensation
+
+#### Variable Components
+- **23-27** - Avantages en nature (Benefits in Kind): Non-monetary benefits
+- **31-33** - Other allowances: Customizable additional payments
+
+### 2. Calculation Rules
+
+#### Gross Salary Calculation
+```
+Total Brut = SUM(All active salary components)
+Brut Imposable = SUM(Components marked as "Oui" for taxation)
+```
+
+In the example:
+- Total Brut = 161,416 FCFA
+- Brut Imposable = 131,416 FCFA (excludes transport allowance)
+
+## Tax Calculations
+
+### ITS (Impôt sur les Traitements et Salaires) - Income Tax
+
+#### Tax Brackets (Progressive Scale)
+```
+0 - 75,000: 0%
+75,001 - 240,000: 16%
+240,001 - 800,000: 21%
+800,001 - 2,400,000: 24%
+2,400,001 - 8,000,000: 28%
+Above 8,000,000: 32%
+```
+
+#### Tax Calculation Formula
+```javascript
+function calculateITS(brutImposable, partsFiscales) {
+    if (brutImposable <= 75000) return 0;
+
+    let tax = 0;
+
+    if (brutImposable > 75000 && brutImposable <= 240000) {
+        tax = (brutImposable - 75000) * 0.16;
+    } else if (brutImposable > 240000 && brutImposable <= 800000) {
+        tax = (240000 - 75000) * 0.16 + (brutImposable - 240000) * 0.21;
+    } else if (brutImposable > 800000 && brutImposable <= 2400000) {
+        tax = (240000 - 75000) * 0.16 + (800000 - 240000) * 0.21 + (brutImposable - 800000) * 0.24;
+    } else if (brutImposable > 2400000 && brutImposable <= 8000000) {
+        tax = (240000 - 75000) * 0.16 + (800000 - 240000) * 0.21 + (2400000 - 800000) * 0.24 + (brutImposable - 2400000) * 0.28;
+    } else if (brutImposable > 8000000) {
+        tax = (240000 - 75000) * 0.16 + (800000 - 240000) * 0.21 + (2400000 - 800000) * 0.24 + (8000000 - 2400000) * 0.28 + (brutImposable - 8000000) * 0.32;
+    }
+
+    // Apply family deduction based on parts
+    const familyDeduction = calculateFamilyDeduction(partsFiscales);
+
+    return Math.max(0, tax - familyDeduction);
+}
+
+function calculateFamilyDeduction(parts) {
+    const deductionTable = {
+        1: 0,
+        1.5: 5500,
+        2: 11000,
+        2.5: 16500,
+        3: 22000,
+        3.5: 27500,
+        4: 33000,
+        4.5: 38500,
+        5: 44000
+    };
+
+    return deductionTable[parts] || 0;
+}
+```
+
+## Social Security Contributions
+
+### CNPS (Caisse Nationale de Prévoyance Sociale)
+
+#### 1. Retirement (Régime de Retraite)
+- **Base**: Brut Imposable (131,416 FCFA)
+- **Employee Rate**: 6.30%
+- **Employer Rate**: 7.70%
+- **Employee Contribution**: 8,279 FCFA
+- **Employer Contribution**: 10,119 FCFA
+
+#### 2. Work Accident Insurance (Accident Travail)
+- **Base**: Salaire catégoriel (75,000 FCFA)
+- **Employee Rate**: 0%
+- **Employer Rate**: 3.00%
+- **Employer Contribution**: 2,250 FCFA
+
+#### 3. Family Benefits (Prestations Familiales)
+- **Base**: Salaire catégoriel (75,000 FCFA)
+- **Employee Rate**: 0%
+- **Employer Rate**: 5.75%
+- **Employer Contribution**: 4,313 FCFA
+
+### CMU (Couverture Maladie Universelle) - Universal Health Coverage
+- **Base**: 1,000 FCFA (fixed)
+- **Employee Rate**: 50%
+- **Employer Rate**: 50%
+- **Employee Contribution**: 500 FCFA
+- **Employer Contribution**: 500 FCFA
+
+### Training Taxes (FDFP)
+
+#### 1. Apprenticeship Tax (Taxe Apprentissage)
+- **Base**: Brut Imposable
+- **Employer Rate**: 0.40%
+- **Employer Contribution**: 526 FCFA
+
+#### 2. Continuous Professional Training (Formation Professionnelle Continue)
+- **Base**: Brut Imposable
+- **Employer Rate**: 0.60%
+- **Employer Contribution**: 788 FCFA
+
+## Net Pay Calculation
+
+### Formula
+```
+Net Pay = Total Brut - Total Employee Deductions + Rounding Adjustment
+
+Where:
+Total Employee Deductions = ITS + CNPS Retirement + CMU + Other Deductions
+```
+
+### Example Calculation
+```
+Total Brut: 161,416 FCFA
+Total Deductions: 17,806 FCFA
+- ITS: 9,027 FCFA
+- CNPS Retirement: 8,279 FCFA
+- CMU: 500 FCFA
+
+Net Pay: 143,600 FCFA (after rounding)
+```
+
+## Rule Engine Components
+
+### Configurable Rules
+
+1. **Tax Brackets and Rates**
+   - Income tax brackets and percentages
+   - Family part deduction amounts
+
+2. **Social Security Rates**
+   - CNPS retirement rates (employee/employer)
+   - Work accident insurance rates
+   - Family benefit rates
+   - CMU contribution amounts
+
+3. **Salary Components**
+   - Component codes and descriptions
+   - Taxable status (Yes/No)
+   - Calculation basis
+
+4. **Allowances and Bonuses**
+   - Transport allowance amounts
+   - Seniority bonus calculation rules
+   - Benefits in kind valuations
+
+### User-Manageable Parameters
+
+With appropriate permissions, users should be able to update:
+
+1. **Rate Tables**
+   - Tax brackets and rates
+   - Social security contribution rates
+   - Training tax rates
+
+2. **Fixed Amounts**
+   - Transport allowance
+   - CMU base amount
+   - Family deduction amounts
+
+3. **Calculation Rules**
+   - Seniority bonus formulas
+   - Overtime calculation methods
+   - Benefit valuations
+
+## Implementation Guidelines
+
+### 1. Database Schema
+
+```sql
+-- Employees Table
+CREATE TABLE employees (
+    employee_id VARCHAR(10) PRIMARY KEY,
+    service_code INTEGER,
+    job_title VARCHAR(100),
+    category VARCHAR(50),
+    fiscal_parts DECIMAL(2,1),
+    cnps_number VARCHAR(50),
+    hire_date DATE,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- Salary Components Table
+CREATE TABLE salary_components (
+    component_code VARCHAR(5) PRIMARY KEY,
+    description VARCHAR(100),
+    is_taxable BOOLEAN,
+    is_active BOOLEAN,
+    calculation_type VARCHAR(20), -- 'FIXED', 'PERCENTAGE', 'FORMULA'
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- Employee Salary Details Table
+CREATE TABLE employee_salaries (
+    id SERIAL PRIMARY KEY,
+    employee_id VARCHAR(10),
+    component_code VARCHAR(5),
+    period DATE,
+    base_amount DECIMAL(12,2),
+    rate DECIMAL(5,2),
+    calculated_amount DECIMAL(12,2),
+    FOREIGN KEY (employee_id) REFERENCES employees(employee_id),
+    FOREIGN KEY (component_code) REFERENCES salary_components(component_code)
+);
+
+-- Tax Rules Table
+CREATE TABLE tax_rules (
+    id SERIAL PRIMARY KEY,
+    min_amount DECIMAL(12,2),
+    max_amount DECIMAL(12,2),
+    rate DECIMAL(5,2),
+    effective_date DATE,
+    end_date DATE
+);
+
+-- Social Security Rules Table
+CREATE TABLE social_security_rules (
+    id SERIAL PRIMARY KEY,
+    contribution_type VARCHAR(50),
+    base_type VARCHAR(50), -- 'BRUT_IMPOSABLE', 'SALAIRE_CATEGORIEL', 'FIXED'
+    employee_rate DECIMAL(5,2),
+    employer_rate DECIMAL(5,2),
+    fixed_base DECIMAL(12,2),
+    effective_date DATE,
+    end_date DATE
+);
+```
+
+### 2. Core Calculation Engine
+
+```javascript
+class PayrollCalculator {
+    constructor(employee, salaryComponents, taxRules, socialSecurityRules) {
+        this.employee = employee;
+        this.salaryComponents = salaryComponents;
+        this.taxRules = taxRules;
+        this.socialSecurityRules = socialSecurityRules;
+    }
+
+    calculateGrossSalary() {
+        return this.salaryComponents.reduce((total, component) => {
+            return total + component.calculatedAmount;
+        }, 0);
+    }
+
+    calculateTaxableGross() {
+        return this.salaryComponents
+            .filter(component => component.isTaxable)
+            .reduce((total, component) => {
+                return total + component.calculatedAmount;
+            }, 0);
+    }
+
+    calculateITS() {
+        const taxableGross = this.calculateTaxableGross();
+        let tax = 0;
+
+        this.taxRules.forEach(bracket => {
+            if (taxableGross > bracket.minAmount) {
+                const taxableInBracket = Math.min(
+                    taxableGross - bracket.minAmount,
+                    bracket.maxAmount - bracket.minAmount
+                );
+                tax += taxableInBracket * (bracket.rate / 100);
+            }
+        });
+
+        const familyDeduction = this.calculateFamilyDeduction();
+        return Math.max(0, tax - familyDeduction);
+    }
+
+    calculateSocialSecurityContributions() {
+        const contributions = {};
+        const grossSalary = this.calculateGrossSalary();
+        const taxableGross = this.calculateTaxableGross();
+        const categorySalary = this.getCategorySalary();
+
+        this.socialSecurityRules.forEach(rule => {
+            let base = 0;
+
+            switch (rule.baseType) {
+                case 'BRUT_IMPOSABLE':
+                    base = taxableGross;
+                    break;
+                case 'SALAIRE_CATEGORIEL':
+                    base = categorySalary;
+                    break;
+                case 'FIXED':
+                    base = rule.fixedBase;
+                    break;
+            }
+
+            contributions[rule.contributionType] = {
+                employeeAmount: base * (rule.employeeRate / 100),
+                employerAmount: base * (rule.employerRate / 100),
+                base: base
+            };
+        });
+
+        return contributions;
+    }
+
+    calculateNetPay() {
+        const grossSalary = this.calculateGrossSalary();
+        const its = this.calculateITS();
+        const socialContributions = this.calculateSocialSecurityContributions();
+
+        let totalDeductions = its;
+
+        Object.values(socialContributions).forEach(contribution => {
+            totalDeductions += contribution.employeeAmount;
+        });
+
+        const netPay = grossSalary - totalDeductions;
+
+        // Apply rounding rules
+        return Math.round(netPay / 10) * 10;
+    }
+}
+```
+
+### 3. Rule Engine Interface
+
+```javascript
+class PayrollRuleEngine {
+    constructor() {
+        this.rules = {
+            taxBrackets: [],
+            socialSecurityRates: [],
+            allowances: {},
+            deductions: {}
+        };
+    }
+
+    updateTaxBracket(minAmount, maxAmount, rate, effectiveDate) {
+        // Validate and update tax bracket
+        // Maintain audit trail
+    }
+
+    updateSocialSecurityRate(contributionType, employeeRate, employerRate, effectiveDate) {
+        // Validate and update rates
+        // Check for conflicts
+    }
+
+    updateAllowance(allowanceType, amount, effectiveDate) {
+        // Update fixed allowances
+    }
+
+    validateRule(rule) {
+        // Ensure rule consistency
+        // Check date ranges
+        // Verify rate limits
+    }
+}
+```
+
+## Data Model
+
+### Payroll Period Processing
+
+```javascript
+class PayrollPeriod {
+    constructor(year, month) {
+        this.year = year;
+        this.month = month;
+        this.workingDays = this.calculateWorkingDays();
+    }
+
+    processPayroll(employees) {
+        const payrollResults = [];
+
+        employees.forEach(employee => {
+            const calculator = new PayrollCalculator(
+                employee,
+                this.getSalaryComponents(employee),
+                this.getApplicableTaxRules(),
+                this.getApplicableSocialSecurityRules()
+            );
+
+            const payslip = {
+                employeeId: employee.id,
+                period: `${this.year}-${this.month}`,
+                grossSalary: calculator.calculateGrossSalary(),
+                taxableGross: calculator.calculateTaxableGross(),
+                its: calculator.calculateITS(),
+                socialContributions: calculator.calculateSocialSecurityContributions(),
+                netPay: calculator.calculateNetPay(),
+                paymentDate: this.getPaymentDate()
+            };
+
+            payrollResults.push(payslip);
+        });
+
+        return payrollResults;
+    }
+}
+```
+
+## Calculation Formulas
+
+### 1. Seniority Calculation
+```javascript
+function calculateSeniority(hireDate, referenceDate) {
+    const years = moment(referenceDate).diff(moment(hireDate), 'years');
+    const months = moment(referenceDate).diff(moment(hireDate), 'months') % 12;
+
+    return {
+        years: years,
+        months: months,
+        display: `${years} an(s) ${months} mois`
+    };
+}
+```
+
+### 2. Seniority Bonus
+```javascript
+function calculateSeniorityBonus(baseSalary, seniorityYears) {
+    // Example: 2% per year of service, max 20%
+    const rate = Math.min(seniorityYears * 0.02, 0.20);
+    return baseSalary * rate;
+}
+```
+
+### 3. Rounding Rules
+```javascript
+function roundPayroll(amount) {
+    // Round to nearest 10
+    return Math.round(amount / 10) * 10;
+}
+```
+
+## Security and Permissions
+
+### Permission Levels
+
+1. **View Only**
+   - View payslips
+   - Generate reports
+
+2. **Payroll Clerk**
+   - Enter salary components
+   - Process payroll
+   - Cannot modify rules
+
+3. **Payroll Manager**
+   - All clerk permissions
+   - Modify allowances
+   - Update employee data
+
+4. **Administrator**
+   - All permissions
+   - Modify tax rules
+   - Update social security rates
+   - Configure system parameters
+
+### Audit Trail
+
+All changes to rules and calculations should be logged:
+- User making the change
+- Timestamp
+- Previous value
+- New value
+- Reason for change
+
+## Testing Guidelines
+
+### Test Scenarios
+
+1. **Basic Calculation**
+   - Single employee, standard components
+   - Verify gross, tax, and net calculations
+
+2. **Tax Bracket Transitions**
+   - Test salaries at bracket boundaries
+   - Verify progressive tax calculation
+
+3. **Family Deductions**
+   - Test various family part configurations
+   - Verify correct deduction application
+
+4. **Social Security Caps**
+   - Test with high salaries
+   - Verify contribution caps if applicable
+
+5. **Rounding**
+   - Test various decimal amounts
+   - Verify consistent rounding
+
+### Validation Rules
+
+1. **Data Integrity**
+   - Employee ID uniqueness
+   - Valid date ranges
+   - Positive amounts only
+
+2. **Business Rules**
+   - Tax cannot exceed gross salary
+   - Net pay must be positive
+   - Total deductions cannot exceed gross
+
+3. **Compliance**
+   - Rates within legal limits
+   - Mandatory contributions included
+   - Proper documentation
+
+## Reporting Requirements
+
+### Standard Reports
+
+1. **Payslip** (Bulletin de Paie)
+   - Employee information
+   - Detailed salary components
+   - All deductions itemized
+   - Net pay clearly shown
+
+2. **Payroll Summary**
+   - Total gross by department
+   - Total taxes collected
+   - Total social contributions
+   - Net payroll amount
+
+3. **Government Reports**
+   - ITS declaration
+   - CNPS contributions
+   - Training tax reports
+
+4. **Management Reports**
+   - Payroll cost analysis
+   - Department comparisons
+   - Trend analysis
+
+## Future Enhancements
+
+1. **Mobile Access**
+   - Employee self-service portal
+   - Digital payslip delivery
+
+2. **Integration**
+   - Banking systems for payments
+   - Accounting software
+   - Time and attendance systems
+
+3. **Advanced Features**
+   - Loan management
+   - Advance payments
+   - Bonus calculations
+   - Leave encashment
+
+4. **Compliance Updates**
+   - Automatic tax table updates
+   - Regulatory change notifications
+   - Compliance reporting
+
+## Conclusion
+
+This documentation provides a comprehensive framework for implementing a robust payroll system. The modular design allows for easy customization and rule updates while maintaining calculation accuracy and compliance with local regulations.

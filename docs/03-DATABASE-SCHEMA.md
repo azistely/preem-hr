@@ -40,6 +40,10 @@ CREATE TABLE tenants (
   -- Configuration
   settings JSONB NOT NULL DEFAULT '{}',
 
+  -- Payroll configuration (multi-country support)
+  sector_code VARCHAR(50), -- 'services', 'industry', 'construction', etc.
+  default_fiscal_parts NUMERIC(3,1) DEFAULT 1.0,
+
   -- Lifecycle
   status TEXT NOT NULL DEFAULT 'active', -- active, suspended, archived
   trial_ends_at TIMESTAMPTZ,
@@ -50,6 +54,8 @@ CREATE TABLE tenants (
   CONSTRAINT valid_country CHECK (country_code ~ '^[A-Z]{2}$'),
   CONSTRAINT valid_currency CHECK (currency ~ '^[A-Z]{3}$')
 );
+
+CREATE INDEX idx_tenants_country ON tenants(country_code);
 
 CREATE INDEX idx_tenants_slug ON tenants(slug);
 CREATE INDEX idx_tenants_status ON tenants(status);
@@ -147,6 +153,12 @@ CREATE TABLE employees (
   -- Tax
   tax_number TEXT,
   tax_dependents INTEGER NOT NULL DEFAULT 0,
+
+  -- Payroll data (multi-country support)
+  fiscal_parts NUMERIC(3,1) DEFAULT 1.0,
+  has_spouse BOOLEAN DEFAULT FALSE,
+  dependent_children INTEGER DEFAULT 0,
+  cmu_family_coverage BOOLEAN DEFAULT FALSE,
 
   -- Custom fields (Zod validated)
   custom_fields JSONB NOT NULL DEFAULT '{}',
@@ -421,6 +433,9 @@ CREATE TABLE payroll_line_items (
   cnps_employer NUMERIC(15,2) NOT NULL,
   cmu_employer NUMERIC(15,2) NOT NULL,
 
+  -- Other taxes (country-agnostic: FDFP for CI, 3FPT for SN, etc.)
+  total_other_taxes NUMERIC(15,2) DEFAULT 0,
+
   -- Net Pay
   net_salary NUMERIC(15,2) NOT NULL,
   employer_cost NUMERIC(15,2) NOT NULL,
@@ -428,6 +443,14 @@ CREATE TABLE payroll_line_items (
   -- Detailed breakdown (JSONB for flexibility)
   earnings_details JSONB NOT NULL DEFAULT '[]', -- [{ type, description, amount }]
   deductions_details JSONB NOT NULL DEFAULT '[]',
+  other_taxes_details JSONB NOT NULL DEFAULT '[]', -- [{ code, name, amount, rate, base }]
+  -- Example for CI: [
+  --   {"code": "fdfp_tap", "name": "TAP (FDFP)", "amount": 526, "rate": 0.004, "base": 131416},
+  --   {"code": "fdfp_tfpc", "name": "TFPC (FDFP)", "amount": 1577, "rate": 0.012, "base": 131416}
+  -- ]
+  -- Example for SN: [
+  --   {"code": "3fpt_training", "name": "3FPT Formation", "amount": 1500, "rate": 0.015, "base": 100000}
+  -- ]
 
   -- Days worked
   days_worked NUMERIC(5,2) NOT NULL DEFAULT 30,
@@ -646,67 +669,355 @@ CREATE INDEX idx_timeoff_requests_status ON time_off_requests(tenant_id, status)
 
 ### 13. Countries
 
+Master table of supported countries.
+
 ```sql
 CREATE TABLE countries (
-  code TEXT PRIMARY KEY, -- ISO 3166-1 alpha-2
-  name_en TEXT NOT NULL,
-  name_fr TEXT NOT NULL,
-  currency TEXT NOT NULL,
-  timezone TEXT NOT NULL,
-
-  -- Regulatory
-  payroll_rules JSONB NOT NULL, -- Country-specific rules
-  tax_brackets JSONB NOT NULL,
-  contribution_rates JSONB NOT NULL,
-
-  -- Holidays
-  public_holidays JSONB NOT NULL DEFAULT '[]', -- [{ date, name }]
-
-  -- Status
-  is_active BOOLEAN NOT NULL DEFAULT true,
-
-  -- Audit
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code VARCHAR(2) NOT NULL UNIQUE, -- ISO 3166-1 alpha-2 ('CI', 'SN', 'BF', etc.)
+  name JSONB NOT NULL, -- {'fr': 'Côte d\'Ivoire', 'en': 'Ivory Coast'}
+  currency_code VARCHAR(3) NOT NULL, -- 'XOF', 'GNF'
+  decimal_places INTEGER NOT NULL DEFAULT 0, -- 0 for CFA, 2 for GNF
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Seed data for Côte d'Ivoire
-INSERT INTO countries (code, name_en, name_fr, currency, timezone, payroll_rules, tax_brackets, contribution_rates) VALUES (
+-- Seed data for West African countries
+INSERT INTO countries (code, name, currency_code) VALUES
+  ('CI', '{"fr": "Côte d''Ivoire", "en": "Ivory Coast"}', 'XOF'),
+  ('SN', '{"fr": "Sénégal", "en": "Senegal"}', 'XOF'),
+  ('BF', '{"fr": "Burkina Faso", "en": "Burkina Faso"}', 'XOF'),
+  ('ML', '{"fr": "Mali", "en": "Mali"}', 'XOF'),
+  ('BJ', '{"fr": "Bénin", "en": "Benin"}', 'XOF'),
+  ('TG', '{"fr": "Togo", "en": "Togo"}', 'XOF'),
+  ('GN', '{"fr": "Guinée", "en": "Guinea"}', 'GNF');
+
+CREATE INDEX idx_countries_code ON countries(code);
+```
+
+### 14. Tax Systems
+
+Configuration for each country's tax system (ITS, IRPP, IUTS, etc.).
+
+```sql
+CREATE TABLE tax_systems (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code VARCHAR(2) NOT NULL REFERENCES countries(code),
+  name VARCHAR(100) NOT NULL, -- 'ITS', 'IRPP', 'IUTS'
+  display_name JSONB NOT NULL, -- {'fr': 'Impôt sur les Traitements et Salaires'}
+  calculation_method VARCHAR(50) NOT NULL, -- 'progressive_monthly', 'progressive_annual'
+  supports_family_deductions BOOLEAN NOT NULL DEFAULT FALSE,
+  calculation_base VARCHAR(50) NOT NULL, -- 'brut_imposable', 'net_imposable'
+  effective_from DATE NOT NULL,
+  effective_to DATE,
+  metadata JSONB, -- Additional country-specific configuration
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT chk_effective_dates CHECK (effective_to IS NULL OR effective_to > effective_from)
+);
+
+CREATE INDEX idx_tax_systems_country_effective ON tax_systems(country_code, effective_from, effective_to);
+
+-- Côte d'Ivoire ITS (2024 reform - CURRENT CORRECT BRACKETS)
+INSERT INTO tax_systems (country_code, name, display_name, calculation_method, supports_family_deductions, calculation_base, effective_from)
+VALUES (
   'CI',
-  'Ivory Coast',
-  'Côte d''Ivoire',
-  'XOF',
-  'Africa/Abidjan',
-  '{
-    "smig": 75000,
-    "legal_hours_week": 40,
-    "legal_hours_week_agriculture": 48,
-    "overtime_multipliers": {
-      "hours_41_to_46": 1.15,
-      "hours_above_46": 1.50,
-      "night_work": 1.75,
-      "sunday_or_holiday": 1.75,
-      "night_sunday_or_holiday": 2.00
-    }
-  }',
-  '[
-    {"min": 0, "max": 300000, "rate": 0},
-    {"min": 300000, "max": 547000, "rate": 0.10},
-    {"min": 547000, "max": 979000, "rate": 0.15},
-    {"min": 979000, "max": 1519000, "rate": 0.20},
-    {"min": 1519000, "max": 2644000, "rate": 0.25},
-    {"min": 2644000, "max": 4669000, "rate": 0.35},
-    {"min": 4669000, "max": 10106000, "rate": 0.45},
-    {"min": 10106000, "max": null, "rate": 0.60}
-  ]',
-  '{
-    "pension": {"employee": 0.063, "employer": 0.077, "ceiling": 3375000},
-    "maternity": {"employee": 0, "employer": 0.0075, "ceiling": 70000},
-    "family": {"employee": 0, "employer": 0.05, "ceiling": 70000},
-    "work_accident": {"employee": 0, "employer_min": 0.02, "employer_max": 0.05, "ceiling": 70000},
-    "cmu": {"employee_fixed": 1000, "employer_employee": 500, "employer_family": 4500}
-  }'
+  'ITS',
+  '{"fr": "Impôt sur les Traitements et Salaires", "en": "Tax on Salaries"}',
+  'progressive_monthly',
+  TRUE,
+  'brut_imposable',
+  '2024-01-01'
 );
+```
+
+### 15. Tax Brackets
+
+Tax bracket definitions for each tax system.
+
+```sql
+CREATE TABLE tax_brackets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tax_system_id UUID NOT NULL REFERENCES tax_systems(id) ON DELETE CASCADE,
+  bracket_order INTEGER NOT NULL, -- 1, 2, 3, etc.
+  min_amount NUMERIC(15,2) NOT NULL,
+  max_amount NUMERIC(15,2), -- NULL for last bracket (infinity)
+  rate NUMERIC(6,4) NOT NULL, -- 0.16 = 16%
+  description JSONB, -- Optional bracket description
+
+  CONSTRAINT chk_bracket_amounts CHECK (max_amount IS NULL OR max_amount > min_amount),
+  CONSTRAINT chk_rate_valid CHECK (rate >= 0 AND rate <= 1),
+  UNIQUE (tax_system_id, bracket_order)
+);
+
+CREATE INDEX idx_tax_brackets_system ON tax_brackets(tax_system_id, bracket_order);
+
+-- Côte d'Ivoire 6 brackets (MONTHLY progressive - 2024 reform)
+INSERT INTO tax_brackets (tax_system_id, bracket_order, min_amount, max_amount, rate) VALUES
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 1, 0, 75000, 0),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 2, 75000, 240000, 0.16),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 3, 240000, 800000, 0.21),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 4, 800000, 2400000, 0.24),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 5, 2400000, 8000000, 0.28),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 6, 8000000, NULL, 0.32);
+```
+
+### 16. Family Deduction Rules
+
+Family deductions for countries that support them (e.g., Côte d'Ivoire).
+
+```sql
+CREATE TABLE family_deduction_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tax_system_id UUID NOT NULL REFERENCES tax_systems(id) ON DELETE CASCADE,
+  fiscal_parts NUMERIC(3,1) NOT NULL, -- 1.0, 1.5, 2.0, etc.
+  deduction_amount NUMERIC(15,2) NOT NULL,
+  description JSONB, -- e.g., {'fr': 'Célibataire sans enfant'}
+
+  UNIQUE (tax_system_id, fiscal_parts)
+);
+
+CREATE INDEX idx_family_deductions_system ON family_deduction_rules(tax_system_id);
+
+-- Côte d'Ivoire family deductions (parts fiscales)
+INSERT INTO family_deduction_rules (tax_system_id, fiscal_parts, deduction_amount, description) VALUES
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 1.0, 0, '{"fr": "Célibataire sans enfant"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 1.5, 5500, '{"fr": "Marié sans enfant OU célibataire 1 enfant"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 2.0, 11000, '{"fr": "Marié 1 enfant OU célibataire 2 enfants"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 2.5, 16500, '{"fr": "Marié 2 enfants"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 3.0, 22000, '{"fr": "Marié 3 enfants"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 3.5, 27500, '{"fr": "Marié 4 enfants"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 4.0, 33000, '{"fr": "Marié 5 enfants"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 4.5, 38500, '{"fr": "Marié 6 enfants"}'),
+  ((SELECT id FROM tax_systems WHERE country_code = 'CI' AND effective_to IS NULL), 5.0, 44000, '{"fr": "Marié 7+ enfants"}');
+```
+
+### 17. Social Security Schemes
+
+Social security agency and scheme configuration.
+
+```sql
+CREATE TABLE social_security_schemes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code VARCHAR(2) NOT NULL REFERENCES countries(code),
+  agency_code VARCHAR(10) NOT NULL, -- 'CNPS', 'CSS', 'INPS'
+  agency_name JSONB NOT NULL, -- {'fr': 'Caisse Nationale de Prévoyance Sociale'}
+  effective_from DATE NOT NULL,
+  effective_to DATE,
+  metadata JSONB, -- Additional country-specific config
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT chk_effective_dates CHECK (effective_to IS NULL OR effective_to > effective_from)
+);
+
+CREATE INDEX idx_social_schemes_country_effective ON social_security_schemes(country_code, effective_from, effective_to);
+
+-- Côte d'Ivoire CNPS
+INSERT INTO social_security_schemes (country_code, agency_code, agency_name, effective_from)
+VALUES (
+  'CI',
+  'CNPS',
+  '{"fr": "Caisse Nationale de Prévoyance Sociale", "en": "National Social Security Fund"}',
+  '2024-01-01'
+);
+```
+
+### 18. Contribution Types
+
+Types of social security contributions (pension, family, health, etc.).
+
+```sql
+CREATE TABLE contribution_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scheme_id UUID NOT NULL REFERENCES social_security_schemes(id) ON DELETE CASCADE,
+  code VARCHAR(50) NOT NULL, -- 'pension', 'family_benefits', 'work_accident', 'cmu'
+  name JSONB NOT NULL, -- {'fr': 'Retraite', 'en': 'Pension'}
+  employee_rate NUMERIC(6,4), -- NULL if employer-only
+  employer_rate NUMERIC(6,4), -- NULL if employee-only
+  calculation_base VARCHAR(50) NOT NULL, -- 'brut_imposable', 'salaire_categoriel', 'fixed'
+  ceiling_amount NUMERIC(15,2), -- NULL if no ceiling
+  ceiling_period VARCHAR(20), -- 'monthly', 'annual'
+  fixed_amount NUMERIC(15,2), -- For fixed contributions (CMU)
+  is_variable_by_sector BOOLEAN NOT NULL DEFAULT FALSE,
+  display_order INTEGER NOT NULL DEFAULT 0,
+
+  UNIQUE (scheme_id, code)
+);
+
+CREATE INDEX idx_contribution_types_scheme ON contribution_types(scheme_id);
+
+-- Côte d'Ivoire CNPS contributions (CORRECTED RATES)
+INSERT INTO contribution_types (scheme_id, code, name, employee_rate, employer_rate, calculation_base, ceiling_amount, ceiling_period, display_order) VALUES
+  (
+    (SELECT id FROM social_security_schemes WHERE country_code = 'CI' AND effective_to IS NULL),
+    'pension',
+    '{"fr": "Retraite", "en": "Pension"}',
+    0.063, -- 6.3%
+    0.077, -- 7.7%
+    'brut_imposable',
+    281250, -- 3,375,000 annual / 12 = 281,250 monthly
+    'monthly',
+    1
+  ),
+  (
+    (SELECT id FROM social_security_schemes WHERE country_code = 'CI' AND effective_to IS NULL),
+    'family_benefits',
+    '{"fr": "Prestations Familiales (inclut maternité)", "en": "Family Benefits (includes maternity)"}',
+    NULL,
+    0.05, -- 5.0% (CORRECTED from 5.75%)
+    'salaire_categoriel',
+    70000,
+    'monthly',
+    2
+  ),
+  (
+    (SELECT id FROM social_security_schemes WHERE country_code = 'CI' AND effective_to IS NULL),
+    'work_accident',
+    '{"fr": "Accident du Travail", "en": "Work Accident"}',
+    NULL,
+    0.03, -- Default 3%, overridden by sector
+    'salaire_categoriel',
+    70000,
+    'monthly',
+    3
+  ),
+  (
+    (SELECT id FROM social_security_schemes WHERE country_code = 'CI' AND effective_to IS NULL),
+    'cmu',
+    '{"fr": "Couverture Maladie Universelle", "en": "Universal Health Coverage"}',
+    NULL,
+    NULL,
+    'fixed',
+    NULL,
+    NULL,
+    4
+  );
+
+-- CMU fixed amounts
+UPDATE contribution_types
+SET employee_rate = NULL,
+    employer_rate = NULL,
+    fixed_amount = 1000 -- Employee fixed
+WHERE code = 'cmu';
+```
+
+### 19. Sector Contribution Overrides
+
+Sector-specific contribution rate overrides (e.g., work accident rates by sector).
+
+```sql
+CREATE TABLE sector_contribution_overrides (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contribution_type_id UUID NOT NULL REFERENCES contribution_types(id) ON DELETE CASCADE,
+  sector_code VARCHAR(50) NOT NULL, -- 'services', 'industry', 'construction', etc.
+  sector_name JSONB NOT NULL,
+  employer_rate NUMERIC(6,4) NOT NULL, -- Override rate for this sector
+  risk_level VARCHAR(20), -- 'low', 'medium', 'high', 'very_high'
+
+  UNIQUE (contribution_type_id, sector_code)
+);
+
+-- Work accident rates by sector (Côte d'Ivoire)
+INSERT INTO sector_contribution_overrides (contribution_type_id, sector_code, sector_name, employer_rate, risk_level) VALUES
+  (
+    (SELECT id FROM contribution_types WHERE code = 'work_accident' AND scheme_id IN (SELECT id FROM social_security_schemes WHERE country_code = 'CI')),
+    'services',
+    '{"fr": "Services/Commerce", "en": "Services/Commerce"}',
+    0.02, -- 2%
+    'low'
+  ),
+  (
+    (SELECT id FROM contribution_types WHERE code = 'work_accident' AND scheme_id IN (SELECT id FROM social_security_schemes WHERE country_code = 'CI')),
+    'industry',
+    '{"fr": "Industrie/Manufacture", "en": "Industry/Manufacturing"}',
+    0.03, -- 3%
+    'medium'
+  ),
+  (
+    (SELECT id FROM contribution_types WHERE code = 'work_accident' AND scheme_id IN (SELECT id FROM social_security_schemes WHERE country_code = 'CI')),
+    'construction',
+    '{"fr": "BTP/Construction", "en": "Construction"}',
+    0.05, -- 5%
+    'very_high'
+  );
+```
+
+### 20. Other Taxes
+
+Other payroll-related taxes (FDFP training taxes, ANPE, etc.).
+
+```sql
+CREATE TABLE other_taxes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code VARCHAR(2) NOT NULL REFERENCES countries(code),
+  code VARCHAR(50) NOT NULL, -- 'fdfp_tap', 'fdfp_tfpc', 'anpe'
+  name JSONB NOT NULL,
+  tax_rate NUMERIC(6,4) NOT NULL,
+  calculation_base VARCHAR(50) NOT NULL, -- 'brut_imposable', 'total_brut'
+  paid_by VARCHAR(20) NOT NULL, -- 'employer', 'employee', 'both'
+  effective_from DATE NOT NULL,
+  effective_to DATE,
+
+  UNIQUE (country_code, code, effective_from)
+);
+
+-- Côte d'Ivoire FDFP taxes (CRITICAL - was missing)
+INSERT INTO other_taxes (country_code, code, name, tax_rate, calculation_base, paid_by, effective_from) VALUES
+  (
+    'CI',
+    'fdfp_tap',
+    '{"fr": "Taxe d''Apprentissage (FDFP)", "en": "Apprenticeship Tax"}',
+    0.004, -- 0.4%
+    'brut_imposable',
+    'employer',
+    '2024-01-01'
+  ),
+  (
+    'CI',
+    'fdfp_tfpc',
+    '{"fr": "Taxe Formation Professionnelle Continue (FDFP)", "en": "Continuous Professional Training Tax"}',
+    0.012, -- 1.2%
+    'brut_imposable',
+    'employer',
+    '2024-01-01'
+  );
+```
+
+### 21. Salary Component Definitions
+
+Defines standard salary components and their tax treatment per country.
+
+```sql
+CREATE TABLE salary_component_definitions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code VARCHAR(2) NOT NULL REFERENCES countries(code),
+  code VARCHAR(10) NOT NULL, -- '11', '12', '21', '22'
+  name JSONB NOT NULL,
+  component_type VARCHAR(50) NOT NULL, -- 'base', 'allowance', 'bonus', 'benefit_in_kind'
+  is_taxable BOOLEAN NOT NULL DEFAULT TRUE,
+  include_in_brut_imposable BOOLEAN NOT NULL DEFAULT TRUE,
+  include_in_salaire_categoriel BOOLEAN NOT NULL DEFAULT FALSE,
+  tax_exempt_threshold NUMERIC(15,2), -- e.g., 30000 for transport allowance
+  display_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+  UNIQUE (country_code, code)
+);
+
+-- Côte d'Ivoire salary components
+INSERT INTO salary_component_definitions (country_code, code, name, component_type, is_taxable, include_in_brut_imposable, include_in_salaire_categoriel, display_order) VALUES
+  ('CI', '11', '{"fr": "Salaire catégoriel", "en": "Base Salary"}', 'base', TRUE, TRUE, TRUE, 1),
+  ('CI', '12', '{"fr": "Sursalaire", "en": "Additional Salary"}', 'base', TRUE, TRUE, FALSE, 2),
+  ('CI', '21', '{"fr": "Prime d''ancienneté", "en": "Seniority Bonus"}', 'bonus', TRUE, TRUE, FALSE, 3),
+  ('CI', '22', '{"fr": "Prime de transport", "en": "Transport Allowance"}', 'allowance', TRUE, TRUE, FALSE, 4);
+
+-- Transport allowance with 30,000 FCFA threshold
+UPDATE salary_component_definitions
+SET tax_exempt_threshold = 30000
+WHERE country_code = 'CI' AND code = '22';
 ```
 
 ---

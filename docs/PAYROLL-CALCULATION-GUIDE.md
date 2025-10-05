@@ -63,32 +63,48 @@ SMIG = 75,000 FCFA // Minimum wage (40h/week)
 CNPS Pension:
 - Employee: 6.3%
 - Employer: 7.7%
-- Ceiling: 3,375,000 FCFA
+- Ceiling: 3,375,000 FCFA annual (281,250 FCFA monthly)
 
 CNPS Other (all employer-paid, ceiling 70,000 FCFA):
-- Maternity: 0.75%
-- Family: 5%
+- Family Allowance: 5.0% (includes maternity)
 - Work Accident: 2-5% (sector-dependent)
 
 CMU:
 - Employee: 1,000 FCFA (fixed)
 - Employer: 500 FCFA (employee) + 4,500 FCFA (family)
 
-ITS: Progressive tax (8 brackets, 0% to 60%)
+FDFP Training Taxes (employer-only):
+- TAP (Apprenticeship): 0.4%
+- TFPC (Professional Training): 1.2%
+- Total: 1.6% of Brut Imposable
+
+ITS: Progressive tax (6 brackets, 0% to 32%) - MONTHLY calculation
 ```
 
-### ITS Progressive Brackets (Annual Income)
+### ITS Progressive Brackets (Monthly Income)
 
 | Bracket | Min (FCFA) | Max (FCFA)  | Rate |
 |---------|------------|-------------|------|
-| 1       | 0          | 300,000     | 0%   |
-| 2       | 300,000    | 547,000     | 10%  |
-| 3       | 547,000    | 979,000     | 15%  |
-| 4       | 979,000    | 1,519,000   | 20%  |
-| 5       | 1,519,000  | 2,644,000   | 25%  |
-| 6       | 2,644,000  | 4,669,000   | 35%  |
-| 7       | 4,669,000  | 10,106,000  | 45%  |
-| 8       | 10,106,000 | ∞           | 60%  |
+| 1       | 0          | 75,000      | 0%   |
+| 2       | 75,001     | 240,000     | 16%  |
+| 3       | 240,001    | 800,000     | 21%  |
+| 4       | 800,001    | 2,400,000   | 24%  |
+| 5       | 2,400,001  | 8,000,000   | 28%  |
+| 6       | 8,000,001  | ∞           | 32%  |
+
+### Family Deductions (Parts Fiscales)
+
+| Parts | Deduction (FCFA) |
+|-------|------------------|
+| 1.0   | 0                |
+| 1.5   | 5,500            |
+| 2.0   | 11,000           |
+| 2.5   | 16,500           |
+| 3.0   | 22,000           |
+| 3.5   | 27,500           |
+| 4.0   | 33,000           |
+| 4.5   | 38,500           |
+| 5.0   | 44,000           |
 
 ---
 
@@ -358,23 +374,33 @@ const result = calculateOvertime({
 7. Calculate net salary
 8. Calculate employer costs
 
-**Example (Official Example 7.1)**:
+**Example (HR Document - Verified)**:
 ```typescript
 const result = calculatePayroll({
-  employeeId: '123',
+  employeeId: '0001',
   periodStart: new Date('2025-01-01'),
   periodEnd: new Date('2025-01-31'),
-  baseSalary: 300000,
+  baseSalary: 75000,           // Salaire catégoriel
+  seniorityBonus: 26416,       // Prime d'ancienneté
+  transportAllowance: 30000,   // Non-taxable
+  allowances: 30000,           // Other allowances
+  fiscalParts: 1,              // Single, no children
 });
 
 // Results:
-// Gross: 300,000
-// CNPS Employee: 18,900
-// CMU Employee: 1,000
-// Taxable Income: 280,100
-// ITS: 60,815
-// Net Salary: 219,285
-// Employer Cost: 351,350
+// Total Brut: 161,416 FCFA
+// Brut Imposable: 131,416 FCFA (excludes transport)
+// CNPS Employee: 8,279 FCFA (6.3% of 131,416)
+// CMU Employee: 1,000 FCFA
+// Taxable Income: 122,137 FCFA
+// ITS Gross: 9,027 FCFA (progressive on monthly income)
+// ITS Family Deduction: 0 FCFA (1 part = 0)
+// ITS Net: 9,027 FCFA
+// Total Deductions: 18,306 FCFA
+// Net Salary: 143,600 FCFA (rounded to nearest 10)
+// CNPS Employer: 17,182 FCFA (pension 10,119 + family 3,750 + accident 2,250 + CMU 500)
+// FDFP: 2,103 FCFA (1.6% of 131,416)
+// Total Employer Cost: 180,701 FCFA
 ```
 
 ---
