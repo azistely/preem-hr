@@ -192,11 +192,22 @@ export interface PayrollCalculationResult {
   // Employer Contributions
   cnpsEmployer: number;
   cmuEmployer: number;
+  otherTaxesEmployer?: number;
   totalEmployerContributions: number;
 
   // Net Pay
   netSalary: number;
   employerCost: number;
+
+  // Other Taxes Details
+  otherTaxesDetails?: Array<{
+    code: string;
+    name: string;
+    amount: number;
+    rate: number;
+    base: number;
+    paidBy: string;
+  }>;
 
   // Days
   daysWorked: number;
@@ -225,7 +236,7 @@ export interface PayrollRunSummary {
   totalGross: number;
   totalNet: number;
   totalEmployerCost: number;
-  totalCnpsEmployee: number;
-  totalCnpsEmployer: number;
-  totalIts: number;
+  totalEmployeeContributions: number;
+  totalEmployerContributions: number;
+  totalTax: number;
 }
