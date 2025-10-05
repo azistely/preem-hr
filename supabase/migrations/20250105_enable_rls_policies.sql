@@ -88,8 +88,16 @@ DROP POLICY IF EXISTS "employee_salaries_tenant_isolation" ON employee_salaries;
 CREATE POLICY "employee_salaries_tenant_isolation" ON employee_salaries
   AS PERMISSIVE
   FOR ALL
-  TO authenticated
+  TO tenant_user
   USING (
+    EXISTS (
+      SELECT 1 FROM employees
+      WHERE employees.id = employee_salaries.employee_id
+        AND employees.tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
+    )
+    OR (auth.jwt() ->> 'role') = 'super_admin'
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM employees
       WHERE employees.id = employee_salaries.employee_id
