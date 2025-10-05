@@ -1,10 +1,11 @@
 'use client';
 
 /**
- * Payroll Calculator Page
+ * Payroll Calculator Page (Multi-Country)
  *
- * Interactive calculator for Côte d'Ivoire payroll calculations.
+ * Interactive calculator for multi-country payroll calculations.
  * Designed for low digital literacy users with large touch targets and progressive disclosure.
+ * Uses database-driven rules for tax and social security calculations.
  */
 
 import { useState } from 'react';
@@ -28,12 +29,13 @@ const t = fr.payroll.calculator;
 
 // Form validation schema
 const formSchema = z.object({
+  countryCode: z.string().length(2),
   baseSalary: z.number().min(75000, { message: t.errorMinimumSalary }),
   housingAllowance: z.number().optional(),
   transportAllowance: z.number().optional(),
   mealAllowance: z.number().optional(),
-  hasFamily: z.boolean(),
-  sector: z.enum(['services', 'construction', 'agriculture', 'other']),
+  fiscalParts: z.number().min(1.0).max(5.0),
+  sectorCode: z.string(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -44,27 +46,29 @@ export default function PayrollCalculatorPage() {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      countryCode: 'CI',
       baseSalary: 0,
       housingAllowance: 0,
       transportAllowance: 0,
       mealAllowance: 0,
-      hasFamily: false,
-      sector: 'services',
+      fiscalParts: 1.0,
+      sectorCode: 'services',
     },
   });
 
-  // tRPC query for payroll calculation
-  const calculate = api.payroll.calculate.useQuery(
+  // tRPC query for payroll calculation (V2 - Multi-Country)
+  const calculate = api.payroll.calculateV2.useQuery(
     {
       employeeId: '00000000-0000-0000-0000-000000000000', // Dummy ID for calculator
       periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
       periodEnd: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0),
+      countryCode: form.watch('countryCode') || 'CI',
       baseSalary: form.watch('baseSalary') || 0,
       housingAllowance: form.watch('housingAllowance') || 0,
       transportAllowance: form.watch('transportAllowance') || 0,
       mealAllowance: form.watch('mealAllowance') || 0,
-      hasFamily: form.watch('hasFamily') || false,
-      sector: form.watch('sector') || 'services',
+      fiscalParts: form.watch('fiscalParts') || 1.0,
+      sectorCode: form.watch('sectorCode') || 'services',
     },
     {
       enabled: form.watch('baseSalary') >= 75000, // Only run when valid
@@ -101,6 +105,30 @@ export default function PayrollCalculatorPage() {
           <CardContent>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {/* Country Selector */}
+                <FormField
+                  control={form.control}
+                  name="countryCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-base">Pays</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="touch-target text-lg">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="CI">🇨🇮 Côte d'Ivoire</SelectItem>
+                          <SelectItem value="SN" disabled>🇸🇳 Sénégal (Bientôt)</SelectItem>
+                          <SelectItem value="BF" disabled>🇧🇫 Burkina Faso (Bientôt)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>Sélectionnez le pays pour les calculs</FormDescription>
+                    </FormItem>
+                  )}
+                />
+
                 {/* Base Salary */}
                 <FormField
                   control={form.control}
@@ -183,19 +211,33 @@ export default function PayrollCalculatorPage() {
                   )}
                 />
 
-                {/* Has Family */}
+                {/* Fiscal Parts (Family Situation) */}
                 <FormField
                   control={form.control}
-                  name="hasFamily"
+                  name="fiscalParts"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                      <FormControl>
-                        <Checkbox checked={field.value} onCheckedChange={field.onChange} className="touch-target" />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel className="text-base">{t.hasFamily}</FormLabel>
-                        <FormDescription>{t.hasFamilyHelper}</FormDescription>
-                      </div>
+                    <FormItem>
+                      <FormLabel>Parts fiscales</FormLabel>
+                      <Select
+                        onValueChange={(value) => field.onChange(Number(value))}
+                        defaultValue={field.value.toString()}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="touch-target">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="1.0">1.0 - Célibataire</SelectItem>
+                          <SelectItem value="1.5">1.5 - Marié(e), 1 enfant</SelectItem>
+                          <SelectItem value="2.0">2.0 - Marié(e), 2 enfants</SelectItem>
+                          <SelectItem value="2.5">2.5 - Marié(e), 3 enfants</SelectItem>
+                          <SelectItem value="3.0">3.0 - Marié(e), 4 enfants</SelectItem>
+                          <SelectItem value="3.5">3.5 - Marié(e), 5 enfants</SelectItem>
+                          <SelectItem value="4.0">4.0 - Marié(e), 6 enfants</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>Situation familiale pour déduction fiscale</FormDescription>
                     </FormItem>
                   )}
                 />
@@ -203,7 +245,7 @@ export default function PayrollCalculatorPage() {
                 {/* Sector */}
                 <FormField
                   control={form.control}
-                  name="sector"
+                  name="sectorCode"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{t.sector}</FormLabel>
