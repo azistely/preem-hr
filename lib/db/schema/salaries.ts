@@ -9,16 +9,19 @@ export const employeeSalaries = pgTable('employee_salaries', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
 
-  // Salary details
+  // Salary components
   baseSalary: numeric('base_salary', { precision: 15, scale: 2 }).notNull(),
   currency: text('currency').notNull().default('XOF'),
   payFrequency: text('pay_frequency').notNull().default('monthly'),
 
-  // Allowances (recurring)
+  // Individual allowance fields
   housingAllowance: numeric('housing_allowance', { precision: 15, scale: 2 }).default('0'),
   transportAllowance: numeric('transport_allowance', { precision: 15, scale: 2 }).default('0'),
   mealAllowance: numeric('meal_allowance', { precision: 15, scale: 2 }).default('0'),
-  otherAllowances: jsonb('other_allowances').default([]),
+
+  // Other allowances (stored as JSONB for flexibility)
+  allowances: jsonb('allowances').notNull().default({}),
+  otherAllowances: jsonb('other_allowances').default('[]'),
 
   // Effective dating
   effectiveFrom: date('effective_from').notNull(),
@@ -26,26 +29,18 @@ export const employeeSalaries = pgTable('employee_salaries', {
 
   // Change tracking
   changeReason: text('change_reason'),
+  notes: text('notes'),
 
   // Audit
   createdAt: timestamp('created_at').notNull().defaultNow(),
-  createdBy: uuid('created_by'),
+  createdBy: uuid('created_by'), // References users(id)
 }, (table) => [
-  // RLS Policy: Tenant Isolation for Employee Salaries
-  // Note: employee_salaries doesn't have direct tenant_id, so we join with employees
-  pgPolicy('employee_salaries_tenant_isolation', {
+  // RLS Policy: Tenant Isolation
+  pgPolicy('tenant_isolation', {
     as: 'permissive',
     for: 'all',
     to: tenantUser,
-    using: sql`EXISTS (
-      SELECT 1 FROM ${employees}
-      WHERE ${employees.id} = ${table.employeeId}
-        AND ${employees.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid
-    ) OR (auth.jwt() ->> 'role') = 'super_admin'`,
-    withCheck: sql`EXISTS (
-      SELECT 1 FROM ${employees}
-      WHERE ${employees.id} = ${table.employeeId}
-        AND ${employees.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid
-    )`,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
   }),
 ]);

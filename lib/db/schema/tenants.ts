@@ -1,10 +1,11 @@
 import { pgTable, uuid, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { countries } from './countries';
 
 export const tenants = pgTable('tenants', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
-  countryCode: text('country_code').notNull().default('CI'),
+  countryCode: text('country_code').notNull().default('CI').references(() => countries.code),
   currency: text('currency').notNull().default('XOF'),
   timezone: text('timezone').notNull().default('Africa/Abidjan'),
 

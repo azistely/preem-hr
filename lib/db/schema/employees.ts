@@ -52,12 +52,10 @@ export const employees = pgTable('employees', {
   // Audit
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  createdBy: uuid('created_by'),
-  updatedBy: uuid('updated_by'),
+  createdBy: uuid('created_by'), // References users(id)
+  updatedBy: uuid('updated_by'), // References users(id)
 }, (table) => [
   // RLS Policy: Tenant Isolation
-  // Tenant users can only access employees from their own tenant
-  // Super admins have access to all tenants
   pgPolicy('tenant_isolation', {
     as: 'permissive',
     for: 'all',

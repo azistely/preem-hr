@@ -26,7 +26,7 @@ export const getPayrollRun = cache(async (runId: string) => {
 
   const lineItems = await db.query.payrollLineItems.findMany({
     where: eq(payrollLineItems.payrollRunId, runId),
-    orderBy: [desc(payrollLineItems.employeeName)],
+    orderBy: [desc(payrollLineItems.employeeId)],
   });
 
   return {
