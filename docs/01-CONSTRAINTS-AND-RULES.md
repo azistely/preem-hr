@@ -354,8 +354,7 @@ export const COTE_IVOIRE_RULES = {
   CNPS: {
     PENSION_EMPLOYEE: 0.063,
     PENSION_EMPLOYER: 0.077,
-    MATERNITY_EMPLOYER: 0.0075,
-    FAMILY_ALLOWANCE_EMPLOYER: 0.05,
+    FAMILY_ALLOWANCE_EMPLOYER: 0.05, // Includes maternity (5.0% total, not 5.75%)
     WORK_ACCIDENT_EMPLOYER_MIN: 0.02,
     WORK_ACCIDENT_EMPLOYER_MAX: 0.05,
     PENSION_CEILING: 3_375_000, // 45 × SMIG
@@ -364,22 +363,40 @@ export const COTE_IVOIRE_RULES = {
 
   // CMU (Universal Health Coverage)
   CMU: {
-    EMPLOYEE: 1000, // Fixed amount
+    EMPLOYEE: 1000, // Fixed amount per month
     EMPLOYER_PER_EMPLOYEE: 500,
     EMPLOYER_FAMILY: 4500, // Spouse + up to 6 children
   },
 
-  // ITS (Tax on Salaries) - 2024 reform
+  // ITS (Tax on Salaries) - 2025 reform - MONTHLY progressive calculation
   ITS_BRACKETS: [
-    { min: 0, max: 300_000, rate: 0 },
-    { min: 300_000, max: 547_000, rate: 0.10 },
-    { min: 547_000, max: 979_000, rate: 0.15 },
-    { min: 979_000, max: 1_519_000, rate: 0.20 },
-    { min: 1_519_000, max: 2_644_000, rate: 0.25 },
-    { min: 2_644_000, max: 4_669_000, rate: 0.35 },
-    { min: 4_669_000, max: 10_106_000, rate: 0.45 },
-    { min: 10_106_000, max: Infinity, rate: 0.60 },
+    { min: 0, max: 75_000, rate: 0 },
+    { min: 75_000, max: 240_000, rate: 0.16 },
+    { min: 240_000, max: 800_000, rate: 0.21 },
+    { min: 800_000, max: 2_400_000, rate: 0.24 },
+    { min: 2_400_000, max: 8_000_000, rate: 0.28 },
+    { min: 8_000_000, max: Infinity, rate: 0.32 },
   ],
+
+  // ITS Family Deductions (Parts fiscales)
+  FAMILY_DEDUCTIONS: {
+    1: 0,
+    1.5: 5_500,
+    2: 11_000,
+    2.5: 16_500,
+    3: 22_000,
+    3.5: 27_500,
+    4: 33_000,
+    4.5: 38_500,
+    5: 44_000,
+  },
+
+  // FDFP Training Taxes (Employer only, based on Brut Imposable)
+  FDFP: {
+    TAP: 0.004, // Taxe d'Apprentissage (0.4%)
+    TFPC: 0.012, // Formation Professionnelle Continue (1.2%)
+    TOTAL: 0.016, // Total 1.6%
+  },
 } as const;
 
 // ❌ WRONG: Hardcoded values without source
@@ -463,9 +480,110 @@ it('should calculate salary', () => {
 
 ---
 
-## 7. UI/UX Constraints (Low Digital Literacy)
+## 7. UI/UX Constraints (HCI-Driven Design for Low Digital Literacy)
 
-### 7.1 French Language (PRIMARY)
+> **PHILOSOPHY:** The system must be so intuitive that users with **zero HR/payroll knowledge** and **low digital literacy** can complete **complex tasks effortlessly**. The UI hides all complexity while remaining **simple, modern, and elegant**.
+
+### 7.0 Core HCI Principles (MANDATORY)
+
+**Human-Computer Interaction Best Practices:**
+
+1. **Zero Learning Curve** - Users should understand what to do instantly, no training required
+2. **Task-Oriented Design** - Design around user goals ("Pay my employees"), not system operations
+3. **Error Prevention Over Error Handling** - Make it impossible to make mistakes
+4. **Cognitive Load Minimization** - Show only what's needed for the current step
+5. **Immediate Feedback** - Every action gets instant, clear visual confirmation
+6. **Graceful Degradation** - Works perfectly on slow networks and old devices
+
+**Design Checklist (EVERY feature MUST pass):**
+- [ ] Can a user with no HR knowledge complete this task?
+- [ ] Can it be done on a slow 3G connection?
+- [ ] Are there fewer than 3 steps to complete the primary action?
+- [ ] Is the primary action obvious within 3 seconds?
+- [ ] Can it be used with one hand on a 5" phone screen?
+- [ ] Does it work without any help text or documentation?
+
+### 7.1 Complexity Abstraction (CRITICAL)
+
+**Rule:** Hide technical complexity, show business outcomes.
+
+```tsx
+// ✅ CORRECT: User sees outcomes, not mechanics
+<PayrollRunWizard>
+  <Step1>
+    <h2>Quelle période voulez-vous payer?</h2>
+    <MonthPicker /> {/* Simple month selector */}
+  </Step1>
+
+  <Step2>
+    <h2>Vérifiez les salaires</h2>
+    <EmployeeList showOnly={['name', 'netPay']} />
+    {/* Complex calculations hidden, just show net amounts */}
+  </Step2>
+
+  <Step3>
+    <h2>Confirmer le paiement</h2>
+    <BigButton>Payer {employeeCount} employés - {totalAmount} FCFA</BigButton>
+  </Step3>
+</PayrollRunWizard>
+
+// ❌ WRONG: Exposing system complexity
+<PayrollForm>
+  <label>Tax System ID:</label> {/* User doesn't know what this is */}
+  <input name="taxSystemId" />
+
+  <label>Contribution Type Override:</label>
+  <select>{/* Technical details exposed */}</select>
+
+  <label>Bracket Calculation Strategy:</label>
+  <input name="strategyClass" /> {/* Implementation detail leaked */}
+</PayrollForm>
+```
+
+**Abstraction Patterns:**
+- Replace technical terms with business language ("tax system" → "pays")
+- Hide all IDs, codes, technical configuration from UI
+- Use smart defaults (auto-detect period, sector, etc.)
+- Bundle related fields into single interactions
+
+### 7.2 Guided Task Flows (Wizards > Forms)
+
+```tsx
+// ✅ CORRECT: Wizard breaks complex task into simple steps
+<CreateEmployeeWizard>
+  <WizardStep title="Informations de base" icon={User}>
+    {/* Only: name, date of birth */}
+  </WizardStep>
+
+  <WizardStep title="Poste et salaire" icon={Briefcase}>
+    {/* Only: job title, monthly salary */}
+  </WizardStep>
+
+  <WizardStep title="Confirmation" icon={Check}>
+    {/* Review + auto-calculated values shown */}
+  </WizardStep>
+</CreateEmployeeWizard>
+
+// ❌ WRONG: Overwhelming single form
+<EmployeeForm>
+  {/* 30 fields on one page, user doesn't know where to start */}
+  <input name="firstName" />
+  <input name="lastName" />
+  <input name="ssn" />
+  <input name="taxId" />
+  <input name="bankAccount" />
+  {/* ... 25 more fields */}
+</EmployeeForm>
+```
+
+**Wizard Best Practices:**
+- Max 3-5 steps per task
+- Each step has ONE clear goal
+- Always show progress (Step 2 of 3)
+- Allow going back to edit
+- Auto-save on every step
+
+### 7.3 French Language (PRIMARY)
 
 ```typescript
 // ✅ CORRECT: French as primary, stored in next-intl files
@@ -488,12 +606,13 @@ const mixed = "Salaire (Gross)"; // Confusing
 - Use terms from official Ivorian documents
 - No tech jargon: "erreur" not "exception", "enregistrer" not "commit"
 - Prefer verbs: "Calculer la paie" not "Calcul de paie"
+- Use everyday language: "famille" not "parts fiscales"
 
-### 7.2 Touch Target Sizes
+### 7.4 Touch Target Sizes (Mobile-First)
 
 ```tsx
 // ✅ CORRECT: Minimum 44x44px for all interactive elements
-<button className="min-h-[44px] min-w-[44px] px-4 py-3">
+<button className="min-h-[44px] min-w-[44px] px-4 py-3 text-lg">
   Enregistrer
 </button>
 
@@ -501,16 +620,29 @@ const mixed = "Salaire (Gross)"; // Confusing
 <button className="text-sm p-1">Enregistrer</button>
 ```
 
-### 7.3 Progressive Disclosure
+**Spacing Requirements:**
+- Buttons: min 44×44px (56×56px preferred for primary actions)
+- Input fields: min 48px height
+- Spacing between touch targets: min 8px
+- Text size: min 16px (no zoom on mobile)
+
+### 7.5 Progressive Disclosure (Show Less, Reveal More)
 
 ```tsx
 // ✅ CORRECT: Show only essential info, expand on demand
 <PayrollSummary>
-  <p>Salaire net: {formatCurrency(netSalary)}</p>
-  <Collapsible trigger="Voir les détails">
-    <p>Salaire brut: {formatCurrency(grossSalary)}</p>
-    <p>CNPS: {formatCurrency(cnps)}</p>
-    <p>ITS: {formatCurrency(its)}</p>
+  <div className="text-3xl font-bold text-primary">
+    {formatCurrency(netSalary)} FCFA
+  </div>
+  <p className="text-sm text-muted-foreground">Salaire net à payer</p>
+
+  <Collapsible>
+    <CollapsibleTrigger className="touch-target">
+      <ChevronDown /> Voir les détails
+    </CollapsibleTrigger>
+    <CollapsibleContent>
+      <DetailedBreakdown /> {/* Complex calculations */}
+    </CollapsibleContent>
   </Collapsible>
 </PayrollSummary>
 
@@ -521,9 +653,186 @@ const mixed = "Salaire (Gross)"; // Confusing
   <p>CNPS Employer: {cnpsEr}</p>
   <p>Taxable Income: {taxable}</p>
   <p>ITS Bracket 1: {br1}</p>
-  {/* 20 more lines... */}
+  {/* 20 more lines... User is overwhelmed */}
 </div>
 ```
+
+**Progressive Disclosure Rules:**
+- Default view: Show only what user NEEDS (outcome)
+- Advanced view: Show what user MIGHT WANT (breakdown)
+- Expert view: Show everything (for accountants)
+- Never show all three levels at once
+
+### 7.6 Visual Hierarchy & Scannability
+
+```tsx
+// ✅ CORRECT: Clear visual hierarchy
+<Card>
+  <CardHeader>
+    <div className="flex items-center justify-between">
+      <div>
+        <CardTitle className="text-2xl">Janvier 2025</CardTitle>
+        <CardDescription>15 employés</CardDescription>
+      </div>
+      <Badge variant="success" className="text-lg">
+        <Check className="mr-2" /> Payé
+      </Badge>
+    </div>
+  </CardHeader>
+
+  <CardContent>
+    <div className="grid gap-4 md:grid-cols-3">
+      <StatCard
+        label="Salaires nets"
+        value="3,250,000 FCFA"
+        icon={DollarSign}
+        size="large" // Primary metric
+      />
+      <StatCard
+        label="Cotisations"
+        value="850,000 FCFA"
+        size="medium" // Secondary metric
+      />
+      <StatCard
+        label="Impôts"
+        value="420,000 FCFA"
+        size="medium"
+      />
+    </div>
+  </CardContent>
+</Card>
+
+// ❌ WRONG: Everything looks the same
+<div>
+  <p>Period: January 2025</p>
+  <p>Employees: 15</p>
+  <p>Net Salaries: 3,250,000</p>
+  <p>Contributions: 850,000</p>
+  <p>Taxes: 420,000</p>
+  {/* No hierarchy, hard to scan */}
+</div>
+```
+
+**Hierarchy Principles:**
+- Size indicates importance (text-3xl > text-lg > text-sm)
+- Color indicates meaning (primary = action, destructive = warning)
+- Icons clarify purpose (Calendar, Users, DollarSign)
+- White space separates concepts
+
+### 7.7 Smart Defaults & Auto-Fill
+
+```tsx
+// ✅ CORRECT: Intelligent defaults
+<CreatePayrollRunForm>
+  <MonthPicker
+    defaultValue={currentMonth} // Auto-select current month
+    minDate={lastPayrollMonth} // Can't duplicate
+  />
+
+  <DatePicker
+    label="Date de paiement"
+    defaultValue={getNextWorkingDay(endOfMonth)} // Auto-calculate
+    hint="Habituellement le 5 du mois suivant"
+  />
+
+  <EmployeeSelector
+    defaultValue={activeEmployees} // Auto-select all active
+    hint="{count} employés sélectionnés"
+  />
+</CreatePayrollRunForm>
+
+// ❌ WRONG: User has to figure everything out
+<form>
+  <input name="periodStart" type="date" /> {/* Empty, no hint */}
+  <input name="periodEnd" type="date" />
+  <input name="paymentDate" type="date" />
+  <select name="employees" multiple> {/* No defaults */}
+    <option>...1000 employees...</option>
+  </select>
+</form>
+```
+
+**Smart Default Rules:**
+- Pre-fill fields with 95% probable value
+- Use business logic (next working day, current period)
+- Show what was auto-filled (don't hide it)
+- Make it easy to override
+
+### 7.8 Error Prevention (Better than Error Messages)
+
+```tsx
+// ✅ CORRECT: Prevent errors before they happen
+<SalaryInput
+  label="Salaire de base"
+  min={75000} // Enforced at input level
+  hint="Minimum légal: 75,000 FCFA (SMIG)"
+  validate={(value) => {
+    if (value < 75000) {
+      return "Le salaire doit être au moins 75,000 FCFA";
+    }
+  }}
+/>
+
+<DateRangePicker
+  minDate={new Date('2020-01-01')}
+  maxDate={today}
+  disabledDates={publicHolidays} // Can't select invalid dates
+/>
+
+// ❌ WRONG: Let user make mistake, then complain
+<input type="number" name="salary" />
+{/* User enters 50000, submits, sees error */}
+```
+
+**Prevention Strategies:**
+- Disable invalid options (grayed out)
+- Use appropriate input types (date picker vs text)
+- Validate on blur (immediate feedback)
+- Show constraints upfront (min/max in label)
+
+### 7.9 Accessibility & Inclusion (WCAG 2.1 AA)
+
+```tsx
+// ✅ CORRECT: Fully accessible
+<Button
+  aria-label="Créer une nouvelle paie pour janvier 2025"
+  className="touch-target"
+>
+  <Plus className="mr-2" aria-hidden="true" />
+  Nouvelle Paie
+</Button>
+
+<FormField>
+  <Label htmlFor="salary">Salaire de base</Label>
+  <Input
+    id="salary"
+    type="number"
+    aria-describedby="salary-hint"
+    aria-invalid={errors.salary ? 'true' : 'false'}
+  />
+  <FormDescription id="salary-hint">
+    Minimum 75,000 FCFA (SMIG)
+  </FormDescription>
+  {errors.salary && (
+    <FormMessage role="alert">{errors.salary}</FormMessage>
+  )}
+</FormField>
+
+// ❌ WRONG: Inaccessible
+<button> {/* No label */}
+  <PlusIcon /> {/* Icon without text */}
+</button>
+
+<input /> {/* No label, no description, no error handling */}
+```
+
+**Accessibility Checklist:**
+- [ ] All interactive elements have labels
+- [ ] Color is not the only indicator (use icons + text)
+- [ ] Keyboard navigation works perfectly
+- [ ] Screen reader announces everything correctly
+- [ ] Error messages are announced (role="alert")
+- [ ] Touch targets meet 44×44px minimum
 
 ---
 

@@ -17,23 +17,24 @@ Build an enterprise-grade multi-tenant payroll and HR platform for French-speaki
 ### Phase 1: Foundation (READ THESE FIRST)
 1. **00-README-FIRST.md** ← You are here
 2. **01-CONSTRAINTS-AND-RULES.md** - Hard constraints, anti-patterns, source of truth
-3. **02-ARCHITECTURE-OVERVIEW.md** - System design, tech stack, bounded contexts
-4. **03-DATABASE-SCHEMA.md** - Complete schema with effective dating and multi-tenancy
-5. **04-DOMAIN-MODELS.md** - Business entities, validation rules, invariants
+3. **HCI-DESIGN-PRINCIPLES.md** - 🎨 **HCI best practices for low digital literacy UX**
+4. **02-ARCHITECTURE-OVERVIEW.md** - System design, tech stack, bounded contexts
+5. **03-DATABASE-SCHEMA.md** - Complete schema with effective dating and multi-tenancy
+6. **04-DOMAIN-MODELS.md** - Business entities, validation rules, invariants
 
 ### Phase 2: Core Features (Priority Order)
-6. **05-EPIC-PAYROLL.md** - Payroll calculation engine with Côte d'Ivoire rules
-7. **06-EPIC-EMPLOYEE-MANAGEMENT.md** - People, positions, assignments
-8. **07-EPIC-TIME-AND-ATTENDANCE.md** - Time tracking, leaves, time off
-9. **08-EPIC-ONBOARDING-WORKFLOW.md** - Guided setup from signup to first payroll
-10. **09-EPIC-WORKFLOW-AUTOMATION.md** - Visual workflow builder
+5. **05-EPIC-PAYROLL.md** - Payroll calculation engine with Côte d'Ivoire rules
+6. **06-EPIC-EMPLOYEE-MANAGEMENT.md** - People, positions, assignments
+7. **07-EPIC-TIME-AND-ATTENDANCE.md** - Time tracking, leaves, time off
+8. **08-EPIC-ONBOARDING-WORKFLOW.md** - Guided setup from signup to first payroll
+9. **09-EPIC-WORKFLOW-AUTOMATION.md** - Workflow automation, proactive alerts, batch operations
 
 ### Phase 3: Integration & Platform
-11. **10-API-CONTRACTS.md** - REST/GraphQL endpoints, webhooks, events
-12. **11-TESTING-STRATEGY.md** - Unit, integration, E2E test patterns
-13. **12-SUPER-ADMIN.md** - Country rules, tax rates, compliance config
-14. **13-GLOBALIZATION.md** - Multi-country, currency, locale support
-15. **14-SECURITY-AND-COMPLIANCE.md** - PII isolation, audit trails, GDPR
+10. **10-API-CONTRACTS.md** - REST/GraphQL endpoints, webhooks, events
+11. **11-TESTING-STRATEGY.md** - Unit, integration, E2E test patterns
+12. **12-SUPER-ADMIN.md** - Country rules, tax rates, compliance config
+13. **13-GLOBALIZATION.md** - Multi-country, currency, locale support
+14. **14-SECURITY-AND-COMPLIANCE.md** - PII isolation, audit trails, GDPR
 
 ## 🚫 Anti-Hallucination Protocols
 
