@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import { calculateGrossSalary } from '@/features/payroll/services/gross-calculation';
 import { calculatePayroll } from '@/features/payroll/services/payroll-calculation';
+import { calculatePayrollV2 } from '@/features/payroll/services/payroll-calculation-v2';
 import {
   createPayrollRun,
   calculatePayrollRun,
@@ -53,6 +54,12 @@ const calculateGrossInputSchema = z.object({
 const calculatePayrollInputSchema = calculateGrossInputSchema.extend({
   hasFamily: z.boolean().optional(),
   sector: z.enum(['services', 'construction', 'agriculture', 'other']).optional(),
+});
+
+const calculatePayrollV2InputSchema = calculateGrossInputSchema.extend({
+  countryCode: z.string().length(2), // ISO 3166-1 alpha-2
+  fiscalParts: z.number().min(1.0).max(5.0).optional(),
+  sectorCode: z.string().optional(),
 });
 
 const createPayrollRunInputSchema = z.object({
@@ -98,10 +105,12 @@ export const payrollRouter = createTRPCRouter({
     }),
 
   /**
-   * Calculate complete payroll for an employee
+   * Calculate complete payroll for an employee (Legacy - Côte d'Ivoire only)
    *
    * Returns gross to net calculation with all deductions and employer costs.
+   * Uses hardcoded constants. For multi-country support, use calculateV2.
    *
+   * @deprecated Use calculateV2 for multi-country support
    * @example
    * ```typescript
    * const result = await trpc.payroll.calculate.query({
@@ -118,6 +127,42 @@ export const payrollRouter = createTRPCRouter({
     .input(calculatePayrollInputSchema)
     .query(({ input }) => {
       return calculatePayroll(input);
+    }),
+
+  /**
+   * Calculate complete payroll for an employee (V2 - Multi-Country)
+   *
+   * Database-driven payroll calculation supporting multiple countries.
+   * Loads tax rates, contribution rates, and brackets from database.
+   *
+   * @example
+   * ```typescript
+   * // Côte d'Ivoire employee
+   * const resultCI = await trpc.payroll.calculateV2.query({
+   *   employeeId: '123',
+   *   countryCode: 'CI',
+   *   periodStart: new Date('2025-01-01'),
+   *   periodEnd: new Date('2025-01-31'),
+   *   baseSalary: 300000,
+   *   fiscalParts: 1.0,
+   *   sectorCode: 'services',
+   * });
+   * // resultCI.netSalary = 219,286
+   *
+   * // Future: Senegal employee
+   * const resultSN = await trpc.payroll.calculateV2.query({
+   *   employeeId: '456',
+   *   countryCode: 'SN',
+   *   periodStart: new Date('2025-01-01'),
+   *   periodEnd: new Date('2025-01-31'),
+   *   baseSalary: 250000,
+   * });
+   * ```
+   */
+  calculateV2: publicProcedure
+    .input(calculatePayrollV2InputSchema)
+    .query(async ({ input }) => {
+      return await calculatePayrollV2(input);
     }),
 
   /**
@@ -187,7 +232,7 @@ export const payrollRouter = createTRPCRouter({
 
       const lineItems = await db.query.payrollLineItems.findMany({
         where: eq(payrollLineItems.payrollRunId, input.runId),
-        orderBy: (items, { asc }) => [asc(items.employeeName)],
+        orderBy: (items, { asc }) => [asc(items.employeeId)],
       });
 
       return {
@@ -233,5 +278,97 @@ export const payrollRouter = createTRPCRouter({
       });
 
       return runs;
+    }),
+
+  /**
+   * Approve a payroll run
+   *
+   * Changes status from 'calculated' to 'approved'.
+   * Only calculated runs can be approved.
+   *
+   * @example
+   * ```typescript
+   * await trpc.payroll.approveRun.mutate({
+   *   runId: 'run-123',
+   *   approvedBy: 'user-123',
+   * });
+   * ```
+   */
+  approveRun: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+        approvedBy: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'processing' && run.status !== 'calculated') {
+        throw new Error('Seules les paies calculées peuvent être approuvées');
+      }
+
+      const [updatedRun] = await db
+        .update(payrollRuns)
+        .set({
+          status: 'approved',
+          approvedAt: new Date(),
+          approvedBy: input.approvedBy,
+        } as any)
+        .where(eq(payrollRuns.id, input.runId))
+        .returning();
+
+      return updatedRun;
+    }),
+
+  /**
+   * Delete a payroll run
+   *
+   * Soft deletes a payroll run (draft only).
+   * Only draft runs can be deleted.
+   *
+   * @example
+   * ```typescript
+   * await trpc.payroll.deleteRun.mutate({
+   *   runId: 'run-123',
+   * });
+   * ```
+   */
+  deleteRun: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'draft') {
+        throw new Error('Seules les paies en brouillon peuvent être supprimées');
+      }
+
+      // Delete associated line items first
+      await db
+        .delete(payrollLineItems)
+        .where(eq(payrollLineItems.payrollRunId, input.runId));
+
+      // Delete the run
+      await db
+        .delete(payrollRuns)
+        .where(eq(payrollRuns.id, input.runId));
+
+      return { success: true };
     }),
 });

@@ -9,6 +9,16 @@ import { type CreateNextContextOptions } from '@trpc/server/adapters/next';
 import { cache } from 'react';
 import 'server-only';
 import { db } from '@/lib/db';
+import { sql } from 'drizzle-orm';
+
+/**
+ * Development-only mock tenant for testing RLS
+ * In production, this will be extracted from Supabase JWT
+ */
+const DEV_MOCK_TENANT = {
+  id: '00000000-0000-0000-0000-000000000001',
+  role: 'tenant_admin',
+};
 
 /**
  * Create context for tRPC
@@ -17,21 +27,22 @@ import { db } from '@/lib/db';
 export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) => {
   const { req } = opts || {};
 
-  // For now, return basic context without auth
-  // TODO: Implement Supabase auth when ready
-  if (!req) {
-    return {
-      user: null,
-      db,
-    };
-  }
+  // For development: use mock tenant to enable RLS testing
+  // In production: extract from Supabase JWT
+  const tenantId = DEV_MOCK_TENANT.id;
+  const userRole = DEV_MOCK_TENANT.role;
 
-  // Future: Extract user from Supabase JWT
-  // const token = req.headers.authorization?.replace('Bearer ', '');
-  // const { data: { user }, error } = await supabase.auth.getUser(token);
+  // Set PostgreSQL session variables for RLS policies
+  // This allows RLS policies to access tenant_id via current_setting()
+  await db.execute(sql`
+    SELECT set_config('app.tenant_id', ${tenantId}, true),
+           set_config('app.user_role', ${userRole}, true);
+  `);
 
   return {
-    user: null, // Will be populated when auth is implemented
+    tenantId,
+    userRole,
+    user: DEV_MOCK_TENANT,
     db,
   };
 });

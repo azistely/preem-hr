@@ -47,7 +47,7 @@ export interface CalculatePayrollRunInput {
  */
 export async function createPayrollRun(
   input: CreatePayrollRunInput
-): Promise<{ id: string; name: string; status: string }> {
+): Promise<{ id: string; runNumber: string; status: string }> {
   // Validate period
   if (input.periodStart >= input.periodEnd) {
     throw new Error('La date de fin doit être postérieure à la date de début');
@@ -78,17 +78,19 @@ export async function createPayrollRun(
     throw new Error('Aucun employé actif trouvé pour ce tenant');
   }
 
+  // Generate run number
+  const runNumber = `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`;
+
   // Create run (convert dates to ISO strings for Drizzle date fields)
   const [run] = await db
     .insert(payrollRuns)
     .values({
       tenantId: input.tenantId,
+      runNumber,
       periodStart: input.periodStart.toISOString().split('T')[0],
       periodEnd: input.periodEnd.toISOString().split('T')[0],
-      paymentDate: input.paymentDate.toISOString().split('T')[0],
-      name:
-        input.name ||
-        `Paie ${input.periodStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`,
+      payDate: input.paymentDate.toISOString().split('T')[0],
+      countryCode: 'CI',
       status: 'draft',
       createdBy: input.createdBy,
     } as any) // Type assertion needed due to Drizzle date field typing
@@ -96,7 +98,7 @@ export async function createPayrollRun(
 
   return {
     id: run.id,
-    name: run.name,
+    runNumber: run.runNumber,
     status: run.status,
   };
 }
@@ -192,54 +194,71 @@ export async function calculatePayrollRun(
         // Get family status from custom fields
         const hasFamily = (employee.customFields as any)?.hasFamily || false;
 
+        // Extract allowances from JSONB
+        const allowances = (currentSalary.allowances as any) || {};
+        const housingAllowance = Number(allowances.housing || 0);
+        const transportAllowance = Number(allowances.transport || 0);
+        const mealAllowance = Number(allowances.meal || 0);
+
         // Calculate payroll
         const calculation = calculatePayroll({
           employeeId: employee.id,
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
           baseSalary: Number(currentSalary.baseSalary),
-          housingAllowance: Number(currentSalary.housingAllowance || 0),
-          transportAllowance: Number(currentSalary.transportAllowance || 0),
-          mealAllowance: Number(currentSalary.mealAllowance || 0),
+          housingAllowance,
+          transportAllowance,
+          mealAllowance,
           hasFamily,
           hireDate: new Date(employee.hireDate),
           terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
         });
 
-        // Prepare line item data
+        // Prepare line item data (using new schema structure)
         lineItemsData.push({
           tenantId: run.tenantId,
           payrollRunId: run.id,
           employeeId: employee.id,
-          employeeName: `${employee.firstName} ${employee.lastName}`,
-          employeeNumber: employee.employeeNumber,
 
-          // Earnings
+          // Salary information
           baseSalary: String(calculation.baseSalary),
-          overtimePay: String(calculation.overtimePay),
-          bonuses: String(calculation.bonuses),
-          allowances: String(calculation.allowances),
+          allowances: {
+            housing: housingAllowance,
+            transport: transportAllowance,
+            meal: mealAllowance,
+          },
+
+          // Time tracking
+          daysWorked: String(calculation.daysWorked),
+          daysAbsent: '0',
+          overtimeHours: {},
+
+          // Gross calculation
           grossSalary: String(calculation.grossSalary),
 
           // Deductions
-          cnpsEmployee: String(calculation.cnpsEmployee),
-          cmuEmployee: String(calculation.cmuEmployee),
-          its: String(calculation.its),
-          otherDeductions: '0',
+          taxDeductions: { its: calculation.its },
+          employeeContributions: {
+            cnps: calculation.cnpsEmployee,
+            cmu: calculation.cmuEmployee,
+          },
+          otherDeductions: {},
+
+          // Net calculation
           totalDeductions: String(calculation.totalDeductions),
-
-          // Employer
-          cnpsEmployer: String(calculation.cnpsEmployer),
-          cmuEmployer: String(calculation.cmuEmployer),
-
-          // Net
           netSalary: String(calculation.netSalary),
-          employerCost: String(calculation.employerCost),
 
-          // Details
-          earningsDetails: calculation.earningsDetails,
-          deductionsDetails: calculation.deductionsDetails,
-          daysWorked: String(calculation.daysWorked),
+          // Employer costs
+          employerContributions: {
+            cnps: calculation.cnpsEmployer,
+            cmu: calculation.cmuEmployer,
+          },
+          totalEmployerCost: String(calculation.employerCost),
+
+          // Payment details
+          paymentMethod: 'bank_transfer',
+          bankAccount: employee.bankAccount,
+          status: 'pending',
         });
       } catch (error) {
         // Log error but continue with other employees
@@ -255,40 +274,44 @@ export async function calculatePayrollRun(
       await db.insert(payrollLineItems).values(lineItemsData);
     }
 
-    // Calculate totals
+    // Calculate totals (using new schema structure)
     const totals = lineItemsData.reduce(
-      (acc, item) => ({
-        totalGross: acc.totalGross + Number(item.grossSalary),
-        totalNet: acc.totalNet + Number(item.netSalary),
-        totalEmployerCost: acc.totalEmployerCost + Number(item.employerCost),
-        totalCnpsEmployee: acc.totalCnpsEmployee + Number(item.cnpsEmployee),
-        totalCnpsEmployer: acc.totalCnpsEmployer + Number(item.cnpsEmployer),
-        totalIts: acc.totalIts + Number(item.its),
-      }),
+      (acc, item) => {
+        const empContribs = item.employeeContributions as any;
+        const taxDeds = item.taxDeductions as any;
+        const emplContribs = item.employerContributions as any;
+
+        return {
+          totalGross: acc.totalGross + Number(item.grossSalary),
+          totalNet: acc.totalNet + Number(item.netSalary),
+          totalEmployerCost: acc.totalEmployerCost + Number(item.totalEmployerCost),
+          totalEmployeeContributions: acc.totalEmployeeContributions + Number(empContribs.cnps || 0) + Number(empContribs.cmu || 0),
+          totalEmployerContributions: acc.totalEmployerContributions + Number(emplContribs.cnps || 0) + Number(emplContribs.cmu || 0),
+          totalTax: acc.totalTax + Number(taxDeds.its || 0),
+        };
+      },
       {
         totalGross: 0,
         totalNet: 0,
         totalEmployerCost: 0,
-        totalCnpsEmployee: 0,
-        totalCnpsEmployer: 0,
-        totalIts: 0,
+        totalEmployeeContributions: 0,
+        totalEmployerContributions: 0,
+        totalTax: 0,
       }
     );
 
-    // Update run with totals
+    // Update run with totals (using new schema structure)
     await db
       .update(payrollRuns)
       .set({
-        status: 'calculated',
-        calculatedAt: new Date(),
-        employeeCount: lineItemsData.length,
+        status: 'processing',
+        processedAt: new Date(),
         totalGross: String(totals.totalGross),
         totalNet: String(totals.totalNet),
-        totalEmployerCost: String(totals.totalEmployerCost),
-        totalCnpsEmployee: String(totals.totalCnpsEmployee),
-        totalCnpsEmployer: String(totals.totalCnpsEmployer),
-        totalIts: String(totals.totalIts),
-      })
+        totalTax: String(totals.totalTax),
+        totalEmployeeContributions: String(totals.totalEmployeeContributions),
+        totalEmployerContributions: String(totals.totalEmployerContributions),
+      } as any)
       .where(eq(payrollRuns.id, input.runId));
 
     return {
