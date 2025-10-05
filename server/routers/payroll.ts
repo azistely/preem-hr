@@ -22,6 +22,15 @@ import { db } from '@/lib/db';
 import { payrollRuns, payrollLineItems } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
+// Export services
+import * as React from 'react';
+import { renderToBuffer } from '@react-pdf/renderer';
+import { PayslipDocument, PayslipData, generatePayslipFilename } from '@/features/payroll/services/payslip-generator.tsx';
+import { generateCNPSExcel, generateCNPSFilename, CNPSExportData } from '@/features/payroll/services/cnps-export';
+import { generateCMUExcel, generateCMUFilename, CMUExportData } from '@/features/payroll/services/cmu-export';
+import { generateEtat301Excel, generateEtat301Filename, Etat301ExportData } from '@/features/payroll/services/etat-301-export';
+import { generateBankTransferExcel, generateBankTransferFilename, BankTransferExportData } from '@/features/payroll/services/bank-transfer-export';
+
 // ========================================
 // Input Validation Schemas
 // ========================================
@@ -370,5 +379,395 @@ export const payrollRouter = createTRPCRouter({
         .where(eq(payrollRuns.id, input.runId));
 
       return { success: true };
+    }),
+
+  // ========================================
+  // Export Procedures
+  // ========================================
+
+  /**
+   * Generate pay slip PDF for a single employee
+   *
+   * Generates a French-language bulletin de paie (pay slip) PDF.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.generatePayslip.mutate({
+   *   runId: 'run-123',
+   *   employeeId: 'emp-123',
+   * });
+   * // result.data = ArrayBuffer (PDF)
+   * // result.filename = 'Bulletin_Paie_John_Doe_01_2025.pdf'
+   * ```
+   */
+  generatePayslip: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+        employeeId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Get payroll run
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'approved' && run.status !== 'paid') {
+        throw new Error('Seules les paies approuvées peuvent être exportées');
+      }
+
+      // Get line item for employee
+      const lineItem = await db.query.payrollLineItems.findFirst({
+        where: (items, { and }) =>
+          and(
+            eq(items.payrollRunId, input.runId),
+            eq(items.employeeId, input.employeeId)
+          ),
+      });
+
+      if (!lineItem) {
+        throw new Error('Employee not found in this payroll run');
+      }
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
+      });
+
+      // Get employee details
+      const employee = await db.query.employees.findFirst({
+        where: (employees, { eq }) => eq(employees.id, input.employeeId),
+      });
+
+      // Prepare payslip data
+      const payslipData: PayslipData = {
+        companyName: tenant?.name || 'Company',
+        companyTaxId: tenant?.taxId || undefined,
+        employeeName: lineItem.employeeName || employee?.firstName + ' ' + employee?.lastName || 'Unknown',
+        employeeNumber: lineItem.employeeNumber || employee?.employeeNumber || '',
+        employeeCNPS: employee?.cnpsNumber || undefined,
+        employeePosition: lineItem.positionTitle || undefined,
+        periodStart: new Date(run.periodStart),
+        periodEnd: new Date(run.periodEnd),
+        payDate: new Date(run.payDate),
+        baseSalary: parseFloat(lineItem.baseSalary?.toString() || '0'),
+        overtimePay: parseFloat(lineItem.overtimePay?.toString() || '0'),
+        bonuses: parseFloat(lineItem.bonuses?.toString() || '0'),
+        grossSalary: parseFloat(lineItem.grossSalary?.toString() || '0'),
+        cnpsEmployee: parseFloat(lineItem.cnpsEmployee?.toString() || '0'),
+        cmuEmployee: parseFloat(lineItem.cmuEmployee?.toString() || '0'),
+        its: parseFloat(lineItem.its?.toString() || '0'),
+        totalDeductions: parseFloat(lineItem.totalDeductions?.toString() || '0'),
+        cnpsEmployer: parseFloat(lineItem.cnpsEmployer?.toString() || '0'),
+        cmuEmployer: parseFloat(lineItem.cmuEmployer?.toString() || '0'),
+        netSalary: parseFloat(lineItem.netSalary?.toString() || '0'),
+        paymentMethod: lineItem.paymentMethod,
+        bankAccount: lineItem.bankAccount || undefined,
+        daysWorked: parseFloat(lineItem.daysWorked?.toString() || '0'),
+      };
+
+      // Generate PDF
+      const pdfBuffer = await renderToBuffer(
+        React.createElement(PayslipDocument, { data: payslipData })
+      );
+      const filename = generatePayslipFilename(payslipData.employeeName, new Date(run.periodStart));
+
+      return {
+        data: Buffer.from(pdfBuffer).toString('base64'),
+        filename,
+        contentType: 'application/pdf',
+      };
+    }),
+
+  /**
+   * Export CNPS declaration Excel file
+   *
+   * Generates Excel file for CNPS portal submission.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.exportCNPS.mutate({
+   *   runId: 'run-123',
+   * });
+   * ```
+   */
+  exportCNPS: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Get payroll run
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'approved' && run.status !== 'paid') {
+        throw new Error('Seules les paies approuvées peuvent être exportées');
+      }
+
+      // Get line items
+      const lineItems = await db.query.payrollLineItems.findMany({
+        where: eq(payrollLineItems.payrollRunId, input.runId),
+      });
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
+      });
+
+      // Get employees for CNPS numbers
+      const employeeIds = lineItems.map((item) => item.employeeId);
+      const employees = await db.query.employees.findMany({
+        where: (employees, { inArray }) => inArray(employees.id, employeeIds),
+      });
+
+      const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
+
+      // Prepare export data
+      const exportData: CNPSExportData = {
+        companyName: tenant?.name || 'Company',
+        companyCNPS: tenant?.taxId,
+        periodStart: new Date(run.periodStart),
+        periodEnd: new Date(run.periodEnd),
+        employees: lineItems.map((item) => {
+          const employee = employeeMap.get(item.employeeId);
+          return {
+            employeeName: item.employeeName || '',
+            employeeCNPS: employee?.cnpsNumber || null,
+            grossSalary: parseFloat(item.grossSalary?.toString() || '0'),
+            cnpsEmployee: parseFloat(item.cnpsEmployee?.toString() || '0'),
+            cnpsEmployer: parseFloat(item.cnpsEmployer?.toString() || '0'),
+          };
+        }),
+      };
+
+      // Generate Excel
+      const excelBuffer = generateCNPSExcel(exportData);
+      const filename = generateCNPSFilename(new Date(run.periodStart));
+
+      return {
+        data: Buffer.from(excelBuffer).toString('base64'),
+        filename,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+    }),
+
+  /**
+   * Export CMU declaration file
+   *
+   * Generates CSV/Excel file for CMU portal submission.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.exportCMU.mutate({
+   *   runId: 'run-123',
+   * });
+   * ```
+   */
+  exportCMU: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Get payroll run
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'approved' && run.status !== 'paid') {
+        throw new Error('Seules les paies approuvées peuvent être exportées');
+      }
+
+      // Get line items
+      const lineItems = await db.query.payrollLineItems.findMany({
+        where: eq(payrollLineItems.payrollRunId, input.runId),
+      });
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
+      });
+
+      // Prepare export data
+      const exportData: CMUExportData = {
+        companyName: tenant?.name || 'Company',
+        companyTaxId: tenant?.taxId,
+        periodStart: new Date(run.periodStart),
+        periodEnd: new Date(run.periodEnd),
+        employees: lineItems.map((item) => ({
+          employeeName: item.employeeName || '',
+          employeeNumber: item.employeeNumber || '',
+          cmuEmployee: parseFloat(item.cmuEmployee?.toString() || '0'),
+          cmuEmployer: parseFloat(item.cmuEmployer?.toString() || '0'),
+        })),
+      };
+
+      // Generate Excel
+      const excelBuffer = generateCMUExcel(exportData);
+      const filename = generateCMUFilename(new Date(run.periodStart), 'xlsx');
+
+      return {
+        data: Buffer.from(excelBuffer).toString('base64'),
+        filename,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+    }),
+
+  /**
+   * Export État 301 (tax declaration) file
+   *
+   * Generates Excel file for DGI portal submission.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.exportEtat301.mutate({
+   *   runId: 'run-123',
+   * });
+   * ```
+   */
+  exportEtat301: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Get payroll run
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'approved' && run.status !== 'paid') {
+        throw new Error('Seules les paies approuvées peuvent être exportées');
+      }
+
+      // Get line items
+      const lineItems = await db.query.payrollLineItems.findMany({
+        where: eq(payrollLineItems.payrollRunId, input.runId),
+      });
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
+      });
+
+      // Prepare export data
+      const exportData: Etat301ExportData = {
+        companyName: tenant?.name || 'Company',
+        companyTaxId: tenant?.taxId,
+        periodStart: new Date(run.periodStart),
+        periodEnd: new Date(run.periodEnd),
+        employees: lineItems.map((item) => ({
+          employeeName: item.employeeName || '',
+          employeeNumber: item.employeeNumber || '',
+          grossSalary: parseFloat(item.grossSalary?.toString() || '0'),
+          cnpsEmployee: parseFloat(item.cnpsEmployee?.toString() || '0'),
+          cmuEmployee: parseFloat(item.cmuEmployee?.toString() || '0'),
+          taxableIncome:
+            parseFloat(item.grossSalary?.toString() || '0') -
+            parseFloat(item.cnpsEmployee?.toString() || '0') -
+            parseFloat(item.cmuEmployee?.toString() || '0'),
+          its: parseFloat(item.its?.toString() || '0'),
+        })),
+      };
+
+      // Generate Excel
+      const excelBuffer = generateEtat301Excel(exportData);
+      const filename = generateEtat301Filename(new Date(run.periodStart));
+
+      return {
+        data: Buffer.from(excelBuffer).toString('base64'),
+        filename,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+    }),
+
+  /**
+   * Export bank transfer file
+   *
+   * Generates bank transfer file (Excel format).
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.exportBankTransfer.mutate({
+   *   runId: 'run-123',
+   * });
+   * ```
+   */
+  exportBankTransfer: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Get payroll run
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'approved' && run.status !== 'paid') {
+        throw new Error('Seules les paies approuvées peuvent être exportées');
+      }
+
+      // Get line items
+      const lineItems = await db.query.payrollLineItems.findMany({
+        where: eq(payrollLineItems.payrollRunId, input.runId),
+      });
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
+      });
+
+      // Prepare export data
+      const exportData: BankTransferExportData = {
+        companyName: tenant?.name || 'Company',
+        periodStart: new Date(run.periodStart),
+        periodEnd: new Date(run.periodEnd),
+        payDate: new Date(run.payDate),
+        employees: lineItems.map((item) => ({
+          employeeName: item.employeeName || '',
+          employeeNumber: item.employeeNumber || '',
+          bankAccount: item.bankAccount,
+          netSalary: parseFloat(item.netSalary?.toString() || '0'),
+          paymentReference: item.paymentReference || undefined,
+        })),
+      };
+
+      // Generate Excel
+      const excelBuffer = generateBankTransferExcel(exportData);
+      const filename = generateBankTransferFilename(new Date(run.periodStart), 'excel');
+
+      return {
+        data: Buffer.from(excelBuffer).toString('base64'),
+        filename,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
     }),
 });
