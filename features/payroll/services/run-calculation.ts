@@ -78,20 +78,20 @@ export async function createPayrollRun(
     throw new Error('Aucun employé actif trouvé pour ce tenant');
   }
 
-  // Create run
+  // Create run (convert dates to ISO strings for Drizzle date fields)
   const [run] = await db
     .insert(payrollRuns)
     .values({
       tenantId: input.tenantId,
-      periodStart: input.periodStart,
-      periodEnd: input.periodEnd,
-      paymentDate: input.paymentDate,
+      periodStart: input.periodStart.toISOString().split('T')[0],
+      periodEnd: input.periodEnd.toISOString().split('T')[0],
+      paymentDate: input.paymentDate.toISOString().split('T')[0],
       name:
         input.name ||
         `Paie ${input.periodStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`,
       status: 'draft',
       createdBy: input.createdBy,
-    })
+    } as any) // Type assertion needed due to Drizzle date field typing
     .returning();
 
   return {
@@ -195,15 +195,15 @@ export async function calculatePayrollRun(
         // Calculate payroll
         const calculation = calculatePayroll({
           employeeId: employee.id,
-          periodStart: run.periodStart,
-          periodEnd: run.periodEnd,
+          periodStart: new Date(run.periodStart),
+          periodEnd: new Date(run.periodEnd),
           baseSalary: Number(currentSalary.baseSalary),
           housingAllowance: Number(currentSalary.housingAllowance || 0),
           transportAllowance: Number(currentSalary.transportAllowance || 0),
           mealAllowance: Number(currentSalary.mealAllowance || 0),
           hasFamily,
-          hireDate: employee.hireDate,
-          terminationDate: employee.terminationDate || undefined,
+          hireDate: new Date(employee.hireDate),
+          terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
         });
 
         // Prepare line item data
