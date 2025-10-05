@@ -2,6 +2,7 @@ import { pgTable, uuid, date, timestamp, text, integer, numeric, jsonb, pgPolicy
 import { sql } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { employees } from './employees';
+import { tenantUser } from './roles';
 
 export const payrollRuns = pgTable('payroll_runs', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -41,8 +42,9 @@ export const payrollRuns = pgTable('payroll_runs', {
   pgPolicy('payroll_runs_tenant_isolation', {
     as: 'permissive',
     for: 'all',
-    to: 'authenticated',
-    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
   }),
 ]);
 
@@ -100,7 +102,8 @@ export const payrollLineItems = pgTable('payroll_line_items', {
   pgPolicy('payroll_line_items_tenant_isolation', {
     as: 'permissive',
     for: 'all',
-    to: 'authenticated',
-    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
   }),
 ]);
