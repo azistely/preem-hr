@@ -10,15 +10,20 @@
 ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policy if it exists (idempotent)
-DROP POLICY IF EXISTS "tenant_isolation_policy" ON employees;
+DROP POLICY IF EXISTS "tenant_isolation" ON employees;
 
 -- Create tenant isolation policy for employees
--- Users can only access employees from their own tenant
-CREATE POLICY "tenant_isolation_policy" ON employees
+-- Tenant users can only access employees from their own tenant
+-- Super admins have access to all tenants
+CREATE POLICY "tenant_isolation" ON employees
   AS PERMISSIVE
   FOR ALL
-  TO authenticated
+  TO tenant_user
   USING (
+    tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
+    OR (auth.jwt() ->> 'role') = 'super_admin'
+  )
+  WITH CHECK (
     tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
   );
 
@@ -36,8 +41,12 @@ DROP POLICY IF EXISTS "payroll_runs_tenant_isolation" ON payroll_runs;
 CREATE POLICY "payroll_runs_tenant_isolation" ON payroll_runs
   AS PERMISSIVE
   FOR ALL
-  TO authenticated
+  TO tenant_user
   USING (
+    tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
+    OR (auth.jwt() ->> 'role') = 'super_admin'
+  )
+  WITH CHECK (
     tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
   );
 
@@ -55,8 +64,12 @@ DROP POLICY IF EXISTS "payroll_line_items_tenant_isolation" ON payroll_line_item
 CREATE POLICY "payroll_line_items_tenant_isolation" ON payroll_line_items
   AS PERMISSIVE
   FOR ALL
-  TO authenticated
+  TO tenant_user
   USING (
+    tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
+    OR (auth.jwt() ->> 'role') = 'super_admin'
+  )
+  WITH CHECK (
     tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
   );
 
