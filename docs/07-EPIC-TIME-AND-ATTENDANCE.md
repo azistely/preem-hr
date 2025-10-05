@@ -7,14 +7,19 @@
 **Priority:** P0 (Must-have for MVP - feeds into payroll)
 
 **Source Documents:**
-- `03-DATABASE-SCHEMA.md` - Tables: time_entries, time_off_requests, time_off_balances
 - `01-CONSTRAINTS-AND-RULES.md` - Mobile-first constraints, offline support
+- `02-ARCHITECTURE-OVERVIEW.md` - Event-driven patterns, mobile architecture
+- `03-DATABASE-SCHEMA.md` - Tables: time_entries, time_off_requests, time_off_balances
+- `04-DOMAIN-MODELS.md` - Business entities, validation rules, domain events
 - `payroll-cote-d-ivoire.md:96-112` - Overtime rules and multipliers
+- `HCI-DESIGN-PRINCIPLES.md` - **UX design principles for low digital literacy**
+- `09-EPIC-WORKFLOW-AUTOMATION.md` - Leave notifications, approval workflows
 
 **Dependencies:**
 - Employee Management (employees must exist)
 - Geolocation services (mobile device GPS)
 - File storage (Supabase for photos)
+- Multi-country configuration (overtime rules by country)
 
 **Dependent Systems:**
 - Payroll (consumes overtime hours for pay calculation)
@@ -300,22 +305,35 @@ describe('Clock Out', () => {
 **I want** to automatically detect overtime
 **So that** employees are paid correctly
 
-**Source:** payroll-cote-d-ivoire.md:96-112
+**Source:** Multi-country overtime rules (country-specific)
 
-**Rules (Côte d'Ivoire):**
+**Rules (Country-Specific):**
+
+**Côte d'Ivoire:**
 - Legal hours: 40/week (173.33/month)
 - Hours 41-46: × 1.15
 - Hours 46+: × 1.50
 - Night work (21h-6h): × 1.75
-- Sunday/Holiday: × 1.75
-- Night + Sunday: × 2.00
+- Weekend: × 1.75
+
+**Senegal:**
+- Legal hours: 40/week (173.33/month)
+- Overtime: × 1.15 (first 8 hours)
+- Overtime: × 1.40 (beyond 8 hours)
+- Night/Sunday: × 1.60
+
+**Implementation Note:**
+- Overtime rules should be loaded from database based on `tenant.country_code`
+- Consider adding `overtime_rules` table or including in country configuration
+- Each country has different legal hours and multipliers
 
 **Acceptance Criteria:**
 - [ ] Sum weekly hours for employee
-- [ ] Classify hours by type (regular, 41-46, 46+, night, weekend)
-- [ ] Store breakdown in time_entry
+- [ ] Load country-specific overtime rules from database
+- [ ] Classify hours by type based on country rules (e.g., CI: regular, 41-46, 46+, night, weekend)
+- [ ] Store breakdown in time_entry with applicable multipliers
 - [ ] Aggregate for payroll period
-- [ ] Validate max overtime (15h/week, 3h/day)
+- [ ] Validate max overtime limits (country-specific: CI=15h/week, SN may differ)
 
 **Test Cases:**
 ```typescript

@@ -1,37 +1,230 @@
-# 💰 EPIC: Payroll Calculation Engine (Côte d'Ivoire)
+# 💰 EPIC: Multi-Country Payroll Calculation Engine
 
 ## Epic Overview
 
-**Goal:** Implement a fully compliant payroll calculation engine for Côte d'Ivoire that handles complex scenarios including overtime, bonuses, deductions, CNPS contributions, CMU, and ITS (tax on salaries).
+**Goal:** Implement a flexible, database-driven payroll calculation engine that supports multiple West African countries (Côte d'Ivoire, Senegal, Burkina Faso, Mali, Benin, Togo, Guinea).
+
+**Architecture:** Configuration-driven, country-agnostic design with strategy pattern for country-specific logic.
 
 **Priority:** P0 (Must-have for MVP)
 
 **Source Documents:**
-- `payroll-cote-d-ivoire.md` (lines 1-219) - Complete regulatory framework
-- `03-DATABASE-SCHEMA.md` - Tables: payroll_runs, payroll_line_items, employee_salaries
-- `01-CONSTRAINTS-AND-RULES.md` - Validation rules, SMIG constants
+- `multi-country-payroll-architecture.md` - Complete architecture design
+- `country-config-schema.ts` - TypeScript types and schemas
+- `02-ARCHITECTURE-OVERVIEW.md` - System design, tech stack, bounded contexts
+- `03-DATABASE-SCHEMA.md` - Multi-country tables (13-21) + payroll tables
+- `04-DOMAIN-MODELS.md` - Business entities, validation rules, domain events
+- `payroll-research-findings.md` - Regulatory research for Côte d'Ivoire
+- `01-CONSTRAINTS-AND-RULES.md` - Validation rules, constants
+- `HCI-DESIGN-PRINCIPLES.md` - **UX design principles for low digital literacy**
+- `09-EPIC-WORKFLOW-AUTOMATION.md` - Batch operations, alerts integration
 
 **Dependencies:**
 - Employee Management (must have employees to pay)
 - Position/Assignment system (for salary determination)
-- Country rules configuration (CNPS rates, ITS brackets)
+- Multi-country configuration (tax_systems, social_security_schemes, other_taxes tables)
+
+**Key Design Principles:**
+1. **Configuration Over Code:** Tax brackets, rates, and rules stored in database
+2. **Country Abstraction:** Each country is configuration, not separate codebase
+3. **Temporal Accuracy:** Effective-dated rules for historical payroll
+4. **Strategy Pattern:** Different calculation methods per country
+5. **Extensibility:** Add new country = database config (no code changes)
 
 ---
 
 ## Success Criteria
 
-- [x] Calculate gross → net salary accurately for all ITS brackets
-- [x] Apply CNPS contributions with correct ceilings
-- [x] Handle overtime calculations (hours 41-46, 46+, night, weekends)
-- [x] Support prorated salaries (mid-month hires/term)
-- [x] Generate compliant pay slips in French
-- [x] Audit trail for all calculations
-- [x] 100% test coverage for calculation logic
-- [x] Matches examples from payroll-cote-d-ivoire.md:148-175
+**Multi-Country Support:**
+- [ ] Load country rules from database (tax_systems, social_security_schemes, other_taxes)
+- [ ] Calculate payroll using database-driven configuration
+- [ ] Support adding new country via database config only
+- [ ] Effective-dated rules for historical accuracy
+
+**Calculation Accuracy:**
+- [ ] Calculate gross → net salary accurately for all tax brackets
+- [ ] Apply social security contributions with correct ceilings
+- [ ] Handle sector-specific rates (work accident)
+- [ ] Handle overtime calculations (hours 41-46, 46+, night, weekends)
+- [ ] Support prorated salaries (mid-month hires/term)
+
+**Compliance & Quality:**
+- [ ] Generate compliant pay slips in French
+- [ ] Audit trail for all calculations
+- [ ] 100% test coverage for calculation logic
+- [ ] Matches regulatory examples (Côte d'Ivoire verified)
+
+---
+
+## Implementation Phases
+
+### Phase 1: Database Configuration Infrastructure (Week 1-2)
+1. Create migrations for multi-country tables
+2. Seed Côte d'Ivoire configuration
+3. Implement RuleLoader service
+4. Add country configuration endpoints (super admin)
+
+### Phase 2: Refactor Calculations (Week 3-4)
+1. Replace hardcoded tax brackets with database queries
+2. Replace hardcoded CNPS rates with database queries
+3. Implement strategy pattern for tax calculations
+4. Refactor PayrollOrchestrator to use RuleLoader
+
+### Phase 3: Testing & Validation (Week 5)
+1. Verify Côte d'Ivoire calculations match before/after
+2. Add comprehensive test suite
+3. Performance testing with database-driven config
+
+### Phase 4: Second Country (Week 6)
+1. Add Senegal configuration to database
+2. Test end-to-end payroll for Senegal
+3. Document process for adding new countries
 
 ---
 
 ## Features & User Stories
+
+### FEATURE 0: Multi-Country Configuration Infrastructure
+
+**Source:** `multi-country-payroll-architecture.md`, `country-config-schema.ts`
+
+**Critical:** This is the foundation. Must be implemented before payroll calculations.
+
+#### Story 0.1: RuleLoader Service
+**As a** payroll calculation engine
+**I want** to load country-specific rules from the database
+**So that** calculations are based on current, country-specific regulations
+
+**Acceptance Criteria:**
+- [ ] Load tax system by country_code and effective_date
+- [ ] Load tax brackets for the tax system
+- [ ] Load family deduction rules (if supported)
+- [ ] Load social security scheme and contribution types
+- [ ] Load sector-specific overrides
+- [ ] Load other taxes (FDFP, 3FPT, etc.)
+- [ ] Return complete CountryConfig object
+
+**Implementation:**
+```typescript
+// src/features/payroll/services/rule-loader.ts
+
+export class RuleLoader {
+  async getTaxSystem(countryCode: string, effectiveDate: Date) {
+    return await db.query.tax_systems.findFirst({
+      where: and(
+        eq(tax_systems.country_code, countryCode),
+        lte(tax_systems.effective_from, effectiveDate),
+        or(
+          isNull(tax_systems.effective_to),
+          gte(tax_systems.effective_to, effectiveDate)
+        )
+      ),
+      with: {
+        brackets: { orderBy: [asc(tax_brackets.bracket_order)] },
+        familyDeductions: true,
+      },
+    });
+  }
+
+  async getSocialScheme(countryCode: string, effectiveDate: Date) {
+    return await db.query.social_security_schemes.findFirst({
+      where: and(
+        eq(social_security_schemes.country_code, countryCode),
+        lte(social_security_schemes.effective_from, effectiveDate),
+        or(
+          isNull(social_security_schemes.effective_to),
+          gte(social_security_schemes.effective_to, effectiveDate)
+        )
+      ),
+      with: {
+        contributionTypes: {
+          with: { sectorOverrides: true },
+        },
+      },
+    });
+  }
+
+  async getOtherTaxes(countryCode: string, effectiveDate: Date) {
+    return await db.query.other_taxes.findMany({
+      where: and(
+        eq(other_taxes.country_code, countryCode),
+        lte(other_taxes.effective_from, effectiveDate),
+        or(
+          isNull(other_taxes.effective_to),
+          gte(other_taxes.effective_to, effectiveDate)
+        )
+      ),
+    });
+  }
+
+  async getCountryConfig(countryCode: string, effectiveDate: Date): Promise<CountryConfig> {
+    const [country, taxSystem, socialScheme, otherTaxes] = await Promise.all([
+      db.query.countries.findFirst({ where: eq(countries.code, countryCode) }),
+      this.getTaxSystem(countryCode, effectiveDate),
+      this.getSocialScheme(countryCode, effectiveDate),
+      this.getOtherTaxes(countryCode, effectiveDate),
+    ]);
+
+    if (!country) throw new Error(`Country ${countryCode} not found`);
+    if (!taxSystem) throw new Error(`No tax system for ${countryCode} on ${effectiveDate}`);
+    if (!socialScheme) throw new Error(`No social scheme for ${countryCode} on ${effectiveDate}`);
+
+    return { country, taxSystem, socialScheme, otherTaxes };
+  }
+}
+```
+
+#### Story 0.2: Database Migrations
+**As a** developer
+**I want** to create all multi-country payroll tables
+**So that** country rules can be stored in the database
+
+**Acceptance Criteria:**
+- [ ] Create countries table with seed data
+- [ ] Create tax_systems table
+- [ ] Create tax_brackets table
+- [ ] Create family_deduction_rules table
+- [ ] Create social_security_schemes table
+- [ ] Create contribution_types table
+- [ ] Create sector_contribution_overrides table
+- [ ] Create other_taxes table
+- [ ] Create salary_component_definitions table
+- [ ] Add indexes for performance
+
+**Migration Files:**
+```bash
+migrations/
+  ├── 0001_create_countries.sql
+  ├── 0002_create_tax_systems.sql
+  ├── 0003_create_tax_brackets.sql
+  ├── 0004_create_family_deductions.sql
+  ├── 0005_create_social_schemes.sql
+  ├── 0006_create_contribution_types.sql
+  ├── 0007_create_sector_overrides.sql
+  ├── 0008_create_other_taxes.sql
+  └── 0009_create_salary_components.sql
+```
+
+#### Story 0.3: Seed Côte d'Ivoire Configuration
+**As a** system
+**I want** Côte d'Ivoire payroll rules pre-configured
+**So that** the system works immediately for CI
+
+**Acceptance Criteria:**
+- [ ] Seed ITS tax system with 6 brackets (0%, 16%, 21%, 24%, 28%, 32%)
+- [ ] Seed family deductions (1.0 → 5.0 parts = 0 → 44,000 FCFA)
+- [ ] Seed CNPS scheme with correct rates (pension 6.3%/7.7%, family 5.0%)
+- [ ] Seed sector overrides for work accident (2%, 3%, 5%)
+- [ ] Seed CMU contribution (fixed amounts)
+- [ ] Seed FDFP taxes (TAP 0.4%, TFPC 1.2%)
+- [ ] Seed standard salary components (11, 12, 21, 22)
+
+**Seed Data:**
+```sql
+-- See 03-DATABASE-SCHEMA.md lines 664-997 for complete seed data
+```
+
+---
 
 ### FEATURE 1: Base Salary Calculation
 
@@ -160,37 +353,48 @@ describe('CNPS Pension Calculation', () => {
 **I want** to calculate maternity, family, and work accident contributions
 **So that** all mandatory social security is covered
 
-**Rules (payroll-cote-d-ivoire.md:50-57):**
-- Maternity: 0.75% employer only, ceiling 70,000
-- Family allowance: 5% employer only, ceiling 70,000
-- Work accident: 2-5% employer (varies by sector), ceiling 70,000
+**Rules (Current CNPS regulations):**
+- Family allowance: 5.0% employer only (includes 0.75% maternity)
+- Work accident: Variable by sector (2% services, 3% industry, 5% construction)
+- Base: Salaire Catégoriel (base salary), not full gross
+- No ceiling for these contributions
 
 **Acceptance Criteria:**
-- [ ] Calculate maternity: `min(grossSalary, 70000) × 0.0075`
-- [ ] Calculate family: `min(grossSalary, 70000) × 0.05`
-- [ ] Calculate work accident based on tenant's sector risk (default 2%)
-- [ ] All three use 70,000 ceiling
+- [ ] Calculate family allowance: `salaireCategoriel × 0.05` (5.0% total)
+- [ ] Calculate work accident based on tenant's sector:
+  - Services: 2%
+  - Industry: 3%
+  - Construction (BTP): 5%
+- [ ] Use Salaire Catégoriel as base (base salary without allowances)
 
 **Test Cases:**
 ```typescript
 describe('CNPS Other Contributions', () => {
-  it('should calculate for salary below ceiling', () => {
-    const result = calculateCNPSOther(60000, { sector: 'services' });
-    expect(result.maternity).toBe(450); // 60k × 0.75%
-    expect(result.family).toBe(3000); // 60k × 5%
-    expect(result.workAccident).toBe(1200); // 60k × 2%
+  it('should calculate for services sector', () => {
+    const salaireCategoriel = 75000; // Base salary only
+    const result = calculateCNPSOther(salaireCategoriel, { sector: 'services' });
+
+    expect(result.family).toBe(3750); // 75k × 5.0%
+    expect(result.workAccident).toBe(1500); // 75k × 2%
+    expect(result.total).toBe(5250);
   });
 
-  it('should apply ceiling correctly', () => {
-    const result = calculateCNPSOther(300000, { sector: 'services' });
-    expect(result.maternity).toBe(525); // 70k × 0.75%
-    expect(result.family).toBe(3500); // 70k × 5%
-    expect(result.workAccident).toBe(1400); // 70k × 2%
+  it('should use correct rate for industry sector', () => {
+    const salaireCategoriel = 100000;
+    const result = calculateCNPSOther(salaireCategoriel, { sector: 'industry' });
+
+    expect(result.family).toBe(5000); // 100k × 5.0%
+    expect(result.workAccident).toBe(3000); // 100k × 3%
+    expect(result.total).toBe(8000);
   });
 
-  it('should use higher rate for BTP sector', () => {
-    const result = calculateCNPSOther(100000, { sector: 'construction' });
-    expect(result.workAccident).toBe(3500); // 70k × 5% (max rate)
+  it('should use higher rate for construction (BTP) sector', () => {
+    const salaireCategoriel = 100000;
+    const result = calculateCNPSOther(salaireCategoriel, { sector: 'construction' });
+
+    expect(result.family).toBe(5000); // 100k × 5.0%
+    expect(result.workAccident).toBe(5000); // 100k × 5% (max rate)
+    expect(result.total).toBe(10000);
   });
 });
 ```
@@ -236,9 +440,129 @@ describe('CMU Calculation', () => {
 
 ---
 
+### FEATURE 3B: Other Payroll Taxes (Country-Specific)
+
+**Source:** Country-specific tax regulations (e.g., FDFP in CI, 3FPT in SN)
+
+**Critical:** These taxes vary by country and are loaded from the `other_taxes` database table.
+
+**Multi-Country Design:**
+- Taxes are defined per country in database
+- Each tax has: code, name, rate, calculation_base, paid_by
+- Examples:
+  - **Côte d'Ivoire**: FDFP (TAP 0.4% + TFPC 1.2% = 1.6% employer)
+  - **Senegal**: 3FPT (~1.5% employer)
+  - **Other countries**: As configured in database
+
+#### Story 3B.1: Calculate Other Taxes (Database-Driven)
+**As a** payroll system
+**I want** to calculate country-specific payroll taxes from database configuration
+**So that** the system supports multiple countries without code changes
+
+**Acceptance Criteria:**
+- [ ] Load other_taxes from database by country_code and effective_date
+- [ ] Calculate each tax based on its configuration (rate × calculation_base)
+- [ ] Separate employer vs employee taxes
+- [ ] Store in flexible JSONB structure (`other_taxes_details`)
+- [ ] Include total in employer cost
+
+**Test Cases:**
+```typescript
+describe('Other Taxes (Multi-Country)', () => {
+  it('should calculate Côte d\'Ivoire FDFP taxes', async () => {
+    const taxes = await calculateOtherTaxes('CI', new Date(), 131416, 161416);
+
+    expect(taxes.details).toHaveLength(2);
+    expect(taxes.details[0]).toMatchObject({
+      code: 'fdfp_tap',
+      amount: 526, // 131,416 × 0.4%
+      rate: 0.004,
+    });
+    expect(taxes.details[1]).toMatchObject({
+      code: 'fdfp_tfpc',
+      amount: 1577, // 131,416 × 1.2%
+      rate: 0.012,
+    });
+    expect(taxes.totalEmployer).toBe(2103);
+  });
+
+  it('should calculate Senegal 3FPT tax', async () => {
+    const taxes = await calculateOtherTaxes('SN', new Date(), 100000, 120000);
+
+    expect(taxes.details).toHaveLength(1);
+    expect(taxes.details[0]).toMatchObject({
+      code: '3fpt_training',
+      amount: 1500, // 100,000 × 1.5%
+      rate: 0.015,
+    });
+  });
+});
+```
+
+**Implementation:**
+```typescript
+// src/features/payroll/services/other-taxes-calculation.ts
+
+export async function calculateOtherTaxes(
+  countryCode: string,
+  effectiveDate: Date,
+  brutImposable: number,
+  totalBrut: number
+) {
+  // Load country-specific taxes from database
+  const taxes = await db.query.other_taxes.findMany({
+    where: and(
+      eq(other_taxes.country_code, countryCode),
+      lte(other_taxes.effective_from, effectiveDate),
+      or(
+        isNull(other_taxes.effective_to),
+        gte(other_taxes.effective_to, effectiveDate)
+      )
+    ),
+  });
+
+  const details = [];
+  let totalEmployer = 0;
+  let totalEmployee = 0;
+
+  for (const tax of taxes) {
+    // Determine calculation base
+    const base = tax.calculation_base === 'brut_imposable'
+      ? brutImposable
+      : totalBrut;
+
+    const amount = Math.round(base * tax.tax_rate);
+
+    details.push({
+      code: tax.code,
+      name: tax.name,
+      amount,
+      rate: tax.tax_rate,
+      base,
+      paidBy: tax.paid_by,
+    });
+
+    if (tax.paid_by === 'employer') totalEmployer += amount;
+    if (tax.paid_by === 'employee') totalEmployee += amount;
+  }
+
+  return { details, totalEmployer, totalEmployee };
+}
+
+// Database structure in payroll_line_items:
+// - total_other_taxes: NUMERIC (sum of all other taxes)
+// - other_taxes_details: JSONB array
+//   Example for CI: [
+//     {"code": "fdfp_tap", "name": "TAP (FDFP)", "amount": 526, "rate": 0.004, "base": 131416},
+//     {"code": "fdfp_tfpc", "name": "TFPC (FDFP)", "amount": 1577, "rate": 0.012, "base": 131416}
+//   ]
+```
+
+---
+
 ### FEATURE 4: ITS (Tax on Salaries) Calculation
 
-**Source:** payroll-cote-d-ivoire.md:74-89 (2024 reform)
+**Source:** Current Côte d'Ivoire tax law (2025)
 
 **Critical:** This is the most complex calculation due to progressive brackets.
 
@@ -274,94 +598,139 @@ describe('Taxable Income Calculation', () => {
 **I want** to calculate ITS using progressive brackets
 **So that** tax is correctly withheld
 
-**Source:** payroll-cote-d-ivoire.md:80-89
+**Source:** Current Côte d'Ivoire tax law (2025)
 
-**Brackets (Annual, convert to monthly):**
+**Brackets (Monthly, progressive):**
 ```
-0 - 300,000: 0%
-300,000 - 547,000: 10%
-547,000 - 979,000: 15%
-979,000 - 1,519,000: 20%
-1,519,000 - 2,644,000: 25%
-2,644,000 - 4,669,000: 35%
-4,669,000 - 10,106,000: 45%
-10,106,000+: 60%
+0 - 75,000: 0%
+75,001 - 240,000: 16%
+240,001 - 800,000: 21%
+800,001 - 2,400,000: 24%
+2,400,001 - 8,000,000: 28%
+8,000,001+: 32%
 ```
 
 **Acceptance Criteria:**
-- [ ] Annualize monthly taxable income (× 12)
-- [ ] Apply progressive calculation (tax each bracket)
-- [ ] Divide annual tax by 12 for monthly withholding
-- [ ] Round to nearest franc
+- [ ] Apply progressive calculation on monthly taxable income (NOT annualized)
+- [ ] Calculate tax for each bracket progressively
+- [ ] Apply family deductions (parts fiscales) after gross tax calculation
+- [ ] Round to nearest 10 FCFA (not 1 FCFA)
 
-**Test Cases (from payroll-cote-d-ivoire.md:156):**
+**Test Cases (corrected with current tax law):**
 ```typescript
 describe('ITS Progressive Calculation', () => {
-  it('should match official example 7.1 (300k gross)', () => {
-    // From payroll-cote-d-ivoire.md:154-157
-    const annualTaxableIncome = 280100 * 12; // 3,361,200
-    const its = calculateITS(annualTaxableIncome);
+  it('should match HR example (131,416 FCFA gross)', () => {
+    // From HR documentation (July 2025)
+    // Gross: 131,416, CNPS: 8,279, CMU: 500
+    // Taxable: 131,416 - 8,279 - 500 = 122,637 FCFA
 
-    // Expected annual tax: ~729,770 FCFA
-    expect(its.annualTax).toBeCloseTo(729770, -2); // Within 100 FCFA
-    expect(its.monthlyTax).toBeCloseTo(60815, -1); // 729770 / 12
+    const taxableIncome = 122637;
+    const its = calculateITS(taxableIncome, 1); // 1 fiscal part
+
+    // Bracket 1 (0-75k): 0
+    // Bracket 2 (75k-122,637): 47,637 × 16% = 7,622 FCFA
+    // Family deduction (1 part): 0
+    // Final tax: 7,622 FCFA (rounded to 7,620)
+    expect(its.monthlyTax).toBeCloseTo(7620, -1);
   });
 
   it('should handle first bracket (no tax)', () => {
-    const its = calculateITS(200000 * 12); // 2.4M annual
-    // All in 0% bracket
-    expect(its.annualTax).toBe(0);
+    const its = calculateITS(60000, 1); // Below 75k threshold
+    expect(its.monthlyTax).toBe(0);
   });
 
   it('should calculate progressive tax correctly', () => {
-    // Manual calculation for 1M annual income
-    // Bracket 1 (0-300k): 0
-    // Bracket 2 (300k-547k): 247k × 10% = 24,700
-    // Bracket 3 (547k-979k): 453k × 15% = 67,950
-    // Bracket 4 (979k-1M): 21k × 20% = 4,200
-    // Total: 96,850
+    // Manual calculation for 500,000 FCFA monthly
+    // Bracket 1 (0-75k): 0
+    // Bracket 2 (75k-240k): 165k × 16% = 26,400
+    // Bracket 3 (240k-500k): 260k × 21% = 54,600
+    // Total before family: 81,000
+    // With 1 part (no deduction): 81,000
+    // Rounded: 81,000
 
-    const its = calculateITS(1000000);
-    expect(its.annualTax).toBeCloseTo(96850, 0);
+    const its = calculateITS(500000, 1);
+    expect(its.monthlyTax).toBe(81000);
+  });
+
+  it('should apply family deductions', () => {
+    // Same 500k salary but with family (2 parts)
+    const its = calculateITS(500000, 2);
+
+    // Gross tax: 81,000 (same as above)
+    // Family deduction (2 parts): 11,000 FCFA
+    // Final: 81,000 - 11,000 = 70,000
+    expect(its.monthlyTax).toBe(70000);
   });
 });
 ```
 
-**Implementation:**
+**Implementation (Database-Driven):**
 ```typescript
-// src/features/payroll/services/its-calculation.ts
+// src/features/payroll/strategies/tax/progressive-monthly.ts
 
-export function calculateITS(annualTaxableIncome: number): ITSResult {
-  const brackets = [
-    { min: 0, max: 300000, rate: 0 },
-    { min: 300000, max: 547000, rate: 0.10 },
-    { min: 547000, max: 979000, rate: 0.15 },
-    { min: 979000, max: 1519000, rate: 0.20 },
-    { min: 1519000, max: 2644000, rate: 0.25 },
-    { min: 2644000, max: 4669000, rate: 0.35 },
-    { min: 4669000, max: 10106000, rate: 0.45 },
-    { min: 10106000, max: Infinity, rate: 0.60 },
-  ];
+export class ProgressiveMonthlyTaxStrategy {
+  constructor(
+    private brackets: TaxBracket[],
+    private familyDeductions: FamilyDeductionRule[]
+  ) {}
 
-  let totalTax = 0;
-  let remainingIncome = annualTaxableIncome;
+  calculate(input: TaxInput): TaxResult {
+    const { taxableIncome, fiscalParts = 1 } = input;
 
-  for (const bracket of brackets) {
-    if (remainingIncome <= 0) break;
+    let grossTax = 0;
+    let remainingIncome = taxableIncome;
+    const bracketBreakdown: BracketResult[] = [];
 
-    const bracketSize = bracket.max - bracket.min;
-    const taxableInBracket = Math.min(remainingIncome, bracketSize);
-    const taxForBracket = taxableInBracket * bracket.rate;
+    // Calculate progressive tax using database-loaded brackets
+    for (const bracket of this.brackets) {
+      if (remainingIncome <= 0) break;
 
-    totalTax += taxForBracket;
-    remainingIncome -= taxableInBracket;
+      const bracketMin = bracket.min_amount;
+      const bracketMax = bracket.max_amount ?? Infinity;
+      const bracketSize = bracketMax - bracketMin;
+
+      const taxableInBracket = Math.min(remainingIncome, bracketSize);
+      const taxForBracket = taxableInBracket * bracket.rate;
+
+      bracketBreakdown.push({
+        bracketOrder: bracket.bracket_order,
+        minAmount: bracketMin,
+        maxAmount: bracket.max_amount,
+        rate: bracket.rate,
+        taxableInBracket,
+        taxAmount: taxForBracket,
+      });
+
+      grossTax += taxForBracket;
+      remainingIncome -= taxableInBracket;
+    }
+
+    // Apply family deduction (from database-loaded rules)
+    const familyDeduction = this.getFamilyDeduction(fiscalParts);
+    const netTax = Math.max(0, grossTax - familyDeduction);
+
+    return {
+      grossTax: Math.round(grossTax),
+      familyDeduction,
+      netTax: Math.round(netTax / 10) * 10, // Round to nearest 10
+      effectiveRate: taxableIncome > 0 ? (netTax / taxableIncome) : 0,
+      bracketBreakdown,
+    };
   }
 
-  return {
-    annualTax: Math.round(totalTax),
-    monthlyTax: Math.round(totalTax / 12),
-    effectiveRate: (totalTax / annualTaxableIncome) * 100,
-  };
+  private getFamilyDeduction(fiscalParts: number): number {
+    const rule = this.familyDeductions.find(r => r.fiscal_parts === fiscalParts);
+    return rule?.deduction_amount ?? 0;
+  }
+}
+
+// Usage in PayrollOrchestrator:
+// const config = await ruleLoader.getCountryConfig(countryCode, effectiveDate);
+// const strategy = new ProgressiveMonthlyTaxStrategy(
+//   config.taxSystem.brackets,
+//   config.taxSystem.familyDeductions
+// );
+// const taxResult = strategy.calculate({ taxableIncome, fiscalParts });
 }
 ```
 
@@ -444,46 +813,72 @@ describe('Overtime Calculation', () => {
 **I want** to see the complete payroll calculation from gross to net
 **So that** I can verify accuracy before payment
 
-**Complete Formula:**
+**Complete Formula (Corrected):**
 ```
-Gross Salary = Base + Overtime + Bonuses + Allowances
-CNPS Employee = Gross × 6.3% (ceiling 3.375M)
-CMU Employee = 1,000 FCFA
-Taxable Income = Gross - CNPS Employee - CMU Employee
-ITS = Progressive tax on annualized taxable income / 12
-Total Deductions = CNPS Employee + CMU Employee + ITS + Other
-Net Salary = Gross - Total Deductions
+1. Total Brut = Base + Overtime + Bonuses + Allowances
+2. Brut Imposable = Total Brut - Non-taxable components (e.g., transport > 30k)
+3. Salaire Catégoriel = Base salary only (for some contributions)
+
+4. CNPS Employee = min(Brut Imposable, 3,375,000) × 6.3%
+5. CMU Employee = 1,000 FCFA
+6. Taxable Income = Brut Imposable - CNPS Employee - CMU Employee
+7. ITS Gross = Progressive tax on monthly taxable income (6 brackets)
+8. ITS Net = ITS Gross - Family Deduction (based on fiscal parts)
+9. Total Employee Deductions = CNPS + CMU + ITS
+
+10. CNPS Employer = min(Brut Imposable, 3,375,000) × 7.7%
+11. CNPS Family = Salaire Catégoriel × 5.0%
+12. CNPS Work Accident = Salaire Catégoriel × (2-5% by sector)
+13. CMU Employer = 500 + (4,500 if family)
+14. FDFP (TAP + TFPC) = Brut Imposable × 1.6%
+
+15. Net Salary = Total Brut - Total Employee Deductions
+16. Final Net = Round to nearest 10 FCFA
+17. Total Employer Cost = Total Brut + All Employer Contributions
 ```
 
 **Acceptance Criteria:**
-- [ ] Calculate in correct order
-- [ ] Round all currency to 2 decimals
-- [ ] Generate detailed breakdown
-- [ ] Validate net >= 0
-- [ ] Match example 7.1 from payroll-cote-d-ivoire.md
+- [ ] Distinguish Total Brut, Brut Imposable, and Salaire Catégoriel
+- [ ] Calculate ITS using monthly progressive brackets (NOT annualized)
+- [ ] Apply family deductions (parts fiscales) to ITS
+- [ ] Include FDFP training taxes (1.6% employer)
+- [ ] Round final net salary to nearest 10 FCFA
+- [ ] Use correct contribution bases for each calculation
 
-**Test Cases:**
+**Test Cases (Corrected with HR Documentation July 2025):**
 ```typescript
 describe('Complete Payroll Calculation', () => {
-  it('should match official example 7.1 exactly', () => {
-    // From payroll-cote-d-ivoire.md:148-161
+  it('should match HR example (131,416 FCFA gross)', () => {
+    // From HR documentation July 2025
     const result = calculatePayroll({
-      baseSalary: 300000,
-      periodStart: new Date('2025-01-01'),
-      periodEnd: new Date('2025-01-31'),
+      baseSalary: 75000, // Salaire Catégoriel
+      housingAllowance: 25000,
+      transportAllowance: 30000,
+      mealAllowance: 1416,
+      fiscalParts: 1,
+      sector: 'services',
     });
 
-    expect(result.grossSalary).toBe(300000);
-    expect(result.cnpsEmployee).toBe(18900);
+    // Total Brut
+    expect(result.totalBrut).toBe(131416);
+
+    // Brut Imposable (all components taxable in this case)
+    expect(result.brutImposable).toBe(131416);
+
+    // Employee deductions
+    expect(result.cnpsEmployee).toBe(8279); // 131,416 × 6.3%
     expect(result.cmuEmployee).toBe(1000);
-    expect(result.taxableIncome).toBe(280100);
-    expect(result.its).toBeCloseTo(60815, 0);
-    expect(result.netSalary).toBeCloseTo(219285, 0);
+    expect(result.taxableIncome).toBe(122137); // 131,416 - 8,279 - 1,000
+    expect(result.its).toBeCloseTo(7540, -1); // Progressive + no family deduction
+    expect(result.netSalary).toBe(114600); // Rounded to nearest 10
 
     // Employer costs
-    expect(result.cnpsEmployer).toBe(23100);
+    expect(result.cnpsEmployer).toBe(10119); // 131,416 × 7.7%
+    expect(result.cnpsFamily).toBe(3750); // 75,000 × 5.0%
+    expect(result.cnpsWorkAccident).toBe(1500); // 75,000 × 2% (services)
     expect(result.cmuEmployer).toBe(500); // No family
-    expect(result.totalEmployerCost).toBeCloseTo(351350, 0);
+    expect(result.fdfpTap).toBe(526); // 131,416 × 0.4%
+    expect(result.fdfpTfpc).toBe(1577); // 131,416 × 1.2%
   });
 
   it('should handle employee with family and allowances', () => {
@@ -491,11 +886,28 @@ describe('Complete Payroll Calculation', () => {
       baseSalary: 500000,
       housingAllowance: 100000,
       transportAllowance: 50000,
+      fiscalParts: 2, // Married with children
       hasFamily: true,
+      sector: 'services',
     });
 
-    expect(result.grossSalary).toBe(650000);
-    expect(result.cmuEmployer).toBe(5000); // 500 + 4500 family
+    // Gross and imposable
+    expect(result.totalBrut).toBe(650000);
+    expect(result.brutImposable).toBe(650000); // All taxable
+
+    // Employee deductions
+    expect(result.cnpsEmployee).toBe(40950); // 650k × 6.3%
+    expect(result.cmuEmployee).toBe(1000);
+
+    // Tax with family deduction
+    const taxableIncome = 608050; // 650k - 40,950 - 1,000
+    // ITS gross ≈ 108,490, Family deduction (2 parts) = 11,000
+    expect(result.its).toBeCloseTo(97490, -1); // Rounded to nearest 10
+
+    // Employer costs
+    expect(result.cmuEmployer).toBe(5000); // 500 + 4,500 family
+    expect(result.cnpsFamily).toBe(25000); // 500k × 5.0%
+    expect(result.fdfpTotal).toBe(10400); // 650k × 1.6%
   });
 });
 ```
@@ -690,6 +1102,345 @@ export async function calculatePayrollRun(runId: string) {
 
   return { runId: run.id, employeeCount: lineItems.length };
 }
+```
+
+---
+
+### FEATURE 8: Event-Driven Payroll Calculations
+
+**Source:** `09-EPIC-WORKFLOW-AUTOMATION.md` - Event-driven automation for employee lifecycle events
+
+#### Story 8.1: Automatic Final Payroll on Termination
+**As the** system
+**I want** to automatically calculate final payroll when an employee is terminated
+**So that** exit pay is accurate and compliant
+
+**Acceptance Criteria:**
+- [ ] `employee.terminated` event triggers final payroll calculation
+- [ ] Calculate prorated salary (worked days / total working days)
+- [ ] Include vacation payout (unused days × daily rate)
+- [ ] Include exit benefits (indemnité de licenciement) if applicable
+- [ ] Create payroll entry with `isPartialMonth: true`
+- [ ] Alert HR manager when final payroll is ready
+
+**Implementation:**
+```typescript
+// Event listener in features/payroll/services/event-listeners.ts
+eventBus.on('employee.terminated', async (event: EmployeeTerminatedEvent) => {
+  const { employeeId, terminationDate, reason } = event;
+
+  // Calculate final payroll
+  const finalPayroll = await calculateFinalPayroll({
+    employeeId,
+    terminationDate,
+    includeProration: true,
+    includeVacationPayout: true,
+    includeExitBenefits: reason !== 'resignation', // No benefits for resignation
+  });
+
+  // Create final payroll entry
+  await createPayrollEntry({
+    employeeId,
+    payrollRunId: await getCurrentOrCreatePayrollRun(terminationDate),
+    baseSalary: finalPayroll.proratedSalary,
+    deductions: finalPayroll.deductions,
+    benefits: finalPayroll.benefits,
+    vacationPayout: finalPayroll.vacationPayout,
+    exitBenefits: finalPayroll.exitBenefits,
+    isPartialMonth: true,
+    workingDays: finalPayroll.workingDays,
+    daysWorked: finalPayroll.daysWorked,
+  });
+
+  // Alert HR manager
+  await createAlert({
+    type: 'final_payroll_ready',
+    severity: 'info',
+    employeeId,
+    message: `Paie de sortie calculée pour ${event.employeeName}`,
+    actionUrl: `/payroll/review/${finalPayroll.id}`,
+  });
+});
+```
+
+**Payroll Calculation:**
+```typescript
+// features/payroll/services/final-payroll.ts
+export async function calculateFinalPayroll(params: {
+  employeeId: string;
+  terminationDate: Date;
+  includeProration: boolean;
+  includeVacationPayout: boolean;
+  includeExitBenefits: boolean;
+}) {
+  const employee = await getEmployee(params.employeeId);
+  const currentSalary = await getCurrentSalary(params.employeeId);
+  const countryCode = employee.countryCode;
+
+  // Calculate working days in termination month
+  const workingDays = getWorkingDaysInMonth(params.terminationDate, countryCode);
+  const daysWorked = getDaysWorkedUntil(
+    startOfMonth(params.terminationDate),
+    params.terminationDate,
+    countryCode
+  );
+
+  // Prorated salary
+  const proratedSalary = params.includeProration
+    ? (currentSalary.baseSalary / workingDays) * daysWorked
+    : currentSalary.baseSalary;
+
+  // Vacation payout
+  const vacationPayout = params.includeVacationPayout
+    ? await calculateVacationPayout(params.employeeId, params.terminationDate)
+    : 0;
+
+  // Exit benefits (indemnité de licenciement - Côte d'Ivoire specific)
+  const exitBenefits = params.includeExitBenefits
+    ? await calculateExitBenefits(params.employeeId, countryCode)
+    : 0;
+
+  // Calculate deductions on prorated amount
+  const deductions = await calculateDeductions({
+    employeeId: params.employeeId,
+    baseSalary: proratedSalary,
+    countryCode,
+  });
+
+  return {
+    proratedSalary,
+    workingDays,
+    daysWorked,
+    vacationPayout,
+    exitBenefits,
+    deductions,
+    netPay: proratedSalary + vacationPayout + exitBenefits - deductions.total,
+  };
+}
+```
+
+#### Story 8.2: Automatic Prorated Payroll on Mid-Month Hire
+**As the** system
+**I want** to automatically calculate prorated payroll when hiring mid-month
+**So that** first payroll is accurate
+
+**Acceptance Criteria:**
+- [ ] `employee.hired` event triggers first payroll calculation (if hire date > 1st of month)
+- [ ] Calculate prorated salary (worked days / total working days)
+- [ ] Create payroll entry with `isPartialMonth: true`
+- [ ] Alert HR manager when first payroll is created
+
+**Implementation:**
+```typescript
+eventBus.on('employee.hired', async (event: EmployeeHiredEvent) => {
+  const { employeeId, hireDate, baseSalary } = event;
+
+  // Only create prorated payroll if hired mid-month
+  if (hireDate.getDate() > 1) {
+    const firstPayroll = await calculateProratedFirstPayroll({
+      employeeId,
+      hireDate,
+      fullMonthlySalary: baseSalary,
+    });
+
+    await createPayrollEntry({
+      employeeId,
+      payrollRunId: await getCurrentOrCreatePayrollRun(hireDate),
+      baseSalary: firstPayroll.proratedSalary,
+      isPartialMonth: true,
+      workingDays: firstPayroll.workingDays,
+      daysWorked: firstPayroll.daysWorked,
+    });
+
+    await createAlert({
+      type: 'prorated_payroll_created',
+      severity: 'info',
+      employeeId,
+      message: `Paie au prorata créée pour ${event.employeeName} (embauche le ${format(hireDate, 'dd MMM')})`,
+      actionUrl: `/payroll/review`,
+    });
+  }
+});
+```
+
+#### Story 8.3: Automatic Payroll Recalculation on Salary Change
+**As the** system
+**I want** to recalculate payroll when salary changes mid-month
+**So that** payroll reflects the salary change accurately
+
+**Acceptance Criteria:**
+- [ ] `salary.changed` event triggers payroll recalculation
+- [ ] Find affected payroll runs (current month if mid-month change)
+- [ ] Calculate days at old salary vs new salary
+- [ ] Update payroll entry with prorated amounts
+- [ ] Mark payroll for HR review with flag
+
+**Implementation:**
+```typescript
+eventBus.on('salary.changed', async (event: SalaryChangedEvent) => {
+  const { employeeId, effectiveFrom, oldSalary, newSalary } = event;
+
+  // Find affected payroll runs
+  const affectedRuns = await getPayrollRunsAffectedBy(effectiveFrom);
+
+  for (const run of affectedRuns) {
+    // Recalculate with prorated salary
+    const recalculated = await recalculatePayrollEntry({
+      employeeId,
+      payrollRunId: run.id,
+      salaryChangeDate: effectiveFrom,
+      oldSalary,
+      newSalary,
+    });
+
+    // Mark for review
+    await markPayrollForReview(recalculated.id, 'salary_change');
+  }
+
+  // Alert HR manager
+  await createAlert({
+    type: 'payroll_recalculated',
+    severity: 'warning',
+    employeeId,
+    message: `Paie recalculée suite au changement de salaire de ${event.employeeName}`,
+    actionUrl: `/payroll/review?employee=${employeeId}`,
+  });
+});
+```
+
+**Recalculation Function:**
+```typescript
+export async function recalculatePayrollEntry(params: {
+  employeeId: string;
+  payrollRunId: string;
+  salaryChangeDate: Date;
+  oldSalary: number;
+  newSalary: number;
+}) {
+  const employee = await getEmployee(params.employeeId);
+  const payrollRun = await getPayrollRun(params.payrollRunId);
+
+  // Total working days in month
+  const totalWorkingDays = getWorkingDaysInMonth(
+    payrollRun.payPeriodStart,
+    employee.countryCode
+  );
+
+  // Days at old salary
+  const daysAtOldSalary = getDaysWorkedBetween(
+    payrollRun.payPeriodStart,
+    params.salaryChangeDate,
+    employee.countryCode
+  );
+
+  // Days at new salary
+  const daysAtNewSalary = getDaysWorkedBetween(
+    addDays(params.salaryChangeDate, 1),
+    payrollRun.payPeriodEnd,
+    employee.countryCode
+  );
+
+  // Prorated calculation
+  const salaryFromOldRate = (params.oldSalary / totalWorkingDays) * daysAtOldSalary;
+  const salaryFromNewRate = (params.newSalary / totalWorkingDays) * daysAtNewSalary;
+  const totalSalary = salaryFromOldRate + salaryFromNewRate;
+
+  // Update payroll entry
+  await updatePayrollEntry(params.employeeId, params.payrollRunId, {
+    baseSalary: totalSalary,
+    metadata: {
+      salaryChange: {
+        date: params.salaryChangeDate,
+        oldSalary: params.oldSalary,
+        newSalary: params.newSalary,
+        daysAtOldSalary,
+        daysAtNewSalary,
+      },
+    },
+  });
+
+  return { totalSalary, daysAtOldSalary, daysAtNewSalary };
+}
+```
+
+#### Story 8.4: Automatic Deductions for Unpaid Leave
+**As the** system
+**I want** to deduct from payroll when unpaid leave is approved
+**So that** payroll accurately reflects unpaid absence
+
+**Acceptance Criteria:**
+- [ ] `leave.approved` event triggers deduction (only for unpaid leave)
+- [ ] Calculate deduction based on daily rate × unpaid days
+- [ ] Add deduction to affected payroll run
+- [ ] Alert HR manager about the deduction
+
+**Implementation:**
+```typescript
+eventBus.on('leave.approved', async (event: LeaveApprovedEvent) => {
+  const { employeeId, leaveType, startDate, endDate } = event;
+
+  // Only process unpaid leave
+  if (leaveType === 'unpaid') {
+    const deduction = await calculateUnpaidLeaveDeduction({
+      employeeId,
+      startDate,
+      endDate,
+    });
+
+    // Find affected payroll run
+    const payrollRun = await getPayrollRunForMonth(startDate);
+
+    // Add deduction to payroll entry
+    await addPayrollDeduction({
+      employeeId,
+      payrollRunId: payrollRun.id,
+      type: 'unpaid_leave',
+      amount: deduction.amount,
+      days: deduction.days,
+      description: `Congé sans solde: ${deduction.days} jours`,
+    });
+
+    // Alert HR manager
+    await createAlert({
+      type: 'unpaid_leave_deduction',
+      severity: 'info',
+      employeeId,
+      message: `Déduction pour congé sans solde ajoutée (${deduction.days}j - ${formatCurrency(deduction.amount)})`,
+      actionUrl: `/payroll/review/${payrollRun.id}`,
+    });
+  }
+});
+```
+
+**Database Schema Addition:**
+```sql
+-- Track payroll events for audit trail
+CREATE TABLE payroll_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+
+  -- Event details
+  event_type TEXT NOT NULL, -- 'termination', 'hire', 'salary_change', 'unpaid_leave'
+  employee_id UUID NOT NULL REFERENCES employees(id),
+  payroll_run_id UUID REFERENCES payroll_runs(id),
+
+  -- Event data
+  event_date DATE NOT NULL,
+  metadata JSONB, -- Event-specific data
+
+  -- Calculated amounts
+  amount_calculated DECIMAL(15, 2),
+  is_prorated BOOLEAN DEFAULT false,
+  working_days INTEGER,
+  days_worked INTEGER,
+
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+
+  CONSTRAINT payroll_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_payroll_events_employee ON payroll_events(employee_id, event_date);
+CREATE INDEX idx_payroll_events_run ON payroll_events(payroll_run_id);
 ```
 
 ---

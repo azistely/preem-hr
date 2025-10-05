@@ -10,6 +10,9 @@
 - `01-CONSTRAINTS-AND-RULES.md` - UX constraints for low literacy
 - `02-ARCHITECTURE-OVERVIEW.md` - Workflow engine patterns
 - `03-DATABASE-SCHEMA.md` - Tenants, employees, positions, payroll tables
+- `04-DOMAIN-MODELS.md` - Business entities, validation rules, domain events
+- `HCI-DESIGN-PRINCIPLES.md` - **UX design principles for low digital literacy**
+- `09-EPIC-WORKFLOW-AUTOMATION.md` - Workflow automation infrastructure
 
 **User Journey:**
 ```
