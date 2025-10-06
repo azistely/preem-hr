@@ -17,6 +17,7 @@ import {
   salaryComponentTemplates,
   sectorConfigurations,
   customSalaryComponents,
+  tenantSalaryComponentActivations,
 } from '@/drizzle/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import type {
@@ -28,6 +29,8 @@ import type {
 } from '@/features/employees/types/salary-components';
 import { createFormulaVersion, getVersionHistory } from '@/lib/salary-components/formula-version-service';
 import { complianceValidator } from '@/lib/compliance';
+import { mergeTemplatesWithActivations, mergeTemplateWithOverrides } from '@/lib/salary-components/template-merger';
+import type { TenantActivation, SalaryComponentTemplate as TemplateMergerTemplate } from '@/lib/salary-components/template-merger';
 
 // ============================================================================
 // Input Schemas
@@ -172,7 +175,12 @@ export const salaryComponentsRouter = createTRPCRouter({
     }),
 
   /**
-   * Get custom components for the current tenant
+   * Get active components for the current tenant (Option B)
+   *
+   * Fetches tenant activations + templates, then merges them.
+   * Returns components with:
+   * - Tax treatment from template (law)
+   * - Customizations from activation (tenant choice)
    */
   getCustomComponents: protectedProcedure.query(async ({ ctx }) => {
     const { tenantId } = ctx;
@@ -184,13 +192,39 @@ export const salaryComponentsRouter = createTRPCRouter({
       });
     }
 
-    const components = await db
+    // 1. Fetch tenant activations
+    const activations = await db
       .select()
-      .from(customSalaryComponents)
-      .where(eq(customSalaryComponents.tenantId, tenantId))
-      .orderBy(desc(customSalaryComponents.createdAt));
+      .from(tenantSalaryComponentActivations)
+      .where(eq(tenantSalaryComponentActivations.tenantId, tenantId))
+      .orderBy(
+        tenantSalaryComponentActivations.displayOrder,
+        desc(tenantSalaryComponentActivations.createdAt)
+      );
 
-    return components as CustomSalaryComponent[];
+    if (activations.length === 0) {
+      return [];
+    }
+
+    // 2. Fetch all activated templates
+    const templateCodes = activations.map((a) => a.templateCode);
+    const templates = await db
+      .select()
+      .from(salaryComponentTemplates)
+      .where(
+        and(
+          // @ts-ignore - Drizzle typing issue with array
+          salaryComponentTemplates.code.in(templateCodes)
+        )
+      );
+
+    // 3. Merge templates with activations
+    const merged = mergeTemplatesWithActivations(
+      templates as unknown as TemplateMergerTemplate[],
+      activations as unknown as TenantActivation[]
+    );
+
+    return merged as unknown as CustomSalaryComponent[];
   }),
 
   /**
@@ -251,13 +285,15 @@ export const salaryComponentsRouter = createTRPCRouter({
     }),
 
   /**
-   * Add component from template (one-click)
-   * Creates a custom component with template metadata
+   * Add component from template (Option B Architecture)
    *
-   * Now with compliance validation:
-   * - Validates customizations against Convention Collective rules
-   * - Prevents locked templates from being modified
-   * - Enforces legal ranges for configurable templates (housing 20-30%, transport ≤30k)
+   * Creates an activation (reference to template + customizations)
+   * instead of copying full component.
+   *
+   * Validation:
+   * - Ensures customizations only contain customizable fields
+   * - Validates against compliance rules
+   * - Prevents duplicate activations
    */
   addFromTemplate: protectedProcedure
     .input(addFromTemplateSchema)
@@ -273,7 +309,7 @@ export const salaryComponentsRouter = createTRPCRouter({
 
       const { templateCode, customizations } = input;
 
-      // Find the template
+      // 1. Find the template
       const [template] = await db
         .select()
         .from(salaryComponentTemplates)
@@ -287,7 +323,26 @@ export const salaryComponentsRouter = createTRPCRouter({
         });
       }
 
-      // ✅ NEW: Validate customizations against compliance rules
+      // 2. Check if already activated
+      const existing = await db
+        .select()
+        .from(tenantSalaryComponentActivations)
+        .where(
+          and(
+            eq(tenantSalaryComponentActivations.tenantId, tenantId),
+            eq(tenantSalaryComponentActivations.templateCode, templateCode)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Ce composant est déjà activé pour votre organisation',
+        });
+      }
+
+      // 3. Validate customizations against compliance rules
       const validationResult = await complianceValidator.validateComponent(
         templateCode,
         template.countryCode,
@@ -295,7 +350,6 @@ export const salaryComponentsRouter = createTRPCRouter({
       );
 
       if (!validationResult.valid) {
-        // Return first violation as user-friendly error
         const firstViolation = validationResult.violations[0];
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -307,61 +361,42 @@ export const salaryComponentsRouter = createTRPCRouter({
         });
       }
 
-      // Generate unique code
-      const existingComponents = await db
-        .select({ code: customSalaryComponents.code })
-        .from(customSalaryComponents)
-        .where(
-          and(
-            eq(customSalaryComponents.tenantId, tenantId),
-            eq(customSalaryComponents.countryCode, template.countryCode)
-          )
-        );
+      // 4. Extract overrides (ONLY customizable fields)
+      const overrides = customizations?.metadata || {};
 
-      const existingCodes = existingComponents.map((c) => c.code);
-      let code = '';
-      let counter = 1;
-
-      do {
-        code = `CUSTOM_${counter.toString().padStart(3, '0')}`;
-        counter++;
-      } while (existingCodes.includes(code));
-
-      // Merge template metadata with customizations
-      const metadata = {
-        ...template.metadata,
-        ...(customizations?.metadata || {}),
-      };
-
-      const name =
-        customizations?.name || (template.name as Record<string, string>).fr || 'Sans nom';
-
-      const [newComponent] = await db
-        .insert(customSalaryComponents)
+      // 5. Create activation
+      const [activation] = await db
+        .insert(tenantSalaryComponentActivations)
         .values({
           tenantId,
           countryCode: template.countryCode,
-          code,
-          name,
-          description: template.description || null,
           templateCode,
-          metadata: metadata as ComponentMetadata,
+          overrides,
+          customName: customizations?.name || null,
           isActive: true,
           displayOrder: 0,
           createdBy: userId,
         })
         .returning();
 
-      return newComponent as CustomSalaryComponent;
+      // 6. Return merged component (for UI)
+      const merged = mergeTemplateWithOverrides(
+        template as unknown as TemplateMergerTemplate,
+        activation as unknown as TenantActivation
+      );
+
+      return merged as unknown as CustomSalaryComponent;
     }),
 
   /**
-   * Update a custom component
+   * Update a component activation (Option B Architecture)
    *
-   * Now with version tracking:
-   * - Detects formula changes in metadata.calculationRule
+   * Updates activation.overrides instead of copying full metadata.
+   * Validates that updates only modify customizable fields.
+   *
+   * Version tracking:
+   * - Detects formula changes in overrides.calculationRule
    * - Creates version history entry if formula changed
-   * - Records who changed it and why (if provided)
    */
   updateCustomComponent: protectedProcedure
     .input(updateCustomComponentSchema)
@@ -377,48 +412,84 @@ export const salaryComponentsRouter = createTRPCRouter({
 
       const { componentId, ...updates } = input;
 
-      // Verify component belongs to tenant
-      const [existing] = await db
+      // 1. Verify activation belongs to tenant
+      const [existingActivation] = await db
         .select()
-        .from(customSalaryComponents)
+        .from(tenantSalaryComponentActivations)
         .where(
           and(
-            eq(customSalaryComponents.id, componentId),
-            eq(customSalaryComponents.tenantId, tenantId)
+            eq(tenantSalaryComponentActivations.id, componentId),
+            eq(tenantSalaryComponentActivations.tenantId, tenantId)
           )
         )
         .limit(1);
 
-      if (!existing) {
+      if (!existingActivation) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Composant introuvable',
         });
       }
 
-      // Check if formula changed (for version tracking)
-      const oldMetadata = existing.metadata as ComponentMetadata | null;
-      const newMetadata = updates.metadata as ComponentMetadata | undefined;
+      // 2. Fetch template to get compliance rules
+      const [template] = await db
+        .select()
+        .from(salaryComponentTemplates)
+        .where(eq(salaryComponentTemplates.code, existingActivation.templateCode))
+        .limit(1);
 
-      const oldFormula = oldMetadata?.calculationRule;
-      const newFormula = newMetadata?.calculationRule;
+      if (!template) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Template introuvable',
+        });
+      }
+
+      // 3. Validate that metadata updates only contain customizable fields
+      if (updates.metadata) {
+        const validationResult = await complianceValidator.validateComponent(
+          existingActivation.templateCode,
+          template.countryCode,
+          { metadata: updates.metadata }
+        );
+
+        if (!validationResult.valid) {
+          const firstViolation = validationResult.violations[0];
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: firstViolation.error,
+            cause: {
+              violations: validationResult.violations,
+              legalReference: firstViolation.legalReference,
+            },
+          });
+        }
+      }
+
+      // 4. Check if formula changed (for version tracking)
+      const oldOverrides = existingActivation.overrides as Record<string, any>;
+      const newOverrides = updates.metadata as Record<string, any> | undefined;
+
+      const oldFormula = oldOverrides?.calculationRule;
+      const newFormula = newOverrides?.calculationRule;
 
       const formulaChanged =
         newFormula &&
         JSON.stringify(oldFormula) !== JSON.stringify(newFormula);
 
-      // Update the component
-      const [updated] = await db
-        .update(customSalaryComponents)
+      // 5. Update activation
+      const [updatedActivation] = await db
+        .update(tenantSalaryComponentActivations)
         .set({
-          ...updates,
-          metadata: updates.metadata as ComponentMetadata | undefined,
+          overrides: updates.metadata || existingActivation.overrides,
+          customName: updates.name || existingActivation.customName,
+          isActive: updates.isActive ?? existingActivation.isActive,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(customSalaryComponents.id, componentId))
+        .where(eq(tenantSalaryComponentActivations.id, componentId))
         .returning();
 
-      // Create formula version if formula changed
+      // 6. Create formula version if formula changed
       if (formulaChanged && newFormula && userId) {
         try {
           await createFormulaVersion({
@@ -430,11 +501,16 @@ export const salaryComponentsRouter = createTRPCRouter({
           });
         } catch (error) {
           console.error('Error creating formula version:', error);
-          // Don't fail the update if version creation fails (non-critical)
         }
       }
 
-      return updated as CustomSalaryComponent;
+      // 7. Return merged component (for UI)
+      const merged = mergeTemplateWithOverrides(
+        template as unknown as TemplateMergerTemplate,
+        updatedActivation as unknown as TenantActivation
+      );
+
+      return merged as unknown as CustomSalaryComponent;
     }),
 
   /**
