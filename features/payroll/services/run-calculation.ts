@@ -23,6 +23,7 @@ import type { PayrollRunSummary } from '../types';
 
 export interface CreatePayrollRunInput {
   tenantId: string;
+  countryCode: string;
   periodStart: Date;
   periodEnd: Date;
   paymentDate: Date;
@@ -81,6 +82,14 @@ export async function createPayrollRun(
   // Generate run number
   const runNumber = `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`;
 
+  // Validate country has payroll config
+  const { ruleLoader } = await import('./rule-loader');
+  try {
+    await ruleLoader.getCountryConfig(input.countryCode);
+  } catch (error) {
+    throw new Error(`Pays ${input.countryCode} n'a pas de configuration de paie valide`);
+  }
+
   // Create run (convert dates to ISO strings for Drizzle date fields)
   const [run] = await db
     .insert(payrollRuns)
@@ -90,7 +99,7 @@ export async function createPayrollRun(
       periodStart: input.periodStart.toISOString().split('T')[0],
       periodEnd: input.periodEnd.toISOString().split('T')[0],
       payDate: input.paymentDate.toISOString().split('T')[0],
-      countryCode: 'CI',
+      countryCode: input.countryCode,
       status: 'draft',
       createdBy: input.createdBy,
     } as any) // Type assertion needed due to Drizzle date field typing
@@ -255,6 +264,10 @@ export async function calculatePayrollRun(
           },
           totalEmployerCost: String(calculation.employerCost),
 
+          // Other taxes
+          totalOtherTaxes: String(calculation.otherTaxesEmployer || 0),
+          otherTaxesDetails: calculation.otherTaxesDetails || [],
+
           // Payment details
           paymentMethod: 'bank_transfer',
           bankAccount: employee.bankAccount,
@@ -304,7 +317,7 @@ export async function calculatePayrollRun(
     await db
       .update(payrollRuns)
       .set({
-        status: 'processing',
+        status: 'calculated',
         processedAt: new Date(),
         totalGross: String(totals.totalGross),
         totalNet: String(totals.totalNet),
