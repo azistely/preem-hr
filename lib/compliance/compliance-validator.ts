@@ -52,6 +52,12 @@ export class ComplianceValidator {
       };
     }
 
+    // 🚨 CRITICAL: Validate forbidden customizations (tax treatment, CNPS)
+    const forbiddenValidation = this.validateForbiddenCustomizations(customization);
+    if (!forbiddenValidation.valid) {
+      return forbiddenValidation;
+    }
+
     // If locked, no customization allowed
     if (templateContext.complianceLevel === 'locked' && customization?.metadata) {
       return {
@@ -67,8 +73,9 @@ export class ComplianceValidator {
       };
     }
 
-    // If freeform, allow everything
+    // If freeform, only allow calculation rule modifications
     if (templateContext.complianceLevel === 'freeform') {
+      // Still enforce forbidden customizations (tax/CNPS already checked above)
       return {
         valid: true,
         violations: [],
@@ -86,6 +93,61 @@ export class ComplianceValidator {
     return {
       valid: true,
       violations: [],
+    };
+  }
+
+  /**
+   * Validate that user is NOT trying to modify forbidden fields
+   *
+   * FORBIDDEN FIELDS (defined by law, not by employer):
+   * - taxTreatment.* (Code Général des Impôts)
+   * - socialSecurityTreatment.* (Décret CNPS)
+   * - category (impacts tax treatment)
+   */
+  private validateForbiddenCustomizations(
+    customization?: ComponentCustomization
+  ): ValidationResult {
+    const violations: ValidationViolation[] = [];
+
+    if (!customization?.metadata) {
+      return { valid: true, violations: [] };
+    }
+
+    const metadata = customization.metadata as any;
+
+    // Check tax treatment modification
+    if (metadata.taxTreatment) {
+      violations.push({
+        field: 'taxTreatment',
+        error: 'Le traitement fiscal est défini par la loi et ne peut pas être modifié',
+        legalReference: 'Code Général des Impôts de Côte d\'Ivoire',
+        severity: 'error',
+      });
+    }
+
+    // Check social security treatment modification
+    if (metadata.socialSecurityTreatment) {
+      violations.push({
+        field: 'socialSecurityTreatment',
+        error: 'Les cotisations sociales sont définies par décret CNPS et ne peuvent pas être modifiées',
+        legalReference: 'Décret CNPS - Caisse Nationale de Prévoyance Sociale',
+        severity: 'error',
+      });
+    }
+
+    // Check category modification
+    if (metadata.category) {
+      violations.push({
+        field: 'category',
+        error: 'La catégorie du composant ne peut pas être modifiée (impacte le traitement fiscal)',
+        legalReference: 'Convention Collective Interprofessionnelle Article 6',
+        severity: 'error',
+      });
+    }
+
+    return {
+      valid: violations.length === 0,
+      violations,
     };
   }
 
