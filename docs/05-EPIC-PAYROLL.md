@@ -1542,4 +1542,407 @@ Before marking this epic complete:
 
 ---
 
+## Multi-Country Architecture Gaps (Identified 2025-10-05)
+
+### 🚨 CRITICAL GAPS
+
+The current implementation has **hardcoded Côte d'Ivoire-specific logic** in UI and export services, violating the multi-country architecture principles. These must be fixed before adding additional countries.
+
+#### **GAP 1: Hardcoded Country Logic in UI**
+
+**Location:** `app/payroll/calculator/page.tsx`, `app/payroll/runs/[id]/page.tsx`
+
+**Problem:**
+- Calculator UI hardcodes CI-specific fields (fiscal parts with CI labels)
+- No dynamic loading of country-specific configuration
+- Country selector is present but non-functional for other countries
+- Missing: Dynamic form fields based on country configuration
+
+**Impact:**
+- Cannot add Senegal/other countries without code changes
+- Violates "Configuration Over Code" principle
+- User experience breaks for non-CI countries
+
+**Required Fix:**
+```typescript
+// BEFORE (Hardcoded CI):
+<SelectItem value="1.0">1.0 - Célibataire</SelectItem>
+<SelectItem value="1.5">1.5 - Marié(e), 1 enfant</SelectItem>
+
+// AFTER (Dynamic from DB):
+{familyDeductionRules.map(rule => (
+  <SelectItem value={rule.fiscal_parts}>{rule.label_fr}</SelectItem>
+))}
+```
+
+#### **GAP 2: Country-Specific Export Services**
+
+**Location:**
+- `features/payroll/services/cnps-export.ts` (CI only)
+- `features/payroll/services/cmu-export.ts` (CI only)
+- `features/payroll/services/etat-301-export.ts` (CI only)
+
+**Problem:**
+- All export services are hardcoded for Côte d'Ivoire
+- CNPS ceiling: Hardcoded 1,647,315 FCFA (should be from DB)
+- CMU rates: Hardcoded 1,000/500/5,000 FCFA (should be from DB)
+- Tax column names: French only, CI-specific terminology
+- No abstraction layer for country-specific exports
+
+**Impact:**
+- Cannot generate exports for Senegal (CSS, not CNPS)
+- Cannot generate exports for other countries
+- Adding new country = writing new export files (code change)
+
+**Required Fix:**
+1. Create abstract `PayrollExportService` interface
+2. Implement country-specific export strategies (Factory pattern)
+3. Load all rates/ceilings from database configuration
+4. Use `other_taxes` table for country-specific tax exports
+
+#### **GAP 3: Hardcoded Rates in Export Services**
+
+**Location:** All export services
+
+**Problems:**
+- `CNPS_SALARY_CAP = 1647315` (should be from `social_security_schemes.salary_ceiling`)
+- `PENSION_EMPLOYEE: 0.063` (should be from `contribution_types.employee_rate`)
+- `PENSION_EMPLOYER: 0.077` (should be from `contribution_types.employer_rate`)
+- `CMU_RATES` object (should be from `other_taxes` table or `contribution_types`)
+
+**Impact:**
+- Rate changes require code deployment
+- Cannot handle historical rate changes
+- Multi-country support impossible
+
+**Required Fix:**
+```typescript
+// Load rates from DB
+const scheme = await getSocialScheme(countryCode, effectiveDate);
+const pensionContribution = scheme.contributionTypes.find(ct => ct.code === 'pension');
+const PENSION_EMPLOYEE = pensionContribution.employee_rate;
+const PENSION_EMPLOYER = pensionContribution.employer_rate;
+const SALARY_CAP = scheme.salary_ceiling;
+```
+
+#### **GAP 4: Missing Export Template System**
+
+**Problem:**
+- No abstraction for government portal-specific CSV/Excel templates
+- Each country has different portals with unique formats:
+  - **CI**: CNPS portal, CMU portal, DGI portal, each with specific column headers
+  - **SN**: CSS portal, IPM portal, CFCE portal, each with different formats
+  - **BF**: CNSS portal, etc.
+- Each bank has its own transfer file format:
+  - **CI**: BICICI, SGBCI, Ecobank, BOA - all different CSV formats
+  - **SN**: CBAO, SGBS, etc. - different formats
+- Hardcoded templates cannot scale
+
+**Critical Insight:**
+Government portals and banks frequently change their import formats. The system must:
+1. Store templates as configuration (not code)
+2. Allow super admins to update templates without deployments
+3. Map payroll data to template columns dynamically
+
+**Required Implementation:**
+
+**Database Schema for Export Templates:**
+```sql
+-- Export template definitions
+CREATE TABLE export_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country_code TEXT NOT NULL REFERENCES countries(code),
+  template_type TEXT NOT NULL, -- 'social_security', 'tax', 'health', 'training_tax', 'bank_transfer'
+  provider_code TEXT NOT NULL, -- 'cnps', 'css', 'bicici', 'sgbci', 'ecobank', etc.
+  provider_name TEXT NOT NULL,
+  file_format TEXT NOT NULL, -- 'csv', 'xlsx', 'txt', 'xml'
+
+  -- Template structure
+  columns JSONB NOT NULL, -- Array of column definitions
+  headers JSONB, -- Optional header rows
+  footers JSONB, -- Optional footer rows
+
+  -- Metadata
+  version TEXT NOT NULL DEFAULT '1.0',
+  effective_from DATE NOT NULL DEFAULT CURRENT_DATE,
+  effective_to DATE,
+  is_active BOOLEAN DEFAULT true,
+
+  -- Documentation
+  description TEXT,
+  portal_url TEXT,
+  documentation_url TEXT,
+  sample_file_url TEXT,
+
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- Column mapping (payroll field → template column)
+-- Stored in JSONB columns field:
+{
+  "columns": [
+    {
+      "position": 1,
+      "name": "N°",
+      "source_field": "row_number",
+      "data_type": "integer",
+      "required": true
+    },
+    {
+      "position": 2,
+      "name": "Matricule CNPS",
+      "source_field": "employee.social_security_number",
+      "data_type": "string",
+      "required": true,
+      "validation": "regex:^[0-9]{10}$"
+    },
+    {
+      "position": 3,
+      "name": "Nom et Prénoms",
+      "source_field": "employee.full_name",
+      "data_type": "string",
+      "required": true
+    },
+    {
+      "position": 4,
+      "name": "Salaire Brut (FCFA)",
+      "source_field": "payroll.gross_salary",
+      "data_type": "currency",
+      "format": "0",
+      "required": true
+    }
+  ]
+}
+```
+
+**Export Factory with Template Resolution:**
+```typescript
+// features/payroll/services/export-factory.ts
+
+export class PayrollExportFactory {
+  /**
+   * Export with specific template
+   * @param templateType - 'social_security', 'tax', 'health', 'bank_transfer'
+   * @param providerCode - 'cnps', 'bicici', 'sgbci', etc.
+   */
+  static async export(
+    runId: string,
+    countryCode: string,
+    templateType: string,
+    providerCode: string
+  ): Promise<ExportResult> {
+    // 1. Load template from database
+    const template = await this.loadTemplate(countryCode, templateType, providerCode);
+
+    // 2. Load payroll data
+    const payrollData = await this.loadPayrollData(runId);
+
+    // 3. Map data to template columns
+    const mappedData = this.mapDataToTemplate(payrollData, template);
+
+    // 4. Generate file (CSV/Excel/XML)
+    const file = await this.generateFile(mappedData, template);
+
+    return file;
+  }
+
+  /**
+   * Get available export templates for a country
+   */
+  static async getAvailableTemplates(countryCode: string): Promise<ExportTemplate[]> {
+    return db.query.exportTemplates.findMany({
+      where: and(
+        eq(exportTemplates.countryCode, countryCode),
+        eq(exportTemplates.isActive, true),
+        lte(exportTemplates.effectiveFrom, new Date()),
+        or(
+          isNull(exportTemplates.effectiveTo),
+          gte(exportTemplates.effectiveTo, new Date())
+        )
+      ),
+      orderBy: [asc(exportTemplates.templateType), asc(exportTemplates.providerName)]
+    });
+  }
+}
+```
+
+**UI: Dynamic Export Actions**
+```typescript
+// Load available exports for country
+const { data: availableExports } = api.payroll.getAvailableExports.useQuery({
+  countryCode: run.countryCode
+});
+
+// Render export buttons dynamically
+{availableExports?.map(template => (
+  <Button
+    key={template.id}
+    onClick={() => handleExport(template.templateType, template.providerCode)}
+    variant="outline"
+  >
+    <FileIcon className="h-5 w-5 mr-2" />
+    {template.providerName}
+  </Button>
+))}
+```
+
+**Benefits:**
+1. **No code changes** when government changes portal format
+2. **Bank-agnostic** - add any bank template via admin UI
+3. **Version control** - keep historical templates for past payroll runs
+4. **Self-service** - super admins can add/update templates
+5. **Multi-country ready** - each country has its own template library
+
+#### **GAP 5: Payslip Generator - CI Only**
+
+**Location:** `features/payroll/services/payslip-generator.tsx`
+
+**Problem:**
+- Hardcoded French labels for CI regulations
+- Footer text: "Code du Travail de Côte d'Ivoire"
+- Column headers: CNPS (6.3%), CMU, ITS - all CI-specific
+- No support for other country deduction types
+
+**Impact:**
+- Senegal payslips would show wrong labels (CSS not CNPS)
+- Cannot localize for other French-speaking countries
+- Legal compliance issues for non-CI countries
+
+**Required Fix:**
+1. Load deduction labels from `contribution_types.name_fr`
+2. Load tax labels from `tax_systems.name`
+3. Country-specific footer from `countries.labor_code_reference`
+4. Dynamic sections based on country configuration
+
+#### **GAP 6: Missing Multi-Country UI Features**
+
+**Required Enhancements:**
+
+1. **Country Selector in Payroll Run Creation:**
+   - Currently missing country selection when creating payroll run
+   - Should default to tenant's country but allow override
+   - Should load country-specific validation rules
+
+2. **Dynamic Export Actions:**
+   - Export buttons hardcoded to CI exports (CNPS, CMU, État 301)
+   - Should show country-specific exports:
+     - CI: CNPS, CMU, État 301, FDFP
+     - SN: CSS, IPM, CFCE, 3FPT
+     - BF: CNSS, IUTS, CNIB
+
+3. **Country-Aware Calculator:**
+   - Fiscal parts selector only works for CI
+   - Should load family deduction rules from DB
+   - Should show country-specific allowances
+   - Should display country-specific deduction names
+
+---
+
+### Implementation Plan for Multi-Country Fixes
+
+#### Phase 1: Export Template Infrastructure (Week 1-2)
+- [ ] Create `export_templates` database table
+- [ ] Create `ExportTemplateMapper` service for dynamic column mapping
+- [ ] Create `ExportFileGenerator` service (CSV, Excel, XML)
+- [ ] Build super admin UI for template management
+- [ ] Migrate existing CI templates (CNPS, CMU, État 301) to database
+
+#### Phase 2: Database-Driven Calculations (Week 3)
+- [ ] Create `RuleLoader` service (as per Epic Story 0.1)
+- [ ] Refactor calculation services to load rates from DB
+- [ ] Remove all hardcoded rates and ceilings
+- [ ] Test with CI data to ensure no regression
+
+#### Phase 3: Dynamic UI (Week 4)
+- [ ] Load family deduction rules dynamically in calculator
+- [ ] Country selector in payroll run creation
+- [ ] Dynamic export buttons (load from available templates)
+- [ ] Country-aware payslip generator with dynamic labels
+
+#### Phase 4: Bank Transfer Templates (Week 5)
+- [ ] Add bank transfer templates for CI banks (BICICI, SGBCI, Ecobank, BOA)
+- [ ] Create bank template selector UI
+- [ ] Implement standard SEPA/SWIFT export option
+- [ ] Test with multiple bank formats
+
+#### Phase 5: Second Country - Senegal (Week 6)
+- [ ] Seed Senegal payroll configuration (CSS, IPM, CFCE, 3FPT)
+- [ ] Add Senegal export templates (CSS portal, CBAO bank, etc.)
+- [ ] Test end-to-end payroll for SN
+- [ ] Validate exports match Senegal government/bank requirements
+
+---
+
+### Success Criteria (Multi-Country Ready)
+
+Before adding a new country, verify:
+- [ ] No hardcoded rates in any service
+- [ ] All calculations use database-loaded rules
+- [ ] Export templates stored in database (not code)
+- [ ] UI dynamically adapts to country config
+- [ ] Export buttons load from available templates
+- [ ] Payslips show country-specific labels
+- [ ] Bank transfers support multiple banks per country
+- [ ] Super admin can add/update export templates without deployment
+- [ ] Adding new country = database seed + template upload only (no code changes)
+
+### Real-World Export Template Examples
+
+#### Example 1: CNPS Portal (Côte d'Ivoire)
+```json
+{
+  "template_type": "social_security",
+  "provider_code": "cnps_ci",
+  "provider_name": "CNPS Côte d'Ivoire",
+  "file_format": "xlsx",
+  "columns": [
+    {"position": 1, "name": "N°", "source_field": "row_number", "data_type": "integer"},
+    {"position": 2, "name": "Matricule CNPS", "source_field": "employee.cnps_number", "required": true},
+    {"position": 3, "name": "Nom et Prénoms", "source_field": "employee.full_name", "required": true},
+    {"position": 4, "name": "Salaire Brut", "source_field": "payroll.gross_salary", "data_type": "currency"},
+    {"position": 5, "name": "Cotisation Retraite Salarié", "source_field": "calculated.cnps_pension_employee"},
+    {"position": 6, "name": "Cotisation Retraite Patronale", "source_field": "calculated.cnps_pension_employer"}
+  ],
+  "portal_url": "https://cnps.ci/portail-employeur"
+}
+```
+
+#### Example 2: BICICI Bank Transfer (Côte d'Ivoire)
+```json
+{
+  "template_type": "bank_transfer",
+  "provider_code": "bicici",
+  "provider_name": "BICICI",
+  "file_format": "csv",
+  "delimiter": ";",
+  "columns": [
+    {"position": 1, "name": "COMPTE DEBITEUR", "source_field": "company.bank_account", "fixed_value": true},
+    {"position": 2, "name": "COMPTE CREDITEUR", "source_field": "employee.bank_account", "required": true},
+    {"position": 3, "name": "MONTANT", "source_field": "payroll.net_salary", "data_type": "currency", "format": "0.00"},
+    {"position": 4, "name": "REFERENCE", "source_field": "payroll.reference"},
+    {"position": 5, "name": "MOTIF", "source_field": "constant", "default_value": "SALAIRE"}
+  ]
+}
+```
+
+#### Example 3: CSS Portal (Sénégal)
+```json
+{
+  "template_type": "social_security",
+  "provider_code": "css_sn",
+  "provider_name": "CSS Sénégal",
+  "file_format": "csv",
+  "columns": [
+    {"position": 1, "name": "Numéro CSS", "source_field": "employee.css_number", "required": true},
+    {"position": 2, "name": "Nom Complet", "source_field": "employee.full_name"},
+    {"position": 3, "name": "Salaire Brut", "source_field": "payroll.gross_salary"},
+    {"position": 4, "name": "Cotisation Salarié", "source_field": "calculated.css_employee"},
+    {"position": 5, "name": "Cotisation Patronale", "source_field": "calculated.css_employer"}
+  ]
+}
+```
+
+---
+
 **Next:** Read `06-EPIC-EMPLOYEE-MANAGEMENT.md`
