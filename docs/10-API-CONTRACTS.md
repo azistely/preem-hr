@@ -335,6 +335,41 @@ export const payrollRouter = router({
       // Returns: GrossSalaryCalculation
     }),
 
+  /**
+   * Calculate payroll (Multi-Country V2)
+   * @access Protected
+   * @description Database-driven calculation supporting multiple countries
+   */
+  calculateV2: protectedProcedure
+    .input(z.object({
+      employeeId: z.string().uuid(),
+      countryCode: z.string().length(2), // 'CI', 'SN', etc.
+      periodStart: z.date(),
+      periodEnd: z.date(),
+      baseSalary: z.number().min(0),
+      housingAllowance: z.number().min(0).optional(),
+      transportAllowance: z.number().min(0).optional(),
+      mealAllowance: z.number().min(0).optional(),
+      fiscalParts: z.number().min(1.0).max(5.0).default(1.0), // Family deductions
+      sectorCode: z.string().optional(), // 'services', 'construction', etc.
+    }))
+    .query(async ({ input, ctx }) => {
+      // Returns: PayrollCalculationResult
+    }),
+
+  /**
+   * Get family deductions for a country
+   * @access Protected
+   * @description Returns fiscal parts and deduction amounts for a country
+   */
+  getFamilyDeductions: protectedProcedure
+    .input(z.object({
+      countryCode: z.string().length(2),
+    }))
+    .query(async ({ input, ctx }) => {
+      // Returns: FamilyDeduction[]
+    }),
+
   // ========================================
   // Mutations
   // ========================================
@@ -953,6 +988,309 @@ try {
     message: 'Une erreur est survenue',
   });
 }
+```
+
+---
+
+## 9. Multi-Country Payroll API
+
+### 9.1 Overview
+
+The multi-country payroll system uses **database-driven configuration** instead of hardcoded values. All tax brackets, social security rates, and contribution rules are stored in the database and loaded dynamically based on country code and effective date.
+
+### 9.2 Supported Countries
+
+| Country | Code | Tax System | Social Security | Status |
+|---------|------|------------|-----------------|--------|
+| Côte d'Ivoire | `CI` | ITS (Impôt sur Traitements et Salaires) | CNPS + CMU | ✅ Active |
+| Sénégal | `SN` | IRPP (Impôt sur le Revenu) | CSS (IPRESS + Retraite) | ✅ Active |
+| Burkina Faso | `BF` | IUTS | CNSS | 🚧 Planned |
+
+### 9.3 Country-Specific Calculation Details
+
+#### 9.3.1 Côte d'Ivoire (CI)
+
+**Tax System (ITS)**
+- Progressive monthly tax with 5 brackets
+- Family deductions supported (1.0 - 2.5 parts)
+- Calculated on: Gross - Employee Contributions
+
+**Social Security (CNPS + CMU)**
+```typescript
+// Employee Contributions
+CNPS Retraite: 6.3% of gross (no ceiling)
+CMU: 1,000 FCFA fixed (+ 4,500 if family)
+
+// Employer Contributions
+CNPS Retraite: 7.7% of gross
+CNPS Prestations Familiales: 5.75% of 70,000 FCFA (salaire catégoriel)
+CNPS Accidents du Travail: Varies by sector (2-5% of 70,000 FCFA)
+CMU: 500 FCFA (+ 4,500 if family)
+
+// Other Taxes
+FDFP (training): 1.2% of gross (employer)
+3FPT: 0.4% of gross (employer)
+```
+
+**Example:**
+```typescript
+const result = await api.payroll.calculateV2.useQuery({
+  employeeId: 'emp-123',
+  countryCode: 'CI',
+  periodStart: new Date('2025-01-01'),
+  periodEnd: new Date('2025-01-31'),
+  baseSalary: 400000,
+  housingAllowance: 100000,
+  fiscalParts: 2.0, // Married
+  sectorCode: 'construction', // Higher work accident rate
+});
+
+// Returns:
+{
+  grossSalary: 500000,
+  cnpsEmployee: 31500,  // 6.3% of 500k
+  cmuEmployee: 1000,
+  its: 115371,          // After family deduction
+  netSalary: 352129,
+  cnpsEmployer: 42000,  // 7.7% + 5.75% + 5% (construction)
+  cmuEmployer: 5000,    // With family
+  employerCost: 553500,
+}
+```
+
+#### 9.3.2 Sénégal (SN)
+
+**Tax System (IRPP)**
+- Progressive monthly tax with 6 brackets
+- Family deductions supported (1.0 - 2.5 parts)
+- Calculated on: Gross - Employee Contributions
+
+**Social Security (CSS)**
+```typescript
+// Employee Contributions
+CSS Retraite: 5.6% of gross (ceiling: 360,000 FCFA)
+IPRESS (health): 0%
+
+// Employer Contributions
+CSS Retraite: 8.4% of gross (ceiling: 360,000 FCFA)
+CSS Prestations Familiales (PF): 7% of gross (no ceiling)
+CSS Accidents du Travail (AT): 1% of gross (no ceiling)
+IPRESS (health): 5% of gross (no ceiling)
+
+// Other Taxes
+CFCE (training): 3% of gross (employer)
+```
+
+**Salary Ceiling Example:**
+```typescript
+// For 500,000 FCFA gross salary:
+const result = await api.payroll.calculateV2.useQuery({
+  employeeId: 'emp-456',
+  countryCode: 'SN',
+  baseSalary: 500000,
+  fiscalParts: 1.0,
+});
+
+// Social Security Calculation:
+// Employee:
+//   CSS Retraite: 5.6% of 360,000 (ceiling) = 20,160
+//   IPRESS: 0
+// Employer:
+//   CSS Retraite: 8.4% of 360,000 (ceiling) = 30,240
+//   PF: 7% of 500,000 (no ceiling) = 35,000
+//   AT: 1% of 500,000 (no ceiling) = 5,000
+//   IPRESS: 5% of 500,000 (no ceiling) = 25,000
+
+// Returns:
+{
+  cnpsEmployee: 20160,  // Retirement only (capped)
+  cmuEmployee: 0,       // No employee health contribution
+  cnpsEmployer: 70240,  // Retraite + PF + AT
+  cmuEmployer: 25000,   // IPRESS
+  otherTaxesEmployer: 15000, // CFCE 3%
+}
+```
+
+### 9.4 Pattern-Based Contribution Matching
+
+The system uses **pattern-based code matching** to categorize contributions, making it country-agnostic:
+
+```typescript
+// Retirement/Pension → cnpsEmployee/cnpsEmployer
+Matches: 'pension', 'retraite', 'retirement'
+Examples: CI: 'pension', SN: 'RETRAITE'
+
+// Health/Medical → cmuEmployee/cmuEmployer
+Matches: 'health', 'medical', 'ipress', 'maladie'
+Examples: CI: 'cmu', SN: 'IPRESS'
+
+// Family/Accidents → cnpsEmployer (usually employer-only)
+Matches: 'family', 'familial', 'pf', 'work_accident', 'accident', 'at'
+Examples: CI: 'family_benefits', SN: 'PF', 'AT'
+```
+
+### 9.5 Adding a New Country
+
+To add support for a new country:
+
+1. **Add Country Record**
+```sql
+INSERT INTO countries (code, name, currency_code, region)
+VALUES ('BF', '{"fr": "Burkina Faso"}', 'XOF', 'west_africa');
+```
+
+2. **Add Tax System**
+```sql
+INSERT INTO tax_systems (
+  country_code, name, display_name,
+  calculation_method, supports_family_deductions,
+  effective_from
+) VALUES (
+  'BF', 'IUTS',
+  '{"fr": "Impôt Unique sur Traitements et Salaires"}',
+  'progressive_monthly', true,
+  '2025-01-01'
+);
+```
+
+3. **Add Tax Brackets**
+```sql
+INSERT INTO tax_brackets (tax_system_id, bracket_order, min_amount, max_amount, rate)
+VALUES
+  (tax_system_id, 1, 0, 30000, 0),
+  (tax_system_id, 2, 30001, 50000, 0.128),
+  -- ... more brackets
+```
+
+4. **Add Social Security Scheme**
+```sql
+INSERT INTO social_security_schemes (
+  country_code, agency_code, agency_name, effective_from
+) VALUES (
+  'BF', 'CNSS',
+  '{"fr": "Caisse Nationale de Sécurité Sociale"}',
+  '2025-01-01'
+);
+```
+
+5. **Add Contribution Types**
+```sql
+INSERT INTO contribution_types (
+  scheme_id, code, name,
+  employee_rate, employer_rate,
+  calculation_base, ceiling_amount
+) VALUES (
+  scheme_id, 'RETRAITE',
+  '{"fr": "Cotisation Retraite"}',
+  0.055, 0.085,
+  'gross_salary', 500000
+);
+```
+
+6. **Test with Calculator**
+```typescript
+const result = await api.payroll.calculateV2.useQuery({
+  countryCode: 'BF',
+  baseSalary: 300000,
+  fiscalParts: 1.0,
+  // ... rest
+});
+```
+
+### 9.6 Frontend Integration
+
+The frontend dynamically adapts based on selected country:
+
+**Dynamic Labels**
+```typescript
+// app/payroll/calculator/page.tsx
+const getSocialSecurityLabels = (countryCode: string) => {
+  if (countryCode === 'SN') {
+    return {
+      employeeRetirement: 'CSS Retraite (5,6%)',
+      employerRetirement: 'CSS Retraite (8,4%)',
+      taxLabel: 'IRPP (Impôt)',
+    };
+  }
+  // Default: Côte d'Ivoire
+  return {
+    employeeRetirement: 'CNPS Salarié (6,3%)',
+    taxLabel: 'ITS (Impôt)',
+  };
+};
+```
+
+**Country Selector**
+```typescript
+<Select onValueChange={field.onChange}>
+  <SelectItem value="CI">🇨🇮 Côte d'Ivoire</SelectItem>
+  <SelectItem value="SN">🇸🇳 Sénégal</SelectItem>
+  <SelectItem value="BF" disabled>🇧🇫 Burkina Faso (Bientôt)</SelectItem>
+</Select>
+```
+
+**Family Deductions (Dynamic)**
+```typescript
+const familyDeductions = api.payroll.getFamilyDeductions.useQuery({
+  countryCode: form.watch('countryCode'),
+});
+
+// Renders options like:
+// CI: "1.0 - Célibataire", "2.0 - Marié(e)", "2.5 - Marié(e) + 2 enfants"
+// SN: "1.0 - Une part", "2.0 - Deux parts", etc.
+```
+
+### 9.7 Testing Multi-Country Calculations
+
+Automated tests verify calculations for each country:
+
+```typescript
+describe('Multi-Country Tests', () => {
+  it('should calculate Senegal payroll with correct CSS contributions', async () => {
+    const result = await calculatePayrollV2({
+      countryCode: 'SN',
+      baseSalary: 360000,
+      fiscalParts: 1.0,
+      sectorCode: 'services',
+    });
+
+    // CSS Retirement (at ceiling)
+    expect(result.cnpsEmployee).toBe(20160); // 5.6% of 360k
+    expect(result.cnpsEmployer).toBe(59040); // Retraite + PF + AT
+
+    // CSS IPRESS (no ceiling)
+    expect(result.cmuEmployer).toBe(18000); // 5% of 360k
+  });
+
+  it('should show different contributions for CI vs SN', async () => {
+    const ci = await calculatePayrollV2({ countryCode: 'CI', baseSalary: 400000 });
+    const sn = await calculatePayrollV2({ countryCode: 'SN', baseSalary: 400000 });
+
+    // Different employee rates
+    expect(ci.cnpsEmployee).toBe(25200); // 6.3% CI
+    expect(sn.cnpsEmployee).toBe(20160); // 5.6% SN (capped at 360k)
+  });
+});
+```
+
+### 9.8 Error Handling
+
+**Unsupported Country**
+```typescript
+try {
+  const result = await api.payroll.calculateV2.useQuery({
+    countryCode: 'XX', // Invalid
+    baseSalary: 300000,
+  });
+} catch (error) {
+  // Error: "No payroll configuration found for country XX"
+}
+```
+
+**Missing Configuration**
+```typescript
+// If tax system exists but contribution types missing:
+// Error: "No social security scheme found for country BF on date 2025-01-01"
 ```
 
 ---

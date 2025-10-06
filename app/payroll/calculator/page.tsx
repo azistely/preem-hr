@@ -90,6 +90,29 @@ export default function PayrollCalculatorPage() {
     return new Intl.NumberFormat('fr-FR').format(Math.round(amount));
   };
 
+  // Get country-specific labels for social security
+  const getSocialSecurityLabels = (countryCode: string) => {
+    if (countryCode === 'SN') {
+      return {
+        employeeRetirement: 'CSS Retraite (5,6%)',
+        employerRetirement: 'CSS Retraite (8,4%)',
+        employeeHealth: 'CSS IPRESS',
+        employerHealth: 'CSS IPRESS (5%)',
+        taxLabel: 'IRPP (Impôt)',
+      };
+    }
+    // Default: Côte d'Ivoire
+    return {
+      employeeRetirement: 'CNPS Salarié (6,3%)',
+      employerRetirement: 'CNPS Employeur (7,7%)',
+      employeeHealth: 'CMU Salarié',
+      employerHealth: 'CMU Employeur',
+      taxLabel: 'ITS (Impôt)',
+    };
+  };
+
+  const labels = getSocialSecurityLabels(form.watch('countryCode') || 'CI');
+
   const onSubmit = (values: FormValues) => {
     // Trigger calculation by enabling the query
     calculate.refetch();
@@ -130,7 +153,7 @@ export default function PayrollCalculatorPage() {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="CI">🇨🇮 Côte d'Ivoire</SelectItem>
-                          <SelectItem value="SN" disabled>🇸🇳 Sénégal (Bientôt)</SelectItem>
+                          <SelectItem value="SN">🇸🇳 Sénégal</SelectItem>
                           <SelectItem value="BF" disabled>🇧🇫 Burkina Faso (Bientôt)</SelectItem>
                         </SelectContent>
                       </Select>
@@ -355,19 +378,19 @@ export default function PayrollCalculatorPage() {
                         <div className="font-medium mb-2">Détails des déductions</div>
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between">
-                            <span>{t.cnpsEmployee}</span>
+                            <span>{labels.employeeRetirement}</span>
                             <span className="font-mono">
                               -{formatCurrency(calculate.data.cnpsEmployee)} {fr.payroll.fcfa}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span>{t.cmuEmployee}</span>
+                            <span>{labels.employeeHealth}</span>
                             <span className="font-mono">
                               -{formatCurrency(calculate.data.cmuEmployee)} {fr.payroll.fcfa}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span>{t.its}</span>
+                            <span>{labels.taxLabel}</span>
                             <span className="font-mono">
                               -{formatCurrency(calculate.data.its)} {fr.payroll.fcfa}
                             </span>
@@ -387,13 +410,13 @@ export default function PayrollCalculatorPage() {
                         <div className="font-medium mb-2">{t.employerCost}</div>
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between">
-                            <span>{t.cnpsEmployer}</span>
+                            <span>{labels.employerRetirement}</span>
                             <span className="font-mono">
                               +{formatCurrency(calculate.data.cnpsEmployer)} {fr.payroll.fcfa}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span>{t.cmuEmployer}</span>
+                            <span>{labels.employerHealth}</span>
                             <span className="font-mono">
                               +{formatCurrency(calculate.data.cmuEmployer)} {fr.payroll.fcfa}
                             </span>
