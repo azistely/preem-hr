@@ -424,6 +424,7 @@ export const employeeSalaries = pgTable("employee_salaries", {
 	transportAllowance: numeric("transport_allowance", { precision: 15, scale:  2 }).default('0'),
 	mealAllowance: numeric("meal_allowance", { precision: 15, scale:  2 }).default('0'),
 	otherAllowances: jsonb("other_allowances").default([]),
+	components: jsonb().default([]).notNull(),
 }, (table) => [
 	index("idx_employee_salaries_active").using("btree", table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")).where(sql`(effective_to IS NULL)`),
 	index("idx_employee_salaries_effective_dates").using("btree", table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")),
@@ -805,6 +806,118 @@ export const salaryComponentDefinitions = pgTable("salary_component_definitions"
 	check("chk_category", sql`(category)::text = ANY ((ARRAY['allowance'::character varying, 'bonus'::character varying, 'deduction'::character varying])::text[])`),
 ]);
 
+export const salaryComponentTemplates = pgTable("salary_component_templates", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	code: varchar({ length: 50 }).notNull(),
+	name: jsonb().notNull(),
+	description: text(),
+	category: varchar({ length: 50 }).notNull(),
+	metadata: jsonb().default({}).notNull(),
+	suggestedAmount: numeric("suggested_amount", { precision: 15, scale: 2 }),
+	isPopular: boolean("is_popular").default(false).notNull(),
+	displayOrder: integer("display_order").default(0).notNull(),
+	// Compliance fields
+	complianceLevel: text("compliance_level").default('freeform'),
+	legalReference: text("legal_reference"),
+	customizableFields: jsonb("customizable_fields").default([]).notNull(),
+	canDeactivate: boolean("can_deactivate").default(true).notNull(),
+	canModify: boolean("can_modify").default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_salary_templates_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),
+	index("idx_salary_templates_popular").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.isPopular.asc().nullsLast().op("bool_ops")).where(sql`(is_popular = true)`),
+	index("idx_templates_compliance_level").using("btree", table.complianceLevel.asc().nullsLast().op("text_ops"), table.countryCode.asc().nullsLast().op("text_ops"), table.isPopular.asc().nullsLast().op("bool_ops")),
+	index("idx_templates_legal_ref").using("btree", table.legalReference.asc().nullsLast().op("text_ops")).where(sql`(legal_reference IS NOT NULL)`),
+	foreignKey({
+			columns: [table.countryCode],
+			foreignColumns: [countries.code],
+			name: "salary_component_templates_country_code_fkey"
+		}),
+	unique("salary_component_templates_country_code_code_key").on(table.countryCode, table.code),
+	check("chk_template_category", sql`(category)::text = ANY ((ARRAY['allowance'::character varying, 'bonus'::character varying, 'deduction'::character varying])::text[])`),
+	check("chk_compliance_level", sql`(compliance_level)::text = ANY ((ARRAY['locked'::text, 'configurable'::text, 'freeform'::text]))`),
+]);
+
+export const sectorConfigurations = pgTable("sector_configurations", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	sectorCode: varchar("sector_code", { length: 50 }).notNull(),
+	name: jsonb().notNull(),
+	workAccidentRate: numeric("work_accident_rate", { precision: 6, scale: 4 }).notNull(),
+	defaultComponents: jsonb("default_components").default({}).notNull(),
+	smartDefaults: jsonb("smart_defaults").default({}).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_sector_configs_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.countryCode],
+			foreignColumns: [countries.code],
+			name: "sector_configurations_country_code_fkey"
+		}),
+	unique("sector_configurations_country_code_sector_code_key").on(table.countryCode, table.sectorCode),
+]);
+
+export const customSalaryComponents = pgTable("custom_salary_components", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	code: varchar({ length: 50 }).notNull(),
+	name: text().notNull(),
+	description: text(),
+	templateCode: varchar("template_code", { length: 50 }),
+	metadata: jsonb().default({}).notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	displayOrder: integer("display_order").default(0).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+}, (table) => [
+	index("idx_custom_components_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_custom_components_active").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.isActive.asc().nullsLast().op("bool_ops")).where(sql`(is_active = true)`),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "custom_salary_components_tenant_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "custom_salary_components_created_by_fkey"
+		}),
+	unique("custom_salary_components_tenant_id_country_code_code_key").on(table.tenantId, table.countryCode, table.code),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
+]);
+
+export const salaryComponentFormulaVersions = pgTable("salary_component_formula_versions", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	componentId: uuid("component_id").notNull(),
+	componentType: text("component_type").notNull(),
+	versionNumber: integer("version_number").notNull(),
+	calculationRule: jsonb("calculation_rule").notNull(),
+	effectiveFrom: date("effective_from").notNull(),
+	effectiveTo: date("effective_to"),
+	changedBy: uuid("changed_by"),
+	changeReason: text("change_reason"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_formula_active_at").using("btree", table.componentId.asc().nullsLast().op("uuid_ops"), table.componentType.asc().nullsLast().op("text_ops"), table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")).where(sql`(effective_to IS NULL OR effective_to >= CURRENT_DATE)`),
+	index("idx_formula_component_history").using("btree", table.componentId.asc().nullsLast().op("uuid_ops"), table.componentType.asc().nullsLast().op("text_ops"), table.versionNumber.desc().nullsLast().op("int4_ops")),
+	index("idx_formula_audit").using("btree", table.changedBy.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.changedBy],
+			foreignColumns: [users.id],
+			name: "salary_component_formula_versions_changed_by_fkey"
+		}),
+	unique("unique_version").on(table.componentId, table.componentType, table.versionNumber),
+	check("component_type_check", sql`component_type IN ('standard', 'custom')`),
+	check("valid_date_range", sql`effective_to IS NULL OR effective_to >= effective_from`),
+	pgPolicy("Tenants can view their component formula versions", { as: "permissive", for: "select", to: ["public"], using: sql`((component_type = 'custom' AND component_id IN (SELECT id FROM custom_salary_components WHERE tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)) OR component_type = 'standard')` }),
+	pgPolicy("Authenticated users can create formula versions", { as: "permissive", for: "insert", to: ["public"], withCheck: sql`auth.role() = 'authenticated'` }),
+]);
+
 export const exportTemplates = pgTable("export_templates", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	countryCode: varchar("country_code", { length: 2 }).notNull(),
@@ -1124,6 +1237,31 @@ export const workflowInstances = pgTable("workflow_instances", {
 		}),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
 	check("valid_status_workflow", sql`status = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])`),
+]);
+
+export const complianceRules = pgTable("compliance_rules", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: text("country_code").notNull(),
+	ruleType: text("rule_type").notNull(),
+	isMandatory: boolean("is_mandatory").default(true).notNull(),
+	canExceed: boolean("can_exceed").default(false),
+	legalReference: text("legal_reference").notNull(),
+	validationLogic: jsonb("validation_logic").notNull(),
+	effectiveFrom: date("effective_from").notNull(),
+	effectiveTo: date("effective_to"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_compliance_rules_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")),
+	index("idx_compliance_rules_type").using("btree", table.ruleType.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.countryCode],
+			foreignColumns: [countries.code],
+			name: "compliance_rules_country_code_fkey"
+		}),
+	pgPolicy("public_read_compliance_rules", { as: "permissive", for: "select", to: ["authenticated"], using: sql`true`  }),
+	pgPolicy("super_admins_manage_compliance_rules", { as: "permissive", for: "all", to: ["authenticated"], using: sql`EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'super_admin'::text)`, withCheck: sql`EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'super_admin'::text)`  }),
+	check("valid_rule_type", sql`rule_type = ANY (ARRAY['minimum_wage'::text, 'seniority_bonus'::text, 'notice_period'::text, 'severance'::text, 'annual_leave'::text, 'maternity_leave'::text, 'overtime_rate'::text, 'transport_exemption'::text, 'housing_allowance_range'::text, 'hazard_pay_range'::text])`),
 ]);
 
 // PostGIS system views - NOT EXPORTED
