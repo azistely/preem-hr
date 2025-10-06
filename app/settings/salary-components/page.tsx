@@ -79,12 +79,6 @@ export default function SalaryComponentsPage() {
           <Sparkles className="mr-2 h-5 w-5" />
           Ajouter depuis le catalogue
         </Button>
-        <Link href="/settings/salary-components/new">
-          <Button variant="outline" className="min-h-[48px]">
-            <Plus className="mr-2 h-5 w-5" />
-            Créer un composant personnalisé
-          </Button>
-        </Link>
       </div>
 
       {/* Tabs */}
@@ -149,19 +143,13 @@ export default function SalaryComponentsPage() {
                   <Settings2 className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">Aucun composant personnalisé</h3>
                   <p className="text-muted-foreground mb-4">
-                    Ajoutez des composants depuis le catalogue ou créez-en de nouveaux
+                    Tous les composants doivent être ajoutés depuis le catalogue pour garantir la conformité légale
                   </p>
                   <div className="flex gap-4 justify-center">
                     <Button onClick={() => setShowTemplateDialog(true)} className="min-h-[48px]">
                       <Sparkles className="mr-2 h-5 w-5" />
                       Parcourir le catalogue
                     </Button>
-                    <Link href="/settings/salary-components/new">
-                      <Button variant="outline" className="min-h-[48px]">
-                        <Plus className="mr-2 h-5 w-5" />
-                        Créer un composant
-                      </Button>
-                    </Link>
                   </div>
                 </div>
               </CardContent>
