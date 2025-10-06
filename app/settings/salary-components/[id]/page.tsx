@@ -28,14 +28,14 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Slider } from '@/components/ui/slider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Loader2, Check, Lock, Info, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Loader2, Check, Lock, Info } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { useCustomComponents, useUpdateCustomComponent } from '@/features/employees/hooks/use-salary-components';
 import { ReadOnlyField } from '@/components/salary-components/read-only-field';
+import { DynamicFieldEditor } from '@/components/salary-components/dynamic-field-editor';
 
 // Dynamic form schema based on customizableFields
 const editComponentSchema = z.object({
@@ -220,78 +220,42 @@ export default function EditSalaryComponentPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {hasRateField && (
-                  <FormField
+                  <DynamicFieldEditor
                     control={form.control}
-                    name="rate"
-                    render={({ field }) => {
-                      // Legal bounds for housing allowance (CI labor code)
-                      const minRate = 0.20; // 20%
-                      const maxRate = 0.30; // 30%
-                      const recommendedRate = 0.25; // 25%
-                      const currentRate = field.value || recommendedRate;
-
-                      return (
-                        <FormItem>
-                          <FormLabel className="flex items-center justify-between">
-                            <span>Taux</span>
-                            <span className="text-2xl font-bold text-primary">
-                              {Math.round(currentRate * 100)}%
-                            </span>
-                          </FormLabel>
-                          <FormControl>
-                            <div className="space-y-4 pt-2">
-                              <Slider
-                                min={minRate * 100}
-                                max={maxRate * 100}
-                                step={1}
-                                value={[currentRate * 100]}
-                                onValueChange={(values) => field.onChange(values[0] / 100)}
-                                className="py-4"
-                              />
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Min: {minRate * 100}%</span>
-                                <span className="text-primary font-medium">
-                                  Recommandé: {recommendedRate * 100}%
-                                </span>
-                                <span>Max: {maxRate * 100}%</span>
-                              </div>
-                            </div>
-                          </FormControl>
-                          <FormDescription>
-                            Taux appliqué au salaire de base (Convention Collective Article 20)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      );
+                    fieldName="rate"
+                    config={{
+                      fieldPath: 'calculationRule.rate',
+                      fieldType: 'percentage',
+                      complianceLevel: component.complianceLevel || 'configurable',
+                      legalBounds: component.metadata?.legalBounds?.rate || {
+                        min: 0.20,
+                        max: 0.30,
+                        recommended: 0.25,
+                        legalReference: component.legalReference || 'Convention Collective Article 20',
+                      },
+                      label: 'Taux',
+                      description: 'Taux appliqué au salaire de base',
                     }}
+                    currentValue={component.metadata?.calculationRule?.rate}
+                    isCustomizable={true}
                   />
                 )}
 
                 {hasAmountField && (
-                  <FormField
+                  <DynamicFieldEditor
                     control={form.control}
-                    name="baseAmount"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Montant fixe (FCFA)</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type="number"
-                            min={0}
-                            step={1000}
-                            placeholder="Ex: 50000"
-                            className="min-h-[48px]"
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || undefined)}
-                            value={field.value || ''}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Montant fixe versé à tous les employés
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    fieldName="baseAmount"
+                    config={{
+                      fieldPath: 'calculationRule.baseAmount',
+                      fieldType: 'amount',
+                      complianceLevel: component.complianceLevel || 'configurable',
+                      legalBounds: component.metadata?.legalBounds?.baseAmount,
+                      label: 'Montant fixe',
+                      description: 'Montant fixe versé à tous les employés',
+                      placeholder: 'Ex: 50000',
+                    }}
+                    currentValue={component.metadata?.calculationRule?.baseAmount}
+                    isCustomizable={true}
                   />
                 )}
               </CardContent>
