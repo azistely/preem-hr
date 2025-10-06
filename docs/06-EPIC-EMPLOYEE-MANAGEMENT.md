@@ -1218,6 +1218,556 @@ System stores:    Structured component array in JSONB with component codes
 Payroll uses:     Components with tax treatment flags for accurate calculations
 ```
 
+---
+
+### 🎯 Design Questions & Decisions
+
+#### Q1: Should salary components be multi-country?
+
+**Answer: YES** - Components must be country-specific.
+
+**Rationale:**
+- **Different codes**: CI uses code 22 for transport, SN might use different codes
+- **Different tax treatment**: What's taxable in CI (code 23) may not be in SN
+- **Different legal requirements**: Each country has mandatory components
+- **Example conflict**: "Prime de transport" in CI (code 22, tax-exempt up to 30k) vs SN (different code, different limit)
+
+**Design Decision:**
+```typescript
+// ✅ Custom components are country-specific
+custom_salary_components {
+  tenantId: uuid,
+  countryCode: varchar(2),  // 'CI', 'SN', 'BF', etc.
+  code: varchar(50),
+  // ...
+  UNIQUE(tenantId, countryCode, code)
+}
+```
+
+**Tenant flow:**
+1. Tenant creates custom component → Must specify country
+2. System shows only components for employee's country
+3. Payroll calculates using country-specific rules
+
+---
+
+#### Q2: How do we handle tax treatment?
+
+**Answer: Country-flexible metadata (JSONB) for tax rules**
+
+**Problem:**
+Tax treatment varies **significantly** by country:
+- **CI**: Uses 3 calculation bases (Brut Imposable, Salaire Catégoriel, tax-exempt limits)
+- **BF**: Uses percentage exemptions (housing 20% up to 50k, transport 5% up to 20k)
+- **SN**: Uses 30% standard deduction before tax calculation
+- **Each country**: Different component codes, different calculation logic
+
+**❌ WRONG Approach** (hardcoded CI-specific fields):
+```typescript
+// DON'T DO THIS - Only works for CI
+interface CustomSalaryComponent {
+  isTaxable: boolean;
+  includeInBrutImposable: boolean;  // CI-specific
+  includeInSalaireCategoriel: boolean;  // CI-specific
+}
+```
+
+**✅ CORRECT Approach** (flexible metadata):
+```typescript
+interface CustomSalaryComponent {
+  id: uuid;
+  tenantId: uuid;
+  countryCode: string;  // 'CI', 'SN', 'BF'
+  code: string;
+  name: string;
+
+  // Flexible JSONB for country-specific tax rules
+  metadata: jsonb;
+}
+```
+
+**Metadata Examples by Country:**
+
+**Côte d'Ivoire (CI)**:
+```json
+{
+  "code": "CUSTOM_PHONE",
+  "name": "Indemnité téléphonique",
+  "countryCode": "CI",
+  "metadata": {
+    "taxTreatment": {
+      "isTaxable": true,
+      "includeInBrutImposable": true,
+      "includeInSalaireCategoriel": false
+    }
+  }
+}
+```
+
+**Burkina Faso (BF)** - Uses percentage exemptions:
+```json
+{
+  "code": "CUSTOM_HOUSING",
+  "name": "Indemnité de logement",
+  "countryCode": "BF",
+  "metadata": {
+    "taxTreatment": {
+      "exemptionType": "percentage",
+      "exemptionRate": 0.20,
+      "exemptionCap": 50000
+    }
+  }
+}
+```
+
+**Senegal (SN)** - Different system:
+```json
+{
+  "code": "CUSTOM_BONUS",
+  "name": "Prime de performance",
+  "countryCode": "SN",
+  "metadata": {
+    "taxTreatment": {
+      "includedInGross": true,
+      "subjectToStandardDeduction": true
+    }
+  }
+}
+```
+
+**Payroll calculation flow** (country-aware):
+```typescript
+// Country-specific calculation engines
+const calculateTaxBase = (components: Component[], countryCode: string) => {
+  switch (countryCode) {
+    case 'CI':
+      return calculateCI(components);  // Uses Brut Imposable, Salaire Catégoriel
+    case 'BF':
+      return calculateBF(components);  // Uses percentage exemptions
+    case 'SN':
+      return calculateSN(components);  // Uses 30% standard deduction
+    default:
+      throw new Error(`Unsupported country: ${countryCode}`);
+  }
+};
+
+// CI-specific calculation
+const calculateCI = (components: Component[]) => {
+  const salaireCategoriel = components
+    .filter(c => c.metadata?.taxTreatment?.includeInSalaireCategoriel)
+    .reduce((sum, c) => sum + c.amount, 0);
+
+  const brutImposable = components
+    .filter(c => c.metadata?.taxTreatment?.includeInBrutImposable)
+    .reduce((sum, c) => sum + c.amount, 0);
+
+  return { salaireCategoriel, brutImposable };
+};
+
+// BF-specific calculation
+const calculateBF = (components: Component[]) => {
+  let totalGross = 0;
+  let exemptions = 0;
+
+  for (const comp of components) {
+    totalGross += comp.amount;
+
+    // Apply BF percentage exemptions
+    const treatment = comp.metadata?.taxTreatment;
+    if (treatment?.exemptionType === 'percentage') {
+      const exemptAmount = Math.min(
+        comp.amount * treatment.exemptionRate,
+        treatment.exemptionCap || Infinity
+      );
+      exemptions += exemptAmount;
+    }
+  }
+
+  return { grossSalary: totalGross, exemptions, taxableIncome: totalGross - exemptions };
+};
+```
+
+**Why this matters:**
+- ✅ Supports all West African countries without schema changes
+- ✅ Each country can have unique tax logic
+- ✅ Future-proof for new countries or tax law changes
+- ✅ Tenant can configure custom components per country's rules
+
+---
+
+#### Q3: Standard vs Custom Components?
+
+**Answer: Hybrid system - Standard (predefined) + Custom (tenant-defined)**
+
+**Standard Components** (seeded from `salary_component_definitions`):
+- Pre-configured in database per country
+- Official codes (11, 21, 22, 23, etc.)
+- Tax treatment defined by law
+- **Cannot be modified** by tenant
+- **Example**: Code 11 (Salaire de base) in CI
+
+**Custom Components** (in `custom_salary_components`):
+- Created by tenant admin
+- Custom codes (CUSTOM_001, CUSTOM_002, etc.)
+- Tax treatment **set by tenant**
+- **Example**: "Prime de performance" - tenant decides if taxable
+
+**Why both?**
+1. **Legal compliance**: Standard components ensure correct tax calculations
+2. **Flexibility**: Custom components allow company-specific bonuses
+3. **User experience**: Most users only see standard 4 fields, power users add custom
+
+---
+
+#### Q4: How to handle component codes?
+
+**Answer: Standard codes from database + Auto-generated custom codes**
+
+**Standard codes** (from `salary_component_definitions`):
+```sql
+SELECT code, name, category FROM salary_component_definitions
+WHERE country_code = 'CI';
+
+-- Results:
+-- 11, "Salaire catégoriel"
+-- 21, "Prime d'ancienneté"
+-- 22, "Prime de transport"
+-- 23, "Avantage en nature - Logement"
+```
+
+**Custom codes** (auto-generated):
+```typescript
+// When tenant creates custom component:
+const generateCustomCode = async (tenantId, countryCode) => {
+  const existingCount = await db.query.customSalaryComponents
+    .count({ where: and(eq('tenantId', tenantId), eq('countryCode', countryCode)) });
+
+  return `CUSTOM_${String(existingCount + 1).padStart(3, '0')}`;
+  // → CUSTOM_001, CUSTOM_002, etc.
+};
+```
+
+---
+
+#### Q5: Backward compatibility with existing columns?
+
+**Answer: Dual-write strategy during transition**
+
+**Problem**: Existing code uses `baseSalary`, `housingAllowance`, etc. columns
+
+**Solution**:
+```typescript
+// Phase 1: Write to BOTH old columns AND new components array
+await db.insert(employeeSalaries).values({
+  // OLD FORMAT (backward compat)
+  baseSalary: 300000,
+  housingAllowance: 50000,
+  transportAllowance: 30000,
+
+  // NEW FORMAT (future)
+  components: [
+    { code: "11", amount: 300000, name: "Salaire de base" },
+    { code: "23", amount: 50000, name: "Indemnité de logement" },
+    { code: "22", amount: 30000, name: "Prime de transport" },
+  ]
+});
+
+// Phase 2: Payroll reads from components with fallback
+const getSalaryComponents = (salaryRecord) => {
+  if (salaryRecord.components) {
+    return salaryRecord.components;  // Use new format
+  }
+
+  // Fallback: convert old format to components
+  return [
+    { code: "11", amount: salaryRecord.baseSalary },
+    { code: "23", amount: salaryRecord.housingAllowance || 0 },
+    { code: "22", amount: salaryRecord.transportAllowance || 0 },
+  ].filter(c => c.amount > 0);
+};
+```
+
+---
+
+#### Q6: How to auto-calculate seniority bonus?
+
+**Answer: Calculate on-demand from hire date**
+
+**Seniority formula** (Côte d'Ivoire):
+- 2% of base salary per year of service
+- Max 25% (after 12.5 years)
+- Based on **hire date** to **payroll period end**
+
+**Implementation**:
+```typescript
+const calculateSeniority = (baseSalary: number, hireDate: Date, asOfDate: Date = new Date()) => {
+  const yearsOfService = (asOfDate.getTime() - hireDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+  const seniorityRate = Math.min(yearsOfService * 0.02, 0.25);  // Max 25%
+
+  return {
+    code: "21",
+    amount: Math.round(baseSalary * seniorityRate),
+    name: "Prime d'ancienneté",
+    yearsOfService: Math.floor(yearsOfService * 10) / 10,  // 1 decimal
+    rate: seniorityRate,
+  };
+};
+
+// Usage in payroll:
+const components = salary.components || convertOldFormat(salary);
+const base = components.find(c => c.code === "11");
+const seniority = calculateSeniority(base.amount, employee.hireDate, payrollPeriod.endDate);
+components.push(seniority);  // Add auto-calculated
+```
+
+**Why on-demand?**
+- Always accurate (no stale data)
+- No need to update monthly
+- Survives salary changes (recalculates with new base)
+
+---
+
+### 🎛️ Three-Level Admin Architecture
+
+**Goal:** Make salary components **zero-config** for 95% of users through super admin pre-configuration.
+
+#### Level 1: Super Admin (Anthropic/Preem)
+
+**Responsibilities:**
+- ✅ Seed standard salary components per country (codes 11-41)
+- ✅ Define country-specific tax treatment rules in metadata
+- ✅ Create curated template library of common custom components
+- ✅ Configure sector-specific defaults (work accident rates, common components)
+- ✅ Set smart defaults by country + industry
+
+**Deliverables:**
+1. **Standard Component Seeds** (`salary_component_definitions` table)
+2. **Component Template Library** (`salary_component_templates` table)
+3. **Sector Configurations** (`sector_configurations` table)
+4. **Auto-enable Business Rules** (code-based)
+
+**Examples:**
+
+```sql
+-- Standard components for Côte d'Ivoire
+INSERT INTO salary_component_definitions (country_code, code, name, metadata, is_common) VALUES
+('CI', '11', '{"fr": "Salaire de base"}', '{
+  "taxTreatment": {
+    "isTaxable": true,
+    "includeInBrutImposable": true,
+    "includeInSalaireCategoriel": true
+  },
+  "isRequired": true
+}', true),
+
+('CI', '22', '{"fr": "Prime de transport"}', '{
+  "taxTreatment": {
+    "isTaxable": false,
+    "exemptionCap": 30000
+  }
+}', true);
+
+-- Popular custom component templates
+INSERT INTO salary_component_templates (country_code, code, name, metadata, is_popular) VALUES
+('CI', 'PHONE', '{"fr": "Prime de téléphone"}', '{
+  "taxTreatment": {
+    "isTaxable": true,
+    "includeInBrutImposable": true
+  },
+  "suggestedAmount": 10000
+}', true);
+
+-- Sector configurations
+INSERT INTO sector_configurations (country_code, sector_code, name, work_accident_rate) VALUES
+('CI', 'SERVICES', '{"fr": "Services/Commerce"}', 0.020),
+('CI', 'CONSTRUCTION', '{"fr": "BTP/Construction"}', 0.050);
+```
+
+---
+
+#### Level 2: Tenant Admin (Company HR Director)
+
+**Responsibilities:**
+- ✅ Review and enable/disable standard components (optional)
+- ✅ Add company-specific components from template library (1-click)
+- ✅ Create truly custom components if needed (rare, 3-5 fields)
+- ✅ Set company sector during onboarding
+
+**User Experience:**
+
+```
+┌────────────────────────────────────────────────┐
+│ Company Setup - Step 2: Industry              │
+├────────────────────────────────────────────────┤
+│ ○ Services/Commerce (2% accident rate)        │
+│ ● Agriculture (2.5% accident rate)            │
+│ ○ BTP/Construction (5% accident rate)         │
+│                                                │
+│ ✅ Auto-configured:                           │
+│    - Work accident rate: 2.5%                 │
+│    - Standard components: Base, Transport     │
+│    - Excluded: Meal allowance                 │
+│                                                │
+│ [Continue]                                     │
+└────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────┐
+│ Add Custom Components (Optional)               │
+├────────────────────────────────────────────────┤
+│ Popular for Côte d'Ivoire:                     │
+│                                                │
+│ 📱 Prime de téléphone (10k FCFA)    [Add]    │
+│ 🎯 Prime de performance (25k)       [Add]    │
+│ 🚗 Frais de déplacement             [Add]    │
+│                                                │
+│ [Skip] [Continue]                              │
+└────────────────────────────────────────────────┘
+```
+
+**Effort:** 2-5 minutes during onboarding, zero config for 90% of companies.
+
+---
+
+#### Level 3: HR Manager (Day-to-day operations)
+
+**Responsibilities:**
+- ✅ Hire employees (uses pre-configured components automatically)
+- ✅ Assign enabled custom components to employees (dropdown + amount)
+- ✅ Review and approve auto-suggestions (e.g., seniority eligibility)
+
+**User Experience:**
+
+```
+// Hiring wizard (4 fields, pre-filled with smart defaults)
+┌────────────────────────────────────────────────┐
+│ Salary Information                             │
+├────────────────────────────────────────────────┤
+│ Salaire de base *        150,000 FCFA         │
+│ Indemnité logement        30,000 FCFA         │
+│ Indemnité transport       25,000 FCFA         │
+│ Indemnité repas                0 FCFA         │
+│                                                │
+│ [+ Add Custom Allowance]                       │
+│                                                │
+│ [Previous] [Next]                              │
+└────────────────────────────────────────────────┘
+
+// Adding custom component (dropdown, no tax config)
+┌────────────────────────────────────────────────┐
+│ Select Allowance                               │
+├────────────────────────────────────────────────┤
+│ ┌────────────────────────────────────────────┐ │
+│ │ 📱 Prime de téléphone                     │ │
+│ │ 💼 Prime de responsabilité                │ │
+│ └────────────────────────────────────────────┘ │
+│                                                │
+│ Amount: [10,000] FCFA                         │
+│                                                │
+│ [Cancel] [Add]                                 │
+└────────────────────────────────────────────────┘
+
+// Auto-suggestion notification
+┌────────────────────────────────────────────────┐
+│ 🔔 Notification                                │
+├────────────────────────────────────────────────┤
+│ 📅 Kouam Yao is now eligible for seniority    │
+│    Hired: 2023-09-01 (1 year ago)             │
+│    Suggested: 6,000 FCFA/month                │
+│                                                │
+│    [Enable Automatically] [Dismiss]            │
+└────────────────────────────────────────────────┘
+```
+
+**Effort:** 30 seconds to hire, zero tax knowledge required.
+
+---
+
+#### Auto-Enable Business Rules
+
+**Super admin defines proactive rules:**
+
+```typescript
+// lib/salary-components/auto-enable-rules.ts
+export const AUTO_ENABLE_RULES = {
+  // Seniority: Auto-enable after 1 year
+  seniority: {
+    condition: (employee) => getYearsOfService(employee.hireDate) >= 1,
+    componentCode: '21',
+    notification: 'Employee eligible for seniority bonus (1+ years)',
+    autoCalculate: true
+  },
+
+  // Performance bonus: Suggest for managers
+  performance: {
+    condition: (employee) => employee.position.category === 'manager',
+    componentCode: 'PERFORMANCE',
+    notification: 'Consider adding performance bonus for managers'
+  },
+
+  // Hazard pay: Auto for construction
+  hazardPay: {
+    condition: (employee, tenant) => tenant.sector === 'CONSTRUCTION',
+    componentCode: 'HAZARD_PAY',
+    notification: 'Hazard pay recommended for construction sector'
+  },
+};
+
+// Background job (runs monthly)
+export const checkAutoEnableRules = async () => {
+  for (const employee of await getAllActiveEmployees()) {
+    for (const rule of Object.values(AUTO_ENABLE_RULES)) {
+      if (rule.condition(employee, employee.tenant)) {
+        await createNotification({
+          employeeId: employee.id,
+          message: rule.notification,
+          action: { type: 'enable_component', componentCode: rule.componentCode }
+        });
+      }
+    }
+  }
+};
+```
+
+---
+
+#### Responsibility Matrix
+
+| Task | Super Admin | Tenant Admin | HR Manager |
+|------|-------------|--------------|------------|
+| Seed standard components | ✅ One-time | - | - |
+| Define tax rules | ✅ Per country | - | - |
+| Create template library | ✅ Curated | - | - |
+| Set sector defaults | ✅ Per industry | - | - |
+| Enable/disable components | - | ✅ Optional | - |
+| Add from template | - | ✅ 1-click | - |
+| Create custom component | - | ✅ Rare (3-5 fields) | - |
+| Hire employee | - | - | ✅ 4 fields |
+| Assign custom allowance | - | - | ✅ Dropdown + amount |
+| Review auto-suggestions | - | - | ✅ 1-click approve |
+
+---
+
+#### Implementation Phases
+
+**Phase 1 (MVP):**
+- ✅ Seed standard components for CI
+- ✅ Create 10 popular templates for CI
+- ✅ Auto-inject metadata on hire
+- ✅ Simple 4-field UI
+
+**Phase 2:**
+- ✅ Sector configuration + work accident rates
+- ✅ Smart defaults by country + industry
+- ✅ Template library UI
+- ✅ One-click add from template
+
+**Phase 3:**
+- ✅ Auto-enable rules (seniority, etc.)
+- ✅ Proactive notifications
+- ✅ Multi-country template expansion
+
+---
+
 **Acceptance Criteria:**
 - [ ] Support standard components: Base (code 11), Housing (23), Transport (22), Meal (24), Seniority (21)
 - [ ] Auto-calculate seniority bonus: 2% per year of service, max 25%
@@ -1227,37 +1777,155 @@ Payroll uses:     Components with tax treatment flags for accurate calculations
 - [ ] Keep backward compatibility with existing baseSalary, housingAllowance columns
 - [ ] Use correct calculation bases in payroll: Brut Imposable vs Salaire Catégoriel
 - [ ] Display components on payslip with proper labels
+- [ ] **NEW:** Seed standard components for CI with correct metadata
+- [ ] **NEW:** Create template library with 10+ popular components
+- [ ] **NEW:** Implement sector configurations for auto work accident rates
+- [ ] **NEW:** Build smart defaults by country + industry
+- [ ] **NEW:** Implement auto-enable rules for seniority
+- [ ] **NEW:** Create one-click "add from template" UI
 
 **Data Model:**
 ```typescript
-// Custom component definitions (company templates)
+// 1. Standard component definitions (seeded per country)
+// Table: salary_component_definitions
+interface SalaryComponentDefinition {
+  id: uuid;
+  countryCode: string;  // 'CI', 'SN', 'BF', etc.
+  code: string;  // '11', '21', '22', '23', etc.
+  name: jsonb;  // { "fr": "Salaire catégoriel", "en": "Base salary" }
+  category: 'allowance' | 'bonus' | 'deduction';
+  componentType: string;  // 'base', 'seniority', 'transport', 'housing'
+  isTaxable: boolean;
+  isSubjectToSocialSecurity: boolean;
+  calculationMethod: 'fixed' | 'percentage' | 'formula' | null;
+  defaultValue: number | null;
+  displayOrder: number;
+  isCommon: boolean;  // Show in simple UI
+  metadata: jsonb;  // { includeInBrutImposable: true, includeInSalaireCategoriel: true }
+}
+
+// 2. Component template library (super admin curated, globally available)
+// Table: salary_component_templates
+interface SalaryComponentTemplate {
+  id: uuid;
+  countryCode: string;  // 'CI', 'SN', 'BF'
+  code: string;  // 'PHONE', 'PERFORMANCE', 'RESPONSIBILITY'
+  name: jsonb;  // { "fr": "Prime de téléphone", "en": "Phone allowance" }
+  description: string | null;
+  category: 'allowance' | 'bonus' | 'deduction';
+  metadata: jsonb;  // Country-specific tax rules
+  suggestedAmount: number | null;  // Recommended amount
+  isPopular: boolean;  // Show in "Popular" list
+  displayOrder: number;
+  createdAt: timestamp;
+  updatedAt: timestamp;
+  // UNIQUE(countryCode, code)
+}
+
+// 3. Sector configurations (super admin defined)
+// Table: sector_configurations
+interface SectorConfiguration {
+  id: uuid;
+  countryCode: string;  // 'CI', 'SN', 'BF'
+  sectorCode: string;  // 'SERVICES', 'CONSTRUCTION', 'AGRICULTURE'
+  name: jsonb;  // { "fr": "Services/Commerce", "en": "Services/Commerce" }
+  workAccidentRate: number;  // 0.020 (2%), 0.050 (5%)
+  defaultComponents: jsonb;  // { "commonComponents": ["22", "23"], "excludedComponents": ["24"] }
+  smartDefaults: jsonb;  // { "baseSalary": 150000, "housingAllowance": 30000 }
+  createdAt: timestamp;
+  updatedAt: timestamp;
+  // UNIQUE(countryCode, sectorCode)
+}
+
+// 4. Custom component definitions (tenant-specific, created from templates or scratch)
+// Table: custom_salary_components
 interface CustomSalaryComponent {
   id: uuid;
   tenantId: uuid;
+  countryCode: string;  // ✅ Multi-country support
+  code: string;  // Auto: "CUSTOM_001", "CUSTOM_002"
   name: string;  // "Prime de performance"
-  componentCode: string;  // Auto: "CUSTOM_001", "CUSTOM_002"
-  defaultAmount: number;  // Suggested amount
-  isTaxable: boolean;  // Tax treatment
-  includeInBrutImposable: boolean;  // For ITS, CNPS pension
-  includeInSalaireCategoriel: boolean;  // For CNPS family benefits
+  description: string | null;
+  templateCode: string | null;  // If created from template: 'PHONE', 'PERFORMANCE'
+
+  // ✅ FLEXIBLE metadata for country-specific tax rules
+  metadata: jsonb;  // Country-specific structure (see Q2 above)
+
+  isActive: boolean;
+  displayOrder: number;
+  createdAt: timestamp;
+  updatedAt: timestamp;
+  createdBy: uuid;
+  // UNIQUE(tenantId, countryCode, code)
 }
 
-// Stored in employee_salaries.components (JSONB)
+// 5. Salary component instances (per employee salary record)
+// Stored in: employee_salaries.components (JSONB column)
 interface SalaryComponentInstance {
-  code: string;  // "11", "21", "22", "23", "CUSTOM_001"
+  code: string;  // "11", "21", "CUSTOM_001"
   amount: number;
   name: string;  // For payslip display
-  isTaxable?: boolean;  // For custom components
+
+  // ✅ Tax treatment metadata (inherited from component definition)
+  metadata?: jsonb;  // Country-specific tax treatment
 }
 
-// Example storage:
+// Example storage in employee_salaries (Côte d'Ivoire employee):
 {
-  "baseSalary": "300000",  // Backward compat
-  "components": [
-    { "code": "11", "amount": 300000, "name": "Salaire de base" },
-    { "code": "23", "amount": 50000, "name": "Indemnité de logement" },
-    { "code": "21", "amount": 12000, "name": "Prime d'ancienneté" },  // Auto-calc
-    { "code": "CUSTOM_001", "amount": 25000, "name": "Prime de performance", "isTaxable": true }
+  "baseSalary": "300000",  // ✅ Backward compat (still write here)
+  "housingAllowance": "50000",
+  "transportAllowance": "30000",
+  "mealAllowance": "0",
+
+  "components": [  // ✅ New format with flexible metadata
+    {
+      "code": "11",
+      "amount": 300000,
+      "name": "Salaire de base",
+      "metadata": {
+        "taxTreatment": {
+          "isTaxable": true,
+          "includeInBrutImposable": true,
+          "includeInSalaireCategoriel": true
+        }
+      }
+    },
+    {
+      "code": "23",
+      "amount": 50000,
+      "name": "Indemnité de logement",
+      "metadata": {
+        "taxTreatment": {
+          "isTaxable": true,
+          "includeInBrutImposable": true,
+          "includeInSalaireCategoriel": false
+        }
+      }
+    },
+    {
+      "code": "21",
+      "amount": 12000,
+      "name": "Prime d'ancienneté",  // Auto-calculated
+      "metadata": {
+        "taxTreatment": {
+          "isTaxable": true,
+          "includeInBrutImposable": true,
+          "includeInSalaireCategoriel": false
+        }
+      }
+    },
+    {
+      "code": "CUSTOM_001",
+      "amount": 25000,
+      "name": "Prime de performance",
+      "metadata": {
+        "taxTreatment": {
+          "isTaxable": true,
+          "includeInBrutImposable": true,
+          "includeInSalaireCategoriel": false
+        }
+      }
+    }
   ]
 }
 ```
