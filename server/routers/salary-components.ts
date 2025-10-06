@@ -19,7 +19,7 @@ import {
   customSalaryComponents,
   tenantSalaryComponentActivations,
 } from '@/drizzle/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import type {
   SalaryComponentDefinition,
   SalaryComponentTemplate,
@@ -211,12 +211,7 @@ export const salaryComponentsRouter = createTRPCRouter({
     const templates = await db
       .select()
       .from(salaryComponentTemplates)
-      .where(
-        and(
-          // @ts-ignore - Drizzle typing issue with array
-          salaryComponentTemplates.code.in(templateCodes)
-        )
-      );
+      .where(inArray(salaryComponentTemplates.code, templateCodes));
 
     // 3. Merge templates with activations
     const merged = mergeTemplatesWithActivations(
