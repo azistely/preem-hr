@@ -88,7 +88,7 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email *</FormLabel>
+              <FormLabel>Email (optionnel)</FormLabel>
               <FormControl>
                 <Input
                   {...field}

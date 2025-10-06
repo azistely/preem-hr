@@ -16,7 +16,6 @@ import {
   salaryComponentDefinitions,
   salaryComponentTemplates,
   sectorConfigurations,
-  customSalaryComponents,
   tenantSalaryComponentActivations,
 } from '@/drizzle/schema';
 import { eq, and, desc, inArray } from 'drizzle-orm';
@@ -51,12 +50,7 @@ const getSectorConfigurationsSchema = z.object({
 });
 
 const createCustomComponentSchema = z.object({
-  countryCode: z.string().length(2),
-  name: z.string().min(1, 'Le nom est requis'),
-  description: z.string().optional(),
-  category: z.enum(['allowance', 'bonus', 'deduction', 'benefit']),
-  metadata: z.record(z.unknown()),
-  templateCode: z.string().optional(),
+  // DEPRECATED: createCustomComponent removed - use addFromTemplate
 });
 
 const addFromTemplateSchema = z.object({
@@ -222,62 +216,9 @@ export const salaryComponentsRouter = createTRPCRouter({
     return merged as unknown as CustomSalaryComponent[];
   }),
 
-  /**
-   * Create a custom component for the tenant
-   */
-  createCustomComponent: protectedProcedure
-    .input(createCustomComponentSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { tenantId, userId } = ctx;
-
-      if (!tenantId) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Tenant ID requis',
-        });
-      }
-
-      const { countryCode, name, description, category, metadata, templateCode } = input;
-
-      // Generate unique code (CUSTOM_XXX format)
-      const existingComponents = await db
-        .select({ code: customSalaryComponents.code })
-        .from(customSalaryComponents)
-        .where(
-          and(
-            eq(customSalaryComponents.tenantId, tenantId),
-            eq(customSalaryComponents.countryCode, countryCode)
-          )
-        );
-
-      const existingCodes = existingComponents.map((c) => c.code);
-      let code = '';
-      let counter = 1;
-
-      // Find next available CUSTOM_XXX code
-      do {
-        code = `CUSTOM_${counter.toString().padStart(3, '0')}`;
-        counter++;
-      } while (existingCodes.includes(code));
-
-      const [newComponent] = await db
-        .insert(customSalaryComponents)
-        .values({
-          tenantId,
-          countryCode,
-          code,
-          name,
-          description: description || null,
-          templateCode: templateCode || null,
-          metadata: metadata as ComponentMetadata,
-          isActive: true,
-          displayOrder: 0,
-          createdBy: userId,
-        })
-        .returning();
-
-      return newComponent as CustomSalaryComponent;
-    }),
+  // REMOVED: createCustomComponent
+  // Reason: Option B architecture - all components must come from templates
+  // Use addFromTemplate instead
 
   /**
    * Add component from template (Option B Architecture)
