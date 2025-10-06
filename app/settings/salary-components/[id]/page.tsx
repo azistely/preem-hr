@@ -1,13 +1,18 @@
 /**
- * Edit Custom Salary Component Page
+ * Edit Salary Component Page (Option B Architecture)
  *
- * Form to edit an existing tenant-specific custom component
- * with country-aware metadata builder (CI-specific for now)
+ * IMPORTANT: This page ONLY allows editing fields in template.customizableFields
+ * Tax treatment, CNPS, and category are defined by law (in template) and CANNOT be modified.
+ *
+ * Architecture:
+ * - Template (salary_component_templates) = Law (single source of truth)
+ * - Activation (tenant_salary_component_activations) = Tenant customizations
+ * - This page edits activation.overrides ONLY
  */
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,39 +28,21 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Loader2, Check } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, Loader2, Check, Lock, Info, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
-import { useCustomComponents, useUpdateCustomComponent, useFormulaHistory } from '@/features/employees/hooks/use-salary-components';
-import { buildCIMetadata } from '@/lib/salary-components/metadata-builder';
-import type { CIComponentMetadata } from '@/features/employees/types/salary-components';
-import { FormulaBuilder } from '@/components/salary-components/formula-builder';
-import { FormulaPreview } from '@/components/salary-components/formula-preview';
-import { FormulaHistory } from '@/components/salary-components/formula-history';
+import { useCustomComponents, useUpdateCustomComponent } from '@/features/employees/hooks/use-salary-components';
+import { ReadOnlyField } from '@/components/salary-components/read-only-field';
 
-// Form schema
+// Dynamic form schema based on customizableFields
 const editComponentSchema = z.object({
-  name: z.string().min(1, 'Le nom est requis'),
-  description: z.string().optional(),
-  category: z.enum(['allowance', 'bonus', 'deduction', 'benefit']),
-
-  // CI Tax Treatment
-  isTaxable: z.boolean(),
-  includeInBrutImposable: z.boolean().optional(),
-  includeInSalaireCategoriel: z.boolean().optional(),
-  exemptionCap: z.number().min(0).optional(),
-
-  // CI Social Security
-  includeInCnpsBase: z.boolean().optional(),
+  name: z.string().min(1, 'Le nom est requis').optional(),
+  // Dynamic fields will be validated at runtime
+  rate: z.number().min(0).max(1).optional(), // For percentage fields (0-100%)
+  baseAmount: z.number().min(0).optional(), // For fixed amount fields
 });
 
 type FormData = z.infer<typeof editComponentSchema>;
@@ -67,99 +54,56 @@ export default function EditSalaryComponentPage() {
 
   const { data: customComponents, isLoading } = useCustomComponents();
   const updateComponent = useUpdateCustomComponent();
-  const { data: versionHistory, isLoading: isLoadingHistory } = useFormulaHistory(componentId);
 
   const component = customComponents?.find((c) => c.id === componentId);
-
-  // Component metadata state (includes formula)
-  const [componentMetadata, setComponentMetadata] = useState<CIComponentMetadata>({
-    taxTreatment: {
-      isTaxable: true,
-      includeInBrutImposable: true,
-      includeInSalaireCategoriel: false,
-    },
-    socialSecurityTreatment: {
-      includeInCnpsBase: false,
-    },
-    calculationRule: {
-      type: 'fixed',
-      baseAmount: 0,
-    },
-  });
 
   const form = useForm<FormData>({
     resolver: zodResolver(editComponentSchema),
     defaultValues: {
       name: '',
-      description: '',
-      category: 'allowance',
-      isTaxable: true,
-      includeInBrutImposable: true,
-      includeInSalaireCategoriel: false,
-      includeInCnpsBase: false,
+      rate: undefined,
+      baseAmount: undefined,
     },
   });
 
-  // Load component data into form and metadata state
+  // Load component data into form
   useEffect(() => {
     if (component) {
-      const metadata = component.metadata as CIComponentMetadata;
-
       form.reset({
         name: component.name,
-        description: component.description || '',
-        category: metadata.category || 'allowance',
-        isTaxable: metadata.taxTreatment?.isTaxable ?? true,
-        includeInBrutImposable: metadata.taxTreatment?.includeInBrutImposable ?? true,
-        includeInSalaireCategoriel: metadata.taxTreatment?.includeInSalaireCategoriel ?? false,
-        exemptionCap: metadata.taxTreatment?.exemptionCap,
-        includeInCnpsBase: metadata.socialSecurityTreatment?.includeInCnpsBase ?? false,
+        rate: component.metadata?.calculationRule?.rate,
+        baseAmount: component.metadata?.calculationRule?.baseAmount,
       });
-
-      // Load formula metadata into state
-      setComponentMetadata(metadata);
     }
   }, [component, form]);
 
-  const isTaxable = form.watch('isTaxable');
-  const includeInBrutImposable = form.watch('includeInBrutImposable');
-  const includeInSalaireCategoriel = form.watch('includeInSalaireCategoriel');
-
-  // Auto-check Brut Imposable when Salaire Catégoriel is checked (CI rule)
-  const handleSalaireCategorielChange = (checked: boolean) => {
-    if (checked) {
-      form.setValue('includeInBrutImposable', true);
-    }
-    form.setValue('includeInSalaireCategoriel', checked);
-  };
-
-  // Handle formula metadata changes
-  const handleMetadataChange = (newMetadata: CIComponentMetadata) => {
-    setComponentMetadata(newMetadata);
-  };
-
   const onSubmit = async (data: FormData) => {
-    // Build CI metadata from form inputs + formula
-    const metadata: CIComponentMetadata = {
-      ...buildCIMetadata({
-        isTaxable: data.isTaxable,
-        includeInBrutImposable: data.includeInBrutImposable ?? data.isTaxable,
-        includeInSalaireCategoriel: data.includeInSalaireCategoriel ?? false,
-        exemptionCap: data.exemptionCap,
-        includeInCnpsBase: data.includeInCnpsBase ?? false,
-      }),
-      // Merge formula from FormulaBuilder
-      calculationRule: componentMetadata.calculationRule,
-    };
+    if (!component) return;
+
+    // Build overrides object with ONLY customizable fields
+    const overrides: Record<string, any> = {};
+
+    // Custom name (always allowed)
+    const customName = data.name !== component.name ? data.name : undefined;
+
+    // Only include fields that are in customizableFields
+    if (component.customizableFields?.includes('calculationRule.rate') && data.rate !== undefined) {
+      overrides.calculationRule = { rate: data.rate };
+    }
+
+    if (component.customizableFields?.includes('calculationRule.baseAmount') && data.baseAmount !== undefined) {
+      overrides.calculationRule = {
+        ...(overrides.calculationRule || {}),
+        baseAmount: data.baseAmount
+      };
+    }
 
     await updateComponent.mutateAsync({
       componentId,
-      name: data.name,
-      description: data.description,
-      metadata,
+      name: customName,
+      metadata: overrides,
     });
 
-    // Redirect to settings page on success
     router.push('/settings/salary-components');
   };
 
@@ -186,6 +130,10 @@ export default function EditSalaryComponentPage() {
     );
   }
 
+  const isModifiable = component.customizableFields && component.customizableFields.length > 0;
+  const hasRateField = component.customizableFields?.includes('calculationRule.rate');
+  const hasAmountField = component.customizableFields?.includes('calculationRule.baseAmount');
+
   return (
     <div className="container mx-auto max-w-3xl py-8">
       {/* Header */}
@@ -196,76 +144,64 @@ export default function EditSalaryComponentPage() {
             Retour aux composants
           </Button>
         </Link>
-        <h1 className="text-3xl font-bold">Modifier le composant</h1>
-        <p className="text-muted-foreground mt-2">
-          Code: <code className="bg-muted px-2 py-1 rounded">{component.code}</code>
-        </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">{component.name}</h1>
+            <p className="text-muted-foreground mt-2">
+              Code: <code className="bg-muted px-2 py-1 rounded">{component.code}</code>
+            </p>
+            {component.legalReference && (
+              <p className="text-sm text-muted-foreground mt-1">
+                📜 {component.legalReference}
+              </p>
+            )}
+          </div>
+          <Badge variant={component.complianceLevel === 'locked' ? 'destructive' : 'secondary'}>
+            {component.complianceLevel === 'locked' && '🔒 Verrouillé'}
+            {component.complianceLevel === 'configurable' && '⚙️ Configurable'}
+            {component.complianceLevel === 'freeform' && '🎨 Libre'}
+          </Badge>
+        </div>
       </div>
+
+      {/* Non-modifiable warning */}
+      {!isModifiable && (
+        <Alert className="mb-6">
+          <Lock className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Ce composant ne peut pas être modifié.</strong> Tous ses paramètres sont définis par la loi ({component.legalReference || 'Convention Collective'}).
+            Vous pouvez uniquement changer son nom d'affichage.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Basic Info */}
+          {/* Custom Name */}
           <Card>
             <CardHeader>
-              <CardTitle>Informations de base</CardTitle>
-              <CardDescription>Nom et description du composant</CardDescription>
+              <CardTitle>Nom d'affichage</CardTitle>
+              <CardDescription>
+                Personnalisez le nom affiché dans votre interface (optionnel)
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
               <FormField
                 control={form.control}
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Nom du composant *</FormLabel>
+                    <FormLabel>Nom personnalisé</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="Ex: Prime de risque minier"
+                        placeholder={component.name}
                         className="min-h-[48px]"
                       />
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (optionnel)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        placeholder="Décrivez le composant..."
-                        className="min-h-[100px]"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Catégorie *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="min-h-[48px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="allowance">Indemnité</SelectItem>
-                        <SelectItem value="bonus">Prime</SelectItem>
-                        <SelectItem value="benefit">Avantage</SelectItem>
-                        <SelectItem value="deduction">Déduction</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <FormDescription>
+                      Laissez vide pour utiliser le nom par défaut du catalogue
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -273,150 +209,160 @@ export default function EditSalaryComponentPage() {
             </CardContent>
           </Card>
 
-          {/* Formula Builder */}
-          <FormulaBuilder metadata={componentMetadata} onChange={handleMetadataChange} />
+          {/* Customizable Fields (if any) */}
+          {isModifiable && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Paramètres modifiables</CardTitle>
+                <CardDescription>
+                  Ces champs peuvent être personnalisés selon vos besoins
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {hasRateField && (
+                  <FormField
+                    control={form.control}
+                    name="rate"
+                    render={({ field }) => {
+                      // Legal bounds for housing allowance (CI labor code)
+                      const minRate = 0.20; // 20%
+                      const maxRate = 0.30; // 30%
+                      const recommendedRate = 0.25; // 25%
+                      const currentRate = field.value || recommendedRate;
 
-          {/* Formula Preview */}
-          <FormulaPreview metadata={componentMetadata} />
-
-          {/* Formula History */}
-          <FormulaHistory
-            versions={versionHistory || []}
-            currentVersionNumber={versionHistory?.[0]?.versionNumber}
-            loading={isLoadingHistory}
-          />
-
-          {/* Tax Treatment (CI-Specific) */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Traitement fiscal (Côte d'Ivoire)</CardTitle>
-              <CardDescription>
-                Comment ce composant est traité dans le calcul de l'ITS
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="isTaxable"
-                render={({ field }) => (
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <div className="space-y-1">
-                      <FormLabel className="font-semibold">Imposable</FormLabel>
-                      <FormDescription>
-                        Ce composant est soumis à l'impôt sur les traitements et salaires (ITS)
-                      </FormDescription>
-                    </div>
-                  </FormItem>
+                      return (
+                        <FormItem>
+                          <FormLabel className="flex items-center justify-between">
+                            <span>Taux</span>
+                            <span className="text-2xl font-bold text-primary">
+                              {Math.round(currentRate * 100)}%
+                            </span>
+                          </FormLabel>
+                          <FormControl>
+                            <div className="space-y-4 pt-2">
+                              <Slider
+                                min={minRate * 100}
+                                max={maxRate * 100}
+                                step={1}
+                                value={[currentRate * 100]}
+                                onValueChange={(values) => field.onChange(values[0] / 100)}
+                                className="py-4"
+                              />
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Min: {minRate * 100}%</span>
+                                <span className="text-primary font-medium">
+                                  Recommandé: {recommendedRate * 100}%
+                                </span>
+                                <span>Max: {maxRate * 100}%</span>
+                              </div>
+                            </div>
+                          </FormControl>
+                          <FormDescription>
+                            Taux appliqué au salaire de base (Convention Collective Article 20)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
                 )}
-              />
 
-              {isTaxable && (
-                <>
+                {hasAmountField && (
                   <FormField
                     control={form.control}
-                    name="includeInBrutImposable"
+                    name="baseAmount"
                     render={({ field }) => (
-                      <FormItem className="flex items-center space-x-3 space-y-0 pl-6">
-                        <FormControl>
-                          <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                        </FormControl>
-                        <div className="space-y-1">
-                          <FormLabel>Inclure dans le Brut Imposable</FormLabel>
-                          <FormDescription className="text-xs">
-                            Base de calcul pour l'ITS après déductions
-                          </FormDescription>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="includeInSalaireCategoriel"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center space-x-3 space-y-0 pl-6">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={handleSalaireCategorielChange}
-                          />
-                        </FormControl>
-                        <div className="space-y-1">
-                          <FormLabel>Inclure dans le Salaire Catégoriel</FormLabel>
-                          <FormDescription className="text-xs">
-                            Base pour les cotisations CNPS
-                            {includeInSalaireCategoriel && !includeInBrutImposable && (
-                              <span className="text-destructive block mt-1">
-                                ⚠ Le Salaire Catégoriel doit être dans le Brut Imposable
-                              </span>
-                            )}
-                          </FormDescription>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="exemptionCap"
-                    render={({ field }) => (
-                      <FormItem className="pl-6">
-                        <FormLabel>Plafond d'exonération (optionnel)</FormLabel>
+                      <FormItem>
+                        <FormLabel>Montant fixe (FCFA)</FormLabel>
                         <FormControl>
                           <Input
                             {...field}
                             type="number"
                             min={0}
                             step={1000}
-                            placeholder="Ex: 30000 (transport exempt jusqu'à 30k)"
+                            placeholder="Ex: 50000"
                             className="min-h-[48px]"
                             onChange={(e) => field.onChange(parseFloat(e.target.value) || undefined)}
                             value={field.value || ''}
                           />
                         </FormControl>
                         <FormDescription>
-                          Montant maximal exonéré d'impôt (en FCFA)
+                          Montant fixe versé à tous les employés
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Read-Only Information: Tax Treatment */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                Traitement fiscal (Lecture seule)
+              </CardTitle>
+              <CardDescription>
+                Ces paramètres sont définis par le Code Général des Impôts et ne peuvent pas être modifiés
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ReadOnlyField
+                label="Imposable (ITS)"
+                value={component.metadata?.taxTreatment?.isTaxable ? 'Oui' : 'Non'}
+                description="Soumis à l'impôt sur les traitements et salaires"
+                reason="Code Général des Impôts"
+              />
+              {component.metadata?.taxTreatment?.isTaxable && (
+                <>
+                  <ReadOnlyField
+                    label="Brut Imposable"
+                    value={component.metadata?.taxTreatment?.includeInBrutImposable ? 'Oui' : 'Non'}
+                    description="Inclus dans la base de calcul ITS"
+                    reason="Code Général des Impôts"
+                  />
+                  <ReadOnlyField
+                    label="Salaire Catégoriel"
+                    value={component.metadata?.taxTreatment?.includeInSalaireCategoriel ? 'Oui' : 'Non'}
+                    description="Inclus dans la base pour cotisations CNPS"
+                    reason="Code Général des Impôts"
                   />
                 </>
               )}
             </CardContent>
           </Card>
 
-          {/* Social Security Treatment (CI-Specific) */}
+          {/* Read-Only Information: CNPS */}
           <Card>
             <CardHeader>
-              <CardTitle>Cotisations sociales (CNPS)</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                Cotisations sociales (Lecture seule)
+              </CardTitle>
               <CardDescription>
-                Comment ce composant est traité dans le calcul des cotisations CNPS
+                Ces paramètres sont définis par le Décret CNPS et ne peuvent pas être modifiés
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <FormField
-                control={form.control}
-                name="includeInCnpsBase"
-                render={({ field }) => (
-                  <FormItem className="flex items-center space-x-3 space-y-0">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <div className="space-y-1">
-                      <FormLabel>Inclure dans la base CNPS</FormLabel>
-                      <FormDescription>
-                        Ce composant est soumis aux cotisations CNPS (employé + employeur)
-                      </FormDescription>
-                    </div>
-                  </FormItem>
-                )}
+              <ReadOnlyField
+                label="Base CNPS"
+                value={component.metadata?.socialSecurityTreatment?.includeInCnpsBase ? 'Oui' : 'Non'}
+                description="Soumis aux cotisations CNPS (employé + employeur)"
+                reason="Décret CNPS"
               />
             </CardContent>
           </Card>
+
+          {/* Compliance Notice */}
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Conformité légale garantie</strong> – Les paramètres fiscaux et sociaux sont automatiquement mis à jour selon les évolutions législatives de la Côte d'Ivoire.
+            </AlertDescription>
+          </Alert>
 
           {/* Actions */}
           <div className="flex items-center justify-between gap-4">
