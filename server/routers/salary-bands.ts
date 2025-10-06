@@ -1,0 +1,138 @@
+import { z } from 'zod';
+import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import {
+  createSalaryBand,
+  getSalaryBandByPosition,
+  validateSalaryAgainstBand,
+  getSalaryCompaRatio,
+  listSalaryBands,
+  updateSalaryBand,
+} from '@/features/employees/services/salary-band.service';
+import { TRPCError } from '@trpc/server';
+
+const createBandSchema = z.object({
+  name: z.string().min(1, 'Le nom est requis'),
+  code: z.string().min(1, 'Le code est requis'),
+  jobLevel: z.string().min(1, 'Le niveau est requis'),
+  minSalary: z.number().min(0, 'Salaire minimum >= 0'),
+  midSalary: z.number().min(0, 'Salaire milieu >= 0'),
+  maxSalary: z.number().min(0, 'Salaire maximum >= 0'),
+  currency: z.string().default('XOF'),
+  effectiveFrom: z.date().optional(),
+  effectiveTo: z.date().optional(),
+});
+
+const updateBandSchema = z.object({
+  bandId: z.string().uuid(),
+  name: z.string().optional(),
+  jobLevel: z.string().optional(),
+  minSalary: z.number().min(0).optional(),
+  midSalary: z.number().min(0).optional(),
+  maxSalary: z.number().min(0).optional(),
+});
+
+const validateSalarySchema = z.object({
+  salary: z.number().min(0),
+  positionId: z.string().uuid(),
+});
+
+const getByPositionSchema = z.object({
+  positionId: z.string().uuid(),
+});
+
+const listSchema = z.object({
+  activeOnly: z.boolean().default(true),
+});
+
+export const salaryBandsRouter = createTRPCRouter({
+  create: protectedProcedure
+    .input(createBandSchema)
+    .mutation(async ({ input, ctx }) => {
+      try {
+        return await createSalaryBand({
+          ...input,
+          tenantId: ctx.tenantId,
+        });
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la création de la bande',
+        });
+      }
+    }),
+
+  update: protectedProcedure
+    .input(updateBandSchema)
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const { bandId, ...updates } = input;
+        return await updateSalaryBand(bandId, ctx.tenantId, updates);
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la mise à jour',
+        });
+      }
+    }),
+
+  list: protectedProcedure
+    .input(listSchema)
+    .query(async ({ input, ctx }) => {
+      try {
+        return await listSalaryBands(ctx.tenantId, input.activeOnly);
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la récupération',
+        });
+      }
+    }),
+
+  getByPosition: protectedProcedure
+    .input(getByPositionSchema)
+    .query(async ({ input, ctx }) => {
+      try {
+        return await getSalaryBandByPosition(input.positionId, ctx.tenantId);
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: error.message || 'Bande non trouvée',
+        });
+      }
+    }),
+
+  validateSalary: protectedProcedure
+    .input(validateSalarySchema)
+    .query(async ({ input, ctx }) => {
+      try {
+        const result = await validateSalaryAgainstBand({
+          ...input,
+          tenantId: ctx.tenantId,
+        });
+
+        // Calculate compa-ratio if band exists
+        if (result.band) {
+          const midpoint = parseFloat(result.band.midpoint || '0');
+          const compaRatio = getSalaryCompaRatio(input.salary, midpoint);
+
+          return {
+            ...result,
+            compaRatio,
+            compaRatioDescription:
+              compaRatio < 80
+                ? 'Sous le marché'
+                : compaRatio > 120
+                ? 'Au-dessus du marché'
+                : 'Compétitif',
+          };
+        }
+
+        return result;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la validation',
+        });
+      }
+    }),
+});
