@@ -14,8 +14,9 @@ Build an enterprise HR/payroll system for French-speaking West Africa that is:
 Before implementing ANY feature, you MUST read:
 
 1. **`docs/01-CONSTRAINTS-AND-RULES.md`** - Hard constraints that can NEVER be violated
-2. **`docs/HCI-DESIGN-PRINCIPLES.md`** - UX principles for low digital literacy
+2. **`docs/HCI-DESIGN-PRINCIPLES.md`** - UX principles for low digital literacy + **Multi-Country UX Patterns**
 3. Relevant EPIC document (e.g., `docs/05-EPIC-PAYROLL.md`)
+4. **`docs/MULTI-COUNTRY-MIGRATION-SUMMARY.md`** - Multi-country architecture (if working on payroll/config)
 
 ## 🎨 UI/UX Non-Negotiables
 
@@ -140,6 +141,24 @@ gap-8  // Between major page sections
 - `destructive` - Errors, warnings, delete
 - `muted` - Secondary info, disabled states
 
+## 🌍 Multi-Country Design Requirements
+
+**Context:** Preem HR supports multiple West African countries (CI, SN, BF, etc.) with different tax/social security rules.
+
+**Key Patterns (see `HCI-DESIGN-PRINCIPLES.md` for details):**
+
+1. **Country-Aware Smart Defaults** - Detect country from tenant, auto-configure everything
+2. **Country-Specific Labels** - Use CNPS for CI, IPRES for SN, IRPP for SN tax (not generic "social security")
+3. **Family Deductions** - Load from database, show friendly labels ("Marié + 2 enfants" not "3.0")
+4. **Sector Rates** - Auto-detect, hide in advanced view (don't force user to select work accident rates)
+5. **Multi-Country Comparison** - Visual cards with flags for super admin, not raw tables
+
+**Implementation Rules:**
+- Country code flows from tenant → payroll calculations (never ask user to select repeatedly)
+- All country-specific config loads from database (tax_systems, social_security_schemes tables)
+- Error messages reference country-specific rules ("inférieur au SMIG de Côte d'Ivoire (75,000 FCFA)")
+- Use database-driven `calculatePayrollV2()` for all payroll (supports countryCode param)
+
 ## 🚫 Common Mistakes to Avoid
 
 1. **Don't assume users understand HR terms** - Explain or hide complexity
@@ -148,12 +167,14 @@ gap-8  // Between major page sections
 4. **Don't use English** - Everything in French (business language)
 5. **Don't forget mobile** - Design for 5" screens first
 6. **Don't skip loading states** - Show feedback for operations > 300ms
+7. **Don't hardcode country rules** - Use database config (tax_systems, social_security_schemes)
+8. **Don't make users select country repeatedly** - Use tenant.countryCode context
 
 ## 📋 Implementation Checklist
 
 When implementing a new UI feature:
 
-1. [ ] Read `docs/HCI-DESIGN-PRINCIPLES.md`
+1. [ ] Read `docs/HCI-DESIGN-PRINCIPLES.md` (includes Multi-Country UX Patterns)
 2. [ ] Design with wizard/progressive disclosure pattern
 3. [ ] All text in French (use `lib/i18n/fr.ts`)
 4. [ ] Touch targets ≥ 44×44px
@@ -162,6 +183,14 @@ When implementing a new UI feature:
 7. [ ] Error prevention (not just handling)
 8. [ ] Test on mobile viewport (375×667)
 9. [ ] Verify with HCI checklist above
+
+**For Multi-Country Features:**
+1. [ ] Country detected from tenant context (tenant.countryCode)
+2. [ ] Country-specific labels used (CNPS/IPRES, ITS/IRPP)
+3. [ ] Database config loaded via RuleLoader/tRPC endpoints
+4. [ ] Family deductions loaded from family_deduction_rules table
+5. [ ] Sector rates auto-detected from employee.sector field
+6. [ ] Use `calculatePayrollV2()` with countryCode parameter
 
 ## 🎯 Success Metrics
 
