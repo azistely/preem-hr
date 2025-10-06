@@ -106,7 +106,9 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
 
   // Unwrap params promise (Next.js 15)
   const { id: runId } = use(params);
-  const userId = '00000000-0000-0000-0000-000000000001';
+  // TODO: Get actual authenticated user ID from auth context
+  // For now, using the existing user from database
+  const userId = 'cb127444-aac4-45a5-8682-93d5f7ef5775';
 
   // Load payroll run with line items
   const { data: run, isLoading, refetch } = api.payroll.getRun.useQuery({
