@@ -461,6 +461,186 @@ const statusConfig = {
 
 ---
 
+## 🌍 Multi-Country UX Patterns
+
+**Context:** Preem HR supports multiple West African countries (Côte d'Ivoire, Senegal, Burkina Faso, etc.), each with different tax rules, social security systems, and regulations.
+
+**Design Challenge:** Make multi-country complexity invisible to users while maintaining accuracy.
+
+### Pattern 6: Country-Aware Smart Defaults
+**Use When:** User's tenant has a country context, auto-configure everything accordingly.
+
+```tsx
+// ✅ Good: Country detected, everything auto-configured
+<PayrollCalculator>
+  {/* Country detected from tenant */}
+  <CountryBadge countryCode={tenant.countryCode}>
+    🇨🇮 Côte d'Ivoire
+  </CountryBadge>
+
+  {/* Country-specific defaults loaded automatically */}
+  <TaxSystemInfo>
+    ITS 2024 • 6 tranches progressives
+  </TaxSystemInfo>
+
+  {/* Country-specific components rendered */}
+  {tenant.countryCode === 'CI' && <CNPSCalculation />}
+  {tenant.countryCode === 'SN' && <IPRESCalculation />}
+</PayrollCalculator>
+
+// ❌ Bad: Force user to select country repeatedly
+<PayrollCalculator>
+  <Select>
+    <option>Sélectionnez le pays</option>
+    <option value="CI">Côte d'Ivoire</option>
+  </Select>
+</PayrollCalculator>
+```
+
+### Pattern 7: Country-Specific Labels (No Jargon)
+**Use When:** Showing country-specific terminology (CNPS vs IPRES, ITS vs IRPP).
+
+```tsx
+// ✅ Good: Country-specific labels with clear context
+const getLabels = (countryCode: string) => {
+  if (countryCode === 'CI') {
+    return {
+      socialSecurity: 'CNPS (Retraite)',
+      tax: 'ITS (Impôt sur les Traitements et Salaires)',
+      health: 'CMU (Couverture Maladie Universelle)',
+    };
+  }
+  if (countryCode === 'SN') {
+    return {
+      socialSecurity: 'IPRES (Retraite)',
+      tax: 'IRPP (Impôt sur le Revenu)',
+      health: 'CSS IPRESS (Santé)',
+    };
+  }
+};
+
+<DeductionLine>
+  <span>{labels.socialSecurity}</span>
+  <Amount>{cnpsEmployee} FCFA</Amount>
+</DeductionLine>
+
+// ❌ Bad: Generic labels that don't match user's reality
+<DeductionLine>
+  <span>Social Security</span> {/* User won't recognize this */}
+</DeductionLine>
+```
+
+### Pattern 8: Family Situation (Fiscal Parts)
+**Use When:** Tax deductions vary by family situation (married, children).
+
+```tsx
+// ✅ Good: Load family deduction rules from database, show friendly labels
+const familyDeductions = useFamilyDeductions(tenant.countryCode);
+
+<Select>
+  {familyDeductions.map(rule => (
+    <SelectItem value={rule.fiscalParts}>
+      {rule.description.fr}
+      {/* e.g., "Célibataire (1.0)" or "Marié + 2 enfants (3.0)" */}
+    </SelectItem>
+  ))}
+</Select>
+
+// ❌ Bad: Numeric values without context
+<Select>
+  <option value="1.0">1.0</option>
+  <option value="2.0">2.0</option>
+</Select>
+```
+
+### Pattern 9: Sector-Specific Rates (Hidden Complexity)
+**Use When:** Contribution rates vary by sector (construction vs services).
+
+```tsx
+// ✅ Good: Auto-detect from employee, show in results only if different
+const sector = employee.sector || 'services';
+
+// Show in detailed breakdown only
+<Collapsible>
+  <CollapsibleTrigger>Voir le calcul détaillé</CollapsibleTrigger>
+  <CollapsibleContent>
+    <InfoLine>
+      <span>Secteur d'activité</span>
+      <Badge>{sectorLabels[sector]}</Badge>
+    </InfoLine>
+    <InfoLine>
+      <span>Taux AT/MP</span>
+      <span>{workAccidentRate}%</span>
+    </InfoLine>
+  </CollapsibleContent>
+</Collapsible>
+
+// ❌ Bad: Force user to know/select sector rates
+<Select label="Work Accident Rate">
+  <option>2% (Services)</option>
+  <option>5% (Construction)</option>
+</Select>
+```
+
+### Pattern 10: Multi-Country Payroll Comparison (Advanced)
+**Use When:** Super admin or multi-country organization wants to compare rules.
+
+```tsx
+// ✅ Good: Visual comparison for decision-making
+<CountryComparison>
+  <ComparisonCard country="CI">
+    <Flag>🇨🇮</Flag>
+    <CountryName>Côte d'Ivoire</CountryName>
+    <Metrics>
+      <Metric label="Taux max ITS" value="32%" />
+      <Metric label="CNPS salarié" value="6.3%" />
+      <Metric label="SMIG mensuel" value="75,000 FCFA" />
+    </Metrics>
+  </ComparisonCard>
+
+  <ComparisonCard country="SN">
+    <Flag>🇸🇳</Flag>
+    <CountryName>Sénégal</CountryName>
+    <Metrics>
+      <Metric label="Taux max IRPP" value="40%" />
+      <Metric label="IPRES salarié" value="5.6%" />
+      <Metric label="SMIG mensuel" value="52,500 FCFA" />
+    </Metrics>
+  </ComparisonCard>
+</CountryComparison>
+
+// ❌ Bad: Raw table of regulations
+<table>
+  <tr><th>Country</th><th>Tax Rate</th></tr>
+  <tr><td>CI</td><td>0.32</td></tr>
+</table>
+```
+
+### Multi-Country UX Checklist
+
+**When implementing multi-country features:**
+
+- [ ] Country detected from tenant context (no repeated selection)
+- [ ] Labels use country-specific terminology (CNPS vs IPRES)
+- [ ] Smart defaults load from database by country
+- [ ] Family deductions show friendly descriptions, not numbers
+- [ ] Sector rates auto-detected from employee data
+- [ ] Regulatory complexity hidden in advanced/expert view
+- [ ] Error messages reference country-specific rules
+- [ ] Help text explains country-specific concepts
+
+**Example Error Messages:**
+
+```tsx
+// ✅ Good: Country-specific, actionable
+"Le salaire est inférieur au SMIG de Côte d'Ivoire (75,000 FCFA)"
+
+// ❌ Bad: Generic, unclear
+"Minimum wage validation failed"
+```
+
+---
+
 ## 📚 References & Inspiration
 
 **HCI Principles:**
