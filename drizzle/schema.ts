@@ -869,6 +869,12 @@ export const customSalaryComponents = pgTable("custom_salary_components", {
 	description: text(),
 	templateCode: varchar("template_code", { length: 50 }),
 	metadata: jsonb().default({}).notNull(),
+	// Compliance metadata (copied from template)
+	complianceLevel: varchar("compliance_level", { length: 20 }).default('freeform'),
+	customizableFields: jsonb("customizable_fields").default([]),
+	canModify: boolean("can_modify").default(true),
+	canDeactivate: boolean("can_deactivate").default(true),
+	legalReference: text("legal_reference"),
 	isActive: boolean("is_active").default(true).notNull(),
 	displayOrder: integer("display_order").default(0).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -888,6 +894,46 @@ export const customSalaryComponents = pgTable("custom_salary_components", {
 			name: "custom_salary_components_created_by_fkey"
 		}),
 	unique("custom_salary_components_tenant_id_country_code_code_key").on(table.tenantId, table.countryCode, table.code),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
+]);
+
+// ============================================================================
+// Tenant Salary Component Activations (Option B Architecture)
+// ============================================================================
+// Tenant activations of templates with customization overrides
+// Single source of truth: template defines law, activation defines choice
+export const tenantSalaryComponentActivations = pgTable("tenant_salary_component_activations", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	templateCode: varchar("template_code", { length: 50 }).notNull(),
+
+	// Overrides (ONLY customizable fields from template)
+	overrides: jsonb().default({}).notNull(),
+
+	// Tenant-specific metadata
+	customName: text("custom_name"), // Optional: override display name
+	isActive: boolean("is_active").default(true).notNull(),
+	displayOrder: integer("display_order").default(0).notNull(),
+
+	// Audit
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+}, (table) => [
+	index("idx_activations_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_activations_active").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.isActive.asc().nullsLast().op("bool_ops")).where(sql`(is_active = true)`),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "tenant_salary_component_activations_tenant_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "tenant_salary_component_activations_created_by_fkey"
+		}),
+	unique("tenant_salary_component_activations_tenant_country_template_key").on(table.tenantId, table.countryCode, table.templateCode),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
 ]);
 
