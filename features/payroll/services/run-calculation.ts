@@ -229,6 +229,11 @@ export async function calculatePayrollRun(
           payrollRunId: run.id,
           employeeId: employee.id,
 
+          // Denormalized employee info (for historical accuracy and exports)
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          employeeNumber: employee.employeeNumber,
+          positionTitle: employee.position,
+
           // Salary information
           baseSalary: String(calculation.baseSalary),
           allowances: {
@@ -245,7 +250,7 @@ export async function calculatePayrollRun(
           // Gross calculation
           grossSalary: String(calculation.grossSalary),
 
-          // Deductions
+          // Deductions (both JSONB and dedicated columns for exports)
           taxDeductions: { its: calculation.its },
           employeeContributions: {
             cnps: calculation.cnpsEmployee,
@@ -253,15 +258,22 @@ export async function calculatePayrollRun(
           },
           otherDeductions: {},
 
+          // Individual deduction columns (for easy export access)
+          cnpsEmployee: String(calculation.cnpsEmployee),
+          cmuEmployee: String(calculation.cmuEmployee),
+          its: String(calculation.its),
+
           // Net calculation
           totalDeductions: String(calculation.totalDeductions),
           netSalary: String(calculation.netSalary),
 
-          // Employer costs
+          // Employer costs (both JSONB and dedicated columns)
           employerContributions: {
             cnps: calculation.cnpsEmployer,
             cmu: calculation.cmuEmployer,
           },
+          cnpsEmployer: String(calculation.cnpsEmployer),
+          cmuEmployer: String(calculation.cmuEmployer),
           totalEmployerCost: String(calculation.employerCost),
 
           // Other taxes
