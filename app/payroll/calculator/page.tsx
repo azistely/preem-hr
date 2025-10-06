@@ -56,6 +56,16 @@ export default function PayrollCalculatorPage() {
     },
   });
 
+  // Load family deductions dynamically based on selected country
+  const familyDeductions = api.payroll.getFamilyDeductions.useQuery(
+    {
+      countryCode: form.watch('countryCode') || 'CI',
+    },
+    {
+      staleTime: 1000 * 60 * 60, // Cache for 1 hour
+    }
+  );
+
   // tRPC query for payroll calculation (V2 - Multi-Country)
   const calculate = api.payroll.calculateV2.useQuery(
     {
@@ -211,7 +221,7 @@ export default function PayrollCalculatorPage() {
                   )}
                 />
 
-                {/* Fiscal Parts (Family Situation) */}
+                {/* Fiscal Parts (Family Situation) - Dynamic from Database */}
                 <FormField
                   control={form.control}
                   name="fiscalParts"
@@ -228,16 +238,23 @@ export default function PayrollCalculatorPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="1.0">1.0 - Célibataire</SelectItem>
-                          <SelectItem value="1.5">1.5 - Marié(e), 1 enfant</SelectItem>
-                          <SelectItem value="2.0">2.0 - Marié(e), 2 enfants</SelectItem>
-                          <SelectItem value="2.5">2.5 - Marié(e), 3 enfants</SelectItem>
-                          <SelectItem value="3.0">3.0 - Marié(e), 4 enfants</SelectItem>
-                          <SelectItem value="3.5">3.5 - Marié(e), 5 enfants</SelectItem>
-                          <SelectItem value="4.0">4.0 - Marié(e), 6 enfants</SelectItem>
+                          {familyDeductions.data && familyDeductions.data.length > 0 ? (
+                            familyDeductions.data.map((deduction) => (
+                              <SelectItem
+                                key={deduction.fiscalParts}
+                                value={deduction.fiscalParts.toString()}
+                              >
+                                {deduction.description?.fr || `${deduction.fiscalParts} parts`}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="1.0">1.0 - Aucune déduction fiscale</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
-                      <FormDescription>Situation familiale pour déduction fiscale</FormDescription>
+                      <FormDescription>
+                        {familyDeductions.isLoading ? 'Chargement...' : 'Situation familiale pour déduction fiscale'}
+                      </FormDescription>
                     </FormItem>
                   )}
                 />

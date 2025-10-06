@@ -76,6 +76,27 @@ export interface PayslipData {
   // Additional details (optional)
   earningsDetails?: Array<{ description: string; amount: number }>;
   deductionsDetails?: Array<{ description: string; amount: number }>;
+
+  // Country configuration for dynamic labels
+  countryConfig?: {
+    taxSystemName: string;
+    socialSchemeName: string;
+    laborCodeReference?: string;
+    contributions: Array<{
+      code: string;
+      name: string;
+      employeeRate: number;
+      employerRate: number;
+      employeeAmount?: number;
+      employerAmount?: number;
+    }>;
+    otherTaxes: Array<{
+      code: string;
+      name: string;
+      paidBy: 'employee' | 'employer';
+      amount?: number;
+    }>;
+  };
 }
 
 // ========================================
@@ -344,18 +365,43 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => (
             <Text style={styles.col1}>Libellé</Text>
             <Text style={styles.col2}>Montant (FCFA)</Text>
           </View>
+
+          {/* Dynamic contribution labels from country config */}
+          {data.countryConfig?.contributions
+            .filter((contrib) => (contrib.employeeAmount ?? 0) > 0)
+            .map((contrib) => (
+              <View key={contrib.code} style={styles.tableRow}>
+                <Text style={styles.col1}>
+                  {contrib.name} ({(contrib.employeeRate * 100).toFixed(1)}%)
+                </Text>
+                <Text style={styles.col2}>
+                  {formatCurrency(contrib.employeeAmount || 0)}
+                </Text>
+              </View>
+            ))}
+
+          {/* Fallback to hardcoded labels if no country config */}
+          {!data.countryConfig && (
+            <>
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>CNPS Salarié (6,3%)</Text>
+                <Text style={styles.col2}>{formatCurrency(data.cnpsEmployee)}</Text>
+              </View>
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>CMU Salarié</Text>
+                <Text style={styles.col2}>{formatCurrency(data.cmuEmployee)}</Text>
+              </View>
+            </>
+          )}
+
+          {/* Tax */}
           <View style={styles.tableRow}>
-            <Text style={styles.col1}>CNPS Salarié (6,3%)</Text>
-            <Text style={styles.col2}>{formatCurrency(data.cnpsEmployee)}</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.col1}>CMU Salarié</Text>
-            <Text style={styles.col2}>{formatCurrency(data.cmuEmployee)}</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.col1}>Impôt sur Traitement et Salaire (ITS)</Text>
+            <Text style={styles.col1}>
+              {data.countryConfig?.taxSystemName || 'Impôt sur Traitement et Salaire (ITS)'}
+            </Text>
             <Text style={styles.col2}>{formatCurrency(data.its)}</Text>
           </View>
+
           {data.deductionsDetails?.map((detail, index) => (
             <View key={index} style={styles.tableRow}>
               <Text style={styles.col1}>{detail.description}</Text>
@@ -377,15 +423,47 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => (
             <Text style={styles.col1}>Libellé</Text>
             <Text style={styles.col2}>Montant (FCFA)</Text>
           </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.col1}>CNPS Patronale (7,7% + 5% + 2-5%)</Text>
-            <Text style={styles.col2}>{formatCurrency(data.cnpsEmployer)}</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.col1}>CMU Patronale</Text>
-            <Text style={styles.col2}>{formatCurrency(data.cmuEmployer)}</Text>
-          </View>
-          {data.fdfp && data.fdfp > 0 && (
+
+          {/* Dynamic employer contribution labels from country config */}
+          {data.countryConfig?.contributions
+            .filter((contrib) => (contrib.employerAmount ?? 0) > 0)
+            .map((contrib) => (
+              <View key={contrib.code} style={styles.tableRow}>
+                <Text style={styles.col1}>
+                  {contrib.name} Patronale ({(contrib.employerRate * 100).toFixed(1)}%)
+                </Text>
+                <Text style={styles.col2}>
+                  {formatCurrency(contrib.employerAmount || 0)}
+                </Text>
+              </View>
+            ))}
+
+          {/* Fallback to hardcoded labels if no country config */}
+          {!data.countryConfig && (
+            <>
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>CNPS Patronale (7,7% + 5% + 2-5%)</Text>
+                <Text style={styles.col2}>{formatCurrency(data.cnpsEmployer)}</Text>
+              </View>
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>CMU Patronale</Text>
+                <Text style={styles.col2}>{formatCurrency(data.cmuEmployer)}</Text>
+              </View>
+            </>
+          )}
+
+          {/* Other employer taxes */}
+          {data.countryConfig?.otherTaxes
+            ?.filter((tax) => tax.paidBy === 'employer' && (tax.amount ?? 0) > 0)
+            .map((tax) => (
+              <View key={tax.code} style={styles.tableRow}>
+                <Text style={styles.col1}>{tax.name}</Text>
+                <Text style={styles.col2}>{formatCurrency(tax.amount || 0)}</Text>
+              </View>
+            ))}
+
+          {/* Fallback FDFP for legacy payslips */}
+          {!data.countryConfig && data.fdfp && data.fdfp > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.col1}>FDFP (Formation professionnelle)</Text>
               <Text style={styles.col2}>{formatCurrency(data.fdfp)}</Text>
@@ -423,7 +501,8 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => (
       {/* Footer */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>
-          Ce bulletin de paie est conforme aux dispositions du Code du Travail de Côte d'Ivoire.
+          {data.countryConfig?.laborCodeReference ||
+           'Ce bulletin de paie est conforme aux dispositions du Code du Travail.'}
         </Text>
         <Text style={styles.footerText}>
           Document généré le {format(new Date(), 'dd/MM/yyyy à HH:mm', { locale: fr })}
