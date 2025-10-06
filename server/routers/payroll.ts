@@ -19,8 +19,9 @@ import {
   calculatePayrollRun,
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
-import { payrollRuns, payrollLineItems } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { payrollRuns, payrollLineItems, employees } from '@/lib/db/schema';
+import { eq, and, lte, gte, or, isNull, asc, sql } from 'drizzle-orm';
+import { ruleLoader } from '@/features/payroll/services/rule-loader';
 
 // Export services
 import * as React from 'react';
@@ -73,6 +74,7 @@ const calculatePayrollV2InputSchema = calculateGrossInputSchema.extend({
 
 const createPayrollRunInputSchema = z.object({
   tenantId: z.string().uuid(),
+  countryCode: z.string().length(2, { message: 'Code pays invalide' }),
   periodStart: z.date(),
   periodEnd: z.date(),
   paymentDate: z.date(),
@@ -239,13 +241,29 @@ export const payrollRouter = createTRPCRouter({
         throw new Error('Payroll run not found');
       }
 
-      const lineItems = await db.query.payrollLineItems.findMany({
-        where: eq(payrollLineItems.payrollRunId, input.runId),
-        orderBy: (items, { asc }) => [asc(items.employeeId)],
-      });
+      // Get line items with employee details using direct SQL for JSONB extraction
+      const lineItems = await db
+        .select({
+          id: payrollLineItems.id,
+          employeeId: payrollLineItems.employeeId,
+          employeeName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
+          employeeNumber: employees.employeeNumber,
+          baseSalary: payrollLineItems.baseSalary,
+          grossSalary: payrollLineItems.grossSalary,
+          netSalary: payrollLineItems.netSalary,
+          totalDeductions: payrollLineItems.totalDeductions,
+          cnpsEmployee: sql<number>`(${payrollLineItems.employeeContributions}->>'cnps')::numeric`,
+          cmuEmployee: sql<number>`(${payrollLineItems.employeeContributions}->>'cmu')::numeric`,
+          its: sql<number>`(${payrollLineItems.taxDeductions}->>'its')::numeric`,
+        })
+        .from(payrollLineItems)
+        .innerJoin(employees, eq(payrollLineItems.employeeId, employees.id))
+        .where(eq(payrollLineItems.payrollRunId, input.runId))
+        .orderBy(asc(employees.employeeNumber));
 
       return {
         ...run,
+        employeeCount: lineItems.length,
         lineItems,
       };
     }),
@@ -286,7 +304,22 @@ export const payrollRouter = createTRPCRouter({
         offset: input.offset,
       });
 
-      return runs;
+      // Add employee count for each run
+      const runsWithCount = await Promise.all(
+        runs.map(async (run) => {
+          const lineItems = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(payrollLineItems)
+            .where(eq(payrollLineItems.payrollRunId, run.id));
+
+          return {
+            ...run,
+            employeeCount: Number(lineItems[0]?.count || 0),
+          };
+        })
+      );
+
+      return runsWithCount;
     }),
 
   /**
@@ -382,6 +415,176 @@ export const payrollRouter = createTRPCRouter({
     }),
 
   // ========================================
+  // Multi-Country Configuration Procedures
+  // ========================================
+
+  /**
+   * Get available countries for payroll
+   *
+   * Returns countries with active payroll configuration.
+   * Used in payroll run creation form to show country selector.
+   *
+   * @example
+   * ```typescript
+   * const countries = await trpc.payroll.getAvailableCountries.query();
+   * // countries = [
+   * //   { code: 'CI', name: 'Côte d\'Ivoire', flag: '🇨🇮', isActive: true },
+   * //   { code: 'SN', name: 'Sénégal', flag: '🇸🇳', isActive: true },
+   * //   ...
+   * // ]
+   * ```
+   */
+  getAvailableCountries: publicProcedure
+    .query(async () => {
+      // Load countries with active payroll configuration
+      const allCountries = await db.query.countries.findMany({
+        where: (countries, { eq }) => eq(countries.isActive, true),
+        orderBy: (countries, { asc }) => [asc(countries.code)],
+      });
+
+      // Validate each country has payroll config
+      const countriesWithConfig = [];
+      for (const country of allCountries) {
+        try {
+          await ruleLoader.getCountryConfig(country.code);
+          const countryName = country.name as { fr: string; en?: string };
+          countriesWithConfig.push({
+            code: country.code,
+            name: countryName.fr,
+            nameEn: countryName.en,
+            currency: country.currencyCode,
+            isActive: country.isActive,
+          });
+        } catch (error) {
+          // Skip countries without payroll config
+          console.error(`Country ${country.code} has no valid payroll config:`, error);
+        }
+      }
+
+      return countriesWithConfig;
+    }),
+
+  /**
+   * Get family deduction rules for a country
+   *
+   * Returns available family deductions (fiscal parts) from database.
+   * Used to populate calculator dropdowns dynamically.
+   *
+   * @example
+   * ```typescript
+   * const deductions = await trpc.payroll.getFamilyDeductions.query({
+   *   countryCode: 'CI',
+   * });
+   * // deductions = [
+   * //   { fiscalParts: 1.0, deductionAmount: 0, description: { fr: "1.0 - Célibataire" } },
+   * //   { fiscalParts: 1.5, deductionAmount: 5500, description: { fr: "1.5 - Marié(e), 1 enfant" } },
+   * //   ...
+   * // ]
+   * ```
+   */
+  getFamilyDeductions: publicProcedure
+    .input(
+      z.object({
+        countryCode: z.string().length(2),
+        effectiveDate: z.date().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const effectiveDate = input.effectiveDate || new Date();
+
+      try {
+        const config = await ruleLoader.getCountryConfig(input.countryCode, effectiveDate);
+
+        // Return family deductions if supported, empty array otherwise
+        if (!config.taxSystem.supportsFamilyDeductions) {
+          return [];
+        }
+
+        return config.taxSystem.familyDeductions.map((fd) => ({
+          fiscalParts: fd.fiscalParts,
+          deductionAmount: fd.deductionAmount,
+          description: fd.description,
+        }));
+      } catch (error) {
+        // Country not configured yet or no tax system
+        return [];
+      }
+    }),
+
+  /**
+   * Get available export templates for a country
+   *
+   * Returns export templates (CNPS, CMU, bank transfers, etc.) from database.
+   * Used to render export buttons dynamically in payroll run detail page.
+   *
+   * @example
+   * ```typescript
+   * const templates = await trpc.payroll.getAvailableExports.query({
+   *   runId: 'run-123',
+   * });
+   * // templates = [
+   * //   { id: '...', templateType: 'social_security', providerCode: 'cnps', providerName: 'CNPS' },
+   * //   { id: '...', templateType: 'health', providerCode: 'cmu', providerName: 'CMU' },
+   * //   ...
+   * // ]
+   * ```
+   */
+  getAvailableExports: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .query(async ({ input }) => {
+      // Get payroll run to determine country
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      // For now, return hardcoded CI exports
+      // TODO: Load from export_templates table when it's created
+      const countryCode = 'CI'; // run.countryCode when field is added
+
+      // Hardcoded CI exports (temporary until export_templates table exists)
+      const ciExports = [
+        {
+          id: 'cnps',
+          templateType: 'social_security',
+          providerCode: 'cnps_ci',
+          providerName: 'CNPS',
+          fileFormat: 'xlsx',
+        },
+        {
+          id: 'cmu',
+          templateType: 'health',
+          providerCode: 'cmu_ci',
+          providerName: 'CMU',
+          fileFormat: 'xlsx',
+        },
+        {
+          id: 'etat301',
+          templateType: 'tax',
+          providerCode: 'dgi_ci',
+          providerName: 'État 301 (DGI)',
+          fileFormat: 'xlsx',
+        },
+        {
+          id: 'bank_transfer',
+          templateType: 'bank_transfer',
+          providerCode: 'standard',
+          providerName: 'Virement Bancaire',
+          fileFormat: 'xlsx',
+        },
+      ];
+
+      return ciExports;
+    }),
+
+  // ========================================
   // Export Procedures
   // ========================================
 
@@ -444,6 +647,46 @@ export const payrollRouter = createTRPCRouter({
         where: (employees, { eq }) => eq(employees.id, input.employeeId),
       });
 
+      // Load country config for dynamic labels
+      let countryConfig;
+      try {
+        const config = await ruleLoader.getCountryConfig(run.countryCode);
+
+        // Map country config to payslip format
+        countryConfig = {
+          taxSystemName: config.taxSystem.name.fr,
+          socialSchemeName: config.socialScheme.name.fr,
+          laborCodeReference: config.laborCodeReference?.fr,
+          contributions: config.socialScheme.contributions.map((contrib) => ({
+            code: contrib.code,
+            name: contrib.name.fr,
+            employeeRate: contrib.employeeRate,
+            employerRate: contrib.employerRate,
+            employeeAmount: contrib.code === 'pension'
+              ? parseFloat(lineItem.cnpsEmployee?.toString() || '0')
+              : contrib.code === 'health'
+              ? parseFloat(lineItem.cmuEmployee?.toString() || '0')
+              : 0,
+            employerAmount: contrib.code === 'pension'
+              ? parseFloat(lineItem.cnpsEmployer?.toString() || '0')
+              : contrib.code === 'health'
+              ? parseFloat(lineItem.cmuEmployer?.toString() || '0')
+              : 0,
+          })),
+          otherTaxes: config.otherTaxes.map((tax) => ({
+            code: tax.code,
+            name: tax.name.fr,
+            paidBy: tax.paidBy,
+            amount: tax.code === 'fdfp' || tax.code === 'fdfp_tap'
+              ? parseFloat(lineItem.totalOtherTaxes?.toString() || '0')
+              : 0,
+          })),
+        };
+      } catch (error) {
+        // If country config not found, payslip will use fallback labels
+        console.warn(`Country config not found for ${run.countryCode}, using fallback labels`);
+      }
+
       // Prepare payslip data
       const payslipData: PayslipData = {
         companyName: tenant?.name || 'Company',
@@ -469,6 +712,7 @@ export const payrollRouter = createTRPCRouter({
         paymentMethod: lineItem.paymentMethod,
         bankAccount: lineItem.bankAccount || undefined,
         daysWorked: parseFloat(lineItem.daysWorked?.toString() || '0'),
+        countryConfig,
       };
 
       // Generate PDF
