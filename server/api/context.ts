@@ -21,6 +21,15 @@ const DEV_MOCK_TENANT = {
 };
 
 /**
+ * Development-only mock user
+ * Uses actual user ID from database
+ */
+const DEV_MOCK_USER = {
+  id: 'cb127444-aac4-45a5-8682-93d5f7ef5775',
+  role: 'tenant_admin',
+};
+
+/**
  * Create context for tRPC
  * Cached to prevent duplicate calls in Server Components
  */
@@ -42,7 +51,7 @@ export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) =
   return {
     tenantId,
     userRole,
-    user: DEV_MOCK_TENANT,
+    user: DEV_MOCK_USER,
     db,
   };
 });

@@ -16,6 +16,7 @@ export const countries = pgTable("countries", {
 	name: jsonb().notNull(),
 	currencyCode: varchar("currency_code", { length: 3 }).notNull(),
 	decimalPlaces: integer("decimal_places").default(0).notNull(),
+	minimumWage: numeric("minimum_wage", { precision: 15, scale: 2 }),
 	isActive: boolean("is_active").default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -194,6 +195,7 @@ export const positions = pgTable("positions", {
 	description: text(),
 	departmentId: uuid("department_id"),
 	reportsToPositionId: uuid("reports_to_position_id"),
+	salaryBandId: uuid("salary_band_id"),
 	minSalary: numeric("min_salary", { precision: 15, scale:  2 }),
 	maxSalary: numeric("max_salary", { precision: 15, scale:  2 }),
 	currency: text().default('XOF').notNull(),
@@ -445,6 +447,161 @@ export const employeeSalaries = pgTable("employee_salaries", {
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
 	check("employee_salaries_base_salary_check", sql`base_salary >= (75000)::numeric`),
 	check("valid_pay_frequency", sql`pay_frequency = ANY (ARRAY['monthly'::text, 'biweekly'::text, 'weekly'::text])`),
+]);
+
+export const salaryReviews = pgTable("salary_reviews", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+	currentSalary: numeric("current_salary", { precision: 15, scale: 2 }).notNull(),
+	proposedSalary: numeric("proposed_salary", { precision: 15, scale: 2 }).notNull(),
+	proposedAllowances: jsonb("proposed_allowances").default({}).notNull(),
+	effectiveFrom: date("effective_from").notNull(),
+	reason: text().notNull(),
+	justification: text(),
+	status: text().default('pending').notNull(),
+	requestedBy: uuid("requested_by").notNull(),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	reviewedBy: uuid("reviewed_by"),
+	reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: 'string' }),
+	reviewNotes: text("review_notes"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_salary_reviews_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	index("idx_salary_reviews_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("text_ops")),
+	index("idx_salary_reviews_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.employeeId],
+			foreignColumns: [employees.id],
+			name: "salary_reviews_employee_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.requestedBy],
+			foreignColumns: [users.id],
+			name: "salary_reviews_requested_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.reviewedBy],
+			foreignColumns: [users.id],
+			name: "salary_reviews_reviewed_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "salary_reviews_tenant_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
+	check("valid_status_salary_review", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])`),
+]);
+
+export const salaryBands = pgTable("salary_bands", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	name: text().notNull(),
+	code: text(),
+	description: text(),
+	minSalary: numeric("min_salary", { precision: 15, scale: 2 }).notNull(),
+	maxSalary: numeric("max_salary", { precision: 15, scale: 2 }).notNull(),
+	midpoint: numeric({ precision: 15, scale: 2 }),
+	currency: text().default('XOF').notNull(),
+	grade: text(),
+	effectiveFrom: date("effective_from").default(sql`CURRENT_DATE`).notNull(),
+	effectiveTo: date("effective_to"),
+	status: text().default('active').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+}, (table) => [
+	index("idx_salary_bands_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_salary_bands_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "salary_bands_created_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "salary_bands_tenant_id_fkey"
+		}).onDelete("cascade"),
+	unique("unique_salary_band_code").on(table.tenantId, table.code),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
+	check("valid_salary_range_bands", sql`min_salary <= max_salary`),
+	check("valid_status_band", sql`status = ANY (ARRAY['active'::text, 'inactive'::text])`),
+]);
+
+export const bulkSalaryAdjustments = pgTable("bulk_salary_adjustments", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	name: text().notNull(),
+	description: text(),
+	adjustmentType: text("adjustment_type").notNull(),
+	adjustmentValue: numeric("adjustment_value", { precision: 15, scale: 2 }),
+	adjustmentPercentage: numeric("adjustment_percentage", { precision: 5, scale: 2 }),
+	effectiveFrom: date("effective_from").notNull(),
+	reason: text().notNull(),
+	status: text().default('draft').notNull(),
+	createdBy: uuid("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	approvedBy: uuid("approved_by"),
+	approvedAt: timestamp("approved_at", { withTimezone: true, mode: 'string' }),
+	executedBy: uuid("executed_by"),
+	executedAt: timestamp("executed_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("idx_bulk_adjustments_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_bulk_adjustments_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.approvedBy],
+			foreignColumns: [users.id],
+			name: "bulk_salary_adjustments_approved_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [users.id],
+			name: "bulk_salary_adjustments_created_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.executedBy],
+			foreignColumns: [users.id],
+			name: "bulk_salary_adjustments_executed_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "bulk_salary_adjustments_tenant_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
+	check("valid_adjustment_type", sql`adjustment_type = ANY (ARRAY['flat'::text, 'percentage'::text])`),
+	check("valid_status_bulk", sql`status = ANY (ARRAY['draft'::text, 'pending_approval'::text, 'approved'::text, 'executed'::text, 'cancelled'::text])`),
+]);
+
+export const bulkAdjustmentItems = pgTable("bulk_adjustment_items", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	bulkAdjustmentId: uuid("bulk_adjustment_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+	currentSalary: numeric("current_salary", { precision: 15, scale: 2 }).notNull(),
+	proposedSalary: numeric("proposed_salary", { precision: 15, scale: 2 }).notNull(),
+	adjustmentAmount: numeric("adjustment_amount", { precision: 15, scale: 2 }).notNull(),
+	status: text().default('pending').notNull(),
+	errorMessage: text("error_message"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_bulk_items_adjustment").using("btree", table.bulkAdjustmentId.asc().nullsLast().op("uuid_ops")),
+	index("idx_bulk_items_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.bulkAdjustmentId],
+			foreignColumns: [bulkSalaryAdjustments.id],
+			name: "bulk_adjustment_items_bulk_adjustment_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.employeeId],
+			foreignColumns: [employees.id],
+			name: "bulk_adjustment_items_employee_id_fkey"
+		}).onDelete("cascade"),
+	unique("unique_employee_per_adjustment").on(table.bulkAdjustmentId, table.employeeId),
+	check("valid_status_item", sql`status = ANY (ARRAY['pending'::text, 'executed'::text, 'failed'::text, 'skipped'::text])`),
 ]);
 
 export const sectorContributionOverrides = pgTable("sector_contribution_overrides", {

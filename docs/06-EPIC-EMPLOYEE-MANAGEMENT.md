@@ -1198,6 +1198,268 @@ describe('Change Salary', () => {
 });
 ```
 
+#### Story 5.2: Custom Salary Components (Flexible Allowances)
+**As a** HR manager
+**I want** to add custom salary components beyond the standard allowances
+**So that** company-specific bonuses and allowances can be tracked
+
+**UX Philosophy (per HCI-DESIGN-PRINCIPLES.md):**
+- **Simple for 90%**: Show only base salary + 3 standard allowances (housing, transport, meal)
+- **Powerful for 10%**: Allow adding custom components via "Add custom allowance" button
+- **Admin controls**: Company-wide component templates for consistency
+- **Auto-calculated**: Seniority bonus (2%/year, max 25%) added automatically based on hire date
+
+**Architecture Overview:**
+```
+User sees:        Base Salary + 3 standard allowances + custom (optional)
+                  ↓
+System stores:    Structured component array in JSONB with component codes
+                  ↓
+Payroll uses:     Components with tax treatment flags for accurate calculations
+```
+
+**Acceptance Criteria:**
+- [ ] Support standard components: Base (code 11), Housing (23), Transport (22), Meal (24), Seniority (21)
+- [ ] Auto-calculate seniority bonus: 2% per year of service, max 25%
+- [ ] Allow HR to add ad-hoc custom allowances (name, amount, tax status)
+- [ ] Allow admins to create reusable company-wide component templates
+- [ ] Store components as JSONB array with code, amount, name, isTaxable
+- [ ] Keep backward compatibility with existing baseSalary, housingAllowance columns
+- [ ] Use correct calculation bases in payroll: Brut Imposable vs Salaire Catégoriel
+- [ ] Display components on payslip with proper labels
+
+**Data Model:**
+```typescript
+// Custom component definitions (company templates)
+interface CustomSalaryComponent {
+  id: uuid;
+  tenantId: uuid;
+  name: string;  // "Prime de performance"
+  componentCode: string;  // Auto: "CUSTOM_001", "CUSTOM_002"
+  defaultAmount: number;  // Suggested amount
+  isTaxable: boolean;  // Tax treatment
+  includeInBrutImposable: boolean;  // For ITS, CNPS pension
+  includeInSalaireCategoriel: boolean;  // For CNPS family benefits
+}
+
+// Stored in employee_salaries.components (JSONB)
+interface SalaryComponentInstance {
+  code: string;  // "11", "21", "22", "23", "CUSTOM_001"
+  amount: number;
+  name: string;  // For payslip display
+  isTaxable?: boolean;  // For custom components
+}
+
+// Example storage:
+{
+  "baseSalary": "300000",  // Backward compat
+  "components": [
+    { "code": "11", "amount": 300000, "name": "Salaire de base" },
+    { "code": "23", "amount": 50000, "name": "Indemnité de logement" },
+    { "code": "21", "amount": 12000, "name": "Prime d'ancienneté" },  // Auto-calc
+    { "code": "CUSTOM_001", "amount": 25000, "name": "Prime de performance", "isTaxable": true }
+  ]
+}
+```
+
+**Standard Component Codes (Côte d'Ivoire):**
+```
+Code 11: Salaire catégoriel (base salary)
+Code 12: Sursalaire
+Code 21: Prime d'ancienneté (seniority - auto-calculated)
+Code 22: Prime de transport (tax-exempt up to 30k)
+Code 23: Avantage en nature - Logement (housing)
+Code 24: Avantage en nature - Autres (meal, other benefits)
+Code 31: Prime de rendement (performance bonus)
+Code 32: Prime de responsabilité
+Code 33: Heures supplémentaires (overtime)
+Code 41: Allocations familiales (not taxable)
+```
+
+**Test Cases:**
+```typescript
+describe('Custom Salary Components', () => {
+  it('should add ad-hoc custom allowance', async () => {
+    const emp = await createTestEmployee({ baseSalary: 300000 });
+
+    await caller.employees.changeSalary({
+      employeeId: emp.id,
+      baseSalary: 300000,
+      customAllowances: [
+        {
+          name: 'Prime de performance',
+          amount: 50000,
+          isTaxable: true,
+        }
+      ],
+      effectiveFrom: new Date('2025-02-01'),
+      changeReason: 'bonus',
+    });
+
+    const salary = await getCurrentSalary(emp.id);
+    expect(salary.components).toContainEqual({
+      code: expect.stringMatching(/CUSTOM_\d{3}/),
+      amount: 50000,
+      name: 'Prime de performance',
+      isTaxable: true,
+    });
+  });
+
+  it('should auto-calculate seniority bonus', async () => {
+    const emp = await createTestEmployee({
+      hireDate: new Date('2020-01-01'),  // 5 years ago
+      baseSalary: 300000,
+    });
+
+    await caller.employees.changeSalary({
+      employeeId: emp.id,
+      baseSalary: 300000,
+      effectiveFrom: new Date('2025-02-01'),
+      changeReason: 'adjustment',
+    });
+
+    const salary = await getCurrentSalary(emp.id);
+    const seniorityComponent = salary.components.find(c => c.code === '21');
+
+    expect(seniorityComponent).toBeDefined();
+    expect(seniorityComponent.amount).toBe(30000);  // 5 years × 2% × 300k
+    expect(seniorityComponent.name).toBe('Prime d\'ancienneté');
+  });
+
+  it('should cap seniority at 25%', async () => {
+    const emp = await createTestEmployee({
+      hireDate: new Date('2000-01-01'),  // 25 years ago
+      baseSalary: 300000,
+    });
+
+    await caller.employees.changeSalary({
+      employeeId: emp.id,
+      baseSalary: 300000,
+      effectiveFrom: new Date('2025-02-01'),
+      changeReason: 'adjustment',
+    });
+
+    const salary = await getCurrentSalary(emp.id);
+    const seniorityComponent = salary.components.find(c => c.code === '21');
+
+    expect(seniorityComponent.amount).toBe(75000);  // Max 25% × 300k
+  });
+
+  it('should create company-wide component template', async () => {
+    const template = await caller.salaryComponents.create({
+      name: 'Prime de responsabilité',
+      defaultAmount: 75000,
+      isTaxable: true,
+    });
+
+    expect(template.id).toBeDefined();
+    expect(template.componentCode).toMatch(/CUSTOM_\d{3}/);
+    expect(template.tenantId).toBe(ctx.tenantId);
+  });
+
+  it('should use component template when adding to employee', async () => {
+    const template = await caller.salaryComponents.create({
+      name: 'Prime de responsabilité',
+      defaultAmount: 75000,
+      isTaxable: true,
+    });
+
+    const emp = await createTestEmployee({ baseSalary: 300000 });
+
+    await caller.employees.changeSalary({
+      employeeId: emp.id,
+      baseSalary: 300000,
+      customAllowances: [
+        {
+          customComponentId: template.id,
+          amount: 80000,  // Can override default
+        }
+      ],
+      effectiveFrom: new Date('2025-02-01'),
+      changeReason: 'promotion',
+    });
+
+    const salary = await getCurrentSalary(emp.id);
+    expect(salary.components).toContainEqual({
+      code: template.componentCode,
+      amount: 80000,
+      name: 'Prime de responsabilité',
+      isTaxable: true,
+    });
+  });
+
+  it('should use correct calculation bases in payroll', async () => {
+    const emp = await createTestEmployee({
+      baseSalary: 300000,  // Code 11: included in both bases
+      housingAllowance: 50000,  // Code 23: included in Brut Imposable
+      transportAllowance: 25000,  // Code 22: excluded from both (tax-exempt)
+    });
+
+    const payroll = await calculatePayrollV2(emp, period);
+
+    // Brut Imposable = 300k + 50k = 350k (for ITS tax, CNPS pension)
+    expect(payroll.calculationBases.brutImposable).toBe(350000);
+
+    // Salaire Catégoriel = 300k only (for CNPS family benefits)
+    expect(payroll.calculationBases.salaireCategoriel).toBe(300000);
+
+    // Total Gross = 300k + 50k + 25k = 375k
+    expect(payroll.gross).toBe(375000);
+  });
+});
+```
+
+**UI Mock (Simple Mode - 90% of users):**
+```
+┌─────────────────────────────────────────┐
+│ 💰 Salaire de Jean Kouassi             │
+├─────────────────────────────────────────┤
+│                                         │
+│ Salaire de base *                       │
+│ ┌─────────────────────────────────────┐ │
+│ │ 300,000                             │ │
+│ └─────────────────────────────────────┘ │
+│ Minimum: 75,000 FCFA (SMIG)             │
+│                                         │
+│ ─────────────────────────────────────── │
+│ Indemnités mensuelles (optionnel)       │
+│                                         │
+│ 🏠 Logement      🚗 Transport   🍽️ Repas │
+│ ┌───────┐       ┌───────┐      ┌──────┐│
+│ │50,000 │       │25,000 │      │10,000││
+│ └───────┘       └───────┘      └──────┘│
+│                 Max: 30,000             │
+│                                         │
+│ ┌─────────────────────────────────────┐ │
+│ │ + Ajouter une indemnité             │ │  ← Only for advanced users
+│ └─────────────────────────────────────┘ │
+│                                         │
+│ ℹ️ Prime d'ancienneté automatique       │
+│ 4 ans de service = +8% du salaire       │
+│ +24,000 FCFA par mois                   │
+│                                         │
+│ ─────────────────────────────────────── │
+│ Salaire brut total mensuel              │
+│ 409,000 FCFA                            │
+│                                         │
+│ [Annuler]         [✓ Enregistrer]       │
+└─────────────────────────────────────────┘
+```
+
+**Migration Strategy:**
+1. Add `components` JSONB column to `employee_salaries` (nullable for backward compat)
+2. Keep existing columns: `baseSalary`, `housingAllowance`, `transportAllowance`, `mealAllowance`
+3. New salary changes write to BOTH old columns AND new components array
+4. Payroll engine reads from components (with fallback to old columns)
+5. Eventually deprecate old columns after full migration
+
+**Implementation Files:**
+- `drizzle/schema.ts` - Add `customSalaryComponents` table, `components` column
+- `features/employees/services/salary.service.ts` - Component mapping logic
+- `server/routers/salary-components.ts` - tRPC router for component management
+- `app/settings/salary-components/page.tsx` - Admin UI for templates
+- `app/employees/[id]/salary/edit/page.tsx` - Simplified salary edit form
+
 ---
 
 ## Implementation Phases
