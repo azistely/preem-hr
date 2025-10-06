@@ -253,6 +253,14 @@ function calculateOtherTaxes(
 
 /**
  * Calculate social security contributions from database config
+ *
+ * COUNTRY-AGNOSTIC: Works for any country by categorizing contributions
+ * based on who pays (employee vs employer) and type (retirement, health, other).
+ *
+ * Categorization logic:
+ * - Retirement/Pension contributions → cnpsEmployee + cnpsEmployer
+ * - Health/Medical contributions → cmuEmployee + cmuEmployer
+ * - Other employer-only contributions → cnpsEmployer
  */
 function calculateSocialSecurityContributions(
   grossSalary: number,
@@ -266,7 +274,7 @@ function calculateSocialSecurityContributions(
   let cmuEmployer = 0;
 
   for (const contrib of contributions) {
-    const code = contrib.code;
+    const code = contrib.code.toLowerCase();
 
     // Determine calculation base based on contribution type
     let calculationBase = grossSalary;
@@ -275,22 +283,27 @@ function calculateSocialSecurityContributions(
       // For salaire_categoriel: use ceiling amount as the base (not a cap)
       // This is used for family benefits and work accident in Côte d'Ivoire (70,000 FCFA)
       calculationBase = contrib.ceilingAmount ? Number(contrib.ceilingAmount) : grossSalary;
-    } else if (contrib.calculationBase === 'brut_imposable') {
-      // For brut_imposable: use gross salary, optionally capped by ceiling
+    } else if (contrib.calculationBase === 'brut_imposable' || contrib.calculationBase === 'gross_salary') {
+      // For brut_imposable/gross_salary: use gross salary, optionally capped by ceiling
       calculationBase = Math.min(
         grossSalary,
-        contrib.ceilingAmount ? Number(contrib.ceilingAmount) : grossSalary
+        contrib.ceilingAmount ? Number(contrib.ceilingAmount) : Infinity
       );
     }
     // else: use grossSalary as default
 
-    // Fixed amount contributions (e.g., CMU)
+    // Fixed amount contributions (e.g., CMU in Côte d'Ivoire)
     if (contrib.fixedAmount) {
       const fixedAmount = Number(contrib.fixedAmount);
-      if (code === 'cmu') {
+
+      // Categorize by code pattern (health/medical → CMU bucket)
+      if (code.includes('cmu') || code.includes('health') || code.includes('medical')) {
         cmuEmployee = fixedAmount;
-        // CMU employer: 500 for employee + 4,500 for family
+        // CMU employer: 500 for employee + 4,500 for family (CI-specific)
         cmuEmployer = options.hasFamily ? 5000 : 500;
+      } else {
+        // Other fixed contributions go to CNPS employer bucket
+        cnpsEmployer += fixedAmount;
       }
       continue;
     }
@@ -314,11 +327,28 @@ function calculateSocialSecurityContributions(
     const employeeAmount = Math.round(calculationBase * employeeRate);
     const employerAmount = Math.round(calculationBase * employerRate);
 
-    // Accumulate by type
-    if (code === 'pension') {
+    // Categorize contributions by code pattern (country-agnostic)
+    // Retirement/Pension → CNPS buckets (both employee and employer)
+    if (code.includes('pension') || code.includes('retraite') || code.includes('retirement')) {
       cnpsEmployee += employeeAmount;
       cnpsEmployer += employerAmount;
-    } else if (code.includes('family') || code.includes('work_accident')) {
+    }
+    // Health/Medical → CMU buckets
+    else if (code.includes('health') || code.includes('medical') || code.includes('ipress') || code.includes('maladie')) {
+      cmuEmployee += employeeAmount;
+      cmuEmployer += employerAmount;
+    }
+    // Family, Work Accident, and other employer-only → CNPS employer bucket
+    else if (code.includes('family') || code.includes('familial') || code.includes('pf') ||
+             code.includes('work_accident') || code.includes('accident') || code.includes('at') ||
+             code.includes('maternity') || code.includes('maternite')) {
+      // These are typically employer-only, but add both just in case
+      cnpsEmployee += employeeAmount;
+      cnpsEmployer += employerAmount;
+    }
+    // Catch-all: any other contribution type → CNPS buckets
+    else {
+      cnpsEmployee += employeeAmount;
       cnpsEmployer += employerAmount;
     }
   }
