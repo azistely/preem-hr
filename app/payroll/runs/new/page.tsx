@@ -24,9 +24,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Form validation schema
 const formSchema = z.object({
+  countryCode: z.string().length(2, { message: 'Sélectionnez un pays' }),
   periodStart: z.string().min(1, { message: 'Date de début requise' }),
   periodEnd: z.string().min(1, { message: 'Date de fin requise' }),
   paymentDate: z.string().min(1, { message: 'Date de paiement requise' }),
@@ -52,7 +54,11 @@ export default function NewPayrollRunPage() {
 
   // Mock tenant ID - in production, get from auth context
   const tenantId = '00000000-0000-0000-0000-000000000001';
-  const userId = '00000000-0000-0000-0000-000000000001';
+  const userId = 'cb127444-aac4-45a5-8682-93d5f7ef5775'; // Real auth user ID
+
+  // Load available countries and tenant info
+  const { data: availableCountries, isLoading: countriesLoading } = api.payroll.getAvailableCountries.useQuery();
+  const { data: tenant } = api.tenant.getCurrent.useQuery();
 
   // Initialize form with current month defaults
   const currentMonthStart = startOfMonth(new Date());
@@ -62,6 +68,7 @@ export default function NewPayrollRunPage() {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      countryCode: tenant?.countryCode || 'CI',
       periodStart: format(currentMonthStart, 'yyyy-MM-dd'),
       periodEnd: format(currentMonthEnd, 'yyyy-MM-dd'),
       paymentDate: format(addMonths(nextMonthStart, 0).setDate(5), 'yyyy-MM-dd'),
@@ -88,6 +95,7 @@ export default function NewPayrollRunPage() {
 
       await createRun.mutateAsync({
         tenantId,
+        countryCode: values.countryCode,
         periodStart: new Date(values.periodStart),
         periodEnd: new Date(values.periodEnd),
         paymentDate: new Date(values.paymentDate),
@@ -190,6 +198,35 @@ export default function NewPayrollRunPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* Country Selector */}
+              <FormField
+                control={form.control}
+                name="countryCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-base">Pays</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={countriesLoading}>
+                      <FormControl>
+                        <SelectTrigger className="min-h-[48px] text-lg">
+                          <SelectValue placeholder="Sélectionnez le pays" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {availableCountries?.map((country) => (
+                          <SelectItem key={country.code} value={country.code} className="text-base py-3">
+                            {country.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Pays pour le calcul de la paie (détermine les règles fiscales et sociales)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {/* Period Start */}
               <FormField
                 control={form.control}

@@ -57,7 +57,7 @@ export default function PayrollRunsPage() {
   const [selectedStatus, setSelectedStatus] = useState<RunStatus | 'all'>('all');
 
   // Mock tenant ID - in production, get from auth context
-  const tenantId = '00000000-0000-0000-0000-000000000000';
+  const tenantId = '00000000-0000-0000-0000-000000000001';
 
   // Load payroll runs
   const { data: runs, isLoading, refetch } = api.payroll.listRuns.useQuery({
