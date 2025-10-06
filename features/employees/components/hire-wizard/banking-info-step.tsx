@@ -77,7 +77,6 @@ export function BankingInfoStep({ form }: BankingInfoStepProps) {
                 type="number"
                 min={0}
                 max={10}
-                defaultValue={0}
                 className="min-h-[48px]"
                 onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
               />

@@ -24,9 +24,10 @@ function getEncryptionKey(): Buffer {
     throw new Error('ENCRYPTION_KEY environment variable is required');
   }
 
-  // Derive key using PBKDF2
-  const salt = crypto.randomBytes(SALT_LENGTH);
-  const derivedKey = crypto.pbkdf2Sync(key, salt, 100000, KEY_LENGTH, 'sha512');
+  // Use a fixed salt for consistent key derivation
+  // In production, this salt should also be stored securely
+  const FIXED_SALT = 'preem-hr-encryption-salt-v1';
+  const derivedKey = crypto.pbkdf2Sync(key, FIXED_SALT, 100000, KEY_LENGTH, 'sha512');
 
   return derivedKey;
 }

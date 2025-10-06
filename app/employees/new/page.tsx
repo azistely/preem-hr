@@ -35,7 +35,7 @@ const createEmployeeSchema = z.object({
   firstName: z.string().min(1, 'Le prénom est requis'),
   lastName: z.string().min(1, 'Le nom est requis'),
   preferredName: z.string().optional(),
-  email: z.string().email('Email invalide'),
+  email: z.string().email('Email invalide').optional().or(z.literal('')),
   phone: z.string().optional(),
   dateOfBirth: z.date().optional(),
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
