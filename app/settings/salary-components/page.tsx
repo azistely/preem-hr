@@ -85,7 +85,7 @@ export default function SalaryComponentsPage() {
       <Tabs defaultValue="custom" className="space-y-6">
         <TabsList>
           <TabsTrigger value="custom">
-            Mes composants ({customComponents?.length || 0})
+            Composants actifs ({customComponents?.length || 0})
           </TabsTrigger>
           <TabsTrigger value="standard">
             Composants standards ({standardComponents?.length || 0})
