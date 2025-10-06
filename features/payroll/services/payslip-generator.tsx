@@ -224,10 +224,14 @@ const styles = StyleSheet.create({
 // ========================================
 
 const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('fr-FR', {
+  // Use regular space for PDF compatibility
+  const formatted = new Intl.NumberFormat('fr-FR', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Math.round(amount));
+
+  // Replace ALL types of spaces (non-breaking \u00A0, narrow no-break \u202F) with regular space
+  return formatted.replace(/[\u00A0\u202F]/g, ' ');
 };
 
 const formatPeriod = (start: Date, end: Date): string => {

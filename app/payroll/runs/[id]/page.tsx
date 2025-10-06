@@ -33,11 +33,14 @@ import {
   FileSpreadsheet,
   Building2,
   Landmark,
+  Archive,
+  Eye,
 } from 'lucide-react';
 import { api } from '@/trpc/react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -103,6 +106,7 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const [isApproving, setIsApproving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [previewPayslip, setPreviewPayslip] = useState<{ employeeId: string; employeeName: string; pdfUrl: string } | null>(null);
 
   // Unwrap params promise (Next.js 15)
   const { id: runId } = use(params);
@@ -160,6 +164,8 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const exportCMU = api.payroll.exportCMU.useMutation();
   const exportEtat301 = api.payroll.exportEtat301.useMutation();
   const exportBankTransfer = api.payroll.exportBankTransfer.useMutation();
+  const generatePayslip = api.payroll.generatePayslip.useMutation();
+  const generateBulkPayslips = api.payroll.generateBulkPayslips.useMutation();
 
   const formatCurrency = (amount: number | string) => {
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -260,6 +266,69 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     } finally {
       setIsExporting(null);
     }
+  };
+
+  // Download individual payslip
+  const handleDownloadPayslip = async (employeeId: string, employeeName: string) => {
+    if (!run) return;
+
+    try {
+      const result = await generatePayslip.mutateAsync({
+        runId: run.id,
+        employeeId,
+      });
+      downloadFile(result.data, result.filename, result.contentType);
+    } catch (error: any) {
+      alert(`Erreur lors de la génération du bulletin: ${error.message}`);
+    }
+  };
+
+  // Download all payslips as ZIP
+  const handleDownloadAllPayslips = async () => {
+    if (!run) return;
+
+    try {
+      const result = await generateBulkPayslips.mutateAsync({
+        runId: run.id,
+      });
+      downloadFile(result.data, result.filename, result.contentType);
+    } catch (error: any) {
+      alert(`Erreur lors de la génération des bulletins: ${error.message}`);
+    }
+  };
+
+  // Preview payslip
+  const handlePreviewPayslip = async (employeeId: string, employeeName: string) => {
+    if (!run) return;
+
+    try {
+      const result = await generatePayslip.mutateAsync({
+        runId: run.id,
+        employeeId,
+      });
+
+      // Convert base64 to blob URL for preview
+      const byteCharacters = atob(result.data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const pdfUrl = URL.createObjectURL(blob);
+
+      setPreviewPayslip({ employeeId, employeeName, pdfUrl });
+    } catch (error: any) {
+      alert(`Erreur lors de la génération du bulletin: ${error.message}`);
+    }
+  };
+
+  // Close preview and cleanup
+  const handleClosePreview = () => {
+    if (previewPayslip?.pdfUrl) {
+      URL.revokeObjectURL(previewPayslip.pdfUrl);
+    }
+    setPreviewPayslip(null);
   };
 
   if (isLoading) {
@@ -450,59 +519,104 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
           </>
         )}
 
-        {status === 'approved' && (
-          <>
-            {/* Dynamic Export Buttons - Loaded from Database */}
-            {isLoadingExports ? (
-              <Button disabled variant="outline" className="gap-2" size="lg">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Chargement des exports...
-              </Button>
-            ) : availableExports && availableExports.length > 0 ? (
-              availableExports.map((exportTemplate) => {
-                const getIcon = () => {
-                  switch (exportTemplate.templateType) {
-                    case 'social_security':
-                      return Building2;
-                    case 'health':
-                      return FileSpreadsheet;
-                    case 'tax':
-                      return FileText;
-                    case 'bank_transfer':
-                      return Landmark;
-                    default:
-                      return Download;
-                  }
-                };
-                const Icon = getIcon();
+        {(status === 'approved' || status === 'paid') && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Exports et Documents
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Payslips Section */}
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-medium mb-1">Bulletins de Paie</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {run?.lineItems?.length || 0} bulletin{(run?.lineItems?.length || 0) > 1 ? 's' : ''} disponible{(run?.lineItems?.length || 0) > 1 ? 's' : ''}
+                  </p>
+                </div>
+                <Button
+                  onClick={handleDownloadAllPayslips}
+                  disabled={generateBulkPayslips.isPending}
+                  className="gap-2 w-full sm:w-auto min-h-[48px]"
+                  size="lg"
+                >
+                  {generateBulkPayslips.isPending ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Génération...
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="h-5 w-5" />
+                      Télécharger Tout (ZIP)
+                    </>
+                  )}
+                </Button>
+              </div>
 
-                return (
-                  <Button
-                    key={exportTemplate.id}
-                    onClick={() => handleExport(exportTemplate.id)}
-                    disabled={isExporting !== null}
-                    variant="outline"
-                    className="gap-2"
-                    size="lg"
-                  >
-                    {isExporting === exportTemplate.id ? (
-                      <>
+              {/* Regulatory Exports Section */}
+              {(isLoadingExports || (availableExports && availableExports.length > 0)) && (
+                <div className="space-y-3 pt-3 border-t">
+                  <div>
+                    <h3 className="text-sm font-medium mb-1">Déclarations Réglementaires</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Exports pour les organismes officiels
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {isLoadingExports ? (
+                      <Button disabled variant="outline" className="gap-2 min-h-[48px]">
                         <Loader2 className="h-5 w-5 animate-spin" />
-                        Export...
-                      </>
+                        Chargement...
+                      </Button>
                     ) : (
-                      <>
-                        <Icon className="h-5 w-5" />
-                        {exportTemplate.providerName}
-                      </>
+                      availableExports?.map((exportTemplate) => {
+                        const getIcon = () => {
+                          switch (exportTemplate.templateType) {
+                            case 'social_security':
+                              return Building2;
+                            case 'health':
+                              return FileSpreadsheet;
+                            case 'tax':
+                              return FileText;
+                            case 'bank_transfer':
+                              return Landmark;
+                            default:
+                              return Download;
+                          }
+                        };
+                        const Icon = getIcon();
+
+                        return (
+                          <Button
+                            key={exportTemplate.id}
+                            onClick={() => handleExport(exportTemplate.id)}
+                            disabled={isExporting !== null}
+                            variant="outline"
+                            className="gap-2 min-h-[48px] justify-start"
+                          >
+                            {isExporting === exportTemplate.id ? (
+                              <>
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                                <span className="truncate">Export...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Icon className="h-5 w-5 flex-shrink-0" />
+                                <span className="truncate">{exportTemplate.providerName}</span>
+                              </>
+                            )}
+                          </Button>
+                        );
+                      })
                     )}
-                  </Button>
-                );
-              })
-            ) : (
-              <p className="text-sm text-muted-foreground">Aucun export disponible</p>
-            )}
-          </>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {status === 'draft' && (
@@ -549,6 +663,9 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
                   <TableHead>ITS</TableHead>
                   <TableHead>Total Déductions</TableHead>
                   <TableHead className="text-right">Net à Payer</TableHead>
+                  {(status === 'approved' || status === 'paid') && (
+                    <TableHead className="text-right">Actions</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -581,6 +698,41 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
                     <TableCell className="text-right font-semibold">
                       {item.netSalary ? `${formatCurrency(item.netSalary)} FCFA` : '-'}
                     </TableCell>
+                    {(status === 'approved' || status === 'paid') && (
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="default"
+                            variant="outline"
+                            onClick={() => handlePreviewPayslip(item.employeeId, item.employeeName || '')}
+                            disabled={generatePayslip.isPending}
+                            className="min-h-[44px] gap-2"
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span className="hidden sm:inline">Voir</span>
+                          </Button>
+                          <Button
+                            size="default"
+                            variant="default"
+                            onClick={() => handleDownloadPayslip(item.employeeId, item.employeeName || '')}
+                            disabled={generatePayslip.isPending}
+                            className="min-h-[44px] gap-2"
+                          >
+                            {generatePayslip.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span className="hidden sm:inline">Chargement...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Download className="h-4 w-4" />
+                                <span className="hidden sm:inline">Télécharger</span>
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -598,6 +750,42 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
           )}
         </CardContent>
       </Card>
+
+      {/* Payslip Preview Dialog */}
+      <Dialog open={!!previewPayslip} onOpenChange={(open) => !open && handleClosePreview()}>
+        <DialogContent className="max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 sm:p-6 gap-0">
+          <DialogHeader className="px-4 pt-4 pb-3 sm:px-6 sm:pt-6 border-b">
+            <DialogTitle className="text-lg sm:text-xl pr-8">
+              Bulletin de Paie - {previewPayslip?.employeeName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 px-4 py-3 sm:px-6 sm:py-4">
+            {previewPayslip?.pdfUrl && (
+              <iframe
+                src={`${previewPayslip.pdfUrl}#toolbar=0`}
+                className="w-full h-full border rounded"
+                title="Aperçu du bulletin de paie"
+              />
+            )}
+          </div>
+          <div className="px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4 border-t">
+            <Button
+              size="default"
+              variant="default"
+              onClick={() => {
+                if (previewPayslip) {
+                  handleDownloadPayslip(previewPayslip.employeeId, previewPayslip.employeeName);
+                }
+              }}
+              disabled={generatePayslip.isPending}
+              className="min-h-[48px] gap-2 w-full"
+            >
+              <Download className="h-5 w-5" />
+              Télécharger le Bulletin
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

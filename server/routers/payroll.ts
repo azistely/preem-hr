@@ -729,6 +729,143 @@ export const payrollRouter = createTRPCRouter({
     }),
 
   /**
+   * Generate bulk payslips for all employees in a payroll run
+   *
+   * Generates a ZIP file containing individual PDF payslips for all employees
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.generateBulkPayslips.mutate({
+   *   runId: 'run-123',
+   * });
+   * // result.data = ArrayBuffer (ZIP file)
+   * // result.filename = 'Bulletins_Paie_01_2025.zip'
+   * ```
+   */
+  generateBulkPayslips: publicProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const JSZip = (await import('jszip')).default;
+
+      // Get payroll run
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      if (run.status !== 'approved' && run.status !== 'paid') {
+        throw new Error('Seules les paies approuvées peuvent être exportées');
+      }
+
+      // Get all line items
+      const lineItems = await db.query.payrollLineItems.findMany({
+        where: eq(payrollLineItems.payrollRunId, input.runId),
+      });
+
+      if (lineItems.length === 0) {
+        throw new Error('Aucun employé trouvé dans cette paie');
+      }
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
+      });
+
+      // Get all employees
+      const employeeIds = lineItems.map(item => item.employeeId);
+      const employeesList = await db.query.employees.findMany({
+        where: (employees, { inArray }) => inArray(employees.id, employeeIds),
+      });
+      const employeeMap = new Map(employeesList.map(emp => [emp.id, emp]));
+
+      // Load country config for dynamic labels
+      let countryConfig;
+      try {
+        const config = await ruleLoader.getCountryConfig(run.countryCode);
+
+        // Map country config to payslip format
+        countryConfig = {
+          taxSystemName: config.taxSystem.name.fr,
+          socialSchemeName: config.socialScheme.name.fr,
+          laborCodeReference: config.laborCodeReference?.fr,
+          contributions: config.socialScheme.contributions.map((contrib) => ({
+            code: contrib.code,
+            name: contrib.name.fr,
+            employeeRate: contrib.employeeRate,
+            employerRate: contrib.employerRate,
+          })),
+          otherTaxes: config.otherTaxes.map((tax) => ({
+            code: tax.code,
+            name: tax.name.fr,
+            paidBy: tax.paidBy,
+          })),
+        };
+      } catch (error) {
+        // If country config not found, payslip will use fallback labels
+        console.warn(`Country config not found for ${run.countryCode}, using fallback labels`);
+      }
+
+      // Create ZIP
+      const zip = new JSZip();
+
+      // Generate payslip for each employee
+      for (const lineItem of lineItems) {
+        const employee = employeeMap.get(lineItem.employeeId);
+
+        if (!employee) continue;
+
+        const payslipData = {
+          employeeName: lineItem.employeeName || '',
+          employeeNumber: lineItem.employeeNumber || '',
+          position: lineItem.position || '',
+          companyName: tenant?.name || '',
+          companyAddress: tenant?.address || '',
+          periodStart: run.periodStart,
+          periodEnd: run.periodEnd,
+          payDate: run.payDate,
+          baseSalary: parseFloat(lineItem.baseSalary?.toString() || '0'),
+          grossSalary: parseFloat(lineItem.grossSalary?.toString() || '0'),
+          netSalary: parseFloat(lineItem.netSalary?.toString() || '0'),
+          cnpsEmployee: parseFloat(lineItem.cnpsEmployee?.toString() || '0'),
+          cnpsEmployer: parseFloat(lineItem.cnpsEmployer?.toString() || '0'),
+          cmuEmployee: parseFloat(lineItem.cmuEmployee?.toString() || '0'),
+          cmuEmployer: parseFloat(lineItem.cmuEmployer?.toString() || '0'),
+          its: parseFloat(lineItem.its?.toString() || '0'),
+          countryConfig,
+        };
+
+        const pdfBuffer = await renderToBuffer(
+          React.createElement(PayslipDocument, { data: payslipData })
+        );
+        const filename = generatePayslipFilename(payslipData.employeeName, new Date(run.periodStart));
+
+        zip.file(filename, pdfBuffer);
+      }
+
+      // Generate ZIP buffer
+      const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+      // Generate filename
+      const period = new Date(run.periodStart);
+      const month = String(period.getMonth() + 1).padStart(2, '0');
+      const year = period.getFullYear();
+      const zipFilename = `Bulletins_Paie_${month}_${year}.zip`;
+
+      return {
+        data: Buffer.from(zipBuffer).toString('base64'),
+        filename: zipFilename,
+        contentType: 'application/zip',
+      };
+    }),
+
+  /**
    * Export CNPS declaration Excel file
    *
    * Generates Excel file for CNPS portal submission.
