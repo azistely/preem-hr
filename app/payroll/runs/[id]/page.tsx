@@ -113,6 +113,11 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     runId,
   });
 
+  // Load available exports dynamically
+  const { data: availableExports, isLoading: isLoadingExports } = api.payroll.getAvailableExports.useQuery({
+    runId,
+  });
+
   // Calculate run mutation
   const calculateRun = api.payroll.calculateRun.useMutation({
     onSuccess: async () => {
@@ -224,50 +229,29 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     router.push('/payroll/runs');
   };
 
-  const handleExportCNPS = async () => {
+  // Generic export handler for dynamic exports
+  const handleExport = async (exportId: string) => {
     if (!run) return;
-    setIsExporting('cnps');
+    setIsExporting(exportId);
     try {
-      const result = await exportCNPS.mutateAsync({ runId: run.id });
-      downloadFile(result.data, result.filename, result.contentType);
-    } catch (error: any) {
-      alert(`Erreur: ${error.message}`);
-    } finally {
-      setIsExporting(null);
-    }
-  };
-
-  const handleExportCMU = async () => {
-    if (!run) return;
-    setIsExporting('cmu');
-    try {
-      const result = await exportCMU.mutateAsync({ runId: run.id });
-      downloadFile(result.data, result.filename, result.contentType);
-    } catch (error: any) {
-      alert(`Erreur: ${error.message}`);
-    } finally {
-      setIsExporting(null);
-    }
-  };
-
-  const handleExportEtat301 = async () => {
-    if (!run) return;
-    setIsExporting('etat301');
-    try {
-      const result = await exportEtat301.mutateAsync({ runId: run.id });
-      downloadFile(result.data, result.filename, result.contentType);
-    } catch (error: any) {
-      alert(`Erreur: ${error.message}`);
-    } finally {
-      setIsExporting(null);
-    }
-  };
-
-  const handleExportBankTransfer = async () => {
-    if (!run) return;
-    setIsExporting('bank');
-    try {
-      const result = await exportBankTransfer.mutateAsync({ runId: run.id });
+      let result;
+      // Call appropriate export mutation based on ID
+      switch (exportId) {
+        case 'cnps':
+          result = await exportCNPS.mutateAsync({ runId: run.id });
+          break;
+        case 'cmu':
+          result = await exportCMU.mutateAsync({ runId: run.id });
+          break;
+        case 'etat301':
+          result = await exportEtat301.mutateAsync({ runId: run.id });
+          break;
+        case 'bank_transfer':
+          result = await exportBankTransfer.mutateAsync({ runId: run.id });
+          break;
+        default:
+          throw new Error(`Export type ${exportId} not implemented`);
+      }
       downloadFile(result.data, result.filename, result.contentType);
     } catch (error: any) {
       alert(`Erreur: ${error.message}`);
@@ -466,82 +450,56 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
 
         {status === 'approved' && (
           <>
-            <Button
-              onClick={handleExportCNPS}
-              disabled={isExporting !== null}
-              variant="outline"
-              className="gap-2"
-              size="lg"
-            >
-              {isExporting === 'cnps' ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Export...
-                </>
-              ) : (
-                <>
-                  <Building2 className="h-5 w-5" />
-                  Export CNPS
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={handleExportCMU}
-              disabled={isExporting !== null}
-              variant="outline"
-              className="gap-2"
-              size="lg"
-            >
-              {isExporting === 'cmu' ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Export...
-                </>
-              ) : (
-                <>
-                  <FileSpreadsheet className="h-5 w-5" />
-                  Export CMU
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={handleExportEtat301}
-              disabled={isExporting !== null}
-              variant="outline"
-              className="gap-2"
-              size="lg"
-            >
-              {isExporting === 'etat301' ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Export...
-                </>
-              ) : (
-                <>
-                  <FileText className="h-5 w-5" />
-                  Export État 301
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={handleExportBankTransfer}
-              disabled={isExporting !== null}
-              variant="outline"
-              className="gap-2"
-              size="lg"
-            >
-              {isExporting === 'bank' ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Export...
-                </>
-              ) : (
-                <>
-                  <Landmark className="h-5 w-5" />
-                  Export Virement
-                </>
-              )}
-            </Button>
+            {/* Dynamic Export Buttons - Loaded from Database */}
+            {isLoadingExports ? (
+              <Button disabled variant="outline" className="gap-2" size="lg">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Chargement des exports...
+              </Button>
+            ) : availableExports && availableExports.length > 0 ? (
+              availableExports.map((exportTemplate) => {
+                const getIcon = () => {
+                  switch (exportTemplate.templateType) {
+                    case 'social_security':
+                      return Building2;
+                    case 'health':
+                      return FileSpreadsheet;
+                    case 'tax':
+                      return FileText;
+                    case 'bank_transfer':
+                      return Landmark;
+                    default:
+                      return Download;
+                  }
+                };
+                const Icon = getIcon();
+
+                return (
+                  <Button
+                    key={exportTemplate.id}
+                    onClick={() => handleExport(exportTemplate.id)}
+                    disabled={isExporting !== null}
+                    variant="outline"
+                    className="gap-2"
+                    size="lg"
+                  >
+                    {isExporting === exportTemplate.id ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Export...
+                      </>
+                    ) : (
+                      <>
+                        <Icon className="h-5 w-5" />
+                        {exportTemplate.providerName}
+                      </>
+                    )}
+                  </Button>
+                );
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground">Aucun export disponible</p>
+            )}
           </>
         )}
 

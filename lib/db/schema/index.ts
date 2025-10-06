@@ -9,6 +9,7 @@ export * from './assignments';
 export * from './salaries';
 export * from './payroll';
 export * from './payroll-config';
+export * from './export-templates';
 export * from './time-tracking';
 export * from './system';
 export * from './workflows';

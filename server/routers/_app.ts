@@ -6,9 +6,11 @@
 
 import { createTRPCRouter } from '../api/trpc';
 import { payrollRouter } from './payroll';
+import { tenantRouter } from './tenant';
 
 export const appRouter = createTRPCRouter({
   payroll: payrollRouter,
+  tenant: tenantRouter,
 });
 
 // Export type definition of API
