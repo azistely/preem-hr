@@ -187,6 +187,61 @@ export const timeOffRouter = router({
   }),
 
   /**
+   * Get pending requests for manager's team (P1-9: Manager Time-Off Approval)
+   * Filters by reporting_manager_id to show only team members' requests
+   * Requires: Manager role
+   */
+  getPendingRequestsForTeam: router.procedure
+    .use(async ({ ctx, next }) => {
+      // Import managerProcedure middleware
+      const { managerProcedure } = await import('../api/trpc');
+      return next({ ctx });
+    })
+    .query(async ({ ctx }) => {
+      const { employees } = await import('@/drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+
+      if (!ctx.user.employeeId) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Aucun profil employé associé',
+        });
+      }
+
+      // Get all team members reporting to this manager
+      const teamMembers = await db.query.employees.findMany({
+        where: (employees, { and, eq }) =>
+          and(
+            eq(employees.reportingManagerId, ctx.user.employeeId),
+            eq(employees.tenantId, ctx.user.tenantId)
+          ),
+        columns: { id: true },
+      });
+
+      const teamMemberIds = teamMembers.map((e) => e.id);
+
+      if (teamMemberIds.length === 0) {
+        return [];
+      }
+
+      // Fetch pending requests from team members
+      const { inArray } = await import('drizzle-orm');
+      return await db.query.timeOffRequests.findMany({
+        where: (requests, { and, eq, inArray }) =>
+          and(
+            eq(requests.tenantId, ctx.user.tenantId),
+            eq(requests.status, 'pending'),
+            inArray(requests.employeeId, teamMemberIds)
+          ),
+        with: {
+          employee: true,
+          policy: true,
+        },
+        orderBy: (requests, { desc }) => [desc(requests.submittedAt)],
+      });
+    }),
+
+  /**
    * Get employee requests
    */
   getEmployeeRequests: publicProcedure
