@@ -284,4 +284,151 @@ export const timeOffRouter = router({
         accrualDate
       );
     }),
+
+  /**
+   * Get pending requests with employee balances
+   */
+  getPendingRequestsWithBalances: publicProcedure.query(async ({ ctx }) => {
+    const requests = await db.query.timeOffRequests.findMany({
+      where: and(
+        eq(timeOffRequests.tenantId, ctx.user.tenantId),
+        eq(timeOffRequests.status, 'pending')
+      ),
+      with: {
+        employee: {
+          columns: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            photoUrl: true,
+          },
+        },
+        policy: true,
+      },
+      orderBy: (requests, { desc }) => [desc(requests.submittedAt)],
+    });
+
+    // Fetch balances for each request
+    const requestsWithBalances = await Promise.all(
+      requests.map(async (request) => {
+        const balance = await db.query.timeOffBalances.findFirst({
+          where: and(
+            eq(timeOffBalances.employeeId, request.employeeId),
+            eq(timeOffBalances.policyId, request.policyId)
+          ),
+        });
+
+        return {
+          ...request,
+          balance: balance || null,
+        };
+      })
+    );
+
+    return requestsWithBalances;
+  }),
+
+  /**
+   * Detect conflicting time-off requests
+   */
+  detectConflicts: publicProcedure
+    .input(
+      z.object({
+        requestId: z.string().uuid(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const request = await db.query.timeOffRequests.findFirst({
+        where: eq(timeOffRequests.id, input.requestId),
+      });
+
+      if (!request) {
+        return [];
+      }
+
+      // Find overlapping approved requests from other employees
+      const conflicts = await db.query.timeOffRequests.findMany({
+        where: and(
+          eq(timeOffRequests.tenantId, ctx.user.tenantId),
+          eq(timeOffRequests.status, 'approved'),
+          sql`${timeOffRequests.startDate} <= ${request.endDate}`,
+          sql`${timeOffRequests.endDate} >= ${request.startDate}`
+        ),
+        with: {
+          employee: {
+            columns: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      return conflicts;
+    }),
+
+  /**
+   * Bulk approve requests
+   */
+  bulkApprove: publicProcedure
+    .input(
+      z.object({
+        requestIds: z.array(z.string().uuid()),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await Promise.all(
+        input.requestIds.map((requestId) =>
+          timeOffService.approveTimeOff({
+            requestId,
+            reviewedBy: ctx.user.id,
+          })
+        )
+      );
+    }),
+
+  /**
+   * Get all balances summary (admin view)
+   */
+  getAllBalancesSummary: publicProcedure.query(async ({ ctx }) => {
+    const balances = await db.query.timeOffBalances.findMany({
+      where: eq(timeOffBalances.tenantId, ctx.user.tenantId),
+      with: {
+        employee: {
+          columns: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        policy: {
+          columns: {
+            id: true,
+            name: true,
+            policyType: true,
+          },
+        },
+      },
+    });
+
+    return balances;
+  }),
+
+  /**
+   * Get pending requests summary
+   */
+  getPendingSummary: publicProcedure.query(async ({ ctx }) => {
+    const { sql } = await import('drizzle-orm');
+
+    const result = await db
+      .select({
+        count: sql<number>`count(*)`,
+      })
+      .from(timeOffRequests)
+      .where(and(eq(timeOffRequests.tenantId, ctx.user.tenantId), eq(timeOffRequests.status, 'pending')));
+
+    return {
+      pendingCount: Number(result[0]?.count || 0),
+    };
+  }),
 });
