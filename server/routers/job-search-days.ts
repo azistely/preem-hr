@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createJobSearchDay,
   updateJobSearchDay,
@@ -44,7 +44,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
   /**
    * Create a job search day request
    */
-  create: protectedProcedure
+  create: publicProcedure
     .input(createJobSearchDaySchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -66,7 +66,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
   /**
    * Update job search day (approve/reject)
    */
-  update: protectedProcedure
+  update: publicProcedure
     .input(updateJobSearchDaySchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -89,7 +89,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
   /**
    * List job search days with filters
    */
-  list: protectedProcedure
+  list: publicProcedure
     .input(listJobSearchDaysSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -110,7 +110,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
   /**
    * Get job search day by ID
    */
-  getById: protectedProcedure
+  getById: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
       const day = await getJobSearchDayById(input.id, ctx.tenantId);
@@ -128,7 +128,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
   /**
    * Delete job search day
    */
-  delete: protectedProcedure
+  delete: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       try {
@@ -145,7 +145,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
   /**
    * Get job search statistics for a termination
    */
-  getStats: protectedProcedure
+  getStats: publicProcedure
     .input(z.object({ terminationId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
       try {

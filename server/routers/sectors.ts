@@ -13,7 +13,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter as router, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter as router, publicProcedure } from '../api/trpc';
 import {
   getTenantSector,
   getSectorsByCountry,
@@ -30,7 +30,7 @@ export const sectorsRouter = router({
    *
    * Use case: Display sector info in tenant settings
    */
-  getTenantSector: protectedProcedure
+  getTenantSector: publicProcedure
     .input(
       z.object({
         tenantId: z.string().uuid(),
@@ -45,7 +45,7 @@ export const sectorsRouter = router({
    *
    * Use case: Populate sector dropdown in tenant settings
    */
-  getSectorsByCountry: protectedProcedure
+  getSectorsByCountry: publicProcedure
     .input(
       z.object({
         countryCode: z.string().length(2),
@@ -61,7 +61,7 @@ export const sectorsRouter = router({
    * Use case: Display rate in payroll breakdown
    * Rates: SERVICES 2%, COMMERCE 2%, TRANSPORT 3%, INDUSTRIE 4%, CONSTRUCTION 5%
    */
-  getWorkAccidentRate: protectedProcedure
+  getWorkAccidentRate: publicProcedure
     .input(
       z.object({
         tenantId: z.string().uuid(),
@@ -81,7 +81,7 @@ export const sectorsRouter = router({
    * Use case: Validation in salary components settings
    * Example: TRANSPORT sector requires PRIME_TRANSPORT
    */
-  getRequiredComponents: protectedProcedure
+  getRequiredComponents: publicProcedure
     .input(
       z.object({
         tenantId: z.string().uuid(),
@@ -97,7 +97,7 @@ export const sectorsRouter = router({
    *
    * Use case: Show warning in settings if components missing
    */
-  validateRequiredComponents: protectedProcedure
+  validateRequiredComponents: publicProcedure
     .input(
       z.object({
         tenantId: z.string().uuid(),
@@ -117,7 +117,7 @@ export const sectorsRouter = router({
    * Use case: Tenant settings page - change sector dropdown
    * IMPORTANT: Affects all employees in tenant (Phase 1)
    */
-  updateTenantSector: protectedProcedure
+  updateTenantSector: publicProcedure
     .input(
       z.object({
         tenantId: z.string().uuid(),
@@ -133,7 +133,7 @@ export const sectorsRouter = router({
    *
    * Use case: Onboarding - suggest default sector
    */
-  getDefaultSector: protectedProcedure
+  getDefaultSector: publicProcedure
     .input(
       z.object({
         countryCode: z.string().length(2),

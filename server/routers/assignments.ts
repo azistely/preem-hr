@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createAssignment,
   transferEmployee,
@@ -37,7 +37,7 @@ const getCurrentAssignmentSchema = z.object({
 });
 
 export const assignmentsRouter = createTRPCRouter({
-  create: protectedProcedure
+  create: publicProcedure
     .input(createAssignmentSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -65,7 +65,7 @@ export const assignmentsRouter = createTRPCRouter({
       }
     }),
 
-  transfer: protectedProcedure
+  transfer: publicProcedure
     .input(transferEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -94,7 +94,7 @@ export const assignmentsRouter = createTRPCRouter({
       }
     }),
 
-  getCurrent: protectedProcedure
+  getCurrent: publicProcedure
     .input(getCurrentAssignmentSchema)
     .query(async ({ input }) => {
       try {
