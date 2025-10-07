@@ -11,12 +11,14 @@ import type {
 } from '@/features/employees/types/salary-components';
 
 export interface EmployeeSalaryData {
-  baseSalary: string | number;
-  housingAllowance?: string | number;
-  transportAllowance?: string | number;
-  mealAllowance?: string | number;
-  otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }>;
-  components?: SalaryComponentInstance[];
+  baseSalary: string | number | null;
+  housingAllowance?: string | number | null;
+  transportAllowance?: string | number | null;
+  mealAllowance?: string | number | null;
+  otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }> | unknown;
+  components?: SalaryComponentInstance[] | unknown;
+  // Allow additional properties for database compatibility
+  [key: string]: string | number | boolean | null | undefined | unknown;
 }
 
 export interface ComponentsBreakdown {
@@ -40,8 +42,12 @@ export function getEmployeeSalaryComponents(
   salaryData: EmployeeSalaryData
 ): ComponentsBreakdown {
   // If components array exists and has items, use component-based system
-  if (salaryData.components && salaryData.components.length > 0) {
-    return readFromComponents(salaryData.components);
+  if (
+    salaryData.components &&
+    Array.isArray(salaryData.components) &&
+    salaryData.components.length > 0
+  ) {
+    return readFromComponents(salaryData.components as SalaryComponentInstance[]);
   }
 
   // Otherwise, fallback to old format (backward compatibility)
@@ -126,15 +132,16 @@ function readFromOldFormat(salaryData: EmployeeSalaryData): ComponentsBreakdown 
     mealAllowance: parseAmount(salaryData.mealAllowance || 0),
     seniorityBonus: 0, // Not in old format (calculated separately)
     familyAllowance: 0, // Not in old format (calculated separately)
-    otherAllowances: salaryData.otherAllowances || [],
+    otherAllowances: Array.isArray(salaryData.otherAllowances) ? salaryData.otherAllowances : [],
     customComponents: [],
   };
 }
 
 /**
- * Parse amount (handles string and number)
+ * Parse amount (handles string, number, and null)
  */
-function parseAmount(value: string | number): number {
+function parseAmount(value: string | number | null | undefined): number {
+  if (value === null || value === undefined) return 0;
   if (typeof value === 'number') return value;
   return parseFloat(value) || 0;
 }

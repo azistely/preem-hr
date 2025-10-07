@@ -991,26 +991,6 @@ export const salaryComponentTemplates = pgTable("salary_component_templates", {
 	check("chk_compliance_level", sql`(compliance_level)::text = ANY ((ARRAY['locked'::text, 'configurable'::text, 'freeform'::text]))`),
 ]);
 
-export const sectorConfigurations = pgTable("sector_configurations", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	countryCode: varchar("country_code", { length: 2 }).notNull(),
-	sectorCode: varchar("sector_code", { length: 50 }).notNull(),
-	name: jsonb().notNull(),
-	workAccidentRate: numeric("work_accident_rate", { precision: 6, scale: 4 }).notNull(),
-	defaultComponents: jsonb("default_components").default({}).notNull(),
-	smartDefaults: jsonb("smart_defaults").default({}).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("idx_sector_configs_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.countryCode],
-			foreignColumns: [countries.code],
-			name: "sector_configurations_country_code_fkey"
-		}),
-	unique("sector_configurations_country_code_sector_code_key").on(table.countryCode, table.sectorCode),
-]);
-
 export const customSalaryComponents = pgTable("custom_salary_components", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
