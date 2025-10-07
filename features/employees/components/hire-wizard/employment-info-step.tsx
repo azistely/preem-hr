@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { CoefficientSelector } from '@/components/employees/coefficient-selector';
 
 interface EmploymentInfoStepProps {
   form: UseFormReturn<any>;
@@ -34,9 +35,10 @@ interface EmploymentInfoStepProps {
 
 export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
   const { data: positions, isLoading } = usePositions('active');
+  const countryCode = 'CI'; // TODO: Get from tenant context
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <FormField
         control={form.control}
         name="hireDate"
@@ -124,6 +126,22 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
                 'Le poste que l\'employé occupera'
               )}
             </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="coefficient"
+        render={({ field }) => (
+          <FormItem>
+            <CoefficientSelector
+              countryCode={countryCode}
+              value={field.value}
+              onChange={field.onChange}
+              showExamples={true}
+            />
             <FormMessage />
           </FormItem>
         )}

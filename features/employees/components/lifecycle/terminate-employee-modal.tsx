@@ -2,11 +2,12 @@
  * Terminate Employee Modal
  *
  * Form to terminate an employee with validation
+ * Includes notice period and severance pay calculations
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -39,12 +40,16 @@ import {
 } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Loader2, AlertTriangle } from 'lucide-react';
-import { format } from 'date-fns';
+import { CalendarIcon, Loader2, AlertTriangle, Clock, DollarSign } from 'lucide-react';
+import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { useTerminateEmployee } from '@/features/employees/hooks/use-employee-mutations';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent } from '@/components/ui/card';
+import { trpc } from '@/lib/trpc/client';
+import { formatCurrency } from '@/features/employees/hooks/use-salary-validation';
+import { useToast } from '@/components/ui/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 const terminateSchema = z.object({
   terminationDate: z.date(),
@@ -70,7 +75,25 @@ export function TerminateEmployeeModal({
   open,
   onClose,
 }: TerminateEmployeeModalProps) {
-  const terminateEmployee = useTerminateEmployee();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const createTermination = trpc.terminations.create.useMutation({
+    onSuccess: () => {
+      queryClient.invalidateQueries();
+      toast({
+        title: 'Cessation enregistrée',
+        description: 'Le contrat a été terminé avec succès.',
+      });
+      onClose();
+    },
+    onError: (error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Une erreur est survenue lors de la cessation.',
+        variant: 'destructive',
+      });
+    },
+  });
 
   const form = useForm<FormData>({
     resolver: zodResolver(terminateSchema),
@@ -79,12 +102,49 @@ export function TerminateEmployeeModal({
     },
   });
 
+  // Fetch notice period calculation
+  const { data: noticePeriod, isLoading: loadingNoticePeriod } =
+    trpc.employeeCategories.calculateNoticePeriod.useQuery(
+      { employeeId: employee.id },
+      { enabled: open }
+    );
+
+  // Fetch severance pay calculation
+  const terminationDate = form.watch('terminationDate');
+  const { data: severancePay, isLoading: loadingSeverancePay } =
+    trpc.employeeCategories.calculateSeverancePay.useQuery(
+      {
+        employeeId: employee.id,
+        hireDate: new Date(employee.hireDate),
+        terminationDate: terminationDate || new Date(),
+        countryMinimumWage: 75000, // TODO: Get from tenant/country config
+      },
+      { enabled: open && !!terminationDate }
+    );
+
   const onSubmit = async (data: FormData) => {
-    await terminateEmployee.mutateAsync({
+    // Ensure we have all required calculations
+    if (!noticePeriod || !severancePay) {
+      toast({
+        title: 'Calculs incomplets',
+        description: 'Veuillez attendre que les calculs soient terminés.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    await createTermination.mutateAsync({
       employeeId: employee.id,
-      ...data,
+      terminationDate: data.terminationDate,
+      terminationReason: data.terminationReason as any,
+      notes: data.notes,
+      noticePeriodDays: noticePeriod.noticePeriodDays,
+      severanceAmount: severancePay.totalAmount,
+      vacationPayoutAmount: 0, // TODO: Calculate vacation payout
+      averageSalary12m: severancePay.averageSalary,
+      yearsOfService: severancePay.yearsOfService,
+      severanceRate: severancePay.rate as any,
     });
-    onClose();
   };
 
   return (
@@ -109,6 +169,76 @@ export function TerminateEmployeeModal({
                 affectations actives. Cette action est irréversible.
               </AlertDescription>
             </Alert>
+
+            {/* Notice Period & Severance Pay Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Notice Period Card */}
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-primary/10 p-2">
+                      <Clock className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-muted-foreground mb-1">
+                        Préavis de licenciement
+                      </p>
+                      {loadingNoticePeriod ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Calcul...</span>
+                        </div>
+                      ) : noticePeriod ? (
+                        <>
+                          <p className="text-2xl font-bold">
+                            {noticePeriod.noticePeriodDays} jours
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {noticePeriod.category?.friendlyLabel || ''} •{' '}
+                            {noticePeriod.workDays}j travail + {noticePeriod.searchDays}j recherche
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Non calculé</p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Severance Pay Card */}
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-primary/10 p-2">
+                      <DollarSign className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-muted-foreground mb-1">
+                        Indemnité de licenciement
+                      </p>
+                      {loadingSeverancePay ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Calcul...</span>
+                        </div>
+                      ) : severancePay ? (
+                        <>
+                          <p className="text-2xl font-bold">
+                            {formatCurrency(severancePay.totalAmount)}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {severancePay.yearsOfService} ans • {severancePay.rate}% du salaire de référence
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Non calculé</p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
             <FormField
               control={form.control}
@@ -205,7 +335,7 @@ export function TerminateEmployeeModal({
                 type="button"
                 variant="outline"
                 onClick={onClose}
-                disabled={terminateEmployee.isPending}
+                disabled={createTermination.isPending}
                 className="min-h-[44px]"
               >
                 Annuler
@@ -213,10 +343,10 @@ export function TerminateEmployeeModal({
               <Button
                 type="submit"
                 variant="destructive"
-                disabled={terminateEmployee.isPending}
+                disabled={createTermination.isPending || !noticePeriod || !severancePay}
                 className="min-h-[44px]"
               >
-                {terminateEmployee.isPending ? (
+                {createTermination.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Traitement...

@@ -29,6 +29,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { SalaryComponentTemplate, CustomSalaryComponent } from '@/features/employees/types/salary-components';
+import { MinimumWageAlert } from '@/components/employees/minimum-wage-alert';
 
 interface SalaryInfoStepProps {
   form: UseFormReturn<any>;
@@ -41,8 +42,10 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const transportAllowance = form.watch('transportAllowance') || 0;
   const mealAllowance = form.watch('mealAllowance') || 0;
   const otherAllowances = form.watch('otherAllowances') || [];
+  const coefficient = form.watch('coefficient') || 100;
 
   const countryCode = 'CI'; // TODO: Get from tenant context
+  const countryMinimumWage = 75000; // TODO: Get from countries table
 
   const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
@@ -111,21 +114,12 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
         )}
       />
 
-      {validationResult && !validationResult.isValid && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{validationResult.errorMessage}</AlertDescription>
-        </Alert>
-      )}
-
-      {validationResult && validationResult.isValid && baseSalary > 0 && (
-        <Alert className="bg-green-50 border-green-200">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800">
-            Salaire valide ({'>='} SMIG)
-          </AlertDescription>
-        </Alert>
-      )}
+      <MinimumWageAlert
+        coefficient={coefficient}
+        currentSalary={baseSalary}
+        countryMinimumWage={countryMinimumWage}
+        countryCode={countryCode}
+      />
 
       <div className="space-y-4 pt-4 border-t">
         <div className="flex items-center justify-between">

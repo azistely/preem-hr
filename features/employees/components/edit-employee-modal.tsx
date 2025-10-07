@@ -38,6 +38,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useUpdateEmployee } from '../hooks/use-employees';
 import { useToast } from '@/hooks/use-toast';
+import { CoefficientSelector } from '@/components/employees/coefficient-selector';
 
 const editEmployeeSchema = z.object({
   id: z.string().uuid(),
@@ -57,6 +58,7 @@ const editEmployeeSchema = z.object({
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
+  coefficient: z.number().int().min(90).max(1000).optional(),
 });
 
 type EditEmployeeFormData = z.infer<typeof editEmployeeSchema>;
@@ -91,6 +93,7 @@ export function EditEmployeeModal({ employee, open, onClose }: EditEmployeeModal
       cnpsNumber: employee.cnpsNumber || '',
       taxNumber: employee.taxNumber || '',
       taxDependents: employee.taxDependents || 0,
+      coefficient: employee.coefficient || 100,
     },
   });
 
@@ -193,6 +196,26 @@ export function EditEmployeeModal({ employee, open, onClose }: EditEmployeeModal
                   )}
                 />
               </div>
+            </div>
+
+            {/* Employment Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Emploi</h3>
+              <FormField
+                control={form.control}
+                name="coefficient"
+                render={({ field }) => (
+                  <FormItem>
+                    <CoefficientSelector
+                      countryCode="CI"
+                      value={field.value || 100}
+                      onChange={field.onChange}
+                      showExamples={true}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {/* Contact Information */}

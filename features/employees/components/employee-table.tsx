@@ -18,6 +18,7 @@ import { EmployeeAvatar } from './employee-avatar';
 import { EmployeeStatusBadge } from './employee-status-badge';
 import { formatCurrency } from '../hooks/use-salary-validation';
 import Link from 'next/link';
+import { CategoryBadge } from '@/components/employees/category-badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +55,7 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
           <TableRow>
             <TableHead>Employé</TableHead>
             <TableHead>Poste</TableHead>
+            <TableHead>Catégorie</TableHead>
             <TableHead>Salaire brut</TableHead>
             <TableHead>Statut</TableHead>
             <TableHead className="w-[80px]"></TableHead>
@@ -62,7 +64,7 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
         <TableBody>
           {employees.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                 Aucun employé trouvé
               </TableCell>
             </TableRow>
@@ -101,6 +103,15 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
                   ) : (
                     <span className="text-muted-foreground">-</span>
                   )}
+                </TableCell>
+
+                <TableCell>
+                  <CategoryBadge
+                    employeeId={employee.id}
+                    showCoefficient={false}
+                    showTooltip={true}
+                    size="sm"
+                  />
                 </TableCell>
 
                 <TableCell className="font-medium">
