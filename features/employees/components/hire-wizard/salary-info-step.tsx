@@ -1,5 +1,8 @@
 /**
  * Salary Info Step - Hire Wizard
+ *
+ * Components-based architecture: Build salary from component instances
+ * Single source of truth: components array (no individual allowance fields)
  */
 
 import { useState } from 'react';
@@ -14,9 +17,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useSalaryValidation, formatCurrency } from '@/features/employees/hooks/use-salary-validation';
+import { formatCurrency } from '@/features/employees/hooks/use-salary-validation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, CheckCircle, Plus, Sparkles, Info, Settings2, X } from 'lucide-react';
+import { AlertCircle, CheckCircle, Plus, Sparkles, Info, Settings2, X, Edit2 } from 'lucide-react';
 import { usePopularTemplates, useCustomComponents } from '@/features/employees/hooks/use-salary-components';
 import {
   Dialog,
@@ -28,8 +31,9 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import type { SalaryComponentTemplate, CustomSalaryComponent } from '@/features/employees/types/salary-components';
+import type { SalaryComponentTemplate, CustomSalaryComponent, SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { MinimumWageAlert } from '@/components/employees/minimum-wage-alert';
+import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
 
 interface SalaryInfoStepProps {
   form: UseFormReturn<any>;
@@ -37,11 +41,11 @@ interface SalaryInfoStepProps {
 
 export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const [showTemplates, setShowTemplates] = useState(false);
-  const baseSalary = form.watch('baseSalary');
-  const housingAllowance = form.watch('housingAllowance') || 0;
-  const transportAllowance = form.watch('transportAllowance') || 0;
-  const mealAllowance = form.watch('mealAllowance') || 0;
-  const otherAllowances = form.watch('otherAllowances') || [];
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editAmount, setEditAmount] = useState<number>(0);
+
+  const baseSalary = form.watch('baseSalary') || 0;
+  const components = form.watch('components') || [];
   const coefficient = form.watch('coefficient') || 100;
 
   const countryCode = 'CI'; // TODO: Get from tenant context
@@ -50,24 +54,21 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
 
-  const { validationResult, minimumWage } = useSalaryValidation(baseSalary);
-
-  const totalOtherAllowances = otherAllowances.reduce(
-    (sum: number, allowance: any) => sum + (allowance.amount || 0),
+  // Calculate total gross salary (base + components)
+  const componentTotal = components.reduce(
+    (sum: number, component: SalaryComponentInstance) => sum + component.amount,
     0
   );
+  const totalGross = baseSalary + componentTotal;
 
-  const totalGross =
-    baseSalary +
-    housingAllowance +
-    transportAllowance +
-    mealAllowance +
-    totalOtherAllowances;
-
+  /**
+   * Add a component from template/custom
+   */
   const handleAddComponent = (
     component: SalaryComponentTemplate | CustomSalaryComponent,
     suggestedAmount: number
   ) => {
+    // Build component instance
     const name =
       'name' in component && typeof component.name === 'object'
         ? (component.name as Record<string, string>).fr
@@ -75,44 +76,90 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
         ? component.name
         : 'Indemnité';
 
-    const currentAllowances = form.getValues('otherAllowances') || [];
-    form.setValue('otherAllowances', [
-      ...currentAllowances,
-      {
-        name,
-        amount: suggestedAmount,
-        taxable: true,
-      },
-    ]);
+    const code = 'code' in component ? component.code : `CUSTOM_${Date.now()}`;
+
+    const newComponent: SalaryComponentInstance = {
+      code,
+      name,
+      amount: suggestedAmount,
+      sourceType: 'standard',
+      metadata: getSmartDefaults(countryCode, code === '22' ? 'transport' : code === '23' ? 'housing' : code === '24' ? 'meal' : 'housing'),
+    };
+
+    const currentComponents = form.getValues('components') || [];
+    form.setValue('components', [...currentComponents, newComponent], { shouldValidate: true });
     setShowTemplates(false);
+  };
+
+  /**
+   * Update base salary amount
+   */
+  const handleUpdateBaseSalary = (newAmount: number) => {
+    form.setValue('baseSalary', newAmount, { shouldValidate: true });
+  };
+
+  /**
+   * Remove a component
+   */
+  const handleRemoveComponent = (index: number) => {
+    const currentComponents = form.getValues('components') || [];
+    form.setValue(
+      'components',
+      currentComponents.filter((_: any, i: number) => i !== index),
+      { shouldValidate: true }
+    );
+  };
+
+  /**
+   * Edit component amount
+   */
+  const handleEditComponent = (index: number) => {
+    const component = components[index];
+    if (component) {
+      setEditingIndex(index);
+      setEditAmount(component.amount);
+    }
+  };
+
+  /**
+   * Save edited amount
+   */
+  const handleSaveEdit = () => {
+    if (editingIndex !== null) {
+      const currentComponents = form.getValues('components') || [];
+      const updatedComponents = currentComponents.map((c: SalaryComponentInstance, i: number) =>
+        i === editingIndex ? { ...c, amount: editAmount } : c
+      );
+      form.setValue('components', updatedComponents, { shouldValidate: true });
+      setEditingIndex(null);
+    }
   };
 
   return (
     <div className="space-y-6">
-      <FormField
-        control={form.control}
-        name="baseSalary"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Salaire de base *</FormLabel>
-            <FormControl>
-              <Input
-                {...field}
-                type="number"
-                min={minimumWage || 75000}
-                step={1000}
-                placeholder="300000"
-                className="min-h-[48px]"
-                onChange={(e) => field.onChange(parseFloat(e.target.value))}
-              />
-            </FormControl>
-            <FormDescription>
-              Minimum: {formatCurrency(minimumWage || 75000)} (SMIG)
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
+      {/* Base Salary (always present) */}
+      <div>
+        <FormLabel>Salaire de base *</FormLabel>
+        <FormControl>
+          <Input
+            type="number"
+            min={countryMinimumWage}
+            step={1000}
+            placeholder="300000"
+            value={baseSalary}
+            onChange={(e) => handleUpdateBaseSalary(parseFloat(e.target.value) || 0)}
+            className="min-h-[48px]"
+          />
+        </FormControl>
+        <FormDescription>
+          Minimum: {formatCurrency(countryMinimumWage)} (SMIG)
+        </FormDescription>
+        {form.formState.errors.components && (
+          <p className="text-sm text-destructive mt-1">
+            {form.formState.errors.components.message?.toString()}
+          </p>
         )}
-      />
+      </div>
 
       <MinimumWageAlert
         coefficient={coefficient}
@@ -121,19 +168,20 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
         countryCode={countryCode}
       />
 
+      {/* Components List (excluding base salary) */}
       <div className="space-y-4 pt-4 border-t">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium">Indemnités (optionnelles)</h3>
+          <h3 className="font-medium">Indemnités et primes</h3>
           <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
             <DialogTrigger asChild>
               <Button type="button" variant="outline" size="sm">
-                <Sparkles className="mr-2 h-4 w-4" />
-                Ajouter une indemnité
+                <Plus className="mr-2 h-4 w-4" />
+                Ajouter
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Ajouter une indemnité</DialogTitle>
+                <DialogTitle>Ajouter un composant salarial</DialogTitle>
                 <DialogDescription>
                   Sélectionnez parmi les modèles populaires ou vos composants personnalisés
                 </DialogDescription>
@@ -229,107 +277,85 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
           </Dialog>
         </div>
 
-        <FormField
-          control={form.control}
-          name="housingAllowance"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Indemnité de logement</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  type="number"
-                  min={0}
-                  step={1000}
-                  placeholder="50000"
-                  className="min-h-[48px]"
-                  onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="transportAllowance"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Indemnité de transport</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  type="number"
-                  min={0}
-                  step={1000}
-                  placeholder="25000"
-                  className="min-h-[48px]"
-                  onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="mealAllowance"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Indemnité de repas</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  type="number"
-                  min={0}
-                  step={1000}
-                  placeholder="15000"
-                  className="min-h-[48px]"
-                  onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Display added custom allowances */}
-        {otherAllowances.length > 0 && (
-          <div className="space-y-2 pt-4 border-t">
-            <h4 className="font-medium text-sm">Indemnités supplémentaires ajoutées</h4>
-            {otherAllowances.map((allowance: any, index: number) => (
-              <div
-                key={index}
-                className="flex items-center justify-between p-3 bg-primary/5 rounded-lg border"
-              >
-                <div>
-                  <p className="font-medium text-sm">{allowance.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatCurrency(allowance.amount)}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    const current = form.getValues('otherAllowances') || [];
-                    form.setValue(
-                      'otherAllowances',
-                      current.filter((_: any, i: number) => i !== index)
-                    );
-                  }}
+        {/* Display added components */}
+        {components.length > 0 && (
+          <div className="space-y-2">
+            {components.map((component: SalaryComponentInstance, index: number) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-3 bg-primary/5 rounded-lg border"
                 >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{component.name}</p>
+                    {editingIndex === index ? (
+                      <div className="flex items-center gap-2 mt-2">
+                        <Input
+                          type="number"
+                          value={editAmount}
+                          onChange={(e) => setEditAmount(parseFloat(e.target.value) || 0)}
+                          className="h-8 w-32"
+                          min={0}
+                          step={1000}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleSaveEdit}
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingIndex(null)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {formatCurrency(component.amount)}
+                      </p>
+                    )}
+                  </div>
+                  {editingIndex !== index && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditComponent(index)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveComponent(index)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
           </div>
+        )}
+
+        {components.length === 0 && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Aucune indemnité ajoutée. Vous pouvez ajouter des primes et indemnités en cliquant sur le bouton "Ajouter" ci-dessus.
+            </AlertDescription>
+          </Alert>
         )}
       </div>
 
+      {/* Total Gross Salary */}
       {totalGross > 0 && (
         <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
           <div className="flex items-center justify-between">
@@ -337,6 +363,10 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
             <span className="text-2xl font-bold text-primary">
               {formatCurrency(totalGross)}
             </span>
+          </div>
+          <div className="text-xs text-muted-foreground mt-2">
+            Salaire de base: {formatCurrency(baseSalary)}
+            {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrency(componentTotal)}`}
           </div>
         </div>
       )}
