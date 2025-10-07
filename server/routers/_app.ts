@@ -22,6 +22,8 @@ import { documentsRouter } from './documents';
 import { jobSearchDaysRouter } from './job-search-days';
 import { timeTrackingRouter } from './time-tracking';
 import { timeOffRouter } from './time-off';
+import { policiesRouter } from './policies';
+import { publicHolidaysRouter } from './public-holidays';
 
 export const appRouter = createTRPCRouter({
   payroll: payrollRouter,
@@ -41,6 +43,8 @@ export const appRouter = createTRPCRouter({
   jobSearchDays: jobSearchDaysRouter,
   timeTracking: timeTrackingRouter,
   timeOff: timeOffRouter,
+  policies: policiesRouter,
+  publicHolidays: publicHolidaysRouter,
 });
 
 // Export type definition of API
