@@ -219,4 +219,156 @@ export const timeTrackingRouter = router({
   getGeofenceConfig: publicProcedure.query(async ({ ctx }) => {
     return await geofenceService.getGeofenceConfig(ctx.user.tenantId);
   }),
+
+  /**
+   * Get pending time entries for admin approval
+   */
+  getPendingEntries: publicProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { db } = await import('@/db');
+      const { timeEntries } = await import('@/drizzle/schema');
+      const { and, eq, gte, lte, desc } = await import('drizzle-orm');
+
+      const conditions = [
+        eq(timeEntries.tenantId, ctx.user.tenantId),
+        eq(timeEntries.status, 'pending'),
+      ];
+
+      if (input.startDate) {
+        conditions.push(gte(timeEntries.clockIn, input.startDate.toISOString()));
+      }
+      if (input.endDate) {
+        conditions.push(lte(timeEntries.clockIn, input.endDate.toISOString()));
+      }
+
+      return await db.query.timeEntries.findMany({
+        where: and(...conditions),
+        with: {
+          employee: {
+            columns: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              photoUrl: true,
+            },
+          },
+        },
+        orderBy: [desc(timeEntries.clockIn)],
+      });
+    }),
+
+  /**
+   * Bulk approve time entries
+   */
+  bulkApprove: publicProcedure
+    .input(
+      z.object({
+        entryIds: z.array(z.string().uuid()),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return await Promise.all(
+        input.entryIds.map((id) => timeEntryService.approveTimeEntry(id, ctx.user.id))
+      );
+    }),
+
+  /**
+   * Get overtime by employee for admin view
+   */
+  getOvertimeByEmployee: publicProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid(),
+        periodStart: z.date(),
+        periodEnd: z.date(),
+      })
+    )
+    .query(async ({ input }) => {
+      return await overtimeService.getOvertimeSummary(
+        input.employeeId,
+        input.periodStart,
+        input.periodEnd
+      );
+    }),
+
+  /**
+   * Get all pending entries summary
+   */
+  getPendingSummary: publicProcedure.query(async ({ ctx }) => {
+    const { db } = await import('@/db');
+    const { timeEntries } = await import('@/drizzle/schema');
+    const { and, eq, sql } = await import('drizzle-orm');
+
+    const result = await db
+      .select({
+        count: sql<number>`count(*)`,
+        totalOvertime: sql<number>`sum(COALESCE((overtime_breakdown->>'hours_41_to_46')::numeric, 0) + COALESCE((overtime_breakdown->>'hours_above_46')::numeric, 0) + COALESCE((overtime_breakdown->>'weekend')::numeric, 0) + COALESCE((overtime_breakdown->>'night_work')::numeric, 0) + COALESCE((overtime_breakdown->>'holiday')::numeric, 0))`,
+      })
+      .from(timeEntries)
+      .where(and(eq(timeEntries.tenantId, ctx.user.tenantId), eq(timeEntries.status, 'pending')));
+
+    return {
+      pendingCount: Number(result[0]?.count || 0),
+      totalOvertimeHours: Number(result[0]?.totalOvertime || 0),
+    };
+  }),
+
+  /**
+   * Get monthly overtime report for all employees
+   * Aggregated endpoint to avoid React Hooks violations
+   */
+  getMonthlyOvertimeReport: publicProcedure
+    .input(
+      z.object({
+        periodStart: z.date(),
+        periodEnd: z.date(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { listEmployees } = await import('@/features/employees/services/employee.service');
+
+      // Fetch all active employees
+      const { employees: activeEmployees } = await listEmployees({
+        tenantId: ctx.user.tenantId,
+        status: 'active',
+        limit: 100,
+      });
+
+      // Fetch overtime for each employee in parallel
+      const overtimeData = await Promise.all(
+        activeEmployees.map(async (employee) => {
+          const summary = await overtimeService.getOvertimeSummary(
+            employee.id,
+            input.periodStart,
+            input.periodEnd
+          );
+          return { employee, summary };
+        })
+      );
+
+      // Calculate totals
+      const totals = overtimeData.reduce(
+        (acc, { summary }) => {
+          if (summary && summary.totalOvertimeHours > 0) {
+            acc.totalHours += summary.totalOvertimeHours;
+            acc.totalPay += summary.overtimePay || 0;
+            acc.employeesWithOvertime++;
+          }
+          return acc;
+        },
+        { totalHours: 0, totalPay: 0, employeesWithOvertime: 0 }
+      );
+
+      return {
+        overtimeData: overtimeData.filter(d => d.summary && d.summary.totalOvertimeHours > 0),
+        totals,
+        totalEmployees: activeEmployees.length,
+      };
+    }),
 });
