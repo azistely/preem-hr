@@ -1,8 +1,8 @@
 /**
  * Salary Component Reader Utilities
  *
- * Reads employee salary components and converts them to payroll calculation format
- * Provides backward compatibility with old salary format
+ * Reads employee salary components and converts them to payroll calculation format.
+ * Single source of truth: components JSONB array only (no legacy column support).
  */
 
 import type {
@@ -11,12 +11,7 @@ import type {
 } from '@/features/employees/types/salary-components';
 
 export interface EmployeeSalaryData {
-  baseSalary: string | number | null;
-  housingAllowance?: string | number | null;
-  transportAllowance?: string | number | null;
-  mealAllowance?: string | number | null;
-  otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }> | unknown;
-  components?: SalaryComponentInstance[] | unknown;
+  components: SalaryComponentInstance[];
   // Allow additional properties for database compatibility
   [key: string]: string | number | boolean | null | undefined | unknown;
 }
@@ -33,25 +28,23 @@ export interface ComponentsBreakdown {
 }
 
 /**
- * Read employee salary components with fallback to old format
+ * Read employee salary components (single source of truth: components array)
  *
- * @param salaryData Employee salary record
+ * @param salaryData Employee salary record with components array
  * @returns Components breakdown for payroll calculation
  */
 export function getEmployeeSalaryComponents(
   salaryData: EmployeeSalaryData
 ): ComponentsBreakdown {
-  // If components array exists and has items, use component-based system
-  if (
-    salaryData.components &&
-    Array.isArray(salaryData.components) &&
-    salaryData.components.length > 0
-  ) {
-    return readFromComponents(salaryData.components as SalaryComponentInstance[]);
+  if (!salaryData.components || !Array.isArray(salaryData.components)) {
+    throw new Error('Components array is required. Legacy format is no longer supported.');
   }
 
-  // Otherwise, fallback to old format (backward compatibility)
-  return readFromOldFormat(salaryData);
+  if (salaryData.components.length === 0) {
+    throw new Error('Components array cannot be empty. Must contain at least base salary.');
+  }
+
+  return readFromComponents(salaryData.components);
 }
 
 /**
@@ -118,33 +111,6 @@ function readFromComponents(
   return breakdown;
 }
 
-/**
- * Read from old format (backward compatibility)
- *
- * @param salaryData Old salary format
- * @returns Breakdown for calculation
- */
-function readFromOldFormat(salaryData: EmployeeSalaryData): ComponentsBreakdown {
-  return {
-    baseSalary: parseAmount(salaryData.baseSalary),
-    housingAllowance: parseAmount(salaryData.housingAllowance || 0),
-    transportAllowance: parseAmount(salaryData.transportAllowance || 0),
-    mealAllowance: parseAmount(salaryData.mealAllowance || 0),
-    seniorityBonus: 0, // Not in old format (calculated separately)
-    familyAllowance: 0, // Not in old format (calculated separately)
-    otherAllowances: Array.isArray(salaryData.otherAllowances) ? salaryData.otherAllowances : [],
-    customComponents: [],
-  };
-}
-
-/**
- * Parse amount (handles string, number, and null)
- */
-function parseAmount(value: string | number | null | undefined): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'number') return value;
-  return parseFloat(value) || 0;
-}
 
 /**
  * Check if component is taxable based on metadata

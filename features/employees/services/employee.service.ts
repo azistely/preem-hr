@@ -60,15 +60,8 @@ export interface CreateEmployeeInput {
   // Position & Salary (required for hire)
   positionId: string;
   coefficient?: number;
-  baseSalary: number;
-  housingAllowance?: number;
-  transportAllowance?: number;
-  mealAllowance?: number;
-  otherAllowances?: Array<{
-    name: string;
-    amount: number;
-    taxable: boolean;
-  }>;
+  baseSalary: number; // Base salary in separate column
+  components?: SalaryComponentInstance[]; // Optional allowances/bonuses
 
   // Custom fields
   customFields?: Record<string, any>;
@@ -132,11 +125,30 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
   // Get country-specific minimum wage
   const minimumWage = await getMinimumWage(countryCode);
 
+  // Validate components array
+  if (!input.components || input.components.length === 0) {
+    throw new ValidationError(
+      'Au moins un composant salarial (salaire de base) est requis',
+      { components: input.components }
+    );
+  }
+
+  // Extract base salary from components (code '11')
+  const baseSalaryComponent = input.components.find(c => c.code === '11');
+  if (!baseSalaryComponent) {
+    throw new ValidationError(
+      'Le salaire de base (code 11) est requis dans les composants',
+      { components: input.components }
+    );
+  }
+
+  const baseSalary = baseSalaryComponent.amount;
+
   // Validate salary >= country SMIG
-  if (input.baseSalary < minimumWage) {
+  if (baseSalary < minimumWage) {
     throw new ValidationError(
       `Le salaire doit être supérieur ou égal au SMIG (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
-      { baseSalary: input.baseSalary, minimumWage, countryCode }
+      { baseSalary, minimumWage, countryCode }
     );
   }
 
@@ -200,72 +212,17 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
       })
       .returning();
 
-    // Build salary components array (new component-based system)
-    const components: SalaryComponentInstance[] = [];
+    // Use components array directly from input (single source of truth)
+    // Components are already built in the UI with proper metadata
+    const components = input.components;
 
-    // 1. Base salary (code 11)
-    components.push({
-      code: '11',
-      name: 'Salaire de base',
-      amount: input.baseSalary,
-      metadata: getSmartDefaults(countryCode, 'housing'), // Base is fully taxable
-      sourceType: 'standard',
-    });
-
-    // 2. Allowances from hire wizard (if provided)
-    if (input.housingAllowance && input.housingAllowance > 0) {
-      components.push({
-        code: '23',
-        name: 'Indemnité de logement',
-        amount: input.housingAllowance,
-        metadata: getSmartDefaults(countryCode, 'housing'),
-        sourceType: 'standard',
-      });
-    }
-
-    if (input.transportAllowance && input.transportAllowance > 0) {
-      components.push({
-        code: '22',
-        name: 'Prime de transport',
-        amount: input.transportAllowance,
-        metadata: getSmartDefaults(countryCode, 'transport'),
-        sourceType: 'standard',
-      });
-    }
-
-    if (input.mealAllowance && input.mealAllowance > 0) {
-      components.push({
-        code: '24',
-        name: 'Indemnité de repas',
-        amount: input.mealAllowance,
-        metadata: getSmartDefaults(countryCode, 'meal'),
-        sourceType: 'standard',
-      });
-    }
-
-    // 3. Auto-inject calculated components (seniority, family allowance)
-    const autoComponents = autoInjectCalculatedComponents({
-      baseSalary: input.baseSalary,
-      hireDate: input.hireDate,
-      numberOfDependents: input.taxDependents || 0,
-      countryCode,
-      enableSeniority: true,
-      enableFamilyAllowance: true,
-    });
-
-    components.push(...autoComponents);
-
-    // Create initial salary record (dual-write: old columns + new components)
+    // Create initial salary record (components-only architecture)
     await tx.insert(employeeSalaries).values({
       tenantId: input.tenantId,
       employeeId: employee!.id,
-      baseSalary: input.baseSalary.toString(),
+      baseSalary: baseSalary.toString(), // Denormalized for queries/constraints
       currency: 'XOF',
-      housingAllowance: input.housingAllowance?.toString() || '0',
-      transportAllowance: input.transportAllowance?.toString() || '0',
-      mealAllowance: input.mealAllowance?.toString() || '0',
-      otherAllowances: input.otherAllowances || [],
-      components, // ← NEW: Component-based system
+      components, // Single source of truth
       effectiveFrom: input.hireDate.toISOString().split('T')[0],
       effectiveTo: null,
       changeReason: 'hire',

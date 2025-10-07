@@ -29,6 +29,15 @@ import { BankingInfoStep } from '@/features/employees/components/hire-wizard/ban
 import { ConfirmationStep } from '@/features/employees/components/hire-wizard/confirmation-step';
 import Link from 'next/link';
 
+// Component schema
+const componentSchema = z.object({
+  code: z.string().min(1),
+  name: z.string().min(1),
+  amount: z.number().min(0),
+  sourceType: z.enum(['standard', 'custom', 'calculated']).default('standard'),
+  metadata: z.record(z.any()).optional(),
+});
+
 // Form schema
 const createEmployeeSchema = z.object({
   // Personal info
@@ -46,11 +55,9 @@ const createEmployeeSchema = z.object({
   positionId: z.string().min(1, 'Le poste est requis'),
   coefficient: z.number().int().min(90).max(1000).default(100),
 
-  // Salary info
-  baseSalary: z.number().min(75000, 'Le salaire doit être >= 75000 FCFA'),
-  housingAllowance: z.number().min(0).default(0),
-  transportAllowance: z.number().min(0).default(0),
-  mealAllowance: z.number().min(0).default(0),
+  // Salary info (base salary + components)
+  baseSalary: z.number().min(75000, 'Le salaire de base doit être >= 75000 FCFA (SMIG)'),
+  components: z.array(componentSchema).default([]),
 
   // Banking info
   bankName: z.string().optional(),
@@ -112,9 +119,7 @@ export default function NewEmployeePage() {
       positionId: '',
       coefficient: 100,
       baseSalary: 75000,
-      housingAllowance: 0,
-      transportAllowance: 0,
-      mealAllowance: 0,
+      components: [],
       bankName: '',
       bankAccount: '',
       taxDependents: 0,
@@ -137,7 +142,7 @@ export default function NewEmployeePage() {
         isValid = await form.trigger(['hireDate', 'positionId', 'coefficient']);
         break;
       case 3:
-        isValid = await form.trigger(['baseSalary']);
+        isValid = await form.trigger(['baseSalary', 'components']);
         break;
       case 4:
         isValid = true; // Banking info is optional
