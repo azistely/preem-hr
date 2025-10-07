@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure, employeeProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, employeeProcedure, managerProcedure } from '../api/trpc';
 import {
   createEmployee,
   listEmployees,
@@ -338,4 +338,45 @@ export const employeesRouter = createTRPCRouter({
       });
     }
   }),
+
+  /**
+   * Get team members reporting to manager (P0-4: Manager Team Roster)
+   * Returns all employees where reporting_manager_id = managerId
+   * Requires: Manager role
+   */
+  getTeamMembers: managerProcedure
+    .input(
+      z.object({
+        managerId: z.string().uuid(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { db } = await import('@/db');
+      const { employees } = await import('@/drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+
+      // Managers can only view their own team members
+      // HR/Admin can view any manager's team (role check handled by procedure)
+      const isOwnTeam = ctx.user.employeeId === input.managerId;
+      const canViewAnyTeam = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+
+      if (!isOwnTeam && !canViewAnyTeam) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Vous ne pouvez consulter que les membres de votre propre équipe',
+        });
+      }
+
+      // Fetch all employees reporting to this manager
+      const teamMembers = await db.query.employees.findMany({
+        where: (employees, { and, eq }) =>
+          and(
+            eq(employees.reportingManagerId, input.managerId),
+            eq(employees.tenantId, ctx.user.tenantId)
+          ),
+        orderBy: (employees, { asc }) => [asc(employees.lastName), asc(employees.firstName)],
+      });
+
+      return teamMembers;
+    }),
 });
