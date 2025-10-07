@@ -149,7 +149,7 @@ export async function calculateTerminalPayroll(
     mealAllowance,
     terminationDate: termination.terminationDate,
     hireDate: employee.hireDate,
-    sectorCode: tenant.sectorCode || 'services', // Use tenant's sector code (all employees inherit from tenant)
+    sectorCode: tenant.sectorCode || 'SERVICES', // Use tenant's sector code (uppercase to match database)
   } as PayrollCalculationInputV2);
 
   // 8. Calculate terminal payments

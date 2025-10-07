@@ -15,6 +15,11 @@ import { salaryReviewsRouter } from './salary-reviews';
 import { bulkAdjustmentsRouter } from './bulk-adjustments';
 import { salaryBandsRouter } from './salary-bands';
 import { salaryComponentsRouter } from './salary-components';
+import { employeeCategoriesRouter } from './employee-categories';
+import { sectorsRouter } from './sectors';
+import { terminationsRouter } from './terminations';
+import { documentsRouter } from './documents';
+import { jobSearchDaysRouter } from './job-search-days';
 
 export const appRouter = createTRPCRouter({
   payroll: payrollRouter,
@@ -27,6 +32,11 @@ export const appRouter = createTRPCRouter({
   bulkAdjustments: bulkAdjustmentsRouter,
   salaryBands: salaryBandsRouter,
   salaryComponents: salaryComponentsRouter,
+  employeeCategories: employeeCategoriesRouter,
+  sectors: sectorsRouter,
+  terminations: terminationsRouter,
+  documents: documentsRouter,
+  jobSearchDays: jobSearchDaysRouter,
 });
 
 // Export type definition of API

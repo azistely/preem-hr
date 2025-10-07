@@ -1,0 +1,91 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - img [ref=e3]
+  - region "Notifications (F8)":
+    - list
+  - generic [active]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - navigation [ref=e10]:
+            - button "previous" [disabled] [ref=e11]:
+              - img "previous" [ref=e12]
+            - generic [ref=e14]:
+              - generic [ref=e15]: 1/
+              - text: "1"
+            - button "next" [disabled] [ref=e16]:
+              - img "next" [ref=e17]
+          - img
+        - generic [ref=e19]:
+          - generic [ref=e20]:
+            - img [ref=e21]
+            - generic "Latest available version is detected (15.5.4)." [ref=e23]: Next.js 15.5.4
+            - generic [ref=e24]: Turbopack
+          - img
+      - dialog "Build Error" [ref=e26]:
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - generic [ref=e33]: Build Error
+              - generic [ref=e34]:
+                - button "Copy Error Info" [ref=e35] [cursor=pointer]:
+                  - img [ref=e36]
+                - link "Go to related documentation" [ref=e38] [cursor=pointer]:
+                  - /url: https://nextjs.org/docs/messages/module-not-found
+                  - img [ref=e39]
+                - link "Learn more about enabling Node.js inspector for server code with Chrome DevTools" [ref=e41] [cursor=pointer]:
+                  - /url: https://nextjs.org/docs/app/building-your-application/configuring/debugging#server-side-code
+                  - img [ref=e42]
+            - paragraph [ref=e51]: "Module not found: Can't resolve '@/db'"
+          - generic [ref=e53]:
+            - generic [ref=e55]:
+              - img [ref=e57]
+              - generic [ref=e61]: ./features/documents/services/cnps-attestation.service.ts (10:1)
+              - button "Open in editor" [ref=e62] [cursor=pointer]:
+                - img [ref=e64]
+            - generic [ref=e67]:
+              - generic [ref=e68]: "Module not found: Can't resolve '@/db'"
+              - generic [ref=e69]: 8 |
+              - text: import
+              - generic [ref=e70]: "{ renderToBuffer }"
+              - text: from '@react-pdf/renderer';
+              - generic [ref=e71]: 9 |
+              - text: import
+              - generic [ref=e72]: "{"
+              - text: CNPSAttestationPDF
+              - generic [ref=e73]: "}"
+              - text: from '../templates/cnps-attestation'; >
+              - generic [ref=e74]: 10 |
+              - text: import
+              - generic [ref=e75]: "{ db }"
+              - text: from '@/db';
+              - generic [ref=e76]: "|"
+              - text: ^^^^^^^^^^^^^^^^^^^^^^^^^^
+              - generic [ref=e77]: 11 |
+              - text: import
+              - generic [ref=e78]: "{"
+              - generic [ref=e79]: 12 |
+              - generic [ref=e80]: employees
+              - text: ","
+              - generic [ref=e81]: 13 |
+              - generic [ref=e82]: employeeTerminations
+              - text: ","
+              - generic [ref=e83]:
+                - text: "Import map: aliased to relative './db' inside of [project]/ Import trace: App Route: ./features/documents/services/cnps-attestation.service.ts ./server/routers/documents.ts ./server/routers/_app.ts ./app/api/trpc/[trpc]/route.ts"
+                - link "https://nextjs.org/docs/messages/module-not-found" [ref=e84] [cursor=pointer]:
+                  - /url: https://nextjs.org/docs/messages/module-not-found
+        - generic [ref=e85]:
+          - generic [ref=e86]: "1"
+          - generic [ref=e87]: "2"
+    - generic [ref=e92] [cursor=pointer]:
+      - button "Open Next.js Dev Tools" [ref=e93]:
+        - img [ref=e94]
+      - button "Open issues overlay" [ref=e98]:
+        - generic [ref=e99]:
+          - generic [ref=e100]: "0"
+          - generic [ref=e101]: "1"
+        - generic [ref=e102]: Issue
+  - alert [ref=e103]
+```

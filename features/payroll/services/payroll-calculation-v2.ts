@@ -96,7 +96,7 @@ export async function calculatePayrollV2(
       config.contributions,
       config.sectorOverrides,
       {
-        sectorCode: input.sectorCode || 'services',
+        sectorCode: input.sectorCode || 'SERVICES', // Default to SERVICES (uppercase to match database)
         hasFamily: input.hasFamily || false,
       }
     );

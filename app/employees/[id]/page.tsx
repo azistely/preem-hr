@@ -37,6 +37,7 @@ import { TransferWizard } from '@/features/employees/components/transfer-wizard'
 import { EditEmployeeModal } from '@/features/employees/components/edit-employee-modal';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { CategoryBadge } from '@/components/employees/category-badge';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -127,9 +128,17 @@ export default function EmployeeDetailPage() {
                 </h1>
                 <EmployeeStatusBadge status={employee.status} />
               </div>
-              <p className="text-muted-foreground text-lg mb-1">
-                {employee.employeeNumber}
-              </p>
+              <div className="flex items-center gap-3 mb-2">
+                <p className="text-muted-foreground text-lg">
+                  {employee.employeeNumber}
+                </p>
+                <CategoryBadge
+                  employeeId={employeeId}
+                  showCoefficient={true}
+                  showTooltip={true}
+                  size="md"
+                />
+              </div>
               {employee.currentPosition && (
                 <p className="text-muted-foreground">
                   {employee.currentPosition.title}

@@ -44,6 +44,7 @@ const createEmployeeSchema = z.object({
   // Employment info
   hireDate: z.date(),
   positionId: z.string().min(1, 'Le poste est requis'),
+  coefficient: z.number().int().min(90).max(1000).default(100),
 
   // Salary info
   baseSalary: z.number().min(75000, 'Le salaire doit être >= 75000 FCFA'),
@@ -109,6 +110,7 @@ export default function NewEmployeePage() {
       nationalId: '',
       hireDate: new Date(),
       positionId: '',
+      coefficient: 100,
       baseSalary: 75000,
       housingAllowance: 0,
       transportAllowance: 0,
@@ -132,7 +134,7 @@ export default function NewEmployeePage() {
         isValid = await form.trigger(['firstName', 'lastName', 'email']);
         break;
       case 2:
-        isValid = await form.trigger(['hireDate', 'positionId']);
+        isValid = await form.trigger(['hireDate', 'positionId', 'coefficient']);
         break;
       case 3:
         isValid = await form.trigger(['baseSalary']);

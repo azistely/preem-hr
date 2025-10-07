@@ -59,6 +59,7 @@ export interface CreateEmployeeInput {
 
   // Position & Salary (required for hire)
   positionId: string;
+  coefficient?: number;
   baseSalary: number;
   housingAllowance?: number;
   transportAllowance?: number;
@@ -98,6 +99,7 @@ export interface UpdateEmployeeInput {
   cnpsNumber?: string;
   taxNumber?: string;
   taxDependents?: number;
+  coefficient?: number;
   customFields?: Record<string, any>;
 }
 
@@ -190,6 +192,7 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
         cnpsNumber: input.cnpsNumber,
         taxNumber: input.taxNumber,
         taxDependents: input.taxDependents || 0,
+        coefficient: input.coefficient || 100,
         customFields: input.customFields || {},
         status: 'active',
         createdBy: input.createdBy,
@@ -451,6 +454,7 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.cnpsNumber !== undefined) updateValues.cnpsNumber = input.cnpsNumber;
   if (input.taxNumber !== undefined) updateValues.taxNumber = input.taxNumber;
   if (input.taxDependents !== undefined) updateValues.taxDependents = input.taxDependents;
+  if (input.coefficient !== undefined) updateValues.coefficient = input.coefficient;
   if (input.customFields !== undefined) updateValues.customFields = input.customFields;
 
   // Update employee

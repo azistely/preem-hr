@@ -66,6 +66,7 @@ const createEmployeeSchema = z.object({
 
   // Position & Salary
   positionId: z.string().uuid('Position invalide'),
+  coefficient: z.number().int().min(90).max(1000).default(100),
   baseSalary: z.number().min(75000, 'Le salaire doit être >= 75000 FCFA (SMIG)'),
   housingAllowance: z.number().min(0).optional(),
   transportAllowance: z.number().min(0).optional(),
@@ -96,6 +97,7 @@ const updateEmployeeSchema = z.object({
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
+  coefficient: z.number().int().min(90).max(1000).optional(),
   customFields: z.record(z.any()).optional(),
 });
 

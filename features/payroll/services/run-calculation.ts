@@ -16,9 +16,10 @@ import {
   employeeSalaries,
   payrollRuns,
   payrollLineItems,
+  tenants,
 } from '@/lib/db/schema';
 import { and, eq, lte, gte, or, isNotNull, isNull } from 'drizzle-orm';
-import { calculatePayroll } from './payroll-calculation';
+import { calculatePayrollV2 } from './payroll-calculation-v2';
 import type { PayrollRunSummary } from '../types';
 
 export interface CreatePayrollRunInput {
@@ -151,6 +152,19 @@ export async function calculatePayrollRun(
     .where(eq(payrollRuns.id, input.runId));
 
   try {
+    // Get tenant with sector information
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.id, run.tenantId),
+      columns: {
+        countryCode: true,
+        sectorCode: true,
+      },
+    });
+
+    if (!tenant) {
+      throw new Error('Tenant not found');
+    }
+
     // Get all active employees for this tenant
     // Include those hired before period end OR terminated after period start
     const activeEmployees = await db.query.employees.findMany({
@@ -202,6 +216,7 @@ export async function calculatePayrollRun(
 
         // Get family status from custom fields
         const hasFamily = (employee.customFields as any)?.hasFamily || false;
+        const fiscalParts = (employee.customFields as any)?.fiscalParts || 1.0;
 
         // Extract allowances from JSONB
         const allowances = (currentSalary.allowances as any) || {};
@@ -209,15 +224,18 @@ export async function calculatePayrollRun(
         const transportAllowance = Number(allowances.transport || 0);
         const mealAllowance = Number(allowances.meal || 0);
 
-        // Calculate payroll
-        const calculation = calculatePayroll({
+        // Calculate payroll using V2 (database-driven, multi-country)
+        const calculation = await calculatePayrollV2({
           employeeId: employee.id,
+          countryCode: tenant.countryCode,
+          sectorCode: tenant.sectorCode || 'SERVICES', // Fallback to SERVICES if not set
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
           baseSalary: Number(currentSalary.baseSalary),
           housingAllowance,
           transportAllowance,
           mealAllowance,
+          fiscalParts,
           hasFamily,
           hireDate: new Date(employee.hireDate),
           terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
