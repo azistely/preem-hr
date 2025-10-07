@@ -386,6 +386,178 @@ export const employeesRouter = createTRPCRouter({
     }),
 
   /**
+   * Export employees to CSV (P1-8: Bulk Operations)
+   * Requires: HR Manager role
+   */
+  exportEmployees: hrManagerProcedure
+    .input(
+      z.object({
+        status: statusEnum.optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { db } = await import('@/db');
+      const { employees, positions } = await import('@/drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+
+      try {
+        // Fetch employees with position data
+        const employeesList = await db
+          .select({
+            id: employees.id,
+            employeeNumber: employees.employeeNumber,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+            email: employees.email,
+            phone: employees.phone,
+            hireDate: employees.hireDate,
+            coefficient: employees.coefficient,
+            status: employees.status,
+            addressLine1: employees.addressLine1,
+            addressLine2: employees.addressLine2,
+            city: employees.city,
+            postalCode: employees.postalCode,
+            bankName: employees.bankName,
+            bankAccount: employees.bankAccount,
+            cnpsNumber: employees.cnpsNumber,
+            taxNumber: employees.taxNumber,
+            taxDependents: employees.taxDependents,
+          })
+          .from(employees)
+          .where(
+            and(
+              eq(employees.tenantId, ctx.user.tenantId),
+              input.status ? eq(employees.status, input.status) : undefined
+            )
+          )
+          .orderBy(employees.lastName, employees.firstName);
+
+        return employeesList;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de l\'export des employés',
+        });
+      }
+    }),
+
+  /**
+   * Import employees from CSV (P1-8: Bulk Operations)
+   * Requires: HR Manager role
+   */
+  importEmployees: hrManagerProcedure
+    .input(
+      z.object({
+        employees: z.array(
+          z.object({
+            firstName: z.string().min(1),
+            lastName: z.string().min(1),
+            email: z.string().email(),
+            phone: z.string().optional(),
+            hireDate: z.string(), // ISO date string
+            positionTitle: z.string().min(1),
+            baseSalary: z.number().min(75000),
+            coefficient: z.number().int().min(90).max(1000).default(100),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { db } = await import('@/db');
+      const { employees, positions, employeeSalaries } = await import('@/drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+
+      try {
+        const results = {
+          success: [] as string[],
+          errors: [] as { row: number; email: string; error: string }[],
+        };
+
+        // Process each employee
+        for (let i = 0; i < input.employees.length; i++) {
+          const employeeData = input.employees[i];
+
+          try {
+            // Find position by title
+            const position = await db.query.positions.findFirst({
+              where: (positions, { and, eq }) =>
+                and(
+                  eq(positions.tenantId, ctx.user.tenantId),
+                  eq(positions.title, employeeData.positionTitle)
+                ),
+            });
+
+            if (!position) {
+              results.errors.push({
+                row: i + 1,
+                email: employeeData.email,
+                error: `Position "${employeeData.positionTitle}" introuvable`,
+              });
+              continue;
+            }
+
+            // Check if employee already exists
+            const existingEmployee = await db.query.employees.findFirst({
+              where: (employees, { and, eq }) =>
+                and(
+                  eq(employees.tenantId, ctx.user.tenantId),
+                  eq(employees.email, employeeData.email)
+                ),
+            });
+
+            if (existingEmployee) {
+              results.errors.push({
+                row: i + 1,
+                email: employeeData.email,
+                error: 'Cet employé existe déjà',
+              });
+              continue;
+            }
+
+            // Create employee using the service
+            const employee = await createEmployee({
+              tenantId: ctx.user.tenantId,
+              createdBy: ctx.user.id,
+              createdByEmail: 'system',
+              firstName: employeeData.firstName,
+              lastName: employeeData.lastName,
+              email: employeeData.email,
+              phone: employeeData.phone,
+              hireDate: new Date(employeeData.hireDate),
+              positionId: position.id,
+              baseSalary: employeeData.baseSalary,
+              coefficient: employeeData.coefficient,
+              components: [],
+            });
+
+            results.success.push(employeeData.email);
+
+            // Emit employee.hired event
+            await eventBus.publish('employee.hired', {
+              employeeId: employee.id,
+              tenantId: employee.tenantId,
+              hireDate: new Date(employee.hireDate),
+              positionId: position.id,
+            });
+          } catch (error: any) {
+            results.errors.push({
+              row: i + 1,
+              email: employeeData.email,
+              error: error.message || 'Erreur inconnue',
+            });
+          }
+        }
+
+        return results;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de l\'import des employés',
+        });
+      }
+    }),
+
+  /**
    * Update own profile (P1-1: Employee Profile Edit - Self-Service)
    * Allows employees to edit limited profile fields
    * Requires: Employee role + ownership check
