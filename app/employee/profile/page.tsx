@@ -13,6 +13,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   User,
   Mail,
@@ -25,13 +26,16 @@ import {
   CreditCard,
   FileText,
   Loader2,
+  Edit,
 } from 'lucide-react';
 import { useCurrentEmployee } from '@/hooks/use-current-employee';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { useRouter } from 'next/navigation';
 
 export default function EmployeeProfilePage() {
   const { employee, isLoading } = useCurrentEmployee();
+  const router = useRouter();
 
   const formatCurrency = (amount: number | string | null) => {
     if (!amount) return 'Non défini';
@@ -99,7 +103,16 @@ export default function EmployeeProfilePage() {
               Employé #{employee.employeeNumber}
             </p>
           </div>
-          {getStatusBadge(employee.status)}
+          <div className="flex items-center gap-3">
+            {getStatusBadge(employee.status)}
+            <Button
+              onClick={() => router.push('/employee/profile/edit')}
+              className="min-h-[44px]"
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Modifier mon profil
+            </Button>
+          </div>
         </div>
       </div>
 

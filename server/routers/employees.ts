@@ -384,4 +384,79 @@ export const employeesRouter = createTRPCRouter({
 
       return teamMembers;
     }),
+
+  /**
+   * Update own profile (P1-1: Employee Profile Edit - Self-Service)
+   * Allows employees to edit limited profile fields
+   * Requires: Employee role + ownership check
+   */
+  updateOwnProfile: employeeProcedure
+    .input(
+      z.object({
+        phone: z.string().optional(),
+        addressLine1: z.string().optional(),
+        addressLine2: z.string().optional(),
+        city: z.string().optional(),
+        postalCode: z.string().optional(),
+        bankName: z.string().optional(),
+        bankAccount: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { db } = await import('@/db');
+      const { employees } = await import('@/drizzle/schema');
+      const { eq, and } = await import('drizzle-orm');
+
+      if (!ctx.user.employeeId) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Aucun profil employé associé à ce compte',
+        });
+      }
+
+      try {
+        // Update only allowed fields
+        const [updatedEmployee] = await db
+          .update(employees)
+          .set({
+            phone: input.phone,
+            addressLine1: input.addressLine1,
+            addressLine2: input.addressLine2,
+            city: input.city,
+            postalCode: input.postalCode,
+            bankName: input.bankName,
+            bankAccount: input.bankAccount,
+            updatedAt: new Date(),
+            updatedBy: ctx.user.id,
+          })
+          .where(
+            and(
+              eq(employees.id, ctx.user.employeeId),
+              eq(employees.tenantId, ctx.user.tenantId)
+            )
+          )
+          .returning();
+
+        if (!updatedEmployee) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Profil employé introuvable',
+          });
+        }
+
+        // Emit employee.updated event
+        await eventBus.publish('employee.updated', {
+          employeeId: updatedEmployee.id,
+          tenantId: ctx.user.tenantId,
+          changes: input,
+        });
+
+        return updatedEmployee;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la mise à jour du profil',
+        });
+      }
+    }),
 });
