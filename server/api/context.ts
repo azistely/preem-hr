@@ -51,7 +51,10 @@ export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) =
   return {
     tenantId,
     userRole,
-    user: DEV_MOCK_USER,
+    user: {
+      ...DEV_MOCK_USER,
+      tenantId, // Add tenantId to user object for router compatibility
+    },
     db,
   };
 });
