@@ -224,14 +224,13 @@ const styles = StyleSheet.create({
 // ========================================
 
 const formatCurrency = (amount: number): string => {
-  // Use regular space for PDF compatibility
+  // Format with fr-FR locale, then replace narrow no-break space (U+202F) with regular space
+  // @react-pdf/renderer doesn't render U+202F correctly, showing it as a slash
   const formatted = new Intl.NumberFormat('fr-FR', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Math.round(amount));
-
-  // Replace ALL types of spaces (non-breaking \u00A0, narrow no-break \u202F) with regular space
-  return formatted.replace(/[\u00A0\u202F]/g, ' ');
+  return formatted.replace(/\u202F/g, ' ');
 };
 
 const formatPeriod = (start: Date, end: Date): string => {
