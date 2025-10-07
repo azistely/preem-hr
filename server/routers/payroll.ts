@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure, employeeProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, employeeProcedure, hrManagerProcedure } from '../api/trpc';
 import { calculateGrossSalary } from '@/features/payroll/services/gross-calculation';
 import { calculatePayroll } from '@/features/payroll/services/payroll-calculation';
 import { calculatePayrollV2 } from '@/features/payroll/services/payroll-calculation-v2';
@@ -180,6 +180,7 @@ export const payrollRouter = createTRPCRouter({
    * Create a new payroll run
    *
    * Initializes a payroll run for a specific period.
+   * Requires: HR Manager role
    *
    * @example
    * ```typescript
@@ -192,7 +193,7 @@ export const payrollRouter = createTRPCRouter({
    * });
    * ```
    */
-  createRun: publicProcedure
+  createRun: hrManagerProcedure
     .input(createPayrollRunInputSchema)
     .mutation(async ({ input }) => {
       return await createPayrollRun(input);
@@ -202,6 +203,7 @@ export const payrollRouter = createTRPCRouter({
    * Calculate payroll run for all employees
    *
    * Processes payroll for all active employees in the tenant.
+   * Requires: HR Manager role
    *
    * @example
    * ```typescript
@@ -212,7 +214,7 @@ export const payrollRouter = createTRPCRouter({
    * // summary.totalGross = 15,000,000
    * ```
    */
-  calculateRun: publicProcedure
+  calculateRun: hrManagerProcedure
     .input(calculatePayrollRunInputSchema)
     .mutation(async ({ input }) => {
       return await calculatePayrollRun(input);
@@ -327,6 +329,7 @@ export const payrollRouter = createTRPCRouter({
    *
    * Changes status from 'calculated' to 'approved'.
    * Only calculated runs can be approved.
+   * Requires: HR Manager role
    *
    * @example
    * ```typescript
@@ -336,7 +339,7 @@ export const payrollRouter = createTRPCRouter({
    * });
    * ```
    */
-  approveRun: publicProcedure
+  approveRun: hrManagerProcedure
     .input(
       z.object({
         runId: z.string().uuid(),
@@ -374,6 +377,7 @@ export const payrollRouter = createTRPCRouter({
    *
    * Soft deletes a payroll run (draft only).
    * Only draft runs can be deleted.
+   * Requires: HR Manager role
    *
    * @example
    * ```typescript
@@ -382,7 +386,7 @@ export const payrollRouter = createTRPCRouter({
    * });
    * ```
    */
-  deleteRun: publicProcedure
+  deleteRun: hrManagerProcedure
     .input(
       z.object({
         runId: z.string().uuid(),
@@ -1309,5 +1313,66 @@ export const payrollRouter = createTRPCRouter({
       });
 
       return employeePayslips;
+    }),
+
+  /**
+   * Get payroll dashboard summary (P1-7: Payroll Reports Dashboard)
+   * Aggregates payroll metrics for a given date range
+   * Requires: HR Manager role
+   */
+  getDashboardSummary: hrManagerProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { payslips } = await import('@/drizzle/schema');
+      const { gte, lte, and, eq, sum, count } = await import('drizzle-orm');
+
+      // Default to current month if no dates provided
+      const now = new Date();
+      const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+      const startDate = input.startDate || defaultStart;
+      const endDate = input.endDate || defaultEnd;
+
+      // Format dates as YYYY-MM-DD strings for comparison with date columns
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      // Query payslips within date range and tenant
+      // Using raw SQL for aggregation since Drizzle's aggregate API is limited
+      const result = await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT employee_id)::int AS employee_count,
+          COALESCE(SUM(gross_salary::numeric), 0) AS total_gross,
+          COALESCE(SUM(net_salary::numeric), 0) AS total_net,
+          COALESCE(SUM(employer_contributions::numeric), 0) AS total_employer_contributions
+        FROM payslips
+        WHERE tenant_id = ${ctx.user.tenantId}
+          AND period_start >= ${startDateStr}::date
+          AND period_end <= ${endDateStr}::date
+          AND status IN ('finalized', 'paid')
+      `);
+
+      const row = result.rows[0] as any;
+
+      const employeeCount = parseInt(row.employee_count) || 0;
+      const totalGross = parseFloat(row.total_gross) || 0;
+      const totalNet = parseFloat(row.total_net) || 0;
+      const totalEmployerContributions = parseFloat(row.total_employer_contributions) || 0;
+
+      return {
+        employeeCount,
+        totalGross,
+        totalNet,
+        totalEmployerContributions,
+        avgCostPerEmployee: employeeCount > 0 ? (totalGross + totalEmployerContributions) / employeeCount : 0,
+        periodStart: startDate,
+        periodEnd: endDate,
+      };
     }),
 });
