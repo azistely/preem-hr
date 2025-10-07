@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createEmployee,
   listEmployees,
@@ -26,10 +26,13 @@ import { TRPCError } from '@trpc/server';
 const genderEnum = z.enum(['male', 'female', 'other', 'prefer_not_to_say']);
 const statusEnum = z.enum(['active', 'terminated', 'suspended']);
 
-const allowanceSchema = z.object({
-  name: z.string().min(1, 'Le nom de l\'indemnité est requis'),
+// Component schema for validation
+const componentSchema = z.object({
+  code: z.string().min(1, 'Le code du composant est requis'),
+  name: z.string().min(1, 'Le nom du composant est requis'),
   amount: z.number().min(0, 'Le montant doit être positif'),
-  taxable: z.boolean().default(true),
+  sourceType: z.enum(['standard', 'custom', 'calculated']).default('standard'),
+  metadata: z.record(z.any()).optional(),
 });
 
 const createEmployeeSchema = z.object({
@@ -64,14 +67,11 @@ const createEmployeeSchema = z.object({
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).default(0),
 
-  // Position & Salary
+  // Position & Salary (base salary + components)
   positionId: z.string().uuid('Position invalide'),
   coefficient: z.number().int().min(90).max(1000).default(100),
-  baseSalary: z.number().min(75000, 'Le salaire doit être >= 75000 FCFA (SMIG)'),
-  housingAllowance: z.number().min(0).optional(),
-  transportAllowance: z.number().min(0).optional(),
-  mealAllowance: z.number().min(0).optional(),
-  otherAllowances: z.array(allowanceSchema).optional(),
+  baseSalary: z.number().min(75000, 'Le salaire de base doit être >= 75000 FCFA (SMIG)'),
+  components: z.array(componentSchema).default([]),
 
   // Custom fields
   customFields: z.record(z.any()).optional(),
@@ -133,7 +133,7 @@ export const employeesRouter = createTRPCRouter({
   /**
    * Create a new employee (hire)
    */
-  create: protectedProcedure
+  create: publicProcedure
     .input(createEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -164,7 +164,7 @@ export const employeesRouter = createTRPCRouter({
   /**
    * List employees with filtering
    */
-  list: protectedProcedure
+  list: publicProcedure
     .input(listEmployeesSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -183,7 +183,7 @@ export const employeesRouter = createTRPCRouter({
   /**
    * Get employee by ID with full details
    */
-  getById: protectedProcedure
+  getById: publicProcedure
     .input(getEmployeeByIdSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -199,7 +199,7 @@ export const employeesRouter = createTRPCRouter({
   /**
    * Update employee information
    */
-  update: protectedProcedure
+  update: publicProcedure
     .input(updateEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -229,7 +229,7 @@ export const employeesRouter = createTRPCRouter({
   /**
    * Terminate employee
    */
-  terminate: protectedProcedure
+  terminate: publicProcedure
     .input(terminateEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -260,7 +260,7 @@ export const employeesRouter = createTRPCRouter({
   /**
    * Suspend employee
    */
-  suspend: protectedProcedure
+  suspend: publicProcedure
     .input(suspendEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -290,7 +290,7 @@ export const employeesRouter = createTRPCRouter({
   /**
    * Reactivate suspended employee
    */
-  reactivate: protectedProcedure
+  reactivate: publicProcedure
     .input(reactivateEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {

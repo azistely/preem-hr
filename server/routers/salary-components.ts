@@ -10,7 +10,7 @@
 
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import { db } from '@/lib/db';
 import {
   salaryComponentDefinitions,
@@ -108,7 +108,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * Get standard components for a country
    * These are super admin seeded (codes 11-41)
    */
-  getStandardComponents: protectedProcedure
+  getStandardComponents: publicProcedure
     .input(getStandardComponentsSchema)
     .query(async ({ input }) => {
       const { countryCode, category } = input;
@@ -131,7 +131,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * Get component templates (curated library)
    * Users can add from template with one click
    */
-  getComponentTemplates: protectedProcedure
+  getComponentTemplates: publicProcedure
     .input(getComponentTemplatesSchema)
     .query(async ({ input }) => {
       const { countryCode, popularOnly } = input;
@@ -154,7 +154,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * Get sector configurations for a country
    * Provides work accident rates and smart defaults
    */
-  getSectorConfigurations: protectedProcedure
+  getSectorConfigurations: publicProcedure
     .input(getSectorConfigurationsSchema)
     .query(async ({ input }) => {
       const { countryCode } = input;
@@ -176,7 +176,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * - Tax treatment from template (law)
    * - Customizations from activation (tenant choice)
    */
-  getCustomComponents: protectedProcedure.query(async ({ ctx }) => {
+  getCustomComponents: publicProcedure.query(async ({ ctx }) => {
     const { tenantId } = ctx;
 
     if (!tenantId) {
@@ -231,7 +231,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * - Validates against compliance rules
    * - Prevents duplicate activations
    */
-  addFromTemplate: protectedProcedure
+  addFromTemplate: publicProcedure
     .input(addFromTemplateSchema)
     .mutation(async ({ input, ctx }) => {
       const { tenantId, userId } = ctx;
@@ -334,7 +334,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * - Detects formula changes in overrides.calculationRule
    * - Creates version history entry if formula changed
    */
-  updateCustomComponent: protectedProcedure
+  updateCustomComponent: publicProcedure
     .input(updateCustomComponentSchema)
     .mutation(async ({ input, ctx }) => {
       const { tenantId, userId } = ctx;
@@ -452,7 +452,7 @@ export const salaryComponentsRouter = createTRPCRouter({
   /**
    * Delete (soft delete) a custom component
    */
-  deleteCustomComponent: protectedProcedure
+  deleteCustomComponent: publicProcedure
     .input(deleteCustomComponentSchema)
     .mutation(async ({ input, ctx }) => {
       const { tenantId } = ctx;
@@ -502,7 +502,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    *
    * Returns timeline of all formula changes with audit trail
    */
-  getFormulaHistory: protectedProcedure
+  getFormulaHistory: publicProcedure
     .input(getFormulaHistorySchema)
     .query(async ({ input, ctx }) => {
       const { tenantId } = ctx;
@@ -551,7 +551,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * Used by UI to display slider bounds and recommended values
    * Example: Housing allowance rate → { min: 0.20, max: 0.30, recommended: 0.25 }
    */
-  getLegalRange: protectedProcedure
+  getLegalRange: publicProcedure
     .input(getLegalRangeSchema)
     .query(async ({ input }) => {
       const { templateCode, countryCode, field } = input;
@@ -571,7 +571,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * Used by UI to show real-time validation feedback
    * Returns violations and warnings without saving
    */
-  validateCustomization: protectedProcedure
+  validateCustomization: publicProcedure
     .input(validateCustomizationSchema)
     .query(async ({ input }) => {
       const { templateCode, countryCode, customizations } = input;

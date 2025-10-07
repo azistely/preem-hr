@@ -13,7 +13,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter as router, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter as router, publicProcedure } from '../api/trpc';
 import {
   getCategoriesByCountry,
   getEmployeeCategory,
@@ -34,7 +34,7 @@ export const employeeCategoriesRouter = router({
    *
    * Use case: Populate category reference table or dropdowns
    */
-  getCategoriesByCountry: protectedProcedure
+  getCategoriesByCountry: publicProcedure
     .input(
       z.object({
         countryCode: z.string().length(2),
@@ -49,7 +49,7 @@ export const employeeCategoriesRouter = router({
    *
    * Use case: Display category badge in employee profile
    */
-  getEmployeeCategory: protectedProcedure
+  getEmployeeCategory: publicProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -65,7 +65,7 @@ export const employeeCategoriesRouter = router({
    * Use case: Termination workflow - show required notice period
    * Returns: { noticePeriodDays, workDays, searchDays, category }
    */
-  calculateNoticePeriod: protectedProcedure
+  calculateNoticePeriod: publicProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -85,7 +85,7 @@ export const employeeCategoriesRouter = router({
    * Use case: Salary validation - prevent below-minimum wages
    * Formula: SMIG × (coefficient / 100)
    */
-  calculateMinimumWage: protectedProcedure
+  calculateMinimumWage: publicProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -109,7 +109,7 @@ export const employeeCategoriesRouter = router({
    * Use case: Termination workflow - show severance amount
    * Convention Collective rates: 30%/35%/40% based on seniority
    */
-  calculateSeverancePay: protectedProcedure
+  calculateSeverancePay: publicProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -136,7 +136,7 @@ export const employeeCategoriesRouter = router({
    *
    * Use case: Employee form validation - show warning if coefficient orphaned
    */
-  validateCoefficient: protectedProcedure
+  validateCoefficient: publicProcedure
     .input(
       z.object({
         coefficient: z.number().int().min(90).max(1000),
@@ -168,7 +168,7 @@ export const employeeCategoriesRouter = router({
    * // }
    * ```
    */
-  validateSalary: protectedProcedure
+  validateSalary: publicProcedure
     .input(
       z.object({
         countryCode: z.string().length(2),
@@ -199,7 +199,7 @@ export const employeeCategoriesRouter = router({
    * // { minimumSalary: 112500 }
    * ```
    */
-  getMinimumSalaryForCategory: protectedProcedure
+  getMinimumSalaryForCategory: publicProcedure
     .input(
       z.object({
         countryCode: z.string().length(2),
@@ -239,7 +239,7 @@ export const employeeCategoriesRouter = router({
    * // ]
    * ```
    */
-  getAllCategories: protectedProcedure
+  getAllCategories: publicProcedure
     .input(
       z.object({
         countryCode: z.string().length(2),

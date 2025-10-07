@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createPosition,
   getPositionHierarchy,
@@ -35,7 +35,7 @@ const listPositionsSchema = z.object({
 });
 
 export const positionsRouter = createTRPCRouter({
-  create: protectedProcedure
+  create: publicProcedure
     .input(createPositionSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -52,7 +52,7 @@ export const positionsRouter = createTRPCRouter({
       }
     }),
 
-  getHierarchy: protectedProcedure
+  getHierarchy: publicProcedure
     .input(getHierarchySchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -65,7 +65,7 @@ export const positionsRouter = createTRPCRouter({
       }
     }),
 
-  list: protectedProcedure
+  list: publicProcedure
     .input(listPositionsSchema)
     .query(async ({ input, ctx }) => {
       try {

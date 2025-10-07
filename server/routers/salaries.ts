@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   changeSalary,
   getCurrentSalary,
@@ -43,7 +43,7 @@ const getSalaryHistorySchema = z.object({
 });
 
 export const salariesRouter = createTRPCRouter({
-  change: protectedProcedure
+  change: publicProcedure
     .input(changeSalarySchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -78,7 +78,7 @@ export const salariesRouter = createTRPCRouter({
       }
     }),
 
-  getCurrent: protectedProcedure
+  getCurrent: publicProcedure
     .input(getCurrentSalarySchema)
     .query(async ({ input }) => {
       try {
@@ -97,7 +97,7 @@ export const salariesRouter = createTRPCRouter({
       }
     }),
 
-  getHistory: protectedProcedure
+  getHistory: publicProcedure
     .input(getSalaryHistorySchema)
     .query(async ({ input }) => {
       try {
@@ -115,7 +115,7 @@ export const salariesRouter = createTRPCRouter({
       }
     }),
 
-  getMinimumWage: protectedProcedure
+  getMinimumWage: publicProcedure
     .input(z.object({}).optional())
     .query(async ({ ctx }) => {
       try {

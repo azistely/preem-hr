@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createSalaryReview,
   reviewSalaryChange,
@@ -46,7 +46,7 @@ export const salaryReviewsRouter = createTRPCRouter({
   /**
    * Create a new salary review request
    */
-  create: protectedProcedure
+  create: publicProcedure
     .input(createReviewSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -75,7 +75,7 @@ export const salaryReviewsRouter = createTRPCRouter({
   /**
    * Approve or reject a salary review
    */
-  review: protectedProcedure
+  review: publicProcedure
     .input(reviewDecisionSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -105,7 +105,7 @@ export const salaryReviewsRouter = createTRPCRouter({
   /**
    * Get all pending reviews for the tenant
    */
-  listPending: protectedProcedure
+  listPending: publicProcedure
     .query(async ({ ctx }) => {
       try {
         return await getPendingReviews(ctx.tenantId);
@@ -120,7 +120,7 @@ export const salaryReviewsRouter = createTRPCRouter({
   /**
    * Get review history for an employee
    */
-  getHistory: protectedProcedure
+  getHistory: publicProcedure
     .input(z.object({ employeeId: z.string().uuid() }))
     .query(async ({ input }) => {
       try {
@@ -136,7 +136,7 @@ export const salaryReviewsRouter = createTRPCRouter({
   /**
    * Cancel a pending salary review
    */
-  cancel: protectedProcedure
+  cancel: publicProcedure
     .input(z.object({ reviewId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       try {

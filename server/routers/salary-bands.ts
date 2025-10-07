@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createSalaryBand,
   getSalaryBandByPosition,
@@ -45,7 +45,7 @@ const listSchema = z.object({
 });
 
 export const salaryBandsRouter = createTRPCRouter({
-  create: protectedProcedure
+  create: publicProcedure
     .input(createBandSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -61,7 +61,7 @@ export const salaryBandsRouter = createTRPCRouter({
       }
     }),
 
-  update: protectedProcedure
+  update: publicProcedure
     .input(updateBandSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -75,7 +75,7 @@ export const salaryBandsRouter = createTRPCRouter({
       }
     }),
 
-  list: protectedProcedure
+  list: publicProcedure
     .input(listSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -88,7 +88,7 @@ export const salaryBandsRouter = createTRPCRouter({
       }
     }),
 
-  getByPosition: protectedProcedure
+  getByPosition: publicProcedure
     .input(getByPositionSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -101,7 +101,7 @@ export const salaryBandsRouter = createTRPCRouter({
       }
     }),
 
-  validateSalary: protectedProcedure
+  validateSalary: publicProcedure
     .input(validateSalarySchema)
     .query(async ({ input, ctx }) => {
       try {

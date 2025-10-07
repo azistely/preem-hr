@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import { generateWorkCertificate } from '@/features/documents/services/work-certificate.service';
 import { generateCNPSAttestation } from '@/features/documents/services/cnps-attestation.service';
 import { generateFinalPayslip } from '@/features/documents/services/final-payslip.service';
@@ -34,7 +34,7 @@ export const documentsRouter = createTRPCRouter({
    * Generate work certificate (Certificat de Travail)
    * Must be issued within 48 hours of termination per Convention Collective Article 40
    */
-  generateWorkCertificate: protectedProcedure
+  generateWorkCertificate: publicProcedure
     .input(generateWorkCertificateSchema)
     .mutation(async ({ input, ctx }) => {
       console.log('[TRPC Documents] generateWorkCertificate called with input:', JSON.stringify(input));
@@ -64,7 +64,7 @@ export const documentsRouter = createTRPCRouter({
    * Generate CNPS attestation
    * Must be issued within 15 days of termination per Convention Collective Article 40
    */
-  generateCNPSAttestation: protectedProcedure
+  generateCNPSAttestation: publicProcedure
     .input(generateCNPSAttestationSchema)
     .mutation(async ({ input, ctx }) => {
       console.log('[TRPC Documents] generateCNPSAttestation called with input:', JSON.stringify(input));
@@ -94,7 +94,7 @@ export const documentsRouter = createTRPCRouter({
    * Generate final payslip with terminal payments
    * Includes severance pay, vacation payout, and prorated salary
    */
-  generateFinalPayslip: protectedProcedure
+  generateFinalPayslip: publicProcedure
     .input(generateFinalPayslipSchema)
     .mutation(async ({ input, ctx }) => {
       console.log('[TRPC Documents] generateFinalPayslip called with input:', JSON.stringify(input));

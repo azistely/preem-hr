@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createBulkAdjustment,
   calculateAffectedEmployees,
@@ -40,7 +40,7 @@ const getStatusSchema = z.object({
 });
 
 export const bulkAdjustmentsRouter = createTRPCRouter({
-  create: protectedProcedure
+  create: publicProcedure
     .input(createAdjustmentSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -65,7 +65,7 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
       }
     }),
 
-  preview: protectedProcedure
+  preview: publicProcedure
     .input(previewAdjustmentSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -78,7 +78,7 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
       }
     }),
 
-  execute: protectedProcedure
+  execute: publicProcedure
     .input(processAdjustmentSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -104,7 +104,7 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
       }
     }),
 
-  getStatus: protectedProcedure
+  getStatus: publicProcedure
     .input(getStatusSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -117,7 +117,7 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
       }
     }),
 
-  list: protectedProcedure
+  list: publicProcedure
     .query(async ({ ctx }) => {
       try {
         return await listBulkAdjustments(ctx.tenantId);

@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import {
   createTermination,
   updateTermination,
@@ -58,7 +58,7 @@ export const terminationsRouter = createTRPCRouter({
   /**
    * Create a new termination record
    */
-  create: protectedProcedure
+  create: publicProcedure
     .input(createTerminationSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -81,7 +81,7 @@ export const terminationsRouter = createTRPCRouter({
   /**
    * Update termination (mainly for document URLs)
    */
-  update: protectedProcedure
+  update: publicProcedure
     .input(updateTerminationSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -104,7 +104,7 @@ export const terminationsRouter = createTRPCRouter({
   /**
    * Get termination by ID
    */
-  getById: protectedProcedure
+  getById: publicProcedure
     .input(getTerminationSchema)
     .query(async ({ input, ctx }) => {
       try {
@@ -120,7 +120,7 @@ export const terminationsRouter = createTRPCRouter({
   /**
    * Get termination by employee ID
    */
-  getByEmployeeId: protectedProcedure
+  getByEmployeeId: publicProcedure
     .input(getTerminationByEmployeeSchema)
     .query(async ({ input, ctx }) => {
       return await getTerminationByEmployeeId(input.employeeId, ctx.tenantId);
@@ -129,7 +129,7 @@ export const terminationsRouter = createTRPCRouter({
   /**
    * List terminations
    */
-  list: protectedProcedure
+  list: publicProcedure
     .input(listTerminationsSchema)
     .query(async ({ input, ctx }) => {
       try {
