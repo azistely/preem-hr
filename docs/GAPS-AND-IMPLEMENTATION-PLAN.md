@@ -401,10 +401,15 @@ getMyTeam: managerProcedure.query(async ({ ctx }) => {
 
 ---
 
-#### P1-1: Employee Profile Edit
+#### P1-1: Employee Profile Edit ✅ COMPLETED
 **Priority:** P1
-**Effort:** 1 day
+**Effort:** 1 day (Actual: 1 day)
 **Impact:** Employees must contact HR for address/phone changes
+**Status:** ✅ Implemented
+- Added `updateOwnProfile` endpoint with employeeProcedure + ownership check
+- Created `/app/employee/profile/edit` page with form validation
+- Employees can edit: phone, address, bank account (not salary/position/status)
+- French UI with Zod validation and toast notifications
 
 **Implementation:** Add edit mode to profile page with restricted fields:
 - ✅ Editable: address, phone number, emergency contact
@@ -414,10 +419,16 @@ getMyTeam: managerProcedure.query(async ({ ctx }) => {
 
 ---
 
-#### P1-8: Employee Import/Export
+#### P1-8: Employee Import/Export ✅ COMPLETED
 **Priority:** P1
-**Effort:** 2 days
+**Effort:** 2 days (Actual: 1 day)
 **Impact:** Manual data entry for bulk hiring
+**Status:** ✅ Implemented
+- Added `exportEmployees` query and `importEmployees` mutation (hrManagerProcedure)
+- Created `/app/admin/employees/import-export` page with tabs
+- Export: Download all employees as CSV
+- Import: Upload CSV, preview, validate, batch create with error handling
+- Position lookup by title with detailed error reporting
 
 **Implementation:**
 - Export: Add button to `/app/employees/page.tsx` to export to Excel
@@ -545,10 +556,15 @@ updateGeofenceConfig: adminProcedure
 
 ---
 
-#### P1-3: Manager Overtime Reports Enhancement
+#### P1-3: Manager Overtime Reports Enhancement ✅ COMPLETED
 **Priority:** P1
-**Effort:** 2 days
+**Effort:** 2 days (Actual: Already implemented)
 **Impact:** Limited reporting capabilities
+**Status:** ✅ Already implemented in previous work
+- Page exists at `/app/manager/reports/overtime/page.tsx`
+- `getMonthlyOvertimeReport` endpoint with managerProcedure
+- Summary cards, detailed breakdown, export to CSV, progressive disclosure
+- Full compliance with HCI principles
 
 **Current State:**
 - UI: ✅ `/app/manager/reports/overtime/page.tsx` created (422 lines)
@@ -586,10 +602,17 @@ getTeamOvertimeReport: managerProcedure
 
 ### Gaps
 
-#### P1-9: Dedicated Manager Time-Off Approval Page
+#### P1-9: Dedicated Manager Time-Off Approval Page ✅ COMPLETED
 **Priority:** P1
-**Effort:** 1 day
+**Effort:** 1 day (Actual: 1 day)
 **Impact:** Manager must use admin route for approvals
+**Status:** ✅ Implemented
+- Added `getPendingRequestsForTeam` endpoint (filters by reporting_manager_id)
+- Created `/app/manager/time-off/approvals` page
+- Display: Employee, Type, Dates, Days, Status, Reason
+- Approve/Reject workflow with mandatory rejection reason
+- Balance validation handled by service layer
+- French UI with confirmation dialogs
 
 **Current State:**
 - Managers currently use `/app/admin/time-off/page.tsx` (generic admin page)
@@ -875,13 +898,13 @@ export const eventBus = {
 
 | Task | Days | Module | Files | Dependencies |
 |------|------|--------|-------|--------------|
-| P1-1: Employee Profile Edit | 1 | `employees/` | `app/employee/profile/page.tsx` | P0-3 |
-| P1-3: Manager Overtime Reports | 2 | `time-tracking/` | `app/manager/reports/overtime/page.tsx` | P0-4 |
-| P1-5: Public Holidays UI | 1 | `time-tracking/` | `app/admin/public-holidays/page.tsx` | P0-1 |
-| P1-6: Geofencing UI | 2 | `time-tracking/` | `app/admin/geofencing/page.tsx` | P0-1 |
+| P1-1: Employee Profile Edit ✅ | 1 | `employees/` | `app/employee/profile/edit/page.tsx` | P0-3 |
+| P1-3: Manager Overtime Reports ✅ | 2 | `time-tracking/` | `app/manager/reports/overtime/page.tsx` | P0-4 |
+| P1-5: Public Holidays UI ✅ | 1 | `time-tracking/` | `app/admin/public-holidays/page.tsx` | P0-1 |
+| P1-6: Geofencing UI ✅ | 2 | `time-tracking/` | `app/admin/geofencing/page.tsx` | P0-1 |
 | P1-7: Payroll Dashboard | 3 | `payroll/` | `app/payroll/dashboard/page.tsx` | None |
-| P1-8: Employee Import/Export | 2 | `employees/` | `app/employees/import/page.tsx` | P0-1 |
-| P1-9: Manager Time-Off Approval | 1 | `time-off/` | `app/manager/time-off/page.tsx` | P0-4 |
+| P1-8: Employee Import/Export ✅ | 2 | `employees/` | `app/admin/employees/import-export/page.tsx` | P0-1 |
+| P1-9: Manager Time-Off Approval ✅ | 1 | `time-off/` | `app/manager/time-off/approvals/page.tsx` | P0-4 |
 
 **Phase 2 Deliverables:**
 - ✅ Full employee self-service
