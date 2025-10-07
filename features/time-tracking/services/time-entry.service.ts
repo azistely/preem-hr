@@ -1,0 +1,273 @@
+/**
+ * Time Entry Service
+ *
+ * Handles clock in/out operations with:
+ * - Geofence validation
+ * - Photo verification
+ * - Overtime detection
+ * - Duplicate prevention
+ */
+
+import { db } from '@/db';
+import { timeEntries, employees } from '@/drizzle/schema';
+import { and, eq, isNull, desc, sql } from 'drizzle-orm';
+import { validateGeofence, type GeoLocation } from './geofence.service';
+import { classifyOvertimeHours } from './overtime.service';
+
+export interface ClockInInput {
+  employeeId: string;
+  tenantId: string;
+  location?: GeoLocation;
+  photoUrl?: string;
+}
+
+export interface ClockOutInput {
+  employeeId: string;
+  tenantId: string;
+  location?: GeoLocation;
+  photoUrl?: string;
+}
+
+export class TimeEntryError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'TimeEntryError';
+  }
+}
+
+/**
+ * Clock in employee
+ */
+export async function clockIn(input: ClockInInput) {
+  const { employeeId, tenantId, location, photoUrl } = input;
+
+  // Check for existing open time entry
+  const openEntry = await db.query.timeEntries.findFirst({
+    where: and(
+      eq(timeEntries.employeeId, employeeId),
+      eq(timeEntries.tenantId, tenantId),
+      isNull(timeEntries.clockOut)
+    ),
+    orderBy: [desc(timeEntries.clockIn)],
+  });
+
+  if (openEntry) {
+    throw new TimeEntryError(
+      'Vous avez déjà pointé votre arrivée',
+      'ALREADY_CLOCKED_IN',
+      { existingEntryId: openEntry.id }
+    );
+  }
+
+  // Validate geofence if location provided
+  let geofenceVerified = false;
+  if (location) {
+    const validation = await validateGeofence(tenantId, location);
+
+    if (!validation.isValid) {
+      throw new TimeEntryError(
+        validation.reason || 'Vous êtes trop loin du lieu de travail',
+        'GEOFENCE_VIOLATION',
+        { distance: validation.distance }
+      );
+    }
+
+    geofenceVerified = true;
+  }
+
+  // Create time entry
+  const clockInTime = new Date();
+
+  const [newEntry] = await db
+    .insert(timeEntries)
+    .values({
+      tenantId,
+      employeeId,
+      clockIn: clockInTime.toISOString(),
+      clockInLocation: location
+        ? sql`ST_SetSRID(ST_MakePoint(${location.longitude}, ${location.latitude}), 4326)::geography`
+        : null,
+      clockInPhotoUrl: photoUrl || null,
+      geofenceVerified,
+      status: 'pending',
+    })
+    .returning();
+
+  return newEntry;
+}
+
+/**
+ * Clock out employee
+ */
+export async function clockOut(input: ClockOutInput) {
+  const { employeeId, tenantId, location, photoUrl } = input;
+
+  // Find open time entry
+  const openEntry = await db.query.timeEntries.findFirst({
+    where: and(
+      eq(timeEntries.employeeId, employeeId),
+      eq(timeEntries.tenantId, tenantId),
+      isNull(timeEntries.clockOut)
+    ),
+    orderBy: [desc(timeEntries.clockIn)],
+  });
+
+  if (!openEntry) {
+    throw new TimeEntryError(
+      "Vous n'avez pas pointé votre arrivée",
+      'NO_CLOCK_IN',
+      { employeeId }
+    );
+  }
+
+  // Validate geofence if location provided
+  if (location && openEntry.geofenceVerified) {
+    const validation = await validateGeofence(tenantId, location);
+
+    if (!validation.isValid) {
+      throw new TimeEntryError(
+        validation.reason || 'Vous êtes trop loin du lieu de travail',
+        'GEOFENCE_VIOLATION',
+        { distance: validation.distance }
+      );
+    }
+  }
+
+  // Calculate hours worked
+  const clockOutTime = new Date();
+  const clockInTime = new Date(openEntry.clockIn);
+  const totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+
+  // Get employee to determine country
+  const employee = await db.query.employees.findFirst({
+    where: eq(employees.id, employeeId),
+    with: {
+      tenant: true,
+    },
+  });
+
+  if (!employee) {
+    throw new TimeEntryError('Employé non trouvé', 'EMPLOYEE_NOT_FOUND', { employeeId });
+  }
+
+  const countryCode = employee.tenant?.countryCode || 'CI';
+
+  // Classify overtime
+  const overtimeBreakdown = await classifyOvertimeHours(
+    employeeId,
+    clockInTime,
+    clockOutTime,
+    countryCode
+  );
+
+  // Determine entry type
+  let entryType = 'regular';
+  if (overtimeBreakdown.hours_above_46 || overtimeBreakdown.hours_41_to_46) {
+    entryType = 'overtime';
+  }
+  if (overtimeBreakdown.night_work) {
+    entryType = 'overtime'; // Night work is always overtime
+  }
+
+  // Update time entry
+  const [updatedEntry] = await db
+    .update(timeEntries)
+    .set({
+      clockOut: clockOutTime.toISOString(),
+      clockOutLocation: location
+        ? sql`ST_SetSRID(ST_MakePoint(${location.longitude}, ${location.latitude}), 4326)::geography`
+        : null,
+      clockOutPhotoUrl: photoUrl || null,
+      totalHours: totalHours.toFixed(2),
+      entryType,
+      overtimeBreakdown: overtimeBreakdown as any,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(timeEntries.id, openEntry.id))
+    .returning();
+
+  return updatedEntry;
+}
+
+/**
+ * Get current time entry for employee
+ */
+export async function getCurrentTimeEntry(employeeId: string, tenantId: string) {
+  const entry = await db.query.timeEntries.findFirst({
+    where: and(
+      eq(timeEntries.employeeId, employeeId),
+      eq(timeEntries.tenantId, tenantId),
+      isNull(timeEntries.clockOut)
+    ),
+    orderBy: [desc(timeEntries.clockIn)],
+  });
+
+  // React Query requires non-undefined return values
+  return entry ?? null;
+}
+
+/**
+ * Get time entries for employee in date range
+ */
+export async function getTimeEntries(
+  employeeId: string,
+  tenantId: string,
+  startDate: Date,
+  endDate: Date
+) {
+  return await db.query.timeEntries.findMany({
+    where: and(
+      eq(timeEntries.employeeId, employeeId),
+      eq(timeEntries.tenantId, tenantId)
+    ),
+    orderBy: [desc(timeEntries.clockIn)],
+  });
+}
+
+/**
+ * Approve time entry
+ */
+export async function approveTimeEntry(
+  entryId: string,
+  approvedBy: string
+) {
+  const [approvedEntry] = await db
+    .update(timeEntries)
+    .set({
+      status: 'approved',
+      approvedBy,
+      approvedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(timeEntries.id, entryId))
+    .returning();
+
+  return approvedEntry;
+}
+
+/**
+ * Reject time entry
+ */
+export async function rejectTimeEntry(
+  entryId: string,
+  approvedBy: string,
+  rejectionReason: string
+) {
+  const [rejectedEntry] = await db
+    .update(timeEntries)
+    .set({
+      status: 'rejected',
+      approvedBy,
+      approvedAt: new Date().toISOString(),
+      rejectionReason,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(timeEntries.id, entryId))
+    .returning();
+
+  return rejectedEntry;
+}
