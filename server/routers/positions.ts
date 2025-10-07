@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, hrManagerProcedure } from '../api/trpc';
 import {
   createPosition,
   getPositionHierarchy,
@@ -35,13 +35,17 @@ const listPositionsSchema = z.object({
 });
 
 export const positionsRouter = createTRPCRouter({
-  create: publicProcedure
+  /**
+   * Create a new position
+   * Requires: HR Manager role
+   */
+  create: hrManagerProcedure
     .input(createPositionSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         return await createPosition({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
         });
       } catch (error: any) {
@@ -52,11 +56,15 @@ export const positionsRouter = createTRPCRouter({
       }
     }),
 
+  /**
+   * Get position hierarchy
+   * Public access for organizational charts
+   */
   getHierarchy: publicProcedure
     .input(getHierarchySchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await getPositionHierarchy(input.positionId, ctx.tenantId);
+        return await getPositionHierarchy(input.positionId, ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'NOT_FOUND',
@@ -65,11 +73,15 @@ export const positionsRouter = createTRPCRouter({
       }
     }),
 
+  /**
+   * List all positions
+   * Public access for dropdowns/lookups
+   */
   list: publicProcedure
     .input(listPositionsSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await listPositions(ctx.tenantId, input.status);
+        return await listPositions(ctx.user.tenantId, input.status);
       } catch (error: any) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',

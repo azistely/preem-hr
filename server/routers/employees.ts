@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure, employeeProcedure, managerProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, employeeProcedure, managerProcedure, hrManagerProcedure } from '../api/trpc';
 import {
   createEmployee,
   listEmployees,
@@ -132,14 +132,15 @@ const reactivateEmployeeSchema = z.object({
 export const employeesRouter = createTRPCRouter({
   /**
    * Create a new employee (hire)
+   * Requires: HR Manager role
    */
-  create: publicProcedure
+  create: hrManagerProcedure
     .input(createEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         const employee = await createEmployee({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
           createdByEmail: 'system', // TODO: Add email to user context
         });
@@ -170,7 +171,7 @@ export const employeesRouter = createTRPCRouter({
       try {
         return await listEmployees({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
         });
       } catch (error: any) {
         throw new TRPCError({
@@ -187,7 +188,7 @@ export const employeesRouter = createTRPCRouter({
     .input(getEmployeeByIdSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await getEmployeeById(input.id, ctx.tenantId);
+        return await getEmployeeById(input.id, ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: error.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'INTERNAL_SERVER_ERROR',
@@ -198,14 +199,15 @@ export const employeesRouter = createTRPCRouter({
 
   /**
    * Update employee information
+   * Requires: HR Manager role
    */
-  update: publicProcedure
+  update: hrManagerProcedure
     .input(updateEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         const updatedEmployee = await updateEmployee({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           updatedBy: ctx.user.id,
           updatedByEmail: 'system', // TODO: Add email to user context
         });
@@ -213,7 +215,7 @@ export const employeesRouter = createTRPCRouter({
         // Emit employee.updated event
         await eventBus.publish('employee.updated', {
           employeeId: input.id,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           changes: input,
         });
 
@@ -228,14 +230,15 @@ export const employeesRouter = createTRPCRouter({
 
   /**
    * Terminate employee
+   * Requires: HR Manager role
    */
-  terminate: publicProcedure
+  terminate: hrManagerProcedure
     .input(terminateEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         const employee = await terminateEmployee({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           updatedBy: ctx.user.id,
           updatedByEmail: 'system', // TODO: Add email to user context
         });
@@ -259,14 +262,15 @@ export const employeesRouter = createTRPCRouter({
 
   /**
    * Suspend employee
+   * Requires: HR Manager role
    */
-  suspend: publicProcedure
+  suspend: hrManagerProcedure
     .input(suspendEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         const employee = await suspendEmployee(
           input.employeeId,
-          ctx.tenantId,
+          ctx.user.tenantId,
           ctx.user.id
         );
 
@@ -289,14 +293,15 @@ export const employeesRouter = createTRPCRouter({
 
   /**
    * Reactivate suspended employee
+   * Requires: HR Manager role
    */
-  reactivate: publicProcedure
+  reactivate: hrManagerProcedure
     .input(reactivateEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         return await reactivateEmployee(
           input.employeeId,
-          ctx.tenantId,
+          ctx.user.tenantId,
           ctx.user.id
         );
       } catch (error: any) {
