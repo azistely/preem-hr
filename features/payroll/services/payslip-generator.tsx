@@ -47,9 +47,18 @@ export interface PayslipData {
   housingAllowance?: number;
   transportAllowance?: number;
   mealAllowance?: number;
+  seniorityBonus?: number;
+  familyAllowance?: number;
   overtimePay?: number;
   bonuses?: number;
   grossSalary: number;
+
+  // Component-based earnings (new system)
+  components?: Array<{
+    code: string;
+    name: string;
+    amount: number;
+  }>;
 
   // Deductions
   cnpsEmployee: number;
@@ -313,46 +322,86 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => (
             <Text style={styles.col1}>Libellé</Text>
             <Text style={styles.col2}>Montant (FCFA)</Text>
           </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.col1}>Salaire de base</Text>
-            <Text style={styles.col2}>{formatCurrency(data.baseSalary)}</Text>
-          </View>
-          {data.housingAllowance && data.housingAllowance > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.col1}>Prime de logement</Text>
-              <Text style={styles.col2}>{formatCurrency(data.housingAllowance)}</Text>
-            </View>
+
+          {/* Render from components array if available (new system) */}
+          {data.components && data.components.length > 0 ? (
+            <>
+              {data.components.map((component, index) => (
+                <View key={`component-${index}`} style={styles.tableRow}>
+                  <Text style={styles.col1}>{component.name}</Text>
+                  <Text style={styles.col2}>{formatCurrency(component.amount)}</Text>
+                </View>
+              ))}
+              {data.overtimePay && data.overtimePay > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Heures supplémentaires</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.overtimePay)}</Text>
+                </View>
+              )}
+              {data.bonuses && data.bonuses > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Primes et bonus</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.bonuses)}</Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Fallback to hardcoded fields for backward compatibility */}
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>Salaire de base</Text>
+                <Text style={styles.col2}>{formatCurrency(data.baseSalary)}</Text>
+              </View>
+              {data.housingAllowance && data.housingAllowance > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Prime de logement</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.housingAllowance)}</Text>
+                </View>
+              )}
+              {data.transportAllowance && data.transportAllowance > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Prime de transport</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.transportAllowance)}</Text>
+                </View>
+              )}
+              {data.mealAllowance && data.mealAllowance > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Prime de panier</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.mealAllowance)}</Text>
+                </View>
+              )}
+              {data.seniorityBonus && data.seniorityBonus > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Prime d'ancienneté</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.seniorityBonus)}</Text>
+                </View>
+              )}
+              {data.familyAllowance && data.familyAllowance > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Allocations familiales</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.familyAllowance)}</Text>
+                </View>
+              )}
+              {data.overtimePay && data.overtimePay > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Heures supplémentaires</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.overtimePay)}</Text>
+                </View>
+              )}
+              {data.bonuses && data.bonuses > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.col1}>Primes et bonus</Text>
+                  <Text style={styles.col2}>{formatCurrency(data.bonuses)}</Text>
+                </View>
+              )}
+              {data.earningsDetails?.map((detail, index) => (
+                <View key={index} style={styles.tableRow}>
+                  <Text style={styles.col1}>{detail.description}</Text>
+                  <Text style={styles.col2}>{formatCurrency(detail.amount)}</Text>
+                </View>
+              ))}
+            </>
           )}
-          {data.transportAllowance && data.transportAllowance > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.col1}>Prime de transport</Text>
-              <Text style={styles.col2}>{formatCurrency(data.transportAllowance)}</Text>
-            </View>
-          )}
-          {data.mealAllowance && data.mealAllowance > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.col1}>Prime de panier</Text>
-              <Text style={styles.col2}>{formatCurrency(data.mealAllowance)}</Text>
-            </View>
-          )}
-          {data.overtimePay && data.overtimePay > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.col1}>Heures supplémentaires</Text>
-              <Text style={styles.col2}>{formatCurrency(data.overtimePay)}</Text>
-            </View>
-          )}
-          {data.bonuses && data.bonuses > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.col1}>Primes et bonus</Text>
-              <Text style={styles.col2}>{formatCurrency(data.bonuses)}</Text>
-            </View>
-          )}
-          {data.earningsDetails?.map((detail, index) => (
-            <View key={index} style={styles.tableRow}>
-              <Text style={styles.col1}>{detail.description}</Text>
-              <Text style={styles.col2}>{formatCurrency(detail.amount)}</Text>
-            </View>
-          ))}
         </View>
         <View style={styles.totalRow}>
           <Text style={styles.col1}>SALAIRE BRUT</Text>

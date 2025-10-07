@@ -26,7 +26,7 @@ import { ruleLoader } from '@/features/payroll/services/rule-loader';
 // Export services
 import * as React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
-import { PayslipDocument, PayslipData, generatePayslipFilename } from '@/features/payroll/services/payslip-generator.tsx';
+import { PayslipDocument, PayslipData, generatePayslipFilename } from '@/features/payroll/services/payslip-generator';
 import { generateCNPSExcel, generateCNPSFilename, CNPSExportData } from '@/features/payroll/services/cnps-export';
 import { generateCMUExcel, generateCMUFilename, CMUExportData } from '@/features/payroll/services/cmu-export';
 import { generateEtat301Excel, generateEtat301Filename, Etat301ExportData } from '@/features/payroll/services/etat-301-export';
@@ -687,6 +687,57 @@ export const payrollRouter = createTRPCRouter({
         console.warn(`Country config not found for ${run.countryCode}, using fallback labels`);
       }
 
+      // Extract allowances from JSONB field
+      const allowancesData = lineItem.allowances as any || {};
+
+      // Build components array from allowances breakdown
+      const components = [];
+      components.push({
+        code: '11',
+        name: 'Salaire de base',
+        amount: parseFloat(lineItem.baseSalary?.toString() || '0'),
+      });
+
+      if (allowancesData.housing && allowancesData.housing > 0) {
+        components.push({
+          code: '23',
+          name: 'Prime de logement',
+          amount: allowancesData.housing,
+        });
+      }
+
+      if (allowancesData.transport && allowancesData.transport > 0) {
+        components.push({
+          code: '22',
+          name: 'Prime de transport',
+          amount: allowancesData.transport,
+        });
+      }
+
+      if (allowancesData.meal && allowancesData.meal > 0) {
+        components.push({
+          code: '24',
+          name: 'Prime de panier',
+          amount: allowancesData.meal,
+        });
+      }
+
+      if (allowancesData.seniority && allowancesData.seniority > 0) {
+        components.push({
+          code: '21',
+          name: 'Prime d\'ancienneté',
+          amount: allowancesData.seniority,
+        });
+      }
+
+      if (allowancesData.family && allowancesData.family > 0) {
+        components.push({
+          code: '41',
+          name: 'Allocations familiales',
+          amount: allowancesData.family,
+        });
+      }
+
       // Prepare payslip data
       const payslipData: PayslipData = {
         companyName: tenant?.name || 'Company',
@@ -699,6 +750,11 @@ export const payrollRouter = createTRPCRouter({
         periodEnd: new Date(run.periodEnd),
         payDate: new Date(run.payDate),
         baseSalary: parseFloat(lineItem.baseSalary?.toString() || '0'),
+        housingAllowance: allowancesData.housing || 0,
+        transportAllowance: allowancesData.transport || 0,
+        mealAllowance: allowancesData.meal || 0,
+        seniorityBonus: allowancesData.seniority || 0,
+        familyAllowance: allowancesData.family || 0,
         overtimePay: parseFloat(lineItem.overtimePay?.toString() || '0'),
         bonuses: parseFloat(lineItem.bonuses?.toString() || '0'),
         grossSalary: parseFloat(lineItem.grossSalary?.toString() || '0'),
@@ -712,6 +768,7 @@ export const payrollRouter = createTRPCRouter({
         paymentMethod: lineItem.paymentMethod,
         bankAccount: lineItem.bankAccount || undefined,
         daysWorked: parseFloat(lineItem.daysWorked?.toString() || '0'),
+        components: components.length > 0 ? components : undefined,
         countryConfig,
       };
 
@@ -821,16 +878,75 @@ export const payrollRouter = createTRPCRouter({
 
         if (!employee) continue;
 
-        const payslipData = {
+        // Extract allowances from JSONB field
+        const allowancesData = lineItem.allowances as any || {};
+
+        // Build components array from allowances breakdown
+        const components = [];
+        components.push({
+          code: '11',
+          name: 'Salaire de base',
+          amount: parseFloat(lineItem.baseSalary?.toString() || '0'),
+        });
+
+        if (allowancesData.housing && allowancesData.housing > 0) {
+          components.push({
+            code: '23',
+            name: 'Prime de logement',
+            amount: allowancesData.housing,
+          });
+        }
+
+        if (allowancesData.transport && allowancesData.transport > 0) {
+          components.push({
+            code: '22',
+            name: 'Prime de transport',
+            amount: allowancesData.transport,
+          });
+        }
+
+        if (allowancesData.meal && allowancesData.meal > 0) {
+          components.push({
+            code: '24',
+            name: 'Prime de panier',
+            amount: allowancesData.meal,
+          });
+        }
+
+        if (allowancesData.seniority && allowancesData.seniority > 0) {
+          components.push({
+            code: '21',
+            name: 'Prime d\'ancienneté',
+            amount: allowancesData.seniority,
+          });
+        }
+
+        if (allowancesData.family && allowancesData.family > 0) {
+          components.push({
+            code: '41',
+            name: 'Allocations familiales',
+            amount: allowancesData.family,
+          });
+        }
+
+        const payslipData: PayslipData = {
           employeeName: lineItem.employeeName || '',
           employeeNumber: lineItem.employeeNumber || '',
-          position: lineItem.position || '',
+          employeePosition: lineItem.positionTitle || '',
           companyName: tenant?.name || '',
           companyAddress: tenant?.address || '',
-          periodStart: run.periodStart,
-          periodEnd: run.periodEnd,
-          payDate: run.payDate,
+          employeeCNPS: employee?.cnpsNumber || undefined,
+          periodStart: new Date(run.periodStart),
+          periodEnd: new Date(run.periodEnd),
+          payDate: new Date(run.payDate),
           baseSalary: parseFloat(lineItem.baseSalary?.toString() || '0'),
+          housingAllowance: allowancesData.housing || 0,
+          transportAllowance: allowancesData.transport || 0,
+          mealAllowance: allowancesData.meal || 0,
+          seniorityBonus: allowancesData.seniority || 0,
+          familyAllowance: allowancesData.family || 0,
+          overtimePay: parseFloat(lineItem.overtimePay?.toString() || '0'),
+          bonuses: parseFloat(lineItem.bonuses?.toString() || '0'),
           grossSalary: parseFloat(lineItem.grossSalary?.toString() || '0'),
           netSalary: parseFloat(lineItem.netSalary?.toString() || '0'),
           cnpsEmployee: parseFloat(lineItem.cnpsEmployee?.toString() || '0'),
@@ -838,6 +954,11 @@ export const payrollRouter = createTRPCRouter({
           cmuEmployee: parseFloat(lineItem.cmuEmployee?.toString() || '0'),
           cmuEmployer: parseFloat(lineItem.cmuEmployer?.toString() || '0'),
           its: parseFloat(lineItem.its?.toString() || '0'),
+          totalDeductions: parseFloat(lineItem.totalDeductions?.toString() || '0'),
+          daysWorked: parseFloat(lineItem.daysWorked?.toString() || '0'),
+          paymentMethod: lineItem.paymentMethod,
+          bankAccount: lineItem.bankAccount || undefined,
+          components: components.length > 0 ? components : undefined,
           countryConfig,
         };
 

@@ -127,6 +127,8 @@ export interface GrossCalculationInput {
   housingAllowance?: number;
   transportAllowance?: number;
   mealAllowance?: number;
+  seniorityBonus?: number;
+  familyAllowance?: number;
   bonuses?: number;
   overtimeHours?: OvertimeHours[];
 }

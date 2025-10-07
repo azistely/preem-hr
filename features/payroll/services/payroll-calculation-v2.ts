@@ -16,6 +16,7 @@ import type {
   PayrollCalculationInput,
   PayrollCalculationResult,
 } from '../types';
+import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { calculateGrossSalary } from './gross-calculation';
 import { loadPayrollConfig, ProgressiveMonthlyTaxStrategy } from '@/features/payroll-config';
 
@@ -23,6 +24,9 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   countryCode: string; // Required for loading config
   fiscalParts?: number; // For tax deductions (1.0, 1.5, 2.0, etc.)
   sectorCode?: string; // For sector-specific contributions
+  seniorityBonus?: number; // Seniority bonus from components
+  familyAllowance?: number; // Family allowance from components
+  customComponents?: SalaryComponentInstance[]; // Custom components for future use
 }
 
 /**
@@ -81,6 +85,8 @@ export async function calculatePayrollV2(
     housingAllowance: input.housingAllowance,
     transportAllowance: input.transportAllowance,
     mealAllowance: input.mealAllowance,
+    seniorityBonus: input.seniorityBonus || 0,
+    familyAllowance: input.familyAllowance || 0,
     bonuses: input.bonuses,
     overtimeHours: input.overtimeHours,
   });
@@ -138,7 +144,7 @@ export async function calculatePayrollV2(
   // ========================================
   // STEP 6: Build Detailed Breakdowns
   // ========================================
-  const earningsDetails = buildEarningsDetails(grossCalc);
+  const earningsDetails = buildEarningsDetails(grossCalc, input);
   const deductionsDetails = buildDeductionsDetails(
     cnpsEmployee,
     cmuEmployee,
@@ -359,7 +365,7 @@ function calculateSocialSecurityContributions(
 /**
  * Build earnings details array
  */
-function buildEarningsDetails(grossCalc: any) {
+function buildEarningsDetails(grossCalc: any, input: PayrollCalculationInputV2) {
   const details = [
     {
       type: 'base_salary',
@@ -368,11 +374,44 @@ function buildEarningsDetails(grossCalc: any) {
     },
   ];
 
-  if (grossCalc.allowances > 0) {
+  // Add individual allowance components
+  if (input.housingAllowance && input.housingAllowance > 0) {
     details.push({
-      type: 'allowances',
-      description: 'Indemnités (logement, transport, repas)',
-      amount: grossCalc.allowances,
+      type: 'housing_allowance',
+      description: 'Prime de logement',
+      amount: input.housingAllowance,
+    });
+  }
+
+  if (input.transportAllowance && input.transportAllowance > 0) {
+    details.push({
+      type: 'transport_allowance',
+      description: 'Prime de transport',
+      amount: input.transportAllowance,
+    });
+  }
+
+  if (input.mealAllowance && input.mealAllowance > 0) {
+    details.push({
+      type: 'meal_allowance',
+      description: 'Prime de panier',
+      amount: input.mealAllowance,
+    });
+  }
+
+  if (input.seniorityBonus && input.seniorityBonus > 0) {
+    details.push({
+      type: 'seniority_bonus',
+      description: 'Prime d\'ancienneté',
+      amount: input.seniorityBonus,
+    });
+  }
+
+  if (input.familyAllowance && input.familyAllowance > 0) {
+    details.push({
+      type: 'family_allowance',
+      description: 'Allocations familiales',
+      amount: input.familyAllowance,
     });
   }
 

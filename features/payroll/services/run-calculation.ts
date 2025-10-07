@@ -218,11 +218,9 @@ export async function calculatePayrollRun(
         const hasFamily = (employee.customFields as any)?.hasFamily || false;
         const fiscalParts = (employee.customFields as any)?.fiscalParts || 1.0;
 
-        // Extract allowances from JSONB
-        const allowances = (currentSalary.allowances as any) || {};
-        const housingAllowance = Number(allowances.housing || 0);
-        const transportAllowance = Number(allowances.transport || 0);
-        const mealAllowance = Number(allowances.meal || 0);
+        // Read components from employee_salaries.components (with fallback to legacy columns)
+        const { getEmployeeSalaryComponents } = await import('@/lib/salary-components/component-reader');
+        const breakdown = getEmployeeSalaryComponents(currentSalary);
 
         // Calculate payroll using V2 (database-driven, multi-country)
         const calculation = await calculatePayrollV2({
@@ -231,10 +229,13 @@ export async function calculatePayrollRun(
           sectorCode: tenant.sectorCode || 'SERVICES', // Fallback to SERVICES if not set
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
-          baseSalary: Number(currentSalary.baseSalary),
-          housingAllowance,
-          transportAllowance,
-          mealAllowance,
+          baseSalary: breakdown.baseSalary,
+          housingAllowance: breakdown.housingAllowance,
+          transportAllowance: breakdown.transportAllowance,
+          mealAllowance: breakdown.mealAllowance,
+          seniorityBonus: breakdown.seniorityBonus,
+          familyAllowance: breakdown.familyAllowance,
+          customComponents: breakdown.customComponents,
           fiscalParts,
           hasFamily,
           hireDate: new Date(employee.hireDate),
@@ -255,9 +256,11 @@ export async function calculatePayrollRun(
           // Salary information
           baseSalary: String(calculation.baseSalary),
           allowances: {
-            housing: housingAllowance,
-            transport: transportAllowance,
-            meal: mealAllowance,
+            housing: breakdown.housingAllowance,
+            transport: breakdown.transportAllowance,
+            meal: breakdown.mealAllowance,
+            seniority: breakdown.seniorityBonus,
+            family: breakdown.familyAllowance,
           },
 
           // Time tracking
