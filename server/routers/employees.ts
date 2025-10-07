@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, employeeProcedure } from '../api/trpc';
 import {
   createEmployee,
   listEmployees,
@@ -306,4 +306,36 @@ export const employeesRouter = createTRPCRouter({
         });
       }
     }),
+
+  /**
+   * Get current logged-in employee
+   * Used by employee-facing pages to get their own data
+   * Requires: Employee role
+   */
+  getCurrentEmployee: employeeProcedure.query(async ({ ctx }) => {
+    if (!ctx.user.employeeId) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Aucun profil employé associé à ce compte utilisateur',
+      });
+    }
+
+    try {
+      const employee = await getEmployeeById(ctx.user.employeeId, ctx.user.tenantId);
+
+      if (!employee) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Profil employé introuvable',
+        });
+      }
+
+      return employee;
+    } catch (error: any) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: error.message || 'Erreur lors de la récupération du profil employé',
+      });
+    }
+  }),
 });

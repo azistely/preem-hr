@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, employeeProcedure } from '../api/trpc';
 import { calculateGrossSalary } from '@/features/payroll/services/gross-calculation';
 import { calculatePayroll } from '@/features/payroll/services/payroll-calculation';
 import { calculatePayrollV2 } from '@/features/payroll/services/payroll-calculation-v2';
@@ -1271,5 +1271,43 @@ export const payrollRouter = createTRPCRouter({
         filename,
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       };
+    }),
+
+  /**
+   * Get employee payslips (P0-2: Employee self-service)
+   * Returns all finalized payslips for the given employee
+   * Requires: Employee role (employees view their own payslips)
+   */
+  getEmployeePayslips: employeeProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const { payslips } = await import('@/drizzle/schema');
+      const { desc } = await import('drizzle-orm');
+
+      // Employees can only view their own payslips
+      // Managers/HR/Admin can view any payslips (role check handled by procedure)
+      const isOwnPayslips = ctx.user.employeeId === input.employeeId;
+      const canViewAnyPayslips = ['manager', 'hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+
+      if (!isOwnPayslips && !canViewAnyPayslips) {
+        throw new Error('Vous ne pouvez consulter que vos propres bulletins de paie');
+      }
+
+      // Fetch all finalized/paid payslips for the employee
+      const employeePayslips = await db.query.payslips.findMany({
+        where: (payslips, { and, eq, inArray }) =>
+          and(
+            eq(payslips.employeeId, input.employeeId),
+            eq(payslips.tenantId, ctx.user.tenantId),
+            inArray(payslips.status, ['finalized', 'paid'])
+          ),
+        orderBy: [desc(payslips.periodStart)],
+      });
+
+      return employeePayslips;
     }),
 });
