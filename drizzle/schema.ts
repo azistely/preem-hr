@@ -25,11 +25,28 @@ export const countries = pgTable("countries", {
 	unique("countries_code_key").on(table.code),
 ]);
 
+export const sectorConfigurations = pgTable("sector_configurations", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull().references(() => countries.code, { onDelete: "restrict" }),
+	sectorCode: varchar("sector_code", { length: 50 }).notNull(),
+	name: jsonb().notNull(), // { fr: "Services", en: "Services" }
+	workAccidentRate: numeric("work_accident_rate", { precision: 5, scale: 4 }).default('0.0200').notNull(),
+	defaultComponents: jsonb("default_components").default([]).notNull(),
+	smartDefaults: jsonb("smart_defaults"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_sector_configurations_country_sector").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.sectorCode.asc().nullsLast().op("text_ops")),
+	unique("sector_configurations_country_code_sector_code_key").on(table.countryCode, table.sectorCode),
+	pgPolicy("sector_configurations_select_all", { as: "permissive", for: "select", to: ["public"], using: sql`true` }),
+]);
+
 export const tenants = pgTable("tenants", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	name: text().notNull(),
 	slug: text().notNull(),
 	countryCode: text("country_code").default('CI').notNull(),
+	sectorCode: varchar("sector_code", { length: 50 }),
 	currency: text().default('XOF').notNull(),
 	timezone: text().default('Africa/Abidjan').notNull(),
 	taxId: text("tax_id"),
@@ -44,8 +61,14 @@ export const tenants = pgTable("tenants", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("idx_tenants_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),
+	index("idx_tenants_country_sector").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.sectorCode.asc().nullsLast().op("text_ops")),
 	index("idx_tenants_slug").using("btree", table.slug.asc().nullsLast().op("text_ops")),
 	index("idx_tenants_status").using("btree", table.status.asc().nullsLast().op("text_ops")).where(sql`(status = 'active'::text)`),
+	foreignKey({
+		columns: [table.countryCode, table.sectorCode],
+		foreignColumns: [sectorConfigurations.countryCode, sectorConfigurations.sectorCode],
+		name: "fk_tenants_sector_code"
+	}).onDelete("restrict").onUpdate("cascade"),
 	unique("tenants_slug_key").on(table.slug),
 	pgPolicy("tenant_self_service", { as: "permissive", for: "all", to: ["public"], using: sql`((id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`((id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`  }),
 	check("valid_country", sql`country_code ~ '^[A-Z]{2}$'::text`),
@@ -280,9 +303,11 @@ export const employees = pgTable("employees", {
 	city: text(),
 	postalCode: text("postal_code"),
 	countryCode: text("country_code").default('CI').notNull(),
+	coefficient: integer().default(100).notNull(),
 	hireDate: date("hire_date").notNull(),
 	terminationDate: date("termination_date"),
 	terminationReason: text("termination_reason"),
+	terminationId: uuid("termination_id"),
 	bankName: text("bank_name"),
 	bankAccount: text("bank_account"),
 	cnpsNumber: text("cnps_number"),
@@ -315,10 +340,136 @@ export const employees = pgTable("employees", {
 			foreignColumns: [users.id],
 			name: "employees_updated_by_fkey"
 		}),
+	foreignKey({
+			columns: [table.terminationId],
+			foreignColumns: [employeeTerminations.id],
+			name: "employees_termination_id_fkey"
+		}),
 	unique("unique_employee_number").on(table.tenantId, table.employeeNumber),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
 	check("valid_gender", sql`(gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text, 'prefer_not_to_say'::text])) OR (gender IS NULL)`),
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'terminated'::text, 'suspended'::text])`),
+]);
+
+export const employeeTerminations = pgTable("employee_terminations", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+	// Termination details
+	terminationDate: date("termination_date").notNull(),
+	terminationReason: text("termination_reason").notNull(),
+	notes: text(),
+	// Notice period
+	noticePeriodDays: integer("notice_period_days").notNull(),
+	noticePaymentAmount: numeric("notice_payment_amount", { precision: 15, scale: 2 }),
+	jobSearchDaysUsed: integer("job_search_days_used").default(0),
+	// Financial calculations
+	severanceAmount: numeric("severance_amount", { precision: 15, scale: 2 }).default('0').notNull(),
+	vacationPayoutAmount: numeric("vacation_payout_amount", { precision: 15, scale: 2 }).default('0').notNull(),
+	averageSalary12m: numeric("average_salary_12m", { precision: 15, scale: 2 }),
+	yearsOfService: numeric("years_of_service", { precision: 5, scale: 2 }),
+	severanceRate: integer("severance_rate"),
+	// Document generation tracking
+	workCertificateGeneratedAt: timestamp("work_certificate_generated_at", { withTimezone: true, mode: 'string' }),
+	workCertificateUrl: text("work_certificate_url"),
+	finalPayslipGeneratedAt: timestamp("final_payslip_generated_at", { withTimezone: true, mode: 'string' }),
+	finalPayslipUrl: text("final_payslip_url"),
+	cnpsAttestationGeneratedAt: timestamp("cnps_attestation_generated_at", { withTimezone: true, mode: 'string' }),
+	cnpsAttestationUrl: text("cnps_attestation_url"),
+	// Workflow status
+	status: text().default('pending').notNull(),
+	// Audit fields
+	createdBy: uuid("created_by"),
+	createdByEmail: text("created_by_email"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedBy: uuid("updated_by"),
+	updatedByEmail: text("updated_by_email"),
+}, (table) => [
+	index("idx_terminations_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_terminations_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	index("idx_terminations_date").using("btree", table.terminationDate.asc().nullsLast().op("date_ops")),
+	index("idx_terminations_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "employee_terminations_tenant_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.employeeId],
+			foreignColumns: [employees.id],
+			name: "employee_terminations_employee_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`(tenant_id = ((current_setting('app.current_tenant_id'::text, true))::uuid))`, withCheck: sql`(tenant_id = ((current_setting('app.current_tenant_id'::text, true))::uuid))`  }),
+	check("valid_termination_reason", sql`termination_reason = ANY (ARRAY['dismissal'::text, 'resignation'::text, 'retirement'::text, 'misconduct'::text, 'contract_end'::text, 'death'::text, 'other'::text])`),
+	check("valid_status", sql`status = ANY (ARRAY['pending'::text, 'notice_period'::text, 'documents_pending'::text, 'completed'::text])`),
+	check("positive_notice_period", sql`notice_period_days >= 0`),
+	check("positive_severance", sql`severance_amount >= 0`),
+	check("valid_severance_rate", sql`severance_rate = ANY (ARRAY[0, 30, 35, 40])`),
+]);
+
+export const jobSearchDays = pgTable("job_search_days", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	// Links
+	tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+	terminationId: uuid("termination_id").notNull().references(() => employeeTerminations.id, { onDelete: "cascade" }),
+	employeeId: uuid("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+	// Job search day details
+	searchDate: date("search_date").notNull(),
+	dayType: varchar("day_type", { length: 20 }).notNull(), // 'full_day' or 'half_day'
+	hoursTaken: numeric("hours_taken", { precision: 4, scale: 2 }).default('8.00').notNull(),
+	// Approval workflow
+	status: varchar({ length: 20 }).default('pending').notNull(), // 'pending', 'approved', 'rejected'
+	approvedBy: uuid("approved_by").references(() => users.id),
+	approvedAt: timestamp("approved_at", { withTimezone: true, mode: 'string' }),
+	rejectionReason: text("rejection_reason"),
+	// Notes
+	notes: text(),
+	// Audit
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by").references(() => users.id),
+	updatedBy: uuid("updated_by").references(() => users.id),
+}, (table) => [
+	index("idx_job_search_days_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_job_search_days_termination").using("btree", table.terminationId.asc().nullsLast().op("uuid_ops")),
+	index("idx_job_search_days_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	index("idx_job_search_days_date").using("btree", table.searchDate.asc().nullsLast().op("date_ops")),
+	index("idx_job_search_days_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	unique("unique_search_date_per_termination").on(table.terminationId, table.searchDate),
+	check("valid_day_type", sql`day_type = ANY (ARRAY['full_day'::text, 'half_day'::text])`),
+	check("valid_status", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])`),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`(tenant_id = ((current_setting('app.current_tenant_id'::text, true))::uuid))`, withCheck: sql`(tenant_id = ((current_setting('app.current_tenant_id'::text, true))::uuid))`  }),
+]);
+
+export const employeeCategoryCoefficients = pgTable("employee_category_coefficients", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	category: varchar({ length: 10 }).notNull(),
+	labelFr: text("label_fr").notNull(),
+	minCoefficient: integer("min_coefficient").notNull(),
+	maxCoefficient: integer("max_coefficient").notNull(),
+	noticePeriodDays: integer("notice_period_days").notNull(),
+	noticeReductionPercent: integer("notice_reduction_percent").default(0),
+	minimumWageBase: varchar("minimum_wage_base", { length: 20 }).default('SMIG').notNull(),
+	legalReference: text("legal_reference"),
+	notes: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_employee_categories_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),
+	index("idx_employee_categories_coefficient_range").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.minCoefficient.asc().nullsLast().op("int4_ops"), table.maxCoefficient.asc().nullsLast().op("int4_ops")),
+	foreignKey({
+			columns: [table.countryCode],
+			foreignColumns: [countries.code],
+			name: "employee_category_coefficients_country_code_fkey"
+		}).onDelete("cascade"),
+	unique("uk_category_country").on(table.countryCode, table.category),
+	unique("uk_coefficient_range").on(table.countryCode, table.minCoefficient, table.maxCoefficient),
+	check("check_coefficient_order", sql`min_coefficient <= max_coefficient`),
+	check("check_notice_period", sql`notice_period_days > 0`),
+	check("check_notice_reduction", sql`notice_reduction_percent >= 0 AND notice_reduction_percent <= 100`),
+	pgPolicy("Allow read access to all authenticated users", { as: "permissive", for: "select", to: ["authenticated"], using: sql`true` }),
 ]);
 
 export const socialSecuritySchemes = pgTable("social_security_schemes", {
