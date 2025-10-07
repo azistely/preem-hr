@@ -1,5 +1,5 @@
 import { pgTable, index, unique, uuid, varchar, jsonb, integer, boolean, timestamp, pgPolicy, check, text, type AnyPgColumn, foreignKey, inet, date, numeric, pgView, customType } from "drizzle-orm/pg-core"
-import { sql } from "drizzle-orm"
+import { sql, relations } from "drizzle-orm"
 
 // Custom type for PostGIS/Postgres name type
 const unknown = customType<{ data: string }>({
@@ -351,6 +351,29 @@ export const employees = pgTable("employees", {
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'terminated'::text, 'suspended'::text])`),
 ]);
 
+// Employees Relations
+export const employeesRelations = relations(employees, ({ one, many }) => ({
+	tenant: one(tenants, {
+		fields: [employees.tenantId],
+		references: [tenants.id],
+	}),
+	createdByUser: one(users, {
+		fields: [employees.createdBy],
+		references: [users.id],
+	}),
+	updatedByUser: one(users, {
+		fields: [employees.updatedBy],
+		references: [users.id],
+	}),
+	termination: one(employeeTerminations, {
+		fields: [employees.terminationId],
+		references: [employeeTerminations.id],
+	}),
+	timeEntries: many(timeEntries),
+	timeOffBalances: many(timeOffBalances),
+	timeOffRequests: many(timeOffRequests),
+}));
+
 export const employeeTerminations = pgTable("employee_terminations", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
@@ -561,7 +584,7 @@ export const employeeSalaries = pgTable("employee_salaries", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeId: uuid("employee_id").notNull(),
-	baseSalary: numeric("base_salary", { precision: 15, scale:  2 }).notNull(),
+	baseSalary: numeric("base_salary", { precision: 15, scale:  2 }).notNull(), // Denormalized for queries/constraints
 	currency: text().default('XOF').notNull(),
 	allowances: jsonb().default({}).notNull(),
 	effectiveFrom: date("effective_from").notNull(),
@@ -571,10 +594,9 @@ export const employeeSalaries = pgTable("employee_salaries", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	createdBy: uuid("created_by"),
 	payFrequency: text("pay_frequency").default('monthly').notNull(),
-	housingAllowance: numeric("housing_allowance", { precision: 15, scale:  2 }).default('0'),
-	transportAllowance: numeric("transport_allowance", { precision: 15, scale:  2 }).default('0'),
-	mealAllowance: numeric("meal_allowance", { precision: 15, scale:  2 }).default('0'),
-	otherAllowances: jsonb("other_allowances").default([]),
+	// Single source of truth: components JSONB array
+	// Contains SalaryComponentInstance[] with code, name, amount, sourceType, metadata
+	// Must always contain base salary component (code '11')
 	components: jsonb().default([]).notNull(),
 }, (table) => [
 	index("idx_employee_salaries_active").using("btree", table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")).where(sql`(effective_to IS NULL)`),
@@ -1140,6 +1162,94 @@ export const spatialRefSys = pgTable("spatial_ref_sys", {
 	check("spatial_ref_sys_srid_check", sql`(srid > 0) AND (srid <= 998999)`),
 ]);
 
+export const geofenceConfigs = pgTable("geofence_configs", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	name: text().notNull(),
+	description: text(),
+	latitude: numeric({ precision: 10, scale: 8 }).notNull(),
+	longitude: numeric({ precision: 11, scale: 8 }).notNull(),
+	radiusMeters: integer("radius_meters").default(100).notNull(),
+	effectiveFrom: date("effective_from").default(sql`CURRENT_DATE`).notNull(),
+	effectiveTo: date("effective_to"),
+	isActive: boolean("is_active").default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+}, (table) => [
+	index("idx_geofence_configs_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_geofence_configs_active").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.isActive.asc().nullsLast().op("bool_ops")).where(sql`is_active = true`),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "geofence_configs_tenant_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.createdBy],
+		foreignColumns: [users.id],
+		name: "geofence_configs_created_by_fkey"
+	}),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
+	check("valid_radius", sql`(radius_meters > 0) AND (radius_meters <= 5000)`),
+	check("valid_latitude", sql`(latitude >= (-90)) AND (latitude <= 90)`),
+	check("valid_longitude", sql`(longitude >= (-180)) AND (longitude <= 180)`),
+]);
+
+export const overtimeRules = pgTable("overtime_rules", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	ruleType: text("rule_type").notNull(),
+	displayName: jsonb("display_name").notNull(),
+	description: jsonb(),
+	multiplier: numeric({ precision: 4, scale: 2 }).notNull(),
+	minHoursPerDay: numeric("min_hours_per_day", { precision: 4, scale: 2 }),
+	maxHoursPerDay: numeric("max_hours_per_day", { precision: 4, scale: 2 }),
+	maxHoursPerWeek: numeric("max_hours_per_week", { precision: 5, scale: 2 }),
+	maxHoursPerMonth: numeric("max_hours_per_month", { precision: 6, scale: 2 }),
+	appliesFromTime: text("applies_from_time"), // TIME type stored as text
+	appliesToTime: text("applies_to_time"), // TIME type stored as text
+	appliesToDays: jsonb("applies_to_days"),
+	effectiveFrom: date("effective_from").notNull(),
+	effectiveTo: date("effective_to"),
+	metadata: jsonb(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_overtime_rules_country_effective").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")),
+	index("idx_overtime_rules_type").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.ruleType.asc().nullsLast().op("text_ops")),
+	foreignKey({
+		columns: [table.countryCode],
+		foreignColumns: [countries.code],
+		name: "overtime_rules_country_code_fkey"
+	}).onDelete("restrict"),
+	check("valid_multiplier", sql`(multiplier >= 1.0) AND (multiplier <= 3.0)`),
+	check("valid_rule_type", sql`rule_type = ANY (ARRAY['hours_41_to_46'::text, 'hours_above_46'::text, 'night_work'::text, 'weekend'::text, 'saturday'::text, 'sunday'::text, 'holiday'::text, 'public_holiday'::text])`),
+	check("chk_effective_dates", sql`(effective_to IS NULL) OR (effective_to > effective_from)`),
+]);
+
+export const publicHolidays = pgTable("public_holidays", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	holidayDate: date("holiday_date").notNull(),
+	name: jsonb().notNull(), // { fr: "Jour de l'An", en: "New Year's Day" }
+	description: jsonb(),
+	isRecurring: boolean("is_recurring").default(true),
+	isPaid: boolean("is_paid").default(true),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_public_holidays_country_code").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),
+	index("idx_public_holidays_date").using("btree", table.holidayDate.asc().nullsLast().op("date_ops")),
+	index("idx_public_holidays_country_date").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.holidayDate.asc().nullsLast().op("date_ops")),
+	foreignKey({
+		columns: [table.countryCode],
+		foreignColumns: [countries.code],
+		name: "public_holidays_country_code_fkey"
+	}).onDelete("restrict"),
+	unique("unique_country_holiday_date").on(table.countryCode, table.holidayDate),
+	pgPolicy("public_holidays_read_all", { as: "permissive", for: "select", to: ["public"], using: sql`true` }),
+]);
+
 export const timeEntries = pgTable("time_entries", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
@@ -1155,6 +1265,7 @@ export const timeEntries = pgTable("time_entries", {
 	clockInPhotoUrl: text("clock_in_photo_url"),
 	clockOutPhotoUrl: text("clock_out_photo_url"),
 	entryType: text("entry_type").default('regular').notNull(),
+	overtimeBreakdown: jsonb("overtime_breakdown").default({}),
 	status: text().default('pending').notNull(),
 	approvedBy: uuid("approved_by"),
 	approvedAt: timestamp("approved_at", { withTimezone: true, mode: 'string' }),
@@ -1185,6 +1296,22 @@ export const timeEntries = pgTable("time_entries", {
 	check("valid_status_time_entry", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])`),
 	check("valid_time", sql`(clock_out IS NULL) OR (clock_out > clock_in)`),
 ]);
+
+// Time Entries Relations
+export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
+	tenant: one(tenants, {
+		fields: [timeEntries.tenantId],
+		references: [tenants.id],
+	}),
+	employee: one(employees, {
+		fields: [timeEntries.employeeId],
+		references: [employees.id],
+	}),
+	approvedByUser: one(users, {
+		fields: [timeEntries.approvedBy],
+		references: [users.id],
+	}),
+}));
 
 export const timeOffPolicies = pgTable("time_off_policies", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -1297,6 +1424,54 @@ export const timeOffRequests = pgTable("time_off_requests", {
 	check("valid_dates", sql`start_date <= end_date`),
 	check("valid_status_request", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])`),
 ]);
+
+// Time-Off Relations
+export const timeOffPoliciesRelations = relations(timeOffPolicies, ({ one, many }) => ({
+	tenant: one(tenants, {
+		fields: [timeOffPolicies.tenantId],
+		references: [tenants.id],
+	}),
+	createdByUser: one(users, {
+		fields: [timeOffPolicies.createdBy],
+		references: [users.id],
+	}),
+	balances: many(timeOffBalances),
+	requests: many(timeOffRequests),
+}));
+
+export const timeOffBalancesRelations = relations(timeOffBalances, ({ one }) => ({
+	tenant: one(tenants, {
+		fields: [timeOffBalances.tenantId],
+		references: [tenants.id],
+	}),
+	employee: one(employees, {
+		fields: [timeOffBalances.employeeId],
+		references: [employees.id],
+	}),
+	policy: one(timeOffPolicies, {
+		fields: [timeOffBalances.policyId],
+		references: [timeOffPolicies.id],
+	}),
+}));
+
+export const timeOffRequestsRelations = relations(timeOffRequests, ({ one }) => ({
+	tenant: one(tenants, {
+		fields: [timeOffRequests.tenantId],
+		references: [tenants.id],
+	}),
+	employee: one(employees, {
+		fields: [timeOffRequests.employeeId],
+		references: [employees.id],
+	}),
+	policy: one(timeOffPolicies, {
+		fields: [timeOffRequests.policyId],
+		references: [timeOffPolicies.id],
+	}),
+	reviewedByUser: one(users, {
+		fields: [timeOffRequests.reviewedBy],
+		references: [users.id],
+	}),
+}));
 
 export const events = pgTable("events", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
