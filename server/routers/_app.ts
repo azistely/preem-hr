@@ -24,6 +24,7 @@ import { timeTrackingRouter } from './time-tracking';
 import { timeOffRouter } from './time-off';
 import { policiesRouter } from './policies';
 import { publicHolidaysRouter } from './public-holidays';
+import { geofencingRouter } from './geofencing';
 
 export const appRouter = createTRPCRouter({
   payroll: payrollRouter,
@@ -45,6 +46,7 @@ export const appRouter = createTRPCRouter({
   timeOff: timeOffRouter,
   policies: policiesRouter,
   publicHolidays: publicHolidaysRouter,
+  geofencing: geofencingRouter,
 });
 
 // Export type definition of API
