@@ -13,7 +13,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter as router, publicProcedure } from '../api/trpc';
+import { createTRPCRouter as router, publicProcedure, hrManagerProcedure } from '../api/trpc';
 import {
   getTenantSector,
   getSectorsByCountry,
@@ -116,8 +116,9 @@ export const sectorsRouter = router({
    *
    * Use case: Tenant settings page - change sector dropdown
    * IMPORTANT: Affects all employees in tenant (Phase 1)
+   * Requires: HR Manager role
    */
-  updateTenantSector: publicProcedure
+  updateTenantSector: hrManagerProcedure
     .input(
       z.object({
         tenantId: z.string().uuid(),
