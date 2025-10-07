@@ -9,25 +9,92 @@ import { type CreateNextContextOptions } from '@trpc/server/adapters/next';
 import { cache } from 'react';
 import 'server-only';
 import { db } from '@/lib/db';
-import { sql } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
+import { users } from '@/drizzle/schema';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+
+/**
+ * User role definitions
+ */
+export type UserRole = 'super_admin' | 'tenant_admin' | 'hr_manager' | 'manager' | 'employee';
 
 /**
  * Development-only mock tenant for testing RLS
- * In production, this will be extracted from Supabase JWT
+ * Only used when Supabase auth is not available
  */
 const DEV_MOCK_TENANT = {
   id: '00000000-0000-0000-0000-000000000001',
-  role: 'tenant_admin',
+  role: 'tenant_admin' as UserRole,
 };
 
 /**
  * Development-only mock user
- * Uses actual user ID from database
+ * Only used when Supabase auth is not available
  */
 const DEV_MOCK_USER = {
   id: 'cb127444-aac4-45a5-8682-93d5f7ef5775',
-  role: 'tenant_admin',
+  email: 'admin@preem.hr',
+  role: 'tenant_admin' as UserRole,
+  tenantId: '00000000-0000-0000-0000-000000000001',
+  employeeId: null as string | null,
 };
+
+/**
+ * Extract user from Supabase session
+ */
+async function getUserFromSession() {
+  try {
+    const cookieStore = await cookies();
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+        },
+      }
+    );
+
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session?.user) {
+      // No session - return null to use dev mock or trigger auth error
+      return null;
+    }
+
+    // Fetch user details from database
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: {
+        id: true,
+        email: true,
+        role: true,
+        tenantId: true,
+        employeeId: true,
+      },
+    });
+
+    if (!user) {
+      console.warn('[Context] User authenticated but not found in database:', session.user.id);
+      return null;
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role as UserRole,
+      tenantId: user.tenantId,
+      employeeId: user.employeeId,
+    };
+  } catch (error) {
+    console.error('[Context] Error extracting user from session:', error);
+    return null;
+  }
+}
 
 /**
  * Create context for tRPC
@@ -36,25 +103,19 @@ const DEV_MOCK_USER = {
 export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) => {
   const { req } = opts || {};
 
-  // For development: use mock tenant to enable RLS testing
-  // In production: extract from Supabase JWT
-  const tenantId = DEV_MOCK_TENANT.id;
-  const userRole = DEV_MOCK_TENANT.role;
+  // Extract user from Supabase session (production) or use dev mock
+  const user = await getUserFromSession() || DEV_MOCK_USER;
 
   // Set PostgreSQL session variables for RLS policies
   // This allows RLS policies to access tenant_id via current_setting()
   await db.execute(sql`
-    SELECT set_config('app.tenant_id', ${tenantId}, true),
-           set_config('app.user_role', ${userRole}, true);
+    SELECT set_config('app.tenant_id', ${user.tenantId}, true),
+           set_config('app.user_role', ${user.role}, true),
+           set_config('app.user_id', ${user.id}, true);
   `);
 
   return {
-    tenantId,
-    userRole,
-    user: {
-      ...DEV_MOCK_USER,
-      tenantId, // Add tenantId to user object for router compatibility
-    },
+    user,
     db,
   };
 });

@@ -314,6 +314,7 @@ export const employees = pgTable("employees", {
 	taxNumber: text("tax_number"),
 	taxDependents: integer("tax_dependents").default(0).notNull(),
 	customFields: jsonb("custom_fields").default({}).notNull(),
+	reportingManagerId: uuid("reporting_manager_id"),
 	status: text().default('active').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -345,6 +346,11 @@ export const employees = pgTable("employees", {
 			foreignColumns: [employeeTerminations.id],
 			name: "employees_termination_id_fkey"
 		}),
+	foreignKey({
+			columns: [table.reportingManagerId],
+			foreignColumns: [table.id],
+			name: "employees_reporting_manager_id_fkey"
+		}),
 	unique("unique_employee_number").on(table.tenantId, table.employeeNumber),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
 	check("valid_gender", sql`(gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text, 'prefer_not_to_say'::text])) OR (gender IS NULL)`),
@@ -369,9 +375,18 @@ export const employeesRelations = relations(employees, ({ one, many }) => ({
 		fields: [employees.terminationId],
 		references: [employeeTerminations.id],
 	}),
+	reportingManager: one(employees, {
+		fields: [employees.reportingManagerId],
+		references: [employees.id],
+		relationName: "managerToTeam",
+	}),
+	teamMembers: many(employees, {
+		relationName: "managerToTeam",
+	}),
 	timeEntries: many(timeEntries),
 	timeOffBalances: many(timeOffBalances),
 	timeOffRequests: many(timeOffRequests),
+	payslips: many(payslips),
 }));
 
 export const employeeTerminations = pgTable("employee_terminations", {
@@ -1359,6 +1374,8 @@ export const timeOffBalances = pgTable("time_off_balances", {
 	periodStart: date("period_start").notNull(),
 	periodEnd: date("period_end").notNull(),
 	lastAccrualDate: date("last_accrual_date"),
+	expiresAt: date("expires_at"), // 6-month carryover limit (Article 28)
+	metadata: jsonb().default({}).notNull(), // Track expired balances, carryover history
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	foreignKey({
@@ -1615,6 +1632,162 @@ export const complianceRules = pgTable("compliance_rules", {
 	pgPolicy("super_admins_manage_compliance_rules", { as: "permissive", for: "all", to: ["authenticated"], using: sql`EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'super_admin'::text)`, withCheck: sql`EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'super_admin'::text)`  }),
 	check("valid_rule_type", sql`rule_type = ANY (ARRAY['minimum_wage'::text, 'seniority_bonus'::text, 'notice_period'::text, 'severance'::text, 'annual_leave'::text, 'maternity_leave'::text, 'overtime_rate'::text, 'transport_exemption'::text, 'housing_allowance_range'::text, 'hazard_pay_range'::text])`),
 ]);
+
+// ============================================================================
+// Payslips Schema
+// ============================================================================
+
+export const payslips = pgTable("payslips", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+
+	// Period
+	periodStart: date("period_start").notNull(),
+	periodEnd: date("period_end").notNull(),
+	paymentDate: date("payment_date").notNull(),
+
+	// Amounts (FCFA, stored as numeric for precision)
+	grossSalary: numeric("gross_salary", { precision: 12, scale: 2 }).notNull(),
+	netSalary: numeric("net_salary", { precision: 12, scale: 2 }).notNull(),
+	employerContributions: numeric("employer_contributions", { precision: 12, scale: 2 }).default("0").notNull(),
+
+	// Breakdown (JSONB for flexibility)
+	salaryComponents: jsonb("salary_components").default([]).notNull(), // [{component_id, name, type, amount, taxable}]
+	deductions: jsonb("deductions").default([]).notNull(),        // [{type, name, amount, rate}]
+	employerCosts: jsonb("employer_costs").default([]).notNull(),    // [{type, name, amount, rate}]
+
+	// Metadata
+	status: text().default('draft').notNull(), // draft, finalized, paid
+	pdfUrl: text("pdf_url"),
+	finalizedAt: timestamp("finalized_at", { withTimezone: true, mode: 'string' }),
+	finalizedBy: uuid("finalized_by"),
+
+	// Lifecycle
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_payslips_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_payslips_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	index("idx_payslips_period").using("btree", table.periodStart.asc().nullsLast().op("date_ops"), table.periodEnd.asc().nullsLast().op("date_ops")),
+	index("idx_payslips_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "payslips_tenant_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.employeeId],
+			foreignColumns: [employees.id],
+			name: "payslips_employee_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.finalizedBy],
+			foreignColumns: [users.id],
+			name: "payslips_finalized_by_fkey"
+		}),
+	pgPolicy("payslips_tenant_isolation", { as: "permissive", for: "all", to: ["authenticated"], using: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
+	check("valid_status", sql`status = ANY (ARRAY['draft'::text, 'finalized'::text, 'paid'::text])`),
+	check("valid_amounts", sql`(gross_salary >= 0::numeric) AND (net_salary >= 0::numeric) AND (employer_contributions >= 0::numeric)`),
+]);
+
+export const payslipsRelations = relations(payslips, ({ one }) => ({
+	tenant: one(tenants, {
+		fields: [payslips.tenantId],
+		references: [tenants.id],
+	}),
+	employee: one(employees, {
+		fields: [payslips.employeeId],
+		references: [employees.id],
+	}),
+	finalizedByUser: one(users, {
+		fields: [payslips.finalizedBy],
+		references: [users.id],
+	}),
+}));
+
+// ============================================================================
+// Geofence Configurations Schema
+// ============================================================================
+
+export const geofenceConfigurations = pgTable("geofence_configurations", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+
+	// Location
+	name: text().notNull(),
+	description: text(),
+	latitude: numeric({ precision: 10, scale: 8 }).notNull(),
+	longitude: numeric({ precision: 11, scale: 8 }).notNull(),
+	radiusMeters: integer("radius_meters").default(100).notNull(),
+
+	// Scope
+	isActive: boolean("is_active").default(true).notNull(),
+	appliesToAll: boolean("applies_to_all").default(true).notNull(),
+
+	// Lifecycle
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_geofence_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_geofence_active").using("btree", table.isActive.asc().nullsLast().op("bool_ops")),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "geofence_configurations_tenant_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("geofence_tenant_isolation", { as: "permissive", for: "all", to: ["authenticated"], using: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
+	check("valid_latitude", sql`(latitude >= '-90'::numeric) AND (latitude <= '90'::numeric)`),
+	check("valid_longitude", sql`(longitude >= '-180'::numeric) AND (longitude <= '180'::numeric)`),
+	check("valid_radius", sql`(radius_meters > 0) AND (radius_meters <= 10000)`),
+]);
+
+export const geofenceConfigurationsRelations = relations(geofenceConfigurations, ({ one, many }) => ({
+	tenant: one(tenants, {
+		fields: [geofenceConfigurations.tenantId],
+		references: [tenants.id],
+	}),
+	employeeAssignments: many(geofenceEmployeeAssignments),
+}));
+
+export const geofenceEmployeeAssignments = pgTable("geofence_employee_assignments", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	geofenceId: uuid("geofence_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_geofence_assignments_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.geofenceId],
+			foreignColumns: [geofenceConfigurations.id],
+			name: "geofence_employee_assignments_geofence_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.employeeId],
+			foreignColumns: [employees.id],
+			name: "geofence_employee_assignments_employee_id_fkey"
+		}).onDelete("cascade"),
+	unique("unique_geofence_employee").on(table.geofenceId, table.employeeId),
+	pgPolicy("geofence_assignments_tenant_isolation", { as: "permissive", for: "all", to: ["authenticated"], using: sql`EXISTS (SELECT 1 FROM geofence_configurations gc WHERE gc.id = geofence_employee_assignments.geofence_id AND gc.tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`, withCheck: sql`EXISTS (SELECT 1 FROM geofence_configurations gc WHERE gc.id = geofence_employee_assignments.geofence_id AND gc.tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
+]);
+
+export const geofenceEmployeeAssignmentsRelations = relations(geofenceEmployeeAssignments, ({ one }) => ({
+	geofence: one(geofenceConfigurations, {
+		fields: [geofenceEmployeeAssignments.geofenceId],
+		references: [geofenceConfigurations.id],
+	}),
+	employee: one(employees, {
+		fields: [geofenceEmployeeAssignments.employeeId],
+		references: [employees.id],
+	}),
+}));
+
+// ============================================================================
+// Policy Configuration Schema
+// ============================================================================
+
+export { overtimeRates, leaveAccrualRules } from '@/lib/db/schema/policies';
 
 // PostGIS system views - NOT EXPORTED
 // Commented out to prevent Drizzle schema initialization errors

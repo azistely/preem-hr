@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { router, publicProcedure } from '../trpc';
+import { router, employeeProcedure, managerProcedure, hrManagerProcedure } from '../trpc';
 import * as timeEntryService from '@/features/time-tracking/services/time-entry.service';
 import * as geofenceService from '@/features/time-tracking/services/geofence.service';
 import * as overtimeService from '@/features/time-tracking/services/overtime.service';
@@ -23,8 +23,9 @@ const geoLocationSchema = z.object({
 export const timeTrackingRouter = router({
   /**
    * Clock in employee
+   * Requires: Employee role (employees clock themselves in)
    */
-  clockIn: publicProcedure
+  clockIn: employeeProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -59,8 +60,9 @@ export const timeTrackingRouter = router({
 
   /**
    * Clock out employee
+   * Requires: Employee role (employees clock themselves out)
    */
-  clockOut: publicProcedure
+  clockOut: employeeProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -95,8 +97,9 @@ export const timeTrackingRouter = router({
 
   /**
    * Get current time entry for employee
+   * Requires: Employee role (employees view their own entries)
    */
-  getCurrentEntry: publicProcedure
+  getCurrentEntry: employeeProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -131,8 +134,9 @@ export const timeTrackingRouter = router({
 
   /**
    * Approve time entry
+   * Requires: Manager role (managers approve team entries)
    */
-  approveEntry: publicProcedure
+  approveEntry: managerProcedure
     .input(
       z.object({
         entryId: z.string().uuid(),
@@ -147,8 +151,9 @@ export const timeTrackingRouter = router({
 
   /**
    * Reject time entry
+   * Requires: Manager role (managers can reject entries)
    */
-  rejectEntry: publicProcedure
+  rejectEntry: managerProcedure
     .input(
       z.object({
         entryId: z.string().uuid(),
@@ -165,8 +170,9 @@ export const timeTrackingRouter = router({
 
   /**
    * Get overtime summary for payroll period
+   * Requires: Employee role (employees view their own overtime, managers/HR view all)
    */
-  getOvertimeSummary: publicProcedure
+  getOvertimeSummary: employeeProcedure
     .input(
       z.object({
         employeeId: z.string().uuid(),
@@ -222,8 +228,9 @@ export const timeTrackingRouter = router({
 
   /**
    * Get pending time entries for admin approval
+   * Requires: Manager role (managers review pending entries)
    */
-  getPendingEntries: publicProcedure
+  getPendingEntries: managerProcedure
     .input(
       z.object({
         startDate: z.date().optional(),
@@ -265,8 +272,9 @@ export const timeTrackingRouter = router({
 
   /**
    * Bulk approve time entries
+   * Requires: Manager role (managers bulk approve team entries)
    */
-  bulkApprove: publicProcedure
+  bulkApprove: managerProcedure
     .input(
       z.object({
         entryIds: z.array(z.string().uuid()),
@@ -322,8 +330,9 @@ export const timeTrackingRouter = router({
   /**
    * Get monthly overtime report for all employees
    * Aggregated endpoint to avoid React Hooks violations
+   * Requires: Manager role (managers view team overtime reports)
    */
-  getMonthlyOvertimeReport: publicProcedure
+  getMonthlyOvertimeReport: managerProcedure
     .input(
       z.object({
         periodStart: z.date(),
