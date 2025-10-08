@@ -42,7 +42,7 @@ const getByPositionSchema = z.object({
 
 const listSchema = z.object({
   activeOnly: z.boolean().default(true),
-});
+}).optional().default({ activeOnly: true });
 
 export const salaryBandsRouter = createTRPCRouter({
   create: publicProcedure
@@ -51,7 +51,7 @@ export const salaryBandsRouter = createTRPCRouter({
       try {
         return await createSalaryBand({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
         });
       } catch (error: any) {
         throw new TRPCError({
@@ -66,7 +66,7 @@ export const salaryBandsRouter = createTRPCRouter({
     .mutation(async ({ input, ctx }) => {
       try {
         const { bandId, ...updates } = input;
-        return await updateSalaryBand(bandId, ctx.tenantId, updates);
+        return await updateSalaryBand(bandId, ctx.user.tenantId, updates);
       } catch (error: any) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -79,7 +79,7 @@ export const salaryBandsRouter = createTRPCRouter({
     .input(listSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await listSalaryBands(ctx.tenantId, input.activeOnly);
+        return await listSalaryBands(ctx.user.tenantId, input?.activeOnly ?? true);
       } catch (error: any) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -92,7 +92,7 @@ export const salaryBandsRouter = createTRPCRouter({
     .input(getByPositionSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await getSalaryBandByPosition(input.positionId, ctx.tenantId);
+        return await getSalaryBandByPosition(input.positionId, ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'NOT_FOUND',
@@ -107,7 +107,7 @@ export const salaryBandsRouter = createTRPCRouter({
       try {
         const result = await validateSalaryAgainstBand({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
         });
 
         // Calculate compa-ratio if band exists

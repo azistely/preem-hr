@@ -50,7 +50,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
       try {
         const jobSearchDay = await createJobSearchDay({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.userId,
         });
 
@@ -72,7 +72,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
       try {
         const updated = await updateJobSearchDay({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           updatedBy: ctx.userId,
           approvedBy: input.status === 'approved' ? ctx.userId : undefined,
         });
@@ -95,7 +95,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
       try {
         const days = await listJobSearchDays({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
         });
 
         return days;
@@ -113,7 +113,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
   getById: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const day = await getJobSearchDayById(input.id, ctx.tenantId);
+      const day = await getJobSearchDayById(input.id, ctx.user.tenantId);
 
       if (!day) {
         throw new TRPCError({
@@ -132,7 +132,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       try {
-        const deleted = await deleteJobSearchDay(input.id, ctx.tenantId);
+        const deleted = await deleteJobSearchDay(input.id, ctx.user.tenantId);
         return deleted;
       } catch (error: any) {
         throw new TRPCError({
@@ -149,7 +149,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
     .input(z.object({ terminationId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
       try {
-        const stats = await getJobSearchStats(input.terminationId, ctx.tenantId);
+        const stats = await getJobSearchStats(input.terminationId, ctx.user.tenantId);
         return stats;
       } catch (error: any) {
         throw new TRPCError({

@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { router, employeeProcedure, managerProcedure, hrManagerProcedure } from '../trpc';
+import { createTRPCRouter, publicProcedure, employeeProcedure, managerProcedure, hrManagerProcedure } from '../api/trpc';
 import * as timeEntryService from '@/features/time-tracking/services/time-entry.service';
 import * as geofenceService from '@/features/time-tracking/services/geofence.service';
 import * as overtimeService from '@/features/time-tracking/services/overtime.service';
@@ -20,7 +20,7 @@ const geoLocationSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
-export const timeTrackingRouter = router({
+export const timeTrackingRouter = createTRPCRouter({
   /**
    * Clock in employee
    * Requires: Employee role (employees clock themselves in)

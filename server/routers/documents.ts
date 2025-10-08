@@ -38,13 +38,13 @@ export const documentsRouter = createTRPCRouter({
     .input(generateWorkCertificateSchema)
     .mutation(async ({ input, ctx }) => {
       console.log('[TRPC Documents] generateWorkCertificate called with input:', JSON.stringify(input));
-      console.log('[TRPC Documents] Context tenantId:', ctx.tenantId);
+      console.log('[TRPC Documents] Context tenantId:', ctx.user.tenantId);
 
       try {
         console.log('[TRPC Documents] About to call generateWorkCertificate service');
         const result = await generateWorkCertificate({
           terminationId: input.terminationId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           issuedBy: input.issuedBy,
         });
         console.log('[TRPC Documents] Service returned successfully');
@@ -68,13 +68,13 @@ export const documentsRouter = createTRPCRouter({
     .input(generateCNPSAttestationSchema)
     .mutation(async ({ input, ctx }) => {
       console.log('[TRPC Documents] generateCNPSAttestation called with input:', JSON.stringify(input));
-      console.log('[TRPC Documents] Context tenantId:', ctx.tenantId);
+      console.log('[TRPC Documents] Context tenantId:', ctx.user.tenantId);
 
       try {
         console.log('[TRPC Documents] About to call generateCNPSAttestation service');
         const result = await generateCNPSAttestation({
           terminationId: input.terminationId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           issuedBy: input.issuedBy,
         });
         console.log('[TRPC Documents] Service returned successfully');
@@ -98,13 +98,13 @@ export const documentsRouter = createTRPCRouter({
     .input(generateFinalPayslipSchema)
     .mutation(async ({ input, ctx }) => {
       console.log('[TRPC Documents] generateFinalPayslip called with input:', JSON.stringify(input));
-      console.log('[TRPC Documents] Context tenantId:', ctx.tenantId);
+      console.log('[TRPC Documents] Context tenantId:', ctx.user.tenantId);
 
       try {
         console.log('[TRPC Documents] About to call generateFinalPayslip service');
         const result = await generateFinalPayslip({
           terminationId: input.terminationId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           payDate: input.payDate,
         });
         console.log('[TRPC Documents] Service returned successfully');

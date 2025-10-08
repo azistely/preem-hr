@@ -43,7 +43,7 @@ export const assignmentsRouter = createTRPCRouter({
       try {
         const assignment = await createAssignment({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
         });
 
@@ -71,7 +71,7 @@ export const assignmentsRouter = createTRPCRouter({
       try {
         const assignment = await transferEmployee({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
         });
 
