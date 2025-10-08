@@ -112,6 +112,7 @@ export const authRouter = router({
             name: companyName,
             slug,
             countryCode: 'CI', // Default to Côte d'Ivoire
+            sectorCode: 'SERVICES', // Default sector (lowest risk, most common)
             currency: 'XOF',
             timezone: 'Africa/Abidjan',
             plan: 'trial',

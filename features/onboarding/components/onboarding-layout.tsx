@@ -3,6 +3,7 @@
 import { ReactNode } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { PreemLogo } from '@/components/brand/preem-logo';
 
 interface OnboardingLayoutProps {
   title: string;
@@ -24,8 +25,13 @@ export function OnboardingLayout({
     : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-green-50 flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-2xl">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <PreemLogo size="default" />
+        </div>
+
         {/* Progress indicator */}
         {currentStep && totalSteps && (
           <div className="mb-6">
@@ -33,16 +39,21 @@ export function OnboardingLayout({
               <p className="text-sm text-muted-foreground">
                 Étape {currentStep} sur {totalSteps}
               </p>
-              <p className="text-sm font-medium">
+              <p className="text-sm font-medium text-preem-teal">
                 {Math.round(progressPercent)}%
               </p>
             </div>
-            <Progress value={progressPercent} className="h-2" />
+            <Progress value={progressPercent} className="h-2 bg-preem-teal/20">
+              <div
+                className="h-full bg-preem-teal transition-all rounded-full"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </Progress>
           </div>
         )}
 
         {/* Main card */}
-        <Card>
+        <Card className="border-2 border-preem-teal/20 shadow-preem-teal">
           <CardHeader className="text-center space-y-2">
             <h1 className="text-2xl md:text-3xl font-bold">
               {title}
@@ -62,7 +73,10 @@ export function OnboardingLayout({
         {/* Help text */}
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
-            💡 Besoin d'aide ? Contactez-nous sur support@preem.hr
+            Besoin d&apos;aide ? Contactez-nous sur{' '}
+            <a href="mailto:support@preem.hr" className="text-preem-teal hover:underline">
+              support@preem.hr
+            </a>
           </p>
         </div>
       </div>
