@@ -497,7 +497,7 @@ export interface SetCompanyInfoInput {
   legalName?: string;
   industry?: string;
   taxId?: string;
-  address?: string;
+  addresses?: string[];
   phone?: string;
   email?: string;
 }
@@ -529,7 +529,7 @@ export async function setCompanyInfo(input: SetCompanyInfoInput) {
   updates.settings = {
     ...currentSettings,
     company: {
-      address: input.address,
+      addresses: input.addresses,
       phone: input.phone,
       email: input.email,
     },
