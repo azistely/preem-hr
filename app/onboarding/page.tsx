@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api/client';
+import { api } from '@/trpc/react';
 
 /**
  * Onboarding Entry Point
@@ -44,9 +44,9 @@ export default function OnboardingPage() {
 
   // Loading state
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-green-50 flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-preem-teal mx-auto mb-4"></div>
         <p className="text-lg text-muted-foreground">Chargement...</p>
       </div>
     </div>
