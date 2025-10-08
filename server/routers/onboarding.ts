@@ -275,7 +275,7 @@ export const onboardingRouter = createTRPCRouter({
       taxId: z.string().optional(),
       address: z.string().optional(),
       phone: z.string().optional(),
-      email: z.string().email().optional(),
+      email: z.union([z.string().email(), z.literal('')]).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       try {
