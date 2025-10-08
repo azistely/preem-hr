@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api/client';
+import { api } from '@/trpc/react';
 import { OnboardingLayout } from '@/features/onboarding/components/onboarding-layout';
 import { HelpBox } from '@/features/onboarding/components/help-box';
 import { Button } from '@/components/ui/button';

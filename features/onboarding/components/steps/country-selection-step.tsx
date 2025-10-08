@@ -1,6 +1,6 @@
 'use client';
 
-import { api } from '@/lib/api/client';
+import { api } from '@/trpc/react';
 import { QuestionOptionCard } from '../question-option-card';
 import { HelpBox } from '../help-box';
 import { toast } from 'sonner';
