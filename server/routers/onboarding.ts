@@ -273,7 +273,7 @@ export const onboardingRouter = createTRPCRouter({
       legalName: z.string().optional(),
       industry: z.string().optional(),
       taxId: z.string().optional(),
-      address: z.string().optional(),
+      addresses: z.array(z.string()).optional(),
       phone: z.string().optional(),
       email: z.union([z.string().email(), z.literal('')]).optional(),
     }))
@@ -303,8 +303,8 @@ export const onboardingRouter = createTRPCRouter({
     .input(z.object({
       firstName: z.string().min(1, 'Le prénom est requis'),
       lastName: z.string().min(1, 'Le nom est requis'),
-      email: z.string().email('Email invalide'),
-      phone: z.string().optional(),
+      email: z.union([z.string().email(), z.literal('')]).optional(),
+      phone: z.string().min(1, 'Le numéro de téléphone est requis'),
       positionTitle: z.string().min(1, 'Le poste est requis'),
       baseSalary: z.number().min(1, 'Le salaire doit être supérieur à 0'),
       hireDate: z.date(),
@@ -337,8 +337,8 @@ export const onboardingRouter = createTRPCRouter({
     .input(z.object({
       firstName: z.string().min(1, 'Le prénom est requis'),
       lastName: z.string().min(1, 'Le nom est requis'),
-      email: z.string().email('Email invalide'),
-      phone: z.string().optional(),
+      email: z.union([z.string().email(), z.literal('')]).optional(),
+      phone: z.string().min(1, 'Le numéro de téléphone est requis'),
       positionTitle: z.string().min(1, 'Le poste est requis'),
       baseSalary: z.number().min(1, 'Le salaire doit être supérieur à 0'),
       hireDate: z.date(),
