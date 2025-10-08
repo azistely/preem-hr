@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/trpc/react';
@@ -9,12 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { Plus, X } from 'lucide-react';
 
 const companyInfoSchema = z.object({
   legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères').optional(),
   industry: z.string().optional(),
   taxId: z.string().optional(),
-  address: z.string().optional(),
+  addresses: z.array(z.object({ value: z.string().min(1, 'L\'adresse ne peut pas être vide') })).optional(),
   phone: z.string().optional(),
   email: z.string().email('Email invalide').optional().or(z.literal('')),
 });
@@ -33,18 +34,35 @@ export function CompanyInfoStep({ onComplete }: CompanyInfoStepProps) {
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors },
   } = useForm<CompanyInfoForm>({
     resolver: zodResolver(companyInfoSchema),
+    defaultValues: {
+      addresses: [{ value: '' }],
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'addresses',
   });
 
   const onSubmit = async (data: CompanyInfoForm) => {
     setIsSubmitting(true);
 
     try {
+      // Transform addresses from array of objects to array of strings
+      const addresses = data.addresses
+        ?.map(a => a.value)
+        .filter(a => a.trim().length > 0);
+
       // Save company info
-      await setCompanyInfo.mutateAsync(data);
+      await setCompanyInfo.mutateAsync({
+        ...data,
+        addresses: addresses && addresses.length > 0 ? addresses : undefined,
+      });
 
       // Complete step
       await completeStep.mutateAsync({ stepId: 'company_info' });
@@ -107,18 +125,51 @@ export function CompanyInfoStep({ onComplete }: CompanyInfoStepProps) {
           />
         </div>
 
-        {/* Address */}
-        <div className="space-y-2">
-          <Label htmlFor="address" className="text-base">
-            Adresse
-            <span className="text-muted-foreground text-sm ml-2">(Optionnel)</span>
-          </Label>
-          <Input
-            id="address"
-            {...register('address')}
-            placeholder="Ex: Abidjan, Cocody"
-            className="min-h-[48px]"
-          />
+        {/* Addresses */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-base">
+              Adresse(s)
+              <span className="text-muted-foreground text-sm ml-2">(Optionnel)</span>
+            </Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => append({ value: '' })}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Ajouter
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex gap-2">
+                <Input
+                  {...register(`addresses.${index}.value`)}
+                  placeholder="Ex: Abidjan, Cocody"
+                  className="min-h-[48px] flex-1"
+                />
+                {fields.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => remove(index)}
+                    className="min-h-[48px] min-w-[48px]"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            {errors.addresses && (
+              <p className="text-sm text-destructive">
+                {errors.addresses.message}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Phone */}
