@@ -64,7 +64,7 @@ export const terminationsRouter = createTRPCRouter({
       try {
         const termination = await createTermination({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
           createdByEmail: 'system', // TODO: Get from user context
         });
@@ -87,7 +87,7 @@ export const terminationsRouter = createTRPCRouter({
       try {
         const termination = await updateTermination({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           updatedBy: ctx.user.id,
           updatedByEmail: 'system', // TODO: Get from user context
         });
@@ -108,7 +108,7 @@ export const terminationsRouter = createTRPCRouter({
     .input(getTerminationSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await getTerminationById(input.id, ctx.tenantId);
+        return await getTerminationById(input.id, ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'NOT_FOUND',
@@ -123,7 +123,7 @@ export const terminationsRouter = createTRPCRouter({
   getByEmployeeId: publicProcedure
     .input(getTerminationByEmployeeSchema)
     .query(async ({ input, ctx }) => {
-      return await getTerminationByEmployeeId(input.employeeId, ctx.tenantId);
+      return await getTerminationByEmployeeId(input.employeeId, ctx.user.tenantId);
     }),
 
   /**
@@ -133,7 +133,7 @@ export const terminationsRouter = createTRPCRouter({
     .input(listTerminationsSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await listTerminations(ctx.tenantId, {
+        return await listTerminations(ctx.user.tenantId, {
           status: input.status,
           limit: input.limit,
           offset: input.offset,

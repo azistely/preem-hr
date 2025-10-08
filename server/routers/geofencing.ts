@@ -51,7 +51,7 @@ export const geofencingRouter = createTRPCRouter({
   list: publicProcedure.query(async ({ ctx }) => {
     try {
       const geofences = await db.query.geofenceConfigurations.findMany({
-        where: eq(geofenceConfigurations.tenantId, ctx.tenantId),
+        where: eq(geofenceConfigurations.tenantId, ctx.user.tenantId),
         orderBy: (geofences, { desc }) => [desc(geofences.createdAt)],
         with: {
           employeeAssignments: {
@@ -89,7 +89,7 @@ export const geofencingRouter = createTRPCRouter({
         const geofence = await db.query.geofenceConfigurations.findFirst({
           where: and(
             eq(geofenceConfigurations.id, input.id),
-            eq(geofenceConfigurations.tenantId, ctx.tenantId)
+            eq(geofenceConfigurations.tenantId, ctx.user.tenantId)
           ),
           with: {
             employeeAssignments: {
@@ -136,7 +136,7 @@ export const geofencingRouter = createTRPCRouter({
           .insert(geofenceConfigurations)
           .values({
             ...input,
-            tenantId: ctx.tenantId,
+            tenantId: ctx.user.tenantId,
           })
           .returning();
 
@@ -163,7 +163,7 @@ export const geofencingRouter = createTRPCRouter({
         const existing = await db.query.geofenceConfigurations.findFirst({
           where: and(
             eq(geofenceConfigurations.id, id),
-            eq(geofenceConfigurations.tenantId, ctx.tenantId)
+            eq(geofenceConfigurations.tenantId, ctx.user.tenantId)
           ),
         });
 
@@ -204,7 +204,7 @@ export const geofencingRouter = createTRPCRouter({
         const existing = await db.query.geofenceConfigurations.findFirst({
           where: and(
             eq(geofenceConfigurations.id, input.id),
-            eq(geofenceConfigurations.tenantId, ctx.tenantId)
+            eq(geofenceConfigurations.tenantId, ctx.user.tenantId)
           ),
         });
 
@@ -242,7 +242,7 @@ export const geofencingRouter = createTRPCRouter({
         const geofence = await db.query.geofenceConfigurations.findFirst({
           where: and(
             eq(geofenceConfigurations.id, input.geofenceId),
-            eq(geofenceConfigurations.tenantId, ctx.tenantId)
+            eq(geofenceConfigurations.tenantId, ctx.user.tenantId)
           ),
         });
 
@@ -301,7 +301,7 @@ export const geofencingRouter = createTRPCRouter({
         const geofence = await db.query.geofenceConfigurations.findFirst({
           where: and(
             eq(geofenceConfigurations.id, input.geofenceId),
-            eq(geofenceConfigurations.tenantId, ctx.tenantId)
+            eq(geofenceConfigurations.tenantId, ctx.user.tenantId)
           ),
         });
 
@@ -342,7 +342,7 @@ export const geofencingRouter = createTRPCRouter({
         const geofence = await db.query.geofenceConfigurations.findFirst({
           where: and(
             eq(geofenceConfigurations.id, input.geofenceId),
-            eq(geofenceConfigurations.tenantId, ctx.tenantId)
+            eq(geofenceConfigurations.tenantId, ctx.user.tenantId)
           ),
         });
 

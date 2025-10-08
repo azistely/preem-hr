@@ -5,6 +5,7 @@
  */
 
 import { createTRPCRouter } from '../api/trpc';
+import { authRouter } from './auth';
 import { payrollRouter } from './payroll';
 import { tenantRouter } from './tenant';
 import { employeesRouter } from './employees';
@@ -25,8 +26,10 @@ import { timeOffRouter } from './time-off';
 import { policiesRouter } from './policies';
 import { publicHolidaysRouter } from './public-holidays';
 import { geofencingRouter } from './geofencing';
+import { onboardingRouter } from './onboarding';
 
 export const appRouter = createTRPCRouter({
+  auth: authRouter,
   payroll: payrollRouter,
   tenant: tenantRouter,
   employees: employeesRouter,
@@ -47,6 +50,7 @@ export const appRouter = createTRPCRouter({
   policies: policiesRouter,
   publicHolidays: publicHolidaysRouter,
   geofencing: geofencingRouter,
+  onboarding: onboardingRouter,
 });
 
 // Export type definition of API

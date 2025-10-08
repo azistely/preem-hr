@@ -1,0 +1,219 @@
+/**
+ * Login Page
+ *
+ * Simple login form for existing users
+ * Redirects to dashboard or onboarding based on completion status
+ *
+ * Design principles:
+ * - Mobile-first (works on 5" phones)
+ * - Large touch targets (min 44px)
+ * - Clear error messages in French
+ * - Loading states for all actions
+ */
+
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { createAuthClient } from '@/lib/supabase/auth-client';
+import { api } from '@/trpc/react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { toast } from 'sonner';
+
+/**
+ * Login form validation schema
+ */
+const loginSchema = z.object({
+  email: z.string().email({ message: 'Email invalide' }),
+  password: z.string().min(1, { message: 'Mot de passe requis' }),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+  });
+
+  const getUserQuery = api.auth.getUserById.useQuery(
+    { userId: '' },
+    { enabled: false }
+  );
+
+  const onSubmit = async (data: LoginFormData) => {
+    setIsSubmitting(true);
+    try {
+      // 1. Sign in with Supabase (client-side)
+      const supabase = createAuthClient();
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
+
+      if (authError || !authData.user) {
+        toast.error('Erreur de connexion', {
+          description: 'Email ou mot de passe incorrect',
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Fetch user details from database
+      const { data: userData } = await getUserQuery.refetch({
+        queryKey: [['auth', 'getUserById'], { input: { userId: authData.user.id }, type: 'query' }] as any,
+      });
+
+      if (!userData) {
+        toast.error('Erreur de connexion', {
+          description: 'Utilisateur non trouvé',
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      toast.success('Connexion réussie!', {
+        description: `Bienvenue ${userData.user.firstName}!`,
+      });
+
+      // Small delay to ensure session is set
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Redirect to onboarding (will auto-redirect to dashboard if complete)
+      router.push('/onboarding');
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('Erreur de connexion', {
+        description: 'Une erreur s\'est produite',
+      });
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-green-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Back to home */}
+        <div className="mb-6">
+          <Link href="/">
+            <Button variant="ghost" className="min-h-[44px]">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Retour
+            </Button>
+          </Link>
+        </div>
+
+        {/* Login Card */}
+        <Card className="border-2 shadow-lg">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 h-16 w-16 rounded-lg bg-gradient-to-br from-orange-500 to-green-500 flex items-center justify-center">
+              <span className="text-white font-bold text-3xl">P</span>
+            </div>
+            <CardTitle className="text-3xl">Connexion</CardTitle>
+            <CardDescription className="text-base">
+              Accédez à votre compte Preem HR
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-base">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="votre@email.com"
+                  className="min-h-[48px] text-base"
+                  {...register('email')}
+                  disabled={isSubmitting}
+                  autoComplete="email"
+                />
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email.message}</p>
+                )}
+              </div>
+
+              {/* Password */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-base">
+                    Mot de passe
+                  </Label>
+                  {/* Future: Add forgot password link */}
+                  {/* <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+                    Mot de passe oublié ?
+                  </Link> */}
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  className="min-h-[48px] text-base"
+                  {...register('password')}
+                  disabled={isSubmitting}
+                  autoComplete="current-password"
+                />
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password.message}</p>
+                )}
+              </div>
+
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                className="w-full min-h-[56px] text-lg"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Connexion en cours...
+                  </>
+                ) : (
+                  <>
+                    Se connecter
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </>
+                )}
+              </Button>
+            </form>
+
+            {/* Signup Link */}
+            <div className="mt-6 text-center border-t pt-6">
+              <p className="text-sm text-muted-foreground">
+                Vous n&apos;avez pas de compte ?{' '}
+                <Link href="/signup" className="text-primary font-medium hover:underline">
+                  Créer un compte gratuit
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Help Text */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            Besoin d&apos;aide ? Contactez-nous par email
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

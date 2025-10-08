@@ -688,36 +688,25 @@ export const salaryBands = pgTable("salary_bands", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	name: text().notNull(),
-	code: text(),
-	description: text(),
+	code: text().notNull(),
+	jobLevel: text("job_level").notNull(),
 	minSalary: numeric("min_salary", { precision: 15, scale: 2 }).notNull(),
+	midSalary: numeric("mid_salary", { precision: 15, scale: 2 }).notNull(),
 	maxSalary: numeric("max_salary", { precision: 15, scale: 2 }).notNull(),
-	midpoint: numeric({ precision: 15, scale: 2 }),
-	currency: text().default('XOF').notNull(),
-	grade: text(),
-	effectiveFrom: date("effective_from").default(sql`CURRENT_DATE`).notNull(),
+	currency: text(),
+	effectiveFrom: date("effective_from").notNull(),
 	effectiveTo: date("effective_to"),
-	status: text().default('active').notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	createdBy: uuid("created_by"),
+	isActive: boolean("is_active"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("idx_salary_bands_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
-	index("idx_salary_bands_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.createdBy],
-			foreignColumns: [users.id],
-			name: "salary_bands_created_by_fkey"
-		}),
 	foreignKey({
 			columns: [table.tenantId],
 			foreignColumns: [tenants.id],
 			name: "salary_bands_tenant_id_fkey"
 		}).onDelete("cascade"),
 	unique("unique_salary_band_code").on(table.tenantId, table.code),
-	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
-	check("valid_salary_range_bands", sql`min_salary <= max_salary`),
-	check("valid_status_band", sql`status = ANY (ARRAY['active'::text, 'inactive'::text])`),
 ]);
 
 export const bulkSalaryAdjustments = pgTable("bulk_salary_adjustments", {

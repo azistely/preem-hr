@@ -59,14 +59,14 @@ export async function createSalaryBand(input: CreateSalaryBandInput) {
       tenantId: input.tenantId,
       name: input.name,
       code: input.code,
-      grade: input.jobLevel,
+      jobLevel: input.jobLevel,
       minSalary: input.minSalary.toString(),
-      midpoint: input.midSalary.toString(),
+      midSalary: input.midSalary.toString(),
       maxSalary: input.maxSalary.toString(),
       currency: input.currency || 'XOF',
       effectiveFrom: input.effectiveFrom?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       effectiveTo: input.effectiveTo?.toISOString().split('T')[0] || null,
-      status: 'active',
+      isActive: true,
     })
     .returning();
 
@@ -152,7 +152,7 @@ export async function listSalaryBands(tenantId: string, activeOnly: boolean = tr
   const conditions = [eq(salaryBands.tenantId, tenantId)];
 
   if (activeOnly) {
-    conditions.push(eq(salaryBands.status, 'active'));
+    conditions.push(eq(salaryBands.isActive, true));
     conditions.push(isNull(salaryBands.effectiveTo));
   }
 
@@ -160,7 +160,7 @@ export async function listSalaryBands(tenantId: string, activeOnly: boolean = tr
     .select()
     .from(salaryBands)
     .where(and(...conditions))
-    .orderBy(salaryBands.grade, salaryBands.code);
+    .orderBy(salaryBands.jobLevel, salaryBands.code);
 }
 
 /**
@@ -188,7 +188,7 @@ export async function updateSalaryBand(
 
   // Validate salary range if updated
   const minSalary = updates.minSalary ?? parseFloat(band.minSalary);
-  const midSalary = updates.midSalary ?? parseFloat(band.midpoint || '0');
+  const midSalary = updates.midSalary ?? parseFloat(band.midSalary || '0');
   const maxSalary = updates.maxSalary ?? parseFloat(band.maxSalary);
 
   if (minSalary >= midSalary || midSalary >= maxSalary) {
@@ -201,9 +201,9 @@ export async function updateSalaryBand(
     .update(salaryBands)
     .set({
       name: updates.name ?? band.name,
-      grade: updates.jobLevel ?? band.grade,
+      jobLevel: updates.jobLevel ?? band.jobLevel,
       minSalary: updates.minSalary?.toString() ?? band.minSalary,
-      midpoint: updates.midSalary?.toString() ?? band.midpoint,
+      midSalary: updates.midSalary?.toString() ?? band.midSalary,
       maxSalary: updates.maxSalary?.toString() ?? band.maxSalary,
       updatedAt: new Date().toISOString(),
     })

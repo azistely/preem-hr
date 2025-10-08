@@ -46,13 +46,13 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
       try {
         const adjustment = await createBulkAdjustment({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
         });
 
         await eventBus.publish('bulk_adjustment.created', {
           adjustmentId: adjustment.id,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
         });
 
@@ -69,7 +69,7 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
     .input(previewAdjustmentSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await calculateAffectedEmployees(input.adjustmentId, ctx.tenantId);
+        return await calculateAffectedEmployees(input.adjustmentId, ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -84,13 +84,13 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
       try {
         const result = await processBulkAdjustment({
           adjustmentId: input.adjustmentId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           processedBy: ctx.user.id,
         });
 
         await eventBus.publish('bulk_adjustment.processed', {
           adjustmentId: input.adjustmentId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           successCount: result.successCount,
           failureCount: result.failureCount,
         });
@@ -108,7 +108,7 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
     .input(getStatusSchema)
     .query(async ({ input, ctx }) => {
       try {
-        return await getBulkAdjustmentStatus(input.adjustmentId, ctx.tenantId);
+        return await getBulkAdjustmentStatus(input.adjustmentId, ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'NOT_FOUND',
@@ -120,7 +120,7 @@ export const bulkAdjustmentsRouter = createTRPCRouter({
   list: publicProcedure
     .query(async ({ ctx }) => {
       try {
-        return await listBulkAdjustments(ctx.tenantId);
+        return await listBulkAdjustments(ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',

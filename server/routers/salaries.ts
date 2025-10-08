@@ -53,7 +53,7 @@ export const salariesRouter = createTRPCRouter({
 
         const newSalary = await changeSalary({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
         });
 
@@ -62,7 +62,7 @@ export const salariesRouter = createTRPCRouter({
         // Emit event
         await eventBus.publish('salary.changed', {
           employeeId: input.employeeId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           oldSalary: oldAmount,
           newSalary: newAmount,
           effectiveDate: input.effectiveFrom,
@@ -120,7 +120,7 @@ export const salariesRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       try {
         // Get tenant's country code first
-        const countryCode = await getTenantCountryCode(ctx.tenantId);
+        const countryCode = await getTenantCountryCode(ctx.user.tenantId);
         const minimumWage = await getMinimumWage(countryCode);
 
         // Get country name for display

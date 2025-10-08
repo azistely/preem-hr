@@ -9,14 +9,14 @@
  */
 
 import { z } from 'zod';
-import { router, publicProcedure } from '../trpc';
+import { createTRPCRouter, publicProcedure, managerProcedure } from '../api/trpc';
 import * as timeOffService from '@/features/time-off/services/time-off.service';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
 import { timeOffPolicies, timeOffRequests, timeOffBalances } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 
-export const timeOffRouter = router({
+export const timeOffRouter = createTRPCRouter({
   /**
    * Request time off
    */
@@ -191,12 +191,7 @@ export const timeOffRouter = router({
    * Filters by reporting_manager_id to show only team members' requests
    * Requires: Manager role
    */
-  getPendingRequestsForTeam: router.procedure
-    .use(async ({ ctx, next }) => {
-      // Import managerProcedure middleware
-      const { managerProcedure } = await import('../api/trpc');
-      return next({ ctx });
-    })
+  getPendingRequestsForTeam: managerProcedure
     .query(async ({ ctx }) => {
       const { employees } = await import('@/drizzle/schema');
       const { eq } = await import('drizzle-orm');

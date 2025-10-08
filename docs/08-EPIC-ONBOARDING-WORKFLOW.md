@@ -2,7 +2,7 @@
 
 ## Epic Overview
 
-**Goal:** Create a zero-to-hero onboarding experience that guides a new company from signup through their first payroll run, optimized for low digital literacy users.
+**Goal:** Create a zero-to-hero onboarding experience that guides a new company from signup through their first payroll run, optimized for low digital literacy users. The onboarding adapts to company size and complexity, showing only relevant steps.
 
 **Priority:** P0 (Must-have for MVP - first user experience)
 
@@ -13,10 +13,20 @@
 - `04-DOMAIN-MODELS.md` - Business entities, validation rules, domain events
 - `HCI-DESIGN-PRINCIPLES.md` - **UX design principles for low digital literacy**
 - `09-EPIC-WORKFLOW-AUTOMATION.md` - Workflow automation infrastructure
+- `GAPS-AND-IMPLEMENTATION-PLAN.md` - Feature priorities and implementation gaps
 
-**User Journey:**
+**Core Philosophy:**
+> "Start with the simplest path, reveal complexity only when needed."
+
+**Adaptive Journey:**
 ```
-Signup → Company Setup → First Employee → Position → Salary → First Payroll → Success
+Signup → Discovery Questionnaire → Adaptive Setup Path → First Payroll → Success
+                ↓
+    ┌───────────┴───────────┐
+    │ Small (1-10 employees) │ → Simple path (3 steps)
+    │ Medium (11-50)         │ → Structured path (5 steps)
+    │ Large (51+)            │ → Full path (8 steps)
+    └────────────────────────┘
 ```
 
 **Dependencies:**
@@ -29,15 +39,19 @@ Signup → Company Setup → First Employee → Position → Salary → First Pa
 
 ## Success Criteria
 
-- [x] Complete onboarding in < 15 minutes (for 1 employee)
+- [x] Discovery questionnaire completes in < 2 minutes
+- [x] Solo business onboarding in < 10 minutes
+- [x] Small team onboarding in < 15 minutes
+- [x] Medium/Large onboarding in < 30 minutes
 - [x] Zero prior HR/payroll knowledge required
 - [x] French-only UI with simple language
 - [x] Mobile-responsive (works on phone)
 - [x] Progressive disclosure (one step at a time)
 - [x] Contextual help at each step
 - [x] Can resume if interrupted
+- [x] Can skip optional features and add later
 - [x] First payroll run successful
-- [x] Clear visual progress indicator
+- [x] Clear visual progress indicator with branching
 
 ---
 
@@ -57,7 +71,7 @@ Signup → Company Setup → First Employee → Position → Salary → First Pa
 - [ ] Create tenant record
 - [ ] Create user with role 'tenant_admin'
 - [ ] Set trial period (30 days)
-- [ ] Redirect to onboarding flow
+- [ ] Redirect to onboarding discovery questionnaire
 - [ ] Large touch targets (min 44x44px)
 - [ ] Simple labels: "Créer mon compte"
 
@@ -236,24 +250,437 @@ export function SignupPage() {
 
 ---
 
-### FEATURE 2: Guided Onboarding Steps
+### FEATURE 2: Questionnaire-Based Discovery & Adaptive Onboarding
 
-#### Story 2.1: Welcome & Country Selection
+**Design Philosophy:**
+- Ask smart questions first to understand company needs
+- Show only relevant steps based on answers
+- Allow skipping advanced features (can add later)
+- Progressive complexity (start simple, add features as needed)
+
+---
+
+#### Story 2.1: Discovery Questionnaire
 **As a** new user (after signup)
+**I want** to answer simple questions about my business
+**So that** the onboarding adapts to my specific needs
+
+**Acceptance Criteria:**
+- [ ] Welcome screen with friendly introduction
+- [ ] 7-10 quick questions (single-choice, visual)
+- [ ] Each question on its own screen
+- [ ] Can go back to previous question
+- [ ] Progress indicator (Question X/Y)
+- [ ] Questions in simple French
+- [ ] Visual icons for each option
+- [ ] Auto-save answers (can resume)
+- [ ] Generate onboarding path based on answers
+- [ ] Show path preview before starting
+
+**Questions to Ask:**
+
+**Q1: Combien d'employés avez-vous ?**
+```
+┌─────────────────────────────────────┐
+│ 🧍 Juste moi (Solo)                │ → SIMPLE_PATH
+├─────────────────────────────────────┤
+│ 👥 2-10 employés (Petite équipe)   │ → SMALL_TEAM_PATH
+├─────────────────────────────────────┤
+│ 👔 11-50 employés (Moyenne)         │ → MEDIUM_ORG_PATH
+├─────────────────────────────────────┤
+│ 🏢 51+ employés (Grande)            │ → LARGE_ORG_PATH
+└─────────────────────────────────────┘
+```
+
+**Q2: Votre entreprise a-t-elle des départements ?**
+```
+┌─────────────────────────────────────┐
+│ ❌ Non, équipe plate                │ → Skip departments setup
+├─────────────────────────────────────┤
+│ ✅ Oui, plusieurs départements      │ → Add departments step
+└─────────────────────────────────────┘
+```
+
+**Q3: Avez-vous des employés avec des types de contrat différents ?**
+```
+┌─────────────────────────────────────┐
+│ ❌ Non, tous à temps plein          │ → Skip contract types setup
+├─────────────────────────────────────┤
+│ ✅ Oui (temps partiel, stages, CDD)│ → Add contract types wizard
+└─────────────────────────────────────┘
+```
+
+**Q4: Comment payez-vous vos employés ?**
+```
+┌─────────────────────────────────────┐
+│ 💰 Salaire fixe seulement           │ → Simple salary setup
+├─────────────────────────────────────┤
+│ 🎁 Salaire + primes/indemnités      │ → Add allowances wizard
+├─────────────────────────────────────┤
+│ 📊 Salaire + commissions            │ → Add commissions setup
+├─────────────────────────────────────┤
+│ 🎯 Tout ça                          │ → Full compensation wizard
+└─────────────────────────────────────┘
+```
+
+**Q5: Voulez-vous suivre le temps de travail (pointage) ?**
+```
+┌─────────────────────────────────────┐
+│ ❌ Non, pas pour l'instant          │ → Skip time tracking
+├─────────────────────────────────────┤
+│ ⏰ Oui, pointage simple              │ → Enable basic time tracking
+├─────────────────────────────────────┤
+│ 📍 Oui, avec géolocalisation        │ → Enable geofencing
+├─────────────────────────────────────┤
+│ 📊 Oui, avec heures supplémentaires │ → Enable overtime tracking
+└─────────────────────────────────────┘
+```
+
+**Q6: Voulez-vous gérer les congés ?**
+```
+┌─────────────────────────────────────┐
+│ ❌ Non, pas pour l'instant          │ → Skip time-off setup
+├─────────────────────────────────────┤
+│ ✅ Oui, congés légaux seulement     │ → Enable with default policy
+├─────────────────────────────────────┤
+│ 🎯 Oui, avec politiques personnalisées│ → Add custom policies wizard
+└─────────────────────────────────────┘
+```
+
+**Q7: Quelle est la fréquence de paie ?**
+```
+┌─────────────────────────────────────┐
+│ 📅 Mensuel (fin du mois)            │ → Set monthly payroll
+├─────────────────────────────────────┤
+│ 📆 Bi-mensuel (2x par mois)         │ → Set bi-weekly payroll
+└─────────────────────────────────────┘
+```
+
+**Test Cases:**
+```typescript
+describe('Discovery Questionnaire', () => {
+  it('should save answers after each question', async () => {
+    const result = await caller.onboarding.answerQuestion({
+      tenantId: tenant.id,
+      questionId: 'company_size',
+      answer: 'small_team',
+    });
+
+    expect(result.onboardingState.answers.company_size).toBe('small_team');
+  });
+
+  it('should generate simple path for solo business', async () => {
+    await answerQuestionnaire(tenant.id, {
+      company_size: 'solo',
+      has_departments: false,
+      contract_types: 'full_time_only',
+      compensation: 'fixed_salary',
+      time_tracking: 'none',
+      time_off: 'none',
+      payroll_frequency: 'monthly',
+    });
+
+    const path = await caller.onboarding.getAdaptivePath({ tenantId: tenant.id });
+
+    expect(path.steps).toEqual([
+      'country_selection',
+      'company_info',
+      'first_employee', // Just the owner
+      'salary_setup',
+      'payroll_preview',
+      'completion',
+    ]);
+    expect(path.estimatedMinutes).toBeLessThanOrEqual(10);
+  });
+
+  it('should generate complex path for large org', async () => {
+    await answerQuestionnaire(tenant.id, {
+      company_size: 'large',
+      has_departments: true,
+      contract_types: 'multiple',
+      compensation: 'full',
+      time_tracking: 'overtime',
+      time_off: 'custom_policies',
+      payroll_frequency: 'monthly',
+    });
+
+    const path = await caller.onboarding.getAdaptivePath({ tenantId: tenant.id });
+
+    expect(path.steps).toEqual([
+      'country_selection',
+      'company_info',
+      'departments_setup',
+      'positions_hierarchy',
+      'contract_types_setup',
+      'compensation_components',
+      'bulk_employee_import',
+      'time_tracking_config',
+      'time_off_policies',
+      'approval_workflows',
+      'payroll_preview',
+      'completion',
+    ]);
+    expect(path.estimatedMinutes).toBeGreaterThan(20);
+  });
+
+  it('should allow resuming questionnaire', async () => {
+    // Answer first 3 questions
+    await answerQuestion(tenant.id, 'company_size', 'medium');
+    await answerQuestion(tenant.id, 'has_departments', true);
+    await answerQuestion(tenant.id, 'contract_types', 'multiple');
+
+    // Logout and login
+    const session = await login(user.email, password);
+
+    // Resume from question 4
+    const state = await caller.onboarding.getQuestionnaireState({ tenantId: tenant.id });
+    expect(state.currentQuestionIndex).toBe(3);
+    expect(state.answers).toHaveLength(3);
+  });
+});
+```
+
+**UI Design:**
+```tsx
+export function DiscoveryQuestionnairePage() {
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const { data: questionnaireState } = api.onboarding.getQuestionnaireState.useQuery();
+  const answerQuestion = api.onboarding.answerQuestion.useMutation();
+
+  const questions = [
+    {
+      id: 'company_size',
+      title: 'Combien d\'employés avez-vous ?',
+      subtitle: 'Comptez tous vos employés actuels, y compris vous-même',
+      options: [
+        { value: 'solo', icon: '🧍', label: 'Juste moi', description: 'Travailleur autonome' },
+        { value: 'small_team', icon: '👥', label: '2-10 employés', description: 'Petite équipe' },
+        { value: 'medium', icon: '👔', label: '11-50 employés', description: 'Moyenne entreprise' },
+        { value: 'large', icon: '🏢', label: '51+ employés', description: 'Grande organisation' },
+      ],
+    },
+    // ... other questions
+  ];
+
+  const handleAnswer = async (answer: string) => {
+    await answerQuestion.mutateAsync({
+      questionId: questions[currentQuestion].id,
+      answer,
+    });
+
+    if (currentQuestion < questions.length - 1) {
+      setCurrentQuestion(currentQuestion + 1);
+    } else {
+      // Questionnaire complete, generate path
+      router.push('/onboarding/path-preview');
+    }
+  };
+
+  return (
+    <OnboardingLayout
+      title="Configurons votre espace"
+      subtitle="Quelques questions rapides pour personnaliser votre expérience"
+      currentStep={currentQuestion + 1}
+      totalSteps={questions.length}
+    >
+      <div className="space-y-6">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold mb-2">
+            {questions[currentQuestion].title}
+          </h2>
+          <p className="text-muted-foreground">
+            {questions[currentQuestion].subtitle}
+          </p>
+        </div>
+
+        <div className="grid gap-3">
+          {questions[currentQuestion].options.map((option) => (
+            <QuestionOptionCard
+              key={option.value}
+              icon={option.icon}
+              label={option.label}
+              description={option.description}
+              onClick={() => handleAnswer(option.value)}
+              className="min-h-[72px] cursor-pointer hover:border-primary"
+            />
+          ))}
+        </div>
+
+        {currentQuestion > 0 && (
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentQuestion(currentQuestion - 1)}
+            className="w-full"
+          >
+            ← Retour
+          </Button>
+        )}
+      </div>
+    </OnboardingLayout>
+  );
+}
+
+function QuestionOptionCard({ icon, label, description, onClick, className }) {
+  return (
+    <Card
+      className={cn("p-4 transition-all hover:shadow-md", className)}
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-4">
+        <div className="text-4xl">{icon}</div>
+        <div className="flex-1">
+          <p className="font-semibold text-lg">{label}</p>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+```
+
+---
+
+#### Story 2.2: Adaptive Path Preview
+**As a** new user (after questionnaire)
+**I want** to see what steps I'll go through
+**So that** I understand what to expect
+
+**Acceptance Criteria:**
+- [ ] Show visual flow diagram with all steps
+- [ ] Highlight which steps are required vs optional
+- [ ] Show estimated time to complete
+- [ ] Allow editing questionnaire answers
+- [ ] "Commencer" button to start onboarding
+- [ ] Mobile-friendly visualization
+
+**Test Cases:**
+```typescript
+describe('Adaptive Path Preview', () => {
+  it('should show personalized path based on answers', async () => {
+    await answerQuestionnaire(tenant.id, {
+      company_size: 'small_team',
+      has_departments: false,
+      // ... other answers
+    });
+
+    const preview = await caller.onboarding.getPathPreview({ tenantId: tenant.id });
+
+    expect(preview.steps).toEqual([
+      { id: 'country', title: 'Pays', required: true, duration: 1 },
+      { id: 'company_info', title: 'Informations', required: true, duration: 2 },
+      { id: 'bulk_import', title: 'Employés', required: true, duration: 5 },
+      { id: 'salary', title: 'Salaires', required: true, duration: 3 },
+      { id: 'preview', title: 'Aperçu', required: true, duration: 2 },
+      { id: 'completion', title: 'Terminé', required: true, duration: 1 },
+    ]);
+
+    expect(preview.totalDuration).toBe(14); // minutes
+  });
+});
+```
+
+**UI Design:**
+```tsx
+export function PathPreviewPage() {
+  const { data: preview } = api.onboarding.getPathPreview.useQuery();
+  const startOnboarding = api.onboarding.startOnboarding.useMutation();
+
+  return (
+    <OnboardingLayout
+      title="Votre parcours de configuration"
+      subtitle={`Nous avons personnalisé ${preview.steps.length} étapes pour vous`}
+    >
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold">
+                  {preview.steps.length} étapes
+                </h3>
+                <p className="text-muted-foreground">
+                  Environ {preview.totalDuration} minutes
+                </p>
+              </div>
+              <Clock className="h-12 w-12 text-primary" />
+            </div>
+          </CardHeader>
+        </Card>
+
+        <div className="space-y-3">
+          {preview.steps.map((step, index) => (
+            <StepPreviewCard
+              key={step.id}
+              number={index + 1}
+              title={step.title}
+              duration={step.duration}
+              required={step.required}
+            />
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <Button
+            onClick={() => startOnboarding.mutate()}
+            className="w-full min-h-[56px] text-lg"
+          >
+            Commencer la configuration
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => router.push('/onboarding/questionnaire')}
+            className="w-full"
+          >
+            Modifier mes réponses
+          </Button>
+        </div>
+
+        <HelpBox>
+          💡 Vous pouvez interrompre à tout moment et reprendre plus tard
+        </HelpBox>
+      </div>
+    </OnboardingLayout>
+  );
+}
+
+function StepPreviewCard({ number, title, duration, required }) {
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-4">
+        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+          {number}
+        </div>
+        <div className="flex-1">
+          <p className="font-semibold">{title}</p>
+          <p className="text-sm text-muted-foreground">
+            {duration} min · {required ? 'Requis' : 'Optionnel'}
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+```
+
+---
+
+#### Story 2.3: Country Selection (All Paths)
+**As a** new user
 **I want** to select my country
 **So that** payroll rules are configured correctly
 
 **Acceptance Criteria:**
-- [ ] Welcome screen with friendly message
-- [ ] Country selector (start with CI only, expand later)
+- [ ] Show in all onboarding paths (required step)
+- [ ] Country selector with flags and descriptions
 - [ ] Load country-specific rules (CNPS rates, ITS brackets, SMIG)
 - [ ] Set tenant.country_code
-- [ ] Show visual progress: Step 1/6
+- [ ] Show visual progress in current path
 - [ ] Simple French: "Où est située votre entreprise ?"
 
 **Test Cases:**
 ```typescript
-describe('Onboarding - Country Selection', () => {
+describe('Country Selection', () => {
   it('should load Côte d\'Ivoire rules', async () => {
     const result = await caller.onboarding.selectCountry({
       tenantId: tenant.id,
@@ -271,15 +698,6 @@ describe('Onboarding - Country Selection', () => {
     expect(rules.payroll_rules.smig).toBe(75000);
     expect(rules.contribution_rates.pension.employee).toBe(0.063);
   });
-
-  it('should show only active countries', async () => {
-    const countries = await caller.onboarding.getAvailableCountries();
-
-    expect(countries).toEqual([
-      { code: 'CI', name: 'Côte d\'Ivoire', flag: '🇨🇮' },
-      // Future: BJ, SN, BF, ML, etc.
-    ]);
-  });
 });
 ```
 
@@ -291,21 +709,16 @@ export function CountrySelectionStep() {
   return (
     <OnboardingLayout
       title="Où est située votre entreprise ?"
-      step={1}
-      totalSteps={6}
+      subtitle="Sélectionnez le pays pour configurer automatiquement les règles de paie"
     >
       <div className="space-y-4">
-        <p className="text-gray-600">
-          Sélectionnez le pays pour configurer automatiquement les règles de paie.
-        </p>
-
         <RadioGroup>
           <RadioCard
             value="CI"
             icon="🇨🇮"
             title="Côte d'Ivoire"
             description="CNPS, ITS, SMIG 75 000 FCFA"
-            className="min-h-[60px]" // Large touch target
+            className="min-h-[60px]"
           />
 
           {/* Future countries */}
@@ -327,7 +740,9 @@ export function CountrySelectionStep() {
 }
 ```
 
-#### Story 2.2: Company Information
+---
+
+#### Story 2.4: Company Information (All Paths)
 **As a** new user
 **I want** to provide company details
 **So that** documents and reports are properly labeled
@@ -337,12 +752,11 @@ export function CountrySelectionStep() {
 - [ ] Optional fields clearly marked
 - [ ] Validate tax ID format (if provided)
 - [ ] Update tenant record
-- [ ] Show progress: Step 2/6
 - [ ] Simple labels, no jargon
 
 **Test Cases:**
 ```typescript
-describe('Onboarding - Company Info', () => {
+describe('Company Information', () => {
   it('should update tenant with company details', async () => {
     const result = await caller.onboarding.setCompanyInfo({
       tenantId: tenant.id,
@@ -356,226 +770,514 @@ describe('Onboarding - Company Info', () => {
     expect(result.tenant.tax_id).toBe('CI-123456789');
     expect(result.tenant.industry).toBe('commerce');
   });
-
-  it('should validate tax ID format', async () => {
-    await expect(
-      caller.onboarding.setCompanyInfo({
-        tenantId: tenant.id,
-        legalName: 'Test Co',
-        taxId: 'INVALID', // Wrong format
-      })
-    ).rejects.toThrow('Numéro d\'identification fiscale invalide');
-  });
 });
 ```
 
-#### Story 2.3: Add First Employee
-**As a** new user
-**I want** to add my first employee (or myself)
-**So that** I can run payroll
+---
+
+#### Story 2.5: Departments Setup (Medium/Large Paths Only)
+**As a** user with a structured organization
+**I want** to create departments
+**So that** employees can be organized by department
 
 **Acceptance Criteria:**
-- [ ] Simple form: Name, email, hire date, salary
-- [ ] Pre-fill owner as first employee option
-- [ ] Validate salary >= SMIG (75,000)
-- [ ] Create employee record
-- [ ] Skip complex fields (bank account, etc.) for now
-- [ ] Show progress: Step 3/6
-- [ ] Encouragement: "Bravo ! Vous avez ajouté votre premier employé 🎉"
+- [ ] Only shown if `has_departments = true` in questionnaire
+- [ ] Pre-fill with common departments (Direction, Comptabilité, Commercial, etc.)
+- [ ] Allow adding/editing/deleting departments
+- [ ] Each department has: name, description
+- [ ] Validate unique department names
+- [ ] Can skip and add later
 
 **Test Cases:**
 ```typescript
-describe('Onboarding - First Employee', () => {
-  it('should add first employee with minimal info', async () => {
-    const result = await caller.onboarding.addFirstEmployee({
+describe('Departments Setup', () => {
+  it('should create multiple departments', async () => {
+    const result = await caller.onboarding.createDepartments({
       tenantId: tenant.id,
-      firstName: 'Kouadio',
-      lastName: 'Yao',
-      email: 'kouadio@maboutique.ci',
-      hireDate: new Date('2025-01-01'),
-      baseSalary: 200000,
+      departments: [
+        { name: 'Direction', description: 'Direction générale' },
+        { name: 'Commercial', description: 'Équipe de vente' },
+        { name: 'Comptabilité', description: 'Finances et paie' },
+      ],
     });
 
-    expect(result.employee.id).toBeDefined();
-    expect(result.employee.employee_number).toBe('EMP-000001');
-    expect(result.employee.status).toBe('active');
-
-    // Check salary created
-    const salary = await db.query.employee_salaries.findFirst({
-      where: eq(employee_salaries.employee_id, result.employee.id),
-    });
-    expect(salary.base_salary).toBe(200000);
+    expect(result.departments).toHaveLength(3);
+    expect(result.departments[0].name).toBe('Direction');
   });
 
-  it('should pre-fill owner info', async () => {
-    const prefilled = await caller.onboarding.getPrefillData({
-      tenantId: tenant.id,
-    });
-
-    expect(prefilled.firstName).toBe(tenant.created_by.first_name);
-    expect(prefilled.email).toBe(tenant.created_by.email);
-  });
-
-  it('should validate SMIG minimum', async () => {
-    await expect(
-      caller.onboarding.addFirstEmployee({
-        tenantId: tenant.id,
-        firstName: 'Test',
-        lastName: 'User',
-        email: 'test@example.com',
-        hireDate: new Date('2025-01-01'),
-        baseSalary: 50000, // Below SMIG
-      })
-    ).rejects.toThrow('Le salaire doit être au moins 75 000 FCFA (SMIG)');
+  it('should skip if not needed', async () => {
+    // Solo/small team path skips this step
+    const path = await getOnboardingPath(soloTenant.id);
+    expect(path.steps).not.toContain('departments_setup');
   });
 });
 ```
 
 **UI Design:**
 ```tsx
-export function AddFirstEmployeeStep() {
-  const { nextStep } = useOnboarding();
-  const { data: prefill } = api.onboarding.getPrefillData.useQuery();
+export function DepartmentsSetupStep() {
+  const [departments, setDepartments] = useState([
+    { name: 'Direction', description: '' },
+    { name: 'Commercial', description: '' },
+    { name: 'Comptabilité', description: '' },
+  ]);
+  const { nextStep, skipStep } = useOnboarding();
 
   return (
     <OnboardingLayout
-      title="Ajoutez votre premier employé"
-      step={3}
-      totalSteps={6}
+      title="Créez vos départements"
+      subtitle="Organisez votre entreprise en départements"
     >
       <div className="space-y-4">
         <HelpBox>
-          💡 Vous pouvez vous ajouter vous-même comme employé
+          💡 Suggestions basées sur votre secteur d'activité
         </HelpBox>
 
-        <Form>
-          <div className="grid md:grid-cols-2 gap-4">
-            <FormField
-              name="firstName"
-              label="Prénom"
-              defaultValue={prefill?.firstName}
-              required
-            />
-            <FormField
-              name="lastName"
-              label="Nom"
-              defaultValue={prefill?.lastName}
-              required
-            />
-          </div>
+        {departments.map((dept, index) => (
+          <Card key={index} className="p-4">
+            <div className="space-y-3">
+              <Input
+                placeholder="Nom du département"
+                value={dept.name}
+                onChange={(e) => updateDepartment(index, 'name', e.target.value)}
+              />
+              <Input
+                placeholder="Description (optionnel)"
+                value={dept.description}
+                onChange={(e) => updateDepartment(index, 'description', e.target.value)}
+              />
+            </div>
+          </Card>
+        ))}
 
-          <FormField
-            name="email"
-            type="email"
-            label="Email"
-            defaultValue={prefill?.email}
-            required
-          />
+        <Button
+          variant="outline"
+          onClick={addDepartment}
+          className="w-full"
+        >
+          + Ajouter un département
+        </Button>
 
-          <FormField
-            name="hireDate"
-            type="date"
-            label="Date d'embauche"
-            defaultValue={new Date()}
-            required
-          />
-
-          <FormField
-            name="baseSalary"
-            type="number"
-            label="Salaire mensuel (FCFA)"
-            placeholder="Minimum 75 000 FCFA"
-            hint="Le SMIG en Côte d'Ivoire est de 75 000 FCFA"
-            min={75000}
-            required
-          />
-
+        <div className="space-y-2">
           <Button onClick={nextStep} className="w-full min-h-[44px]">
             Continuer
           </Button>
-        </Form>
+          <Button
+            variant="ghost"
+            onClick={skipStep}
+            className="w-full"
+          >
+            Passer cette étape
+          </Button>
+        </div>
       </div>
     </OnboardingLayout>
   );
 }
 ```
 
-#### Story 2.4: Create First Position
+---
+
+#### Story 2.6: Employee Setup (Adaptive)
 **As a** new user
-**I want** to define a position for the employee
-**So that** org structure is clear
+**I want** to add employees efficiently
+**So that** I can run payroll
 
 **Acceptance Criteria:**
-- [ ] Simple position form: Title, department
-- [ ] Auto-create position from employee context
-- [ ] Default to "Gérant" if owner
-- [ ] Create position record
-- [ ] Create assignment (employee → position)
-- [ ] Show progress: Step 4/6
-- [ ] Skip if too complex, allow later
+- [ ] **Solo Path:** Quick form to add owner as employee
+- [ ] **Small Team Path (2-10):** Add 1-10 employees individually with wizard
+- [ ] **Medium/Large Path (11+):** Bulk import via CSV template
+- [ ] Validate salary >= SMIG
+- [ ] Create employee records with positions
+- [ ] Show success message with count
+
+**Path-Specific Implementations:**
+
+**Solo Path:**
+```tsx
+export function SoloEmployeeSetupStep() {
+  const { data: ownerInfo } = api.onboarding.getOwnerInfo.useQuery();
+  const { nextStep } = useOnboarding();
+
+  return (
+    <OnboardingLayout
+      title="Ajoutez-vous comme employé"
+      subtitle="Créez votre profil employé pour générer votre paie"
+    >
+      <Form>
+        <FormField
+          name="firstName"
+          label="Prénom"
+          defaultValue={ownerInfo?.firstName}
+          required
+        />
+        <FormField
+          name="lastName"
+          label="Nom"
+          defaultValue={ownerInfo?.lastName}
+          required
+        />
+        <FormField
+          name="position"
+          label="Votre fonction"
+          defaultValue="Gérant"
+          required
+        />
+        <FormField
+          name="baseSalary"
+          label="Salaire mensuel (FCFA)"
+          placeholder="Minimum 75 000 FCFA"
+          min={75000}
+          required
+        />
+
+        <Button onClick={nextStep} className="w-full min-h-[44px]">
+          Continuer
+        </Button>
+      </Form>
+    </OnboardingLayout>
+  );
+}
+```
+
+**Small Team Path:**
+```tsx
+export function SmallTeamEmployeeSetupStep() {
+  const [employees, setEmployees] = useState([createEmptyEmployee()]);
+  const { nextStep } = useOnboarding();
+
+  return (
+    <OnboardingLayout
+      title="Ajoutez votre équipe"
+      subtitle={`${employees.length} employé(s) ajouté(s)`}
+    >
+      <div className="space-y-4">
+        {employees.map((emp, index) => (
+          <EmployeeCard
+            key={index}
+            employee={emp}
+            onUpdate={(data) => updateEmployee(index, data)}
+            onRemove={() => removeEmployee(index)}
+          />
+        ))}
+
+        <Button
+          variant="outline"
+          onClick={addEmployee}
+          className="w-full"
+          disabled={employees.length >= 10}
+        >
+          + Ajouter un employé
+        </Button>
+
+        <Button onClick={nextStep} className="w-full min-h-[44px]">
+          Continuer ({employees.length} employés)
+        </Button>
+      </div>
+    </OnboardingLayout>
+  );
+}
+```
+
+**Medium/Large Path:**
+```tsx
+export function BulkEmployeeImportStep() {
+  const [file, setFile] = useState<File | null>(null);
+  const downloadTemplate = api.onboarding.downloadEmployeeTemplate.useMutation();
+  const importEmployees = api.onboarding.importEmployees.useMutation();
+  const { nextStep } = useOnboarding();
+
+  return (
+    <OnboardingLayout
+      title="Importez vos employés"
+      subtitle="Utilisez notre modèle Excel pour importer vos employés en masse"
+    >
+      <div className="space-y-6">
+        <Card className="p-6 bg-blue-50 border-blue-200">
+          <div className="flex items-start gap-4">
+            <FileSpreadsheet className="h-8 w-8 text-blue-600" />
+            <div className="flex-1">
+              <h3 className="font-semibold mb-2">Téléchargez le modèle</h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                Remplissez le fichier Excel avec les informations de vos employés
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => downloadTemplate.mutate()}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Télécharger le modèle Excel
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <FileUpload
+            accept=".xlsx,.csv"
+            onFileSelect={setFile}
+            className="min-h-[120px]"
+          />
+
+          {file && (
+            <div className="mt-4">
+              <p className="text-sm font-semibold">Fichier sélectionné:</p>
+              <p className="text-sm text-muted-foreground">{file.name}</p>
+            </div>
+          )}
+        </Card>
+
+        <Button
+          onClick={() => importEmployees.mutate({ file })}
+          disabled={!file}
+          className="w-full min-h-[44px]"
+        >
+          Importer les employés
+        </Button>
+
+        <HelpBox>
+          💡 Besoin d'aide ? Regardez notre{' '}
+          <a href="#" className="underline">
+            guide d'importation
+          </a>
+        </HelpBox>
+      </div>
+    </OnboardingLayout>
+  );
+}
+```
 
 **Test Cases:**
 ```typescript
-describe('Onboarding - First Position', () => {
-  it('should create position and assign employee', async () => {
-    const employee = await createTestEmployee();
+describe('Employee Setup (Adaptive)', () => {
+  it('should show solo form for solo path', async () => {
+    await answerQuestionnaire(tenant.id, { company_size: 'solo' });
+    const path = await getOnboardingPath(tenant.id);
 
-    const result = await caller.onboarding.createFirstPosition({
-      tenantId: tenant.id,
-      employeeId: employee.id,
-      title: 'Gérant',
-      departmentName: 'Direction',
-    });
-
-    expect(result.position.title).toBe('Gérant');
-    expect(result.department.name).toBe('Direction');
-
-    // Check assignment created
-    const assignment = await db.query.assignments.findFirst({
-      where: and(
-        eq(assignments.employee_id, employee.id),
-        eq(assignments.position_id, result.position.id)
-      ),
-    });
-    expect(assignment).toBeDefined();
+    const employeeStep = path.steps.find(s => s.id === 'employee_setup');
+    expect(employeeStep.variant).toBe('solo');
   });
 
-  it('should auto-suggest "Gérant" for owner', async () => {
-    const suggestion = await caller.onboarding.suggestPosition({
-      tenantId: tenant.id,
-      isOwner: true,
-    });
+  it('should show wizard for small team', async () => {
+    await answerQuestionnaire(tenant.id, { company_size: 'small_team' });
+    const path = await getOnboardingPath(tenant.id);
 
-    expect(suggestion.title).toBe('Gérant');
-    expect(suggestion.department).toBe('Direction');
+    const employeeStep = path.steps.find(s => s.id === 'employee_setup');
+    expect(employeeStep.variant).toBe('wizard');
+  });
+
+  it('should show bulk import for medium/large', async () => {
+    await answerQuestionnaire(tenant.id, { company_size: 'medium' });
+    const path = await getOnboardingPath(tenant.id);
+
+    const employeeStep = path.steps.find(s => s.id === 'employee_setup');
+    expect(employeeStep.variant).toBe('bulk_import');
   });
 });
 ```
 
-#### Story 2.5: Review First Payroll Calculation
-**As a** new user
-**I want** to see a preview of the first payroll
-**So that** I understand what will be paid
+---
+
+#### Story 2.7: Compensation Components (If Needed)
+**As a** user who pays allowances/commissions
+**I want** to configure compensation components
+**So that** payroll includes all earnings
 
 **Acceptance Criteria:**
-- [ ] Calculate payroll for first employee (current month)
-- [ ] Show breakdown:
-  - Salaire brut
-  - CNPS (employee + employer)
-  - CMU
-  - ITS
-  - Salaire net
-  - Coût total
-- [ ] Visual breakdown (progress bars, colors)
-- [ ] Explanation tooltips
-- [ ] Show progress: Step 5/6
-- [ ] "Aperçu de votre première paie"
+- [ ] Only shown if `compensation != 'fixed_salary'` in questionnaire
+- [ ] Pre-configured components based on country (Transport, Logement, etc.)
+- [ ] Allow enabling/disabling components
+- [ ] Set default amounts (can override per employee)
+- [ ] Explain tax implications
+- [ ] Can skip and configure later
 
 **Test Cases:**
 ```typescript
-describe('Onboarding - Payroll Preview', () => {
-  it('should calculate preview for first employee', async () => {
-    const employee = await createTestEmployee({ baseSalary: 300000 });
+describe('Compensation Components', () => {
+  it('should show for users with allowances', async () => {
+    await answerQuestionnaire(tenant.id, { compensation: 'with_allowances' });
+    const path = await getOnboardingPath(tenant.id);
+
+    expect(path.steps).toContain('compensation_components');
+  });
+
+  it('should skip for fixed salary only', async () => {
+    await answerQuestionnaire(tenant.id, { compensation: 'fixed_salary' });
+    const path = await getOnboardingPath(tenant.id);
+
+    expect(path.steps).not.toContain('compensation_components');
+  });
+
+  it('should create components with defaults', async () => {
+    const result = await caller.onboarding.configureCompensation({
+      tenantId: tenant.id,
+      components: [
+        { type: 'transport', enabled: true, defaultAmount: 25000 },
+        { type: 'logement', enabled: true, defaultAmount: 50000 },
+      ],
+    });
+
+    expect(result.components).toHaveLength(2);
+  });
+});
+```
+
+---
+
+#### Story 2.8: Time Tracking Configuration (If Needed)
+**As a** user who wants time tracking
+**I want** to configure clock-in settings
+**So that** employees can start tracking time
+
+**Acceptance Criteria:**
+- [ ] Only shown if `time_tracking != 'none'` in questionnaire
+- [ ] Enable/disable geofencing
+- [ ] Set office location (if geofencing enabled)
+- [ ] Set geofence radius (50m - 5000m)
+- [ ] Configure overtime rules
+- [ ] Explain how it works to employees
+
+**UI Design:**
+```tsx
+export function TimeTrackingConfigStep() {
+  const [geofencingEnabled, setGeofencingEnabled] = useState(false);
+  const { nextStep, skipStep } = useOnboarding();
+
+  return (
+    <OnboardingLayout
+      title="Configurez le pointage"
+      subtitle="Définissez les règles de pointage pour vos employés"
+    >
+      <div className="space-y-6">
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold">Géolocalisation</h3>
+              <p className="text-sm text-muted-foreground">
+                Restreindre le pointage à un lieu spécifique
+              </p>
+            </div>
+            <Switch
+              checked={geofencingEnabled}
+              onCheckedChange={setGeofencingEnabled}
+            />
+          </div>
+
+          {geofencingEnabled && (
+            <div className="space-y-4">
+              <LocationPicker
+                onLocationSelect={(lat, lng) => setOfficeLocation({ lat, lng })}
+              />
+
+              <div>
+                <label className="text-sm font-medium">Rayon autorisé</label>
+                <Slider
+                  min={50}
+                  max={5000}
+                  step={50}
+                  value={[radius]}
+                  onValueChange={([value]) => setRadius(value)}
+                />
+                <p className="text-sm text-muted-foreground mt-1">
+                  {radius} mètres autour du bureau
+                </p>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Button onClick={nextStep} className="w-full min-h-[44px]">
+          Continuer
+        </Button>
+
+        <Button variant="ghost" onClick={skipStep} className="w-full">
+          Configurer plus tard
+        </Button>
+      </div>
+    </OnboardingLayout>
+  );
+}
+```
+
+---
+
+#### Story 2.9: Time-Off Policies (If Needed)
+**As a** user who manages leave
+**I want** to configure time-off policies
+**So that** employees can request leave
+
+**Acceptance Criteria:**
+- [ ] Only shown if `time_off != 'none'` in questionnaire
+- [ ] Pre-configured with statutory minimums by country
+- [ ] Allow customizing accrual rates
+- [ ] Set approval workflow (auto vs manager)
+- [ ] Explain how balances work
+
+**UI Design:**
+```tsx
+export function TimeOffPoliciesStep() {
+  const { data: defaultPolicies } = api.onboarding.getDefaultPolicies.useQuery();
+  const { nextStep } = useOnboarding();
+
+  return (
+    <OnboardingLayout
+      title="Configurez les congés"
+      subtitle="Définissez les politiques de congés pour vos employés"
+    >
+      <div className="space-y-4">
+        <HelpBox>
+          ✅ Nous avons pré-configuré les congés légaux de Côte d'Ivoire (2,2 jours/mois)
+        </HelpBox>
+
+        {defaultPolicies?.map((policy) => (
+          <PolicyCard
+            key={policy.id}
+            name={policy.name}
+            description={policy.description}
+            accrualRate={policy.accrualRate}
+            enabled={policy.enabled}
+            onToggle={(enabled) => updatePolicy(policy.id, { enabled })}
+          />
+        ))}
+
+        <Button
+          variant="outline"
+          onClick={addCustomPolicy}
+          className="w-full"
+        >
+          + Ajouter une politique personnalisée
+        </Button>
+
+        <Button onClick={nextStep} className="w-full min-h-[44px]">
+          Continuer
+        </Button>
+      </div>
+    </OnboardingLayout>
+  );
+}
+```
+
+---
+
+#### Story 2.10: Payroll Preview (All Paths)
+**As a** new user
+**I want** to see a preview of payroll
+**So that** I understand what will be paid
+
+**Acceptance Criteria:**
+- [ ] Calculate payroll for all employees (current month)
+- [ ] Show breakdown per employee (collapsible)
+- [ ] Show totals (gross, net, employer cost)
+- [ ] Visual breakdown with progress bars
+- [ ] Explanation tooltips
+- [ ] "Cela vous semble-t-il correct ?" confirmation
+
+**Test Cases:**
+```typescript
+describe('Payroll Preview', () => {
+  it('should calculate preview for all employees', async () => {
+    await createTestEmployee({ baseSalary: 300000 });
+    await createTestEmployee({ baseSalary: 200000 });
 
     const preview = await caller.onboarding.previewPayroll({
       tenantId: tenant.id,
@@ -583,28 +1285,9 @@ describe('Onboarding - Payroll Preview', () => {
       periodEnd: new Date('2025-01-31'),
     });
 
-    expect(preview.employees).toHaveLength(1);
-
-    const emp = preview.employees[0];
-    expect(emp.grossSalary).toBe(300000);
-    expect(emp.cnpsEmployee).toBe(18900); // 6.3%
-    expect(emp.cmuEmployee).toBe(1000);
-    expect(emp.its).toBeCloseTo(60815, 0);
-    expect(emp.netSalary).toBeCloseTo(219285, 0);
-    expect(emp.employerCost).toBeGreaterThan(300000);
-  });
-
-  it('should show explanation for each component', async () => {
-    const explanations = await caller.onboarding.getPayrollExplanations();
-
-    expect(explanations).toEqual({
-      cnpsEmployee: 'Cotisation retraite (6,3% du salaire brut)',
-      cnpsEmployer: 'Cotisation retraite employeur (7,7%)',
-      cmu: 'Couverture maladie universelle (1 000 FCFA)',
-      its: 'Impôt sur les traitements et salaires (progressif)',
-      netSalary: 'Salaire à verser à l\'employé',
-      employerCost: 'Coût total pour l\'entreprise',
-    });
+    expect(preview.employees).toHaveLength(2);
+    expect(preview.totalGross).toBe(500000);
+    expect(preview.totalNet).toBeCloseTo(438570, 0);
   });
 });
 ```
@@ -618,75 +1301,50 @@ export function PayrollPreviewStep() {
   return (
     <OnboardingLayout
       title="Aperçu de votre première paie"
-      step={5}
-      totalSteps={6}
+      subtitle={`Paie de ${format(preview.period, 'MMMM yyyy', { locale: fr })}`}
     >
       <div className="space-y-6">
-        <HelpBox>
-          💡 Voici le calcul automatique de la paie pour {preview.employees[0].name}
-        </HelpBox>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 gap-4">
+          <Card className="p-4">
+            <p className="text-sm text-muted-foreground">Employés</p>
+            <p className="text-3xl font-bold">{preview.employeeCount}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-sm text-muted-foreground">Salaires nets</p>
+            <p className="text-3xl font-bold text-green-600">
+              {preview.totalNet.toLocaleString('fr-FR')}
+            </p>
+          </Card>
+        </div>
 
+        {/* Employee Breakdown (Collapsible) */}
         <Card>
           <CardHeader>
-            <h3 className="font-semibold">Détail de la paie</h3>
+            <h3 className="font-semibold">Détail par employé</h3>
           </CardHeader>
-
-          <CardContent className="space-y-4">
-            {/* Gross Salary */}
-            <PayrollLine
-              label="Salaire brut"
-              amount={preview.employees[0].grossSalary}
-              color="green"
-              tooltip="Salaire de base + primes + heures supplémentaires"
-            />
-
-            {/* Deductions */}
-            <div className="pl-4 border-l-2 border-red-200 space-y-2">
-              <PayrollLine
-                label="CNPS employé (6,3%)"
-                amount={-preview.employees[0].cnpsEmployee}
-                color="red"
-                tooltip="Cotisation retraite déduite du salaire"
-              />
-
-              <PayrollLine
-                label="CMU"
-                amount={-preview.employees[0].cmuEmployee}
-                color="red"
-                tooltip="Couverture maladie universelle (fixe)"
-              />
-
-              <PayrollLine
-                label="ITS"
-                amount={-preview.employees[0].its}
-                color="red"
-                tooltip="Impôt sur les traitements et salaires"
-              />
-            </div>
-
-            {/* Net Salary */}
-            <Separator />
-            <PayrollLine
-              label="Salaire net"
-              amount={preview.employees[0].netSalary}
-              color="blue"
-              size="lg"
-              tooltip="Montant à verser à l'employé"
-            />
-
-            {/* Employer Cost */}
-            <Separator />
-            <PayrollLine
-              label="Coût total entreprise"
-              amount={preview.employees[0].employerCost}
-              color="purple"
-              tooltip="Salaire brut + cotisations patronales"
-            />
+          <CardContent className="space-y-2">
+            {preview.employees.map((emp) => (
+              <Collapsible key={emp.id}>
+                <CollapsibleTrigger className="w-full p-3 hover:bg-muted rounded-lg flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{emp.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Net: {emp.netSalary.toLocaleString('fr-FR')} FCFA
+                    </p>
+                  </div>
+                  <ChevronDown className="h-4 w-4" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="p-4 space-y-2">
+                  <PayrollBreakdown payslip={emp} />
+                </CollapsibleContent>
+              </Collapsible>
+            ))}
           </CardContent>
         </Card>
 
         <Button onClick={nextStep} className="w-full min-h-[44px]">
-          Continuer
+          Cela me semble correct, continuer
         </Button>
       </div>
     </OnboardingLayout>
@@ -694,24 +1352,25 @@ export function PayrollPreviewStep() {
 }
 ```
 
-#### Story 2.6: Complete Onboarding
+---
+
+#### Story 2.11: Completion & Next Steps (All Paths)
 **As a** new user
-**I want** to finalize setup
-**So that** I can start using the system
+**I want** to celebrate completion and know what to do next
+**So that** I feel accomplished and ready to use the system
 
 **Acceptance Criteria:**
-- [ ] Show success message with confetti animation
-- [ ] Mark onboarding as complete in tenant settings
-- [ ] Show next steps:
-  - "Ajouter plus d'employés"
-  - "Configurer le pointage mobile"
-  - "Lancer la paie du mois"
+- [ ] Confetti animation on load
+- [ ] Success message with personalized summary
+- [ ] Show what was configured
+- [ ] Show next steps (action items)
+- [ ] Mark onboarding as complete
 - [ ] Redirect to dashboard
-- [ ] Show progress: Step 6/6 ✓
+- [ ] Send welcome email with resources
 
 **Test Cases:**
 ```typescript
-describe('Onboarding - Completion', () => {
+describe('Onboarding Completion', () => {
   it('should mark onboarding complete', async () => {
     const result = await caller.onboarding.complete({
       tenantId: tenant.id,
@@ -734,6 +1393,142 @@ describe('Onboarding - Completion', () => {
 });
 ```
 
+**UI Design:**
+```tsx
+export function CompletionStep() {
+  const { data: summary } = api.onboarding.getSummary.useQuery();
+  const [showConfetti, setShowConfetti] = useState(true);
+
+  useEffect(() => {
+    // Hide confetti after 3 seconds
+    const timer = setTimeout(() => setShowConfetti(false), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-green-50 to-blue-50">
+      {showConfetti && <Confetti />}
+
+      <Card className="w-full max-w-2xl">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 h-20 w-20 rounded-full bg-green-100 flex items-center justify-center">
+            <Check className="h-12 w-12 text-green-600" />
+          </div>
+          <h1 className="text-3xl font-bold mb-2">
+            Félicitations ! 🎉
+          </h1>
+          <p className="text-lg text-muted-foreground">
+            Votre espace Preem est configuré et prêt à l'emploi
+          </p>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {/* What was configured */}
+          <div>
+            <h2 className="font-semibold mb-3">Ce qui a été configuré:</h2>
+            <div className="grid gap-2">
+              <ConfiguredItem
+                icon={<Building className="h-5 w-5" />}
+                text={`Entreprise: ${summary.companyName}`}
+              />
+              <ConfiguredItem
+                icon={<Users className="h-5 w-5" />}
+                text={`${summary.employeeCount} employé(s) ajouté(s)`}
+              />
+              {summary.departmentCount > 0 && (
+                <ConfiguredItem
+                  icon={<Folder className="h-5 w-5" />}
+                  text={`${summary.departmentCount} département(s)`}
+                />
+              )}
+              {summary.timeTrackingEnabled && (
+                <ConfiguredItem
+                  icon={<Clock className="h-5 w-5" />}
+                  text="Pointage activé"
+                />
+              )}
+              {summary.timeOffEnabled && (
+                <ConfiguredItem
+                  icon={<Calendar className="h-5 w-5" />}
+                  text="Gestion des congés activée"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Next steps */}
+          <div>
+            <h2 className="font-semibold mb-3">Prochaines étapes:</h2>
+            <div className="space-y-3">
+              <NextStepCard
+                number={1}
+                title="Lancez votre première paie"
+                description="Générez les bulletins de paie de vos employés"
+                action="Aller à Paie"
+                href="/payroll"
+              />
+              <NextStepCard
+                number={2}
+                title="Invitez vos employés"
+                description="Ils pourront consulter leurs bulletins et pointer"
+                action="Gérer les accès"
+                href="/employees"
+              />
+              {!summary.timeTrackingEnabled && (
+                <NextStepCard
+                  number={3}
+                  title="Activer le pointage (optionnel)"
+                  description="Suivez les heures de travail de vos employés"
+                  action="Configurer"
+                  href="/settings/time-tracking"
+                />
+              )}
+            </div>
+          </div>
+
+          <Button
+            onClick={() => router.push('/dashboard')}
+            className="w-full min-h-[56px] text-lg"
+          >
+            Accéder à mon tableau de bord
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ConfiguredItem({ icon, text }) {
+  return (
+    <div className="flex items-center gap-3 p-2 rounded-lg bg-muted">
+      <div className="text-primary">{icon}</div>
+      <p className="text-sm">{text}</p>
+    </div>
+  );
+}
+
+function NextStepCard({ number, title, description, action, href }) {
+  return (
+    <Card className="p-4">
+      <div className="flex items-start gap-4">
+        <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
+          {number}
+        </div>
+        <div className="flex-1">
+          <h3 className="font-semibold mb-1">{title}</h3>
+          <p className="text-sm text-muted-foreground mb-2">{description}</p>
+          <Link href={href}>
+            <Button variant="outline" size="sm">
+              {action} →
+            </Button>
+          </Link>
+        </div>
+      </div>
+    </Card>
+  );
+}
+```
+
 ---
 
 ### FEATURE 3: Onboarding State Management
@@ -746,6 +1541,7 @@ describe('Onboarding - Completion', () => {
 **Acceptance Criteria:**
 - [ ] Store onboarding state in tenant.settings.onboarding
 - [ ] Track completed steps
+- [ ] Track questionnaire answers
 - [ ] Allow resume from last step
 - [ ] Show "Reprendre là où vous étiez" on login
 - [ ] Clear state when onboarding complete
@@ -757,7 +1553,7 @@ describe('Onboarding - Save & Resume', () => {
     await caller.onboarding.selectCountry({ tenantId: tenant.id, countryCode: 'CI' });
 
     const state = await getOnboardingState(tenant.id);
-    expect(state.currentStep).toBe(2); // Moved to step 2
+    expect(state.currentStep).toBe(2);
     expect(state.completedSteps).toContain(1);
 
     await caller.onboarding.setCompanyInfo({ /* ... */ });
@@ -769,6 +1565,7 @@ describe('Onboarding - Save & Resume', () => {
 
   it('should resume from last step on login', async () => {
     // Partially complete onboarding
+    await answerQuestionnaire(tenant.id, { company_size: 'medium' });
     await caller.onboarding.selectCountry({ tenantId: tenant.id, countryCode: 'CI' });
     await caller.onboarding.setCompanyInfo({ /* ... */ });
 
@@ -776,8 +1573,24 @@ describe('Onboarding - Save & Resume', () => {
     const session = await login(user.email, password);
 
     const state = await caller.onboarding.getState({ tenantId: tenant.id });
-    expect(state.currentStep).toBe(3); // Resume at step 3
+    expect(state.currentStep).toBe(3); // Resume at departments setup
     expect(state.isComplete).toBe(false);
+    expect(state.path).toBe('medium');
+  });
+
+  it('should preserve questionnaire answers on resume', async () => {
+    await answerQuestionnaire(tenant.id, {
+      company_size: 'small_team',
+      has_departments: false,
+      time_tracking: 'overtime',
+    });
+
+    // Logout and login
+    await login(user.email, password);
+
+    const state = await caller.onboarding.getState({ tenantId: tenant.id });
+    expect(state.questionnaireAnswers.company_size).toBe('small_team');
+    expect(state.questionnaireAnswers.time_tracking).toBe('overtime');
   });
 
   it('should clear state when complete', async () => {
@@ -786,39 +1599,111 @@ describe('Onboarding - Save & Resume', () => {
     const state = await getOnboardingState(tenant.id);
     expect(state.isComplete).toBe(true);
     expect(state.currentStep).toBeNull();
+    expect(state.questionnaireAnswers).toEqual({});
   });
 });
 ```
 
 ---
 
+## Visual Flow Diagrams
+
+### Adaptive Branching Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      QUESTIONNAIRE                          │
+│              (7 questions, ~2 minutes)                      │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+        ┌────────┴────────┐
+        │   Path Decision  │
+        └────────┬────────┘
+                 │
+    ┌────────────┼────────────┐
+    │            │            │
+    v            v            v
+┌───────┐   ┌────────┐   ┌──────────┐
+│ SOLO  │   │ SMALL  │   │ MED/LARGE│
+│ PATH  │   │ TEAM   │   │   PATH   │
+└───┬───┘   └───┬────┘   └─────┬────┘
+    │           │              │
+    │           │              │
+    v           v              v
+┌───────────────────────────────────────────────────────────┐
+│                     CORE STEPS (All Paths)                │
+├───────────────────────────────────────────────────────────┤
+│ 1. Country Selection                                      │
+│ 2. Company Information                                    │
+└───────────────────────────────────────────────────────────┘
+    │           │              │
+    │           │              │
+    v           v              v
+┌──────┐    ┌──────┐      ┌──────────┐
+│ Skip │    │ Skip │      │ Create   │
+│ Dept │    │ Dept │      │ Dept     │ ← Medium/Large only
+└──┬───┘    └──┬───┘      └─────┬────┘
+   │           │              │
+   v           v              v
+┌──────────┐ ┌──────────┐ ┌──────────┐
+│ Add 1    │ │ Add 2-10 │ │ Bulk     │
+│ Employee │ │ Employees│ │ Import   │
+│ (Owner)  │ │ (Wizard) │ │ (CSV)    │
+└─────┬────┘ └─────┬────┘ └─────┬────┘
+      │            │            │
+      │            │            │
+      v            v            v
+┌─────────────────────────────────────────────┐
+│        OPTIONAL FEATURES (If Selected)      │
+├─────────────────────────────────────────────┤
+│ • Compensation Components (if allowances)   │
+│ • Time Tracking Config (if enabled)         │
+│ • Time-Off Policies (if enabled)            │
+│ • Approval Workflows (if Medium/Large)      │
+└──────────────────┬──────────────────────────┘
+                   │
+                   v
+┌─────────────────────────────────────────────┐
+│           COMPLETION (All Paths)            │
+├─────────────────────────────────────────────┤
+│ • Payroll Preview                           │
+│ • Success Celebration                       │
+│ • Next Steps                                │
+└─────────────────────────────────────────────┘
+```
+
+---
+
 ## Implementation Phases
 
-### Phase 1: Registration & Country Setup (Week 1)
+### Phase 1: Discovery & Core Paths (Week 1-2)
 - [ ] Story 1.1: Signup flow
-- [ ] Story 2.1: Country selection
-- [ ] Story 2.2: Company info
-- [ ] Onboarding layout component
-- [ ] Progress indicator
-
-**Deliverable:** Can create account and select country
-
-### Phase 2: Employee & Position Setup (Week 2)
-- [ ] Story 2.3: Add first employee
-- [ ] Story 2.4: Create first position
-- [ ] Auto-assignment logic
-- [ ] Validation and error handling
-
-**Deliverable:** Can add employee with position
-
-### Phase 3: Payroll Preview & Completion (Week 3)
-- [ ] Story 2.5: Payroll preview
-- [ ] Visual breakdown components
-- [ ] Tooltips and help text
-- [ ] Story 2.6: Completion flow
+- [ ] Story 2.1: Discovery questionnaire (7 questions)
+- [ ] Story 2.2: Adaptive path preview
+- [ ] Story 2.3: Country selection
+- [ ] Story 2.4: Company information
+- [ ] Story 2.6: Solo path employee setup
+- [ ] Story 2.10: Payroll preview
+- [ ] Story 2.11: Completion
 - [ ] Story 3.1: Save/resume state
 
-**Deliverable:** Complete onboarding flow working end-to-end
+**Deliverable:** Solo business can complete onboarding in < 10 minutes
+
+### Phase 2: Small Team Path (Week 3)
+- [ ] Story 2.6: Small team wizard (2-10 employees)
+- [ ] Story 2.7: Compensation components (optional)
+- [ ] Story 2.8: Time tracking config (optional)
+- [ ] Story 2.9: Time-off policies (optional)
+
+**Deliverable:** Small teams can onboard in < 15 minutes
+
+### Phase 3: Medium/Large Paths (Week 4)
+- [ ] Story 2.5: Departments setup
+- [ ] Story 2.6: Bulk employee import (CSV)
+- [ ] Advanced features wizard
+- [ ] Approval workflows configuration
+
+**Deliverable:** Large organizations can onboard in < 30 minutes
 
 ---
 
@@ -826,32 +1711,60 @@ describe('Onboarding - Save & Resume', () => {
 
 Before marking this epic complete:
 
-- [ ] Can complete full onboarding in < 15 min
+### Questionnaire
+- [ ] All 7 questions have clear options
+- [ ] Can go back to previous question
+- [ ] Auto-saves after each answer
+- [ ] Can resume questionnaire if interrupted
+- [ ] Path preview shows correct steps based on answers
+
+### Solo Path
+- [ ] Completes in < 10 minutes
+- [ ] Only shows essential steps
+- [ ] No departments/bulk import shown
+- [ ] Owner added as employee
+- [ ] First payroll preview accurate
+
+### Small Team Path
+- [ ] Completes in < 15 minutes
+- [ ] Can add 2-10 employees individually
+- [ ] Optional features can be skipped
+- [ ] Payroll preview accurate for all employees
+
+### Medium/Large Path
+- [ ] Completes in < 30 minutes
+- [ ] Departments wizard shown
+- [ ] Bulk import works with CSV template
+- [ ] All advanced features accessible
+- [ ] Payroll preview accurate
+
+### General Requirements
 - [ ] Mobile-responsive on phones
 - [ ] French UI with zero jargon
 - [ ] Visual progress clear at each step
 - [ ] Can resume if interrupted
-- [ ] Validation prevents errors (SMIG, email, etc.)
-- [ ] First payroll preview accurate
+- [ ] Validation prevents errors
 - [ ] Success screen celebratory
 - [ ] Redirects to dashboard on completion
-- [ ] Works with low connectivity (graceful degradation)
+- [ ] Works with low connectivity
 
 ---
 
 ## UX Checklist (Low Digital Literacy)
 
-- [ ] One question per screen
+- [ ] One question/step per screen
 - [ ] Large touch targets (44x44px minimum)
-- [ ] Simple French (no "CNPS", use "Cotisation retraite")
-- [ ] Tooltips for complex terms
-- [ ] Visual progress bar
-- [ ] Encouraging messages ("Bravo !")
+- [ ] Simple French (no jargon)
+- [ ] Visual icons for each option
+- [ ] Progress bar shows current position
+- [ ] Encouraging messages at each step
 - [ ] Can go back to previous step
-- [ ] Pre-fill when possible
+- [ ] Auto-save progress continuously
 - [ ] Clear error messages with solutions
 - [ ] Help box on each step
+- [ ] Confetti animation on completion
+- [ ] Next steps clearly presented
 
 ---
 
-**Next:** Read `10-API-CONTRACTS.md`
+**Next:** Read `09-EPIC-WORKFLOW-AUTOMATION.md`

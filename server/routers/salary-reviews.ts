@@ -52,14 +52,14 @@ export const salaryReviewsRouter = createTRPCRouter({
       try {
         const review = await createSalaryReview({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           requestedBy: ctx.user.id,
         });
 
         await eventBus.publish('salary_review.created', {
           reviewId: review.id,
           employeeId: input.employeeId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           requestedBy: ctx.user.id,
         });
 
@@ -81,14 +81,14 @@ export const salaryReviewsRouter = createTRPCRouter({
       try {
         const review = await reviewSalaryChange({
           ...input,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           reviewedBy: ctx.user.id,
         });
 
         await eventBus.publish('salary_review.decided', {
           reviewId: review.id,
           employeeId: review.employeeId,
-          tenantId: ctx.tenantId,
+          tenantId: ctx.user.tenantId,
           decision: input.decision,
           reviewedBy: ctx.user.id,
         });
@@ -108,7 +108,7 @@ export const salaryReviewsRouter = createTRPCRouter({
   listPending: publicProcedure
     .query(async ({ ctx }) => {
       try {
-        return await getPendingReviews(ctx.tenantId);
+        return await getPendingReviews(ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -140,7 +140,7 @@ export const salaryReviewsRouter = createTRPCRouter({
     .input(z.object({ reviewId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       try {
-        return await cancelSalaryReview(input.reviewId, ctx.tenantId);
+        return await cancelSalaryReview(input.reviewId, ctx.user.tenantId);
       } catch (error: any) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
