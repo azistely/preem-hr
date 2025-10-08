@@ -16,8 +16,8 @@ import { X, Plus, Users } from 'lucide-react';
 const employeeSchema = z.object({
   firstName: z.string().min(2, 'Le prénom doit contenir au moins 2 caractères'),
   lastName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
-  email: z.string().email('Email invalide'),
-  phone: z.string().optional(),
+  email: z.string().email('Email invalide').optional().or(z.literal('')),
+  phone: z.string().min(1, 'Le numéro de téléphone est requis'),
   positionTitle: z.string().min(2, 'Le poste doit contenir au moins 2 caractères'),
   baseSalary: z.string().min(1, 'Le salaire est requis'),
   hireDate: z.string().min(1, 'La date d\'embauche est requise'),
@@ -222,10 +222,28 @@ export function EmployeesWizardStep({ onComplete }: EmployeesWizardStepProps) {
               )}
             </div>
 
+            {/* Phone */}
+            <div className="space-y-2">
+              <Label htmlFor="phone" className="text-base">
+                Téléphone
+              </Label>
+              <Input
+                id="phone"
+                type="tel"
+                {...register('phone')}
+                placeholder="Ex: +225 01 23 45 67 89"
+                className="min-h-[48px]"
+              />
+              {errors.phone && (
+                <p className="text-sm text-destructive">{errors.phone.message}</p>
+              )}
+            </div>
+
             {/* Email */}
             <div className="space-y-2">
               <Label htmlFor="email" className="text-base">
                 Email
+                <span className="text-muted-foreground text-sm ml-2">(Optionnel)</span>
               </Label>
               <Input
                 id="email"
@@ -237,21 +255,6 @@ export function EmployeesWizardStep({ onComplete }: EmployeesWizardStepProps) {
               {errors.email && (
                 <p className="text-sm text-destructive">{errors.email.message}</p>
               )}
-            </div>
-
-            {/* Phone */}
-            <div className="space-y-2">
-              <Label htmlFor="phone" className="text-base">
-                Téléphone
-                <span className="text-muted-foreground text-sm ml-2">(Optionnel)</span>
-              </Label>
-              <Input
-                id="phone"
-                type="tel"
-                {...register('phone')}
-                placeholder="Ex: +225 01 23 45 67 89"
-                className="min-h-[48px]"
-              />
             </div>
 
             {/* Position Title */}
