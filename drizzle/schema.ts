@@ -46,7 +46,7 @@ export const tenants = pgTable("tenants", {
 	name: text().notNull(),
 	slug: text().notNull(),
 	countryCode: text("country_code").default('CI').notNull(),
-	sectorCode: varchar("sector_code", { length: 50 }),
+	sectorCode: varchar("sector_code", { length: 50 }).notNull(),
 	currency: text().default('XOF').notNull(),
 	timezone: text().default('Africa/Abidjan').notNull(),
 	taxId: text("tax_id"),

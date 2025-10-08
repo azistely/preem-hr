@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { PreemLogo } from '@/components/brand/preem-logo';
 
 /**
  * Signup form validation schema
@@ -113,24 +114,22 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-green-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
         {/* Back to home */}
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <Link href="/">
-            <Button variant="ghost" className="min-h-[44px]">
+            <Button variant="ghost" className="min-h-[44px] text-preem-teal hover:text-preem-teal-700 hover:bg-preem-teal/10">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Retour
             </Button>
           </Link>
+          <PreemLogo size="default" />
         </div>
 
         {/* Signup Card */}
-        <Card className="border-2 shadow-lg">
+        <Card className="border-2 border-preem-teal/20 shadow-preem-teal">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-4 h-16 w-16 rounded-lg bg-gradient-to-br from-orange-500 to-green-500 flex items-center justify-center">
-              <span className="text-white font-bold text-3xl">P</span>
-            </div>
             <CardTitle className="text-3xl">Créer votre compte</CardTitle>
             <CardDescription className="text-base">
               Commencez à gérer votre paie en 2 minutes
@@ -251,7 +250,7 @@ export default function SignupPage() {
               {/* Submit Button */}
               <Button
                 type="submit"
-                className="w-full min-h-[56px] text-lg"
+                className="w-full min-h-[56px] text-lg bg-preem-teal hover:bg-preem-teal-600 text-white shadow-preem-teal transition-all"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
@@ -277,7 +276,7 @@ export default function SignupPage() {
             <div className="mt-6 text-center border-t pt-6">
               <p className="text-sm text-muted-foreground">
                 Vous avez déjà un compte ?{' '}
-                <Link href="/login" className="text-primary font-medium hover:underline">
+                <Link href="/login" className="text-preem-teal font-medium hover:underline hover:text-preem-teal-700">
                   Se connecter
                 </Link>
               </p>
