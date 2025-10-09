@@ -41,16 +41,17 @@ const createPositionSchema = z.object({
   departmentId: z.string().optional(),
   minSalary: z.number().min(75000, 'Le salaire minimum doit être >= 75000 FCFA'),
   maxSalary: z.number().min(75000, 'Le salaire maximum doit être >= 75000 FCFA'),
-  weeklyHours: z.number().min(1).max(80).default(40),
-  headcount: z.number().int().min(1).default(1),
+  weeklyHours: z.number().min(1).max(80).optional().default(40),
+  headcount: z.number().int().min(1).optional().default(1),
 });
 
 type FormData = z.infer<typeof createPositionSchema>;
+type FormInput = z.input<typeof createPositionSchema>;
 
 export default function NewPositionPage() {
   const createPosition = useCreatePosition();
 
-  const form = useForm<FormData>({
+  const form = useForm<FormInput>({
     resolver: zodResolver(createPositionSchema),
     defaultValues: {
       title: '',
@@ -68,7 +69,7 @@ export default function NewPositionPage() {
 
   const { minimumWage } = useSalaryValidation(minSalary);
 
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = async (data: FormInput) => {
     // Validate min < max
     if (data.minSalary >= data.maxSalary) {
       form.setError('maxSalary', {

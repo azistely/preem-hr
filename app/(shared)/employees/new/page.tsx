@@ -53,21 +53,24 @@ const createEmployeeSchema = z.object({
   // Employment info
   hireDate: z.date(),
   positionId: z.string().min(1, 'Le poste est requis'),
-  coefficient: z.number().int().min(90).max(1000).default(100),
+  coefficient: z.number().int().min(90).max(1000).optional().default(100),
 
   // Salary info (base salary + components)
   baseSalary: z.number().min(75000, 'Le salaire de base doit être >= 75000 FCFA (SMIG)'),
-  components: z.array(componentSchema).default([]),
+  components: z.array(componentSchema).optional().default([]),
 
   // Banking info
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
 
   // Tax info
-  taxDependents: z.number().int().min(0).max(10).default(0),
+  taxDependents: z.number().int().min(0).max(10).optional().default(0),
 });
 
 type FormData = z.infer<typeof createEmployeeSchema>;
+
+// Type-safe form data that matches the schema inference
+type FormInput = z.input<typeof createEmployeeSchema>;
 
 const steps = [
   {
@@ -106,7 +109,7 @@ export default function NewEmployeePage() {
   const [currentStep, setCurrentStep] = useState(1);
   const createEmployee = useCreateEmployee();
 
-  const form = useForm<FormData>({
+  const form = useForm<FormInput>({
     resolver: zodResolver(createEmployeeSchema),
     defaultValues: {
       firstName: '',
@@ -126,8 +129,22 @@ export default function NewEmployeePage() {
     },
   });
 
-  const onSubmit = async (data: FormData) => {
-    await createEmployee.mutateAsync(data);
+  const onSubmit = async (data: FormInput) => {
+    // Ensure required fields are set (email is required by API but optional in form for UX)
+    if (!data.email || data.email === '') {
+      form.setError('email', { message: 'L\'email est requis' });
+      setCurrentStep(1); // Go back to personal info step
+      return;
+    }
+
+    // Transform to API format (all defaults are applied by Zod)
+    await createEmployee.mutateAsync({
+      ...data,
+      email: data.email, // TypeScript now knows email is defined
+      coefficient: data.coefficient ?? 100,
+      taxDependents: data.taxDependents ?? 0,
+      components: data.components ?? [],
+    });
   };
 
   const nextStep = async () => {

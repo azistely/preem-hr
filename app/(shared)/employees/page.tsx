@@ -183,7 +183,7 @@ export default function EmployeesPage() {
               )}
 
               {/* Desktop: Table View */}
-              {isDesktop && <EmployeeTable employees={employees} />}
+              {isDesktop && <EmployeeTable employees={employees as any} />}
 
               {/* Pagination */}
               {data?.nextCursor && (

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, date, timestamp, integer, jsonb, pgPolicy } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, date, timestamp, integer, jsonb, pgPolicy, numeric, boolean, varchar } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { tenantUser } from './roles';
@@ -42,6 +42,21 @@ export const employees = pgTable('employees', {
   // Tax
   taxNumber: text('tax_number'),
   taxDependents: integer('tax_dependents').notNull().default(0),
+
+  // Coefficient (catégorie professionnelle)
+  coefficient: integer('coefficient').notNull().default(100),
+
+  // Termination
+  terminationId: uuid('termination_id'),
+
+  // Reporting structure
+  reportingManagerId: uuid('reporting_manager_id'),
+
+  // Family information (for family deductions)
+  maritalStatus: varchar('marital_status'),
+  dependentChildren: integer('dependent_children'),
+  fiscalParts: numeric('fiscal_parts'),
+  hasFamily: boolean('has_family'),
 
   // Custom fields (Zod validated)
   customFields: jsonb('custom_fields').notNull().default({}),
