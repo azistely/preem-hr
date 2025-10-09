@@ -24,6 +24,12 @@ import {
   getEmployeeImportTemplate,
   createDepartments,
 } from '@/features/onboarding/services/onboarding.service';
+import {
+  setCompanyInfoV2,
+  createFirstEmployeeV2,
+  createFirstPayrollRun,
+  completeOnboardingV2,
+} from '@/features/onboarding/services/onboarding-v2.service';
 import { TRPCError } from '@trpc/server';
 
 // Input validation schemas
@@ -451,6 +457,128 @@ export const onboardingRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: error.message || 'Impossible de créer les départements',
+        });
+      }
+    }),
+
+  // ========================================
+  // V2 ENDPOINTS - Task-First Onboarding
+  // ========================================
+
+  /**
+   * Set company information with sector (V2)
+   */
+  setCompanyInfoV2: publicProcedure
+    .input(z.object({
+      legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
+      industry: z.string().min(2, 'Le secteur est requis'),
+      sector: z.enum(['SERVICES', 'COMMERCE', 'TRANSPORT', 'INDUSTRIE', 'CONSTRUCTION']),
+      taxId: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const tenant = await setCompanyInfoV2({
+          tenantId: ctx.user.tenantId,
+          ...input,
+        });
+
+        return {
+          success: true,
+          tenant,
+        };
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Impossible d\'enregistrer les informations',
+        });
+      }
+    }),
+
+  /**
+   * Create first employee with family status (V2)
+   */
+  createFirstEmployeeV2: publicProcedure
+    .input(z.object({
+      firstName: z.string().min(1, 'Le prénom est requis'),
+      lastName: z.string().min(1, 'Le nom est requis'),
+      email: z.union([z.string().email(), z.literal('')]).optional(),
+      phone: z.string().min(1, 'Le numéro de téléphone est requis'),
+      positionTitle: z.string().min(1, 'Le poste est requis'),
+      baseSalary: z.number().min(75000, 'Inférieur au SMIG de Côte d\'Ivoire (75,000 FCFA)'),
+      hireDate: z.date(),
+      // CRITICAL: Family status
+      maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
+      dependentChildren: z.number().min(0).max(10),
+      // OPTIONAL: Allowances
+      transportAllowance: z.number().optional(),
+      housingAllowance: z.number().optional(),
+      mealAllowance: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const result = await createFirstEmployeeV2({
+          tenantId: ctx.user.tenantId,
+          userId: ctx.user.id,
+          ...input,
+        });
+
+        return {
+          success: true,
+          employee: result.employee,
+          position: result.position,
+          payslipPreview: result.payslipPreview,
+        };
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Impossible de créer l\'employé',
+        });
+      }
+    }),
+
+  /**
+   * Create first payroll run with frequency (V2)
+   */
+  createFirstPayrollRun: publicProcedure
+    .input(z.object({
+      frequency: z.enum(['monthly', 'bi_weekly']),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const result = await createFirstPayrollRun({
+          tenantId: ctx.user.tenantId,
+          userId: ctx.user.id,
+          frequency: input.frequency,
+        });
+
+        return {
+          success: true,
+          ...result,
+        };
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Impossible de créer la configuration de paie',
+        });
+      }
+    }),
+
+  /**
+   * Complete onboarding (V2)
+   */
+  completeOnboardingV2: publicProcedure
+    .mutation(async ({ ctx }) => {
+      try {
+        const result = await completeOnboardingV2(ctx.user.tenantId);
+
+        return {
+          success: true,
+          ...result,
+        };
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Impossible de terminer l\'onboarding',
         });
       }
     }),
