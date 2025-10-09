@@ -25,7 +25,8 @@ import { ruleLoader } from '@/features/payroll/services/rule-loader';
 
 // Export services
 import * as React from 'react';
-import { renderToBuffer } from '@react-pdf/renderer';
+// Lazy load @react-pdf/renderer to avoid loading it on module initialization
+// This prevents issues with Turbopack/Next.js module resolution
 import { PayslipDocument, PayslipData, generatePayslipFilename } from '@/features/payroll/services/payslip-generator';
 import { generateCNPSExcel, generateCNPSFilename, CNPSExportData } from '@/features/payroll/services/cnps-export';
 import { generateCMUExcel, generateCMUFilename, CMUExportData } from '@/features/payroll/services/cmu-export';
@@ -776,7 +777,8 @@ export const payrollRouter = createTRPCRouter({
         countryConfig,
       };
 
-      // Generate PDF
+      // Generate PDF (lazy load renderer)
+      const { renderToBuffer } = await import('@react-pdf/renderer');
       const pdfBuffer = await renderToBuffer(
         React.createElement(PayslipDocument, { data: payslipData })
       );
@@ -966,6 +968,8 @@ export const payrollRouter = createTRPCRouter({
           countryConfig,
         };
 
+        // Generate PDF (lazy load renderer)
+        const { renderToBuffer } = await import('@react-pdf/renderer');
         const pdfBuffer = await renderToBuffer(
           React.createElement(PayslipDocument, { data: payslipData })
         );
