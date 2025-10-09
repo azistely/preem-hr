@@ -1,0 +1,253 @@
+/**
+ * Next.js 15 Middleware - Role-Based Access Control (RBAC)
+ *
+ * Protects routes based on user role:
+ * - super_admin: Full access to all routes (cross-tenant)
+ * - tenant_admin: All tenant routes + admin settings
+ * - hr_manager: All shared routes + admin dashboard + policies
+ * - manager: Manager routes + shared routes (employees, payroll view)
+ * - employee: Employee routes only
+ */
+
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+
+/**
+ * User role type
+ */
+type UserRole = 'super_admin' | 'tenant_admin' | 'hr_manager' | 'manager' | 'employee';
+
+/**
+ * Route access configuration
+ */
+const ROUTE_ACCESS: Record<string, UserRole[]> = {
+  // Employee routes (accessible by all authenticated users)
+  '/employee/dashboard': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/employee/payslips': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/employee/profile': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/employee/profile/edit': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Manager routes
+  '/manager/dashboard': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/team': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/time-tracking': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/time-off/approvals': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/reports/overtime': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Admin dashboard (HR Manager+)
+  '/admin/dashboard': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Admin policies (HR Manager+)
+  '/admin/policies': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/policies/time-off': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/policies/overtime': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/policies/accrual': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Admin time management (HR Manager+)
+  '/admin/time-tracking': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/time-off': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/public-holidays': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/geofencing': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Admin employee management (HR Manager+)
+  '/admin/employees/import-export': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Admin settings (Tenant Admin only)
+  '/admin/settings': ['tenant_admin', 'super_admin'],
+  '/admin/settings/dashboard': ['tenant_admin', 'super_admin'],
+  '/admin/settings/users': ['tenant_admin', 'super_admin'],
+  '/admin/settings/roles': ['tenant_admin', 'super_admin'],
+  '/admin/settings/company': ['tenant_admin', 'super_admin'],
+  '/admin/settings/billing': ['tenant_admin', 'super_admin'],
+  '/admin/settings/costs': ['tenant_admin', 'super_admin'],
+  '/admin/settings/security': ['tenant_admin', 'super_admin'],
+  '/admin/settings/integrations': ['tenant_admin', 'super_admin'],
+  '/admin/audit-log': ['tenant_admin', 'super_admin'],
+
+  // Test routes (development only - should be removed in production)
+  '/test-dashboard': ['tenant_admin', 'super_admin'],
+
+  // Shared routes (HR Manager+)
+  '/employees': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/employees/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll/runs': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll/runs/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll/calculator': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll/dashboard': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/positions': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/positions/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/positions/org-chart': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/salaries': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/salaries/bulk-adjustment': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/salaries/bands': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/time-tracking': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'], // Employee time tracking
+  '/time-off': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'], // Employee time-off requests
+  '/terminations': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Settings (accessible based on role)
+  '/settings': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/settings/salary-components': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/settings/sectors': ['hr_manager', 'tenant_admin', 'super_admin'],
+};
+
+/**
+ * Public routes that don't require authentication
+ */
+const PUBLIC_ROUTES = [
+  '/',
+  '/login',
+  '/signup',
+  '/api',
+];
+
+/**
+ * Get default redirect path based on role
+ */
+function getDefaultPath(role: UserRole): string {
+  switch (role) {
+    case 'super_admin':
+    case 'tenant_admin':
+      return '/admin/settings/dashboard';
+    case 'hr_manager':
+      return '/admin/dashboard';
+    case 'manager':
+      return '/manager/dashboard';
+    case 'employee':
+      return '/employee/dashboard';
+    default:
+      return '/employee/dashboard';
+  }
+}
+
+/**
+ * Check if user has access to a route
+ */
+function hasAccess(pathname: string, role: UserRole): boolean {
+  // Super admin has access to everything
+  if (role === 'super_admin') return true;
+
+  // Check exact match first
+  if (ROUTE_ACCESS[pathname]) {
+    return ROUTE_ACCESS[pathname].includes(role);
+  }
+
+  // Check prefix matches (for dynamic routes)
+  for (const [routePath, allowedRoles] of Object.entries(ROUTE_ACCESS)) {
+    if (pathname.startsWith(routePath + '/')) {
+      return allowedRoles.includes(role);
+    }
+  }
+
+  // Default deny for protected routes
+  return false;
+}
+
+/**
+ * Check if route is public
+ */
+function isPublicRoute(pathname: string): boolean {
+  // Exact match
+  if (PUBLIC_ROUTES.includes(pathname)) return true;
+
+  // Prefix match
+  return PUBLIC_ROUTES.some(route => pathname.startsWith(route + '/'));
+}
+
+/**
+ * Middleware execution
+ */
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Skip middleware for static files and Next.js internals
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/static') ||
+    pathname.includes('/api/') ||
+    pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|webp|woff|woff2|ttf|eot|css|js)$/)
+  ) {
+    return NextResponse.next();
+  }
+
+  // Allow public routes
+  if (isPublicRoute(pathname)) {
+    return NextResponse.next();
+  }
+
+  // Special handling for onboarding routes
+  if (pathname.startsWith('/onboarding')) {
+    return NextResponse.next();
+  }
+
+  // Create Supabase client
+  const response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value);
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
+
+  // Get authenticated user (secure - validates with Supabase Auth server)
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Redirect to login if not authenticated
+  if (!user) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Extract user role from JWT claims (app_metadata)
+  const userRole = (user.app_metadata?.role || 'employee') as UserRole;
+
+  // Check if user has access to this route
+  if (!hasAccess(pathname, userRole)) {
+    // Redirect to default path for their role
+    const defaultPath = getDefaultPath(userRole);
+    const redirectUrl = new URL(defaultPath, request.url);
+
+    // Add a query param to show a message (optional)
+    redirectUrl.searchParams.set('error', 'access_denied');
+
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  // User has access - allow request
+  return response;
+}
+
+/**
+ * Matcher configuration
+ * Only run middleware on protected routes
+ */
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public files (images, etc)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff|woff2|ttf|eot)$).*)',
+  ],
+};
