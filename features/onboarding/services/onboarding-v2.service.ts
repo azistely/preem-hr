@@ -122,7 +122,13 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
   }
 
   // Validate hireDate
-  if (!input.hireDate || isNaN(input.hireDate.getTime())) {
+  if (!input.hireDate) {
+    throw new ValidationError('La date d\'embauche est requise');
+  }
+
+  // Ensure hireDate is a valid Date object
+  const hireDate = input.hireDate instanceof Date ? input.hireDate : new Date(input.hireDate);
+  if (isNaN(hireDate.getTime())) {
     throw new ValidationError('La date d\'embauche est invalide');
   }
 
@@ -179,7 +185,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         lastName: input.lastName,
         email: input.email || null,
         phone: input.phone,
-        hireDate: input.hireDate.toISOString().split('T')[0],
+        hireDate: hireDate.toISOString().split('T')[0],
         countryCode: tenant.countryCode || 'CI',
         coefficient: 100,
         status: 'active',
@@ -204,7 +210,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         employeeId: employee.id,
         positionId: position.id,
         assignmentType: 'primary',
-        effectiveFrom: input.hireDate.toISOString().split('T')[0],
+        effectiveFrom: hireDate.toISOString().split('T')[0],
         effectiveTo: null,
         createdBy: input.userId,
       })
@@ -227,7 +233,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         baseSalary: String(input.baseSalary),
         components: componentsWithCalculated,
         currency: tenant.currency || 'XOF',
-        effectiveFrom: input.hireDate.toISOString().split('T')[0],
+        effectiveFrom: hireDate.toISOString().split('T')[0],
         effectiveTo: null,
         changeReason: 'Initial hire',
         createdBy: input.userId,
@@ -247,7 +253,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       periodStart,
       periodEnd,
       baseSalary: input.baseSalary,
-      hireDate: input.hireDate,
+      hireDate: hireDate,
       fiscalParts: fiscalParts, // Use calculated fiscal parts
       transportAllowance: input.transportAllowance || 0,
       housingAllowance: input.housingAllowance || 0,
