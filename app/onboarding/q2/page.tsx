@@ -15,7 +15,6 @@ import { OnboardingQuestion } from '@/features/onboarding/components/onboarding-
 import { EmployeeFormV2 } from '@/features/onboarding/components/employee-form-v2';
 import { PayslipPreviewCard } from '@/features/onboarding/components/payslip-preview-card';
 import { toast } from 'sonner';
-import confetti from 'canvas-confetti';
 
 export default function OnboardingQ2Page() {
   const router = useRouter();
@@ -44,21 +43,20 @@ export default function OnboardingQ2Page() {
     mealAllowance?: number;
   }) => {
     try {
-      const result = await createEmployeeMutation.mutateAsync(data);
+      // Ensure hireDate is a valid Date object before sending
+      const submitData = {
+        ...data,
+        hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
+      };
+
+      const result = await createEmployeeMutation.mutateAsync(submitData);
 
       // Store results
       setEmployeeData(result.employee);
       setPayslipPreview(result.payslipPreview);
       setShowSuccess(true);
 
-      // Confetti animation!
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-
-      toast.success(`${data.firstName} ${data.lastName} ajouté avec succès!`);
+      toast.success(`${data.firstName} ${data.lastName} ajouté avec succès! 🎉`);
     } catch (error: any) {
       toast.error(error.message || 'Impossible de créer l\'employé');
     }

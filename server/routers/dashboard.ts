@@ -290,22 +290,31 @@ export const dashboardRouter = router({
       );
 
     // Calculate total payroll cost (last month)
-    const lastMonth = new Date();
-    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    // Wrap in try-catch since there may be no payroll data yet
+    let payrollCosts: { netSalary: number | null; grossSalary: number | null }[] = [];
+    try {
+      const lastMonth = new Date();
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+      const lastMonthISO = lastMonth.toISOString();
 
-    const payrollCosts = await db
-      .select({
-        netSalary: sql<number>`sum(${payrollLineItems.netSalary})`,
-        grossSalary: sql<number>`sum(${payrollLineItems.grossSalary})`,
-      })
-      .from(payrollLineItems)
-      .innerJoin(payrollRuns, eq(payrollLineItems.payrollRunId, payrollRuns.id))
-      .where(
-        and(
-          eq(payrollRuns.tenantId, tenantId),
-          gte(payrollRuns.periodEnd, lastMonth)
-        )
-      );
+      payrollCosts = await db
+        .select({
+          netSalary: sql<number>`coalesce(sum(${payrollLineItems.netSalary}), 0)`,
+          grossSalary: sql<number>`coalesce(sum(${payrollLineItems.grossSalary}), 0)`,
+        })
+        .from(payrollLineItems)
+        .innerJoin(payrollRuns, eq(payrollLineItems.payrollRunId, payrollRuns.id))
+        .where(
+          and(
+            eq(payrollRuns.tenantId, tenantId),
+            gte(payrollRuns.periodEnd, lastMonthISO)
+          )
+        );
+    } catch (error) {
+      // If query fails (e.g., no payroll data), use default values
+      console.error('[Dashboard] Failed to fetch HR payroll costs:', error);
+      payrollCosts = [{ netSalary: 0, grossSalary: 0 }];
+    }
 
     // Get critical actions
     const today = new Date();
@@ -320,8 +329,8 @@ export const dashboardRouter = router({
     return {
       metrics: {
         employeeCount: employeeCount[0]?.count || 0,
-        payrollCost: payrollCosts[0]?.netSalary || 0,
-        grossPayroll: payrollCosts[0]?.grossSalary || 0,
+        payrollCost: Number(payrollCosts[0]?.netSalary) || 0,
+        grossPayroll: Number(payrollCosts[0]?.grossSalary) || 0,
       },
       criticalActions: {
         payrollDue: needsPayroll,
@@ -350,23 +359,32 @@ export const dashboardRouter = router({
       .where(eq(employees.tenantId, tenantId));
 
     // Get total costs (last month)
-    const lastMonth = new Date();
-    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    // Wrap in try-catch since there may be no payroll data yet
+    let costs: { netSalary: number | null; grossSalary: number | null; employerCosts: number | null }[] = [];
+    try {
+      const lastMonth = new Date();
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+      const lastMonthISO = lastMonth.toISOString();
 
-    const costs = await db
-      .select({
-        netSalary: sql<number>`sum(${payrollLineItems.netSalary})`,
-        grossSalary: sql<number>`sum(${payrollLineItems.grossSalary})`,
-        employerCosts: sql<number>`sum(${payrollLineItems.employerCNPS} + ${payrollLineItems.employerCMU})`,
-      })
-      .from(payrollLineItems)
-      .innerJoin(payrollRuns, eq(payrollLineItems.payrollRunId, payrollRuns.id))
-      .where(
-        and(
-          eq(payrollRuns.tenantId, tenantId),
-          gte(payrollRuns.periodEnd, lastMonth)
-        )
-      );
+      costs = await db
+        .select({
+          netSalary: sql<number>`coalesce(sum(${payrollLineItems.netSalary}), 0)`,
+          grossSalary: sql<number>`coalesce(sum(${payrollLineItems.grossSalary}), 0)`,
+          employerCosts: sql<number>`coalesce(sum(${payrollLineItems.totalEmployerCost}), 0)`,
+        })
+        .from(payrollLineItems)
+        .innerJoin(payrollRuns, eq(payrollLineItems.payrollRunId, payrollRuns.id))
+        .where(
+          and(
+            eq(payrollRuns.tenantId, tenantId),
+            gte(payrollRuns.periodEnd, lastMonthISO)
+          )
+        );
+    } catch (error) {
+      // If query fails (e.g., no payroll data), use default values
+      console.error('[Dashboard] Failed to fetch payroll costs:', error);
+      costs = [{ netSalary: 0, grossSalary: 0, employerCosts: 0 }];
+    }
 
     return {
       organization: {
@@ -375,9 +393,9 @@ export const dashboardRouter = router({
         expiryDate: new Date('2026-01-15'), // TODO: Get from subscription
       },
       costs: {
-        payroll: costs[0]?.netSalary || 0,
-        charges: costs[0]?.employerCosts || 0,
-        total: (costs[0]?.netSalary || 0) + (costs[0]?.employerCosts || 0),
+        payroll: Number(costs[0]?.netSalary) || 0,
+        charges: Number(costs[0]?.employerCosts) || 0,
+        total: (Number(costs[0]?.netSalary) || 0) + (Number(costs[0]?.employerCosts) || 0),
       },
       users: {
         total: userCount[0]?.count || 0,

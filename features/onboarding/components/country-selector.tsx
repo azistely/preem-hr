@@ -1,11 +1,12 @@
 'use client';
 
 import { Card } from '@/components/ui/card';
-import { Check } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CountrySelectorProps {
   value: string | null;
+  status?: 'idle' | 'saving' | 'saved' | 'error';
   onSelect: (countryCode: string) => void;
 }
 
@@ -69,47 +70,60 @@ function CountryCard({
   );
 }
 
-export function CountrySelector({ value, onSelect }: CountrySelectorProps) {
+export function CountrySelector({ value, status = 'idle', onSelect }: CountrySelectorProps) {
+  const isDisabled = status === 'saving';
+
   return (
-    <div className="space-y-3">
-      <CountryCard
-        code="CI"
-        flag="🇨🇮"
-        name="Côte d'Ivoire"
-        details="CNPS 6.3%, ITS progressif, SMIG 75,000 FCFA"
-        selected={value === 'CI'}
-        onClick={() => onSelect('CI')}
-      />
+    <div className="space-y-4">
+      <div className="space-y-3">
+        <CountryCard
+          code="CI"
+          flag="🇨🇮"
+          name="Côte d'Ivoire"
+          details="CNPS 6.3%, ITS progressif, SMIG 75,000 FCFA"
+          selected={value === 'CI'}
+          disabled={isDisabled}
+          onClick={() => onSelect('CI')}
+        />
 
-      <CountryCard
-        code="SN"
-        flag="🇸🇳"
-        name="Sénégal"
-        details="IPRES 14%, IRPP progressif, SMIG 52,500 FCFA"
-        disabled
-        comingSoon
-        onClick={() => {}}
-      />
+        <CountryCard
+          code="SN"
+          flag="🇸🇳"
+          name="Sénégal"
+          details="IPRES 14%, IRPP progressif, SMIG 52,500 FCFA"
+          disabled
+          comingSoon
+          onClick={() => {}}
+        />
 
-      <CountryCard
-        code="BF"
-        flag="🇧🇫"
-        name="Burkina Faso"
-        details="CNSS, IUTS, SMIG 34,664 FCFA"
-        disabled
-        comingSoon
-        onClick={() => {}}
-      />
+        <CountryCard
+          code="BF"
+          flag="🇧🇫"
+          name="Burkina Faso"
+          details="CNSS, IUTS, SMIG 34,664 FCFA"
+          disabled
+          comingSoon
+          onClick={() => {}}
+        />
 
-      <CountryCard
-        code="ML"
-        flag="🇲🇱"
-        name="Mali"
-        details="INPS, ITS, SMIG 40,000 FCFA"
-        disabled
-        comingSoon
-        onClick={() => {}}
-      />
+        <CountryCard
+          code="ML"
+          flag="🇲🇱"
+          name="Mali"
+          details="INPS, ITS, SMIG 40,000 FCFA"
+          disabled
+          comingSoon
+          onClick={() => {}}
+        />
+      </div>
+
+      {/* Loading indicator only */}
+      {status === 'saving' && (
+        <div className="flex items-center justify-center gap-2 text-muted-foreground py-4">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Configuration en cours...</span>
+        </div>
+      )}
     </div>
   );
 }

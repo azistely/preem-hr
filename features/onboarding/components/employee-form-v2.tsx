@@ -15,7 +15,7 @@ const employeeSchemaV2 = z.object({
   phone: z.string().min(1, 'Le téléphone est requis'),
   positionTitle: z.string().min(1, 'La fonction est requise'),
   baseSalary: z.number().min(75000, 'Inférieur au SMIG de Côte d\'Ivoire (75,000 FCFA)'),
-  hireDate: z.date(),
+  hireDate: z.date({ required_error: 'La date d\'embauche est requise', invalid_type_error: 'Date invalide' }),
   // CRITICAL: Family status
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
   dependentChildren: z.number().min(0).max(10),
@@ -117,7 +117,12 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           label="Date d'embauche"
           type="date"
           {...register('hireDate', {
-            setValueAs: (value) => value ? new Date(value) : undefined,
+            setValueAs: (value) => {
+              // Handle empty string or undefined
+              if (!value || value === '') return undefined;
+              const date = new Date(value);
+              return isNaN(date.getTime()) ? undefined : date;
+            },
           })}
           error={errors.hireDate?.message}
           required
@@ -249,7 +254,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
         className="w-full min-h-[56px]"
         disabled={isSubmitting}
       >
-        {isSubmitting ? 'Création...' : 'Créer mon profil'}
+        {isSubmitting ? 'Ajout en cours...' : 'Ajouter cet employé →'}
       </Button>
     </form>
   );

@@ -292,6 +292,7 @@ export function getNavigationByRole(role: string) {
         mobile: hrManagerMobileNav,
         desktop: hrManagerDesktopSections,
       };
+    case "admin": // Used by admin layout
     case "tenant_admin":
     case "super_admin":
       return {

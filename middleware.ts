@@ -68,6 +68,9 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   // Test routes (development only - should be removed in production)
   '/test-dashboard': ['tenant_admin', 'super_admin'],
 
+  // Onboarding routes (all authenticated users)
+  '/onboarding': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+
   // Shared routes (HR Manager+)
   '/employees': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/employees/new': ['hr_manager', 'tenant_admin', 'super_admin'],
@@ -176,11 +179,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Special handling for onboarding routes
-  if (pathname.startsWith('/onboarding')) {
-    return NextResponse.next();
-  }
-
   // Create Supabase client
   const response = NextResponse.next({
     request: {
@@ -225,8 +223,8 @@ export async function middleware(request: NextRequest) {
     const defaultPath = getDefaultPath(userRole);
     const redirectUrl = new URL(defaultPath, request.url);
 
-    // Add a query param to show a message (optional)
-    redirectUrl.searchParams.set('error', 'access_denied');
+    // Don't add error parameter - just silently redirect to their dashboard
+    // Users will naturally end up at their role-appropriate dashboard
 
     return NextResponse.redirect(redirectUrl);
   }

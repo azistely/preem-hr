@@ -505,7 +505,7 @@ export const onboardingRouter = createTRPCRouter({
       phone: z.string().min(1, 'Le numéro de téléphone est requis'),
       positionTitle: z.string().min(1, 'Le poste est requis'),
       baseSalary: z.number().min(75000, 'Inférieur au SMIG de Côte d\'Ivoire (75,000 FCFA)'),
-      hireDate: z.date(),
+      hireDate: z.date({ required_error: 'La date d\'embauche est requise' }),
       // CRITICAL: Family status
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
       dependentChildren: z.number().min(0).max(10),
@@ -529,6 +529,7 @@ export const onboardingRouter = createTRPCRouter({
           payslipPreview: result.payslipPreview,
         };
       } catch (error: any) {
+        console.error('[Onboarding] createFirstEmployeeV2 error:', error);
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: error.message || 'Impossible de créer l\'employé',
