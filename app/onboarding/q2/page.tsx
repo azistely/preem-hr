@@ -15,7 +15,6 @@ import { OnboardingQuestion } from '@/features/onboarding/components/onboarding-
 import { EmployeeFormV2 } from '@/features/onboarding/components/employee-form-v2';
 import { PayslipPreviewCard } from '@/features/onboarding/components/payslip-preview-card';
 import { toast } from 'sonner';
-import confetti from 'canvas-confetti';
 
 export default function OnboardingQ2Page() {
   const router = useRouter();
@@ -51,14 +50,7 @@ export default function OnboardingQ2Page() {
       setPayslipPreview(result.payslipPreview);
       setShowSuccess(true);
 
-      // Confetti animation!
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-
-      toast.success(`${data.firstName} ${data.lastName} ajouté avec succès!`);
+      toast.success(`${data.firstName} ${data.lastName} ajouté avec succès! 🎉`);
     } catch (error: any) {
       toast.error(error.message || 'Impossible de créer l\'employé');
     }
