@@ -52,9 +52,10 @@ export default function NewPayrollRunPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Mock tenant ID - in production, get from auth context
-  const tenantId = '00000000-0000-0000-0000-000000000001';
-  const userId = 'cb127444-aac4-45a5-8682-93d5f7ef5775'; // Real auth user ID
+  // Get authenticated user from auth context
+  const { data: user } = api.auth.me.useQuery();
+  const tenantId = user?.tenantId;
+  const userId = user?.id;
 
   // Load available countries and tenant info
   const { data: availableCountries, isLoading: countriesLoading } = api.payroll.getAvailableCountries.useQuery();
@@ -89,6 +90,11 @@ export default function NewPayrollRunPage() {
   });
 
   const onSubmit = async (values: FormValues) => {
+    if (!tenantId || !userId) {
+      setError('Utilisateur non authentifié');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setError(null);

@@ -110,9 +110,10 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
 
   // Unwrap params promise (Next.js 15)
   const { id: runId } = use(params);
-  // TODO: Get actual authenticated user ID from auth context
-  // For now, using the existing user from database
-  const userId = 'cb127444-aac4-45a5-8682-93d5f7ef5775';
+
+  // Get authenticated user from auth context
+  const { data: user } = api.auth.me.useQuery();
+  const userId = user?.id;
 
   // Load payroll run with line items
   const { data: run, isLoading, refetch } = api.payroll.getRun.useQuery({
@@ -206,6 +207,10 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
 
   const handleApprove = async () => {
     if (!run) return;
+    if (!userId) {
+      alert('Utilisateur non authentifié');
+      return;
+    }
 
     const confirmed = confirm(
       'Approuver cette paie ? Une fois approuvée, elle ne pourra plus être modifiée.'
