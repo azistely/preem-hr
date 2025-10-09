@@ -14,10 +14,10 @@ import {
   employeeSalaries,
   employees,
   auditLogs,
-  alerts,
 } from '@/lib/db/schema';
 import { eq, and, isNull, inArray } from 'drizzle-orm';
 import type { BatchOperation } from '@/lib/db/schema/automation';
+import { sendEvent } from '@/lib/inngest/client';
 
 /**
  * Process a bulk salary update operation
@@ -164,33 +164,23 @@ export async function processBulkSalaryUpdate(operationId: string) {
       })
       .where(eq(batchOperations.id, operationId));
 
-    // Create alert for completion
-    const user = await db.query.users.findFirst({
-      where: eq(employees.id, operation.startedBy),
-    });
-
-    if (user) {
-      await db.insert(alerts).values({
+    // Publish batch operation completed event (replaces direct alert creation)
+    // The event handler will create the alert asynchronously
+    await sendEvent({
+      name: 'batch.operation.completed',
+      data: {
+        operationId,
+        operationType: 'salary_update',
+        successCount,
+        errorCount,
+        duration: Date.now() - (operation.startedAt?.getTime() || Date.now()),
         tenantId: operation.tenantId,
-        type: 'batch_operation_completed',
-        severity: errorCount > 0 ? 'warning' : 'info',
-        message:
-          errorCount > 0
-            ? `Mise à jour groupée terminée: ${successCount} succès, ${errorCount} erreurs`
-            : `Mise à jour groupée terminée avec succès: ${successCount} salaires mis à jour`,
-        assigneeId: operation.startedBy,
-        actionUrl: `/batch-operations/${operationId}`,
-        actionLabel: 'Voir les détails',
-        status: 'active',
         metadata: {
-          operationId,
-          successCount,
-          errorCount,
+          userId: operation.startedBy,
+          employeeCount: employeeIds.length,
         },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-    }
+      },
+    });
 
     return {
       success: true,
