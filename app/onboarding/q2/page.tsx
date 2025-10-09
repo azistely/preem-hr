@@ -27,7 +27,7 @@ export default function OnboardingQ2Page() {
   const createEmployeeMutation = api.onboarding.createFirstEmployeeV2.useMutation();
 
   // Get user info for pre-filling
-  const { data: user } = api.auth.getCurrentUser.useQuery();
+  const { data: user } = api.auth.me.useQuery();
 
   const handleEmployeeSubmit = async (data: {
     firstName: string;

@@ -25,7 +25,7 @@ export default function OnboardingQ1Page() {
   const setCompanyInfoMutation = api.onboarding.setCompanyInfoV2.useMutation();
 
   // Get user info for pre-filling
-  const { data: user } = api.auth.getCurrentUser.useQuery();
+  const { data: user } = api.auth.me.useQuery();
 
   const handleCountrySelect = async (countryCode: string) => {
     // Optimistic UI: Update immediately
