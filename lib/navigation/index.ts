@@ -215,13 +215,28 @@ export const adminDesktopSections: NavSection[] = [
     ],
   },
   {
-    title: "Temps & Congés",
+    title: "Temps",
     items: [
       { icon: Clock, label: "Pointages", href: "/time-tracking" },
+      { icon: Clock, label: "Gestion temps", href: "/admin/time-tracking" },
+      { icon: MapPin, label: "Géolocalisation", href: "/admin/geofencing" },
+    ],
+  },
+  {
+    title: "Congés",
+    items: [
       { icon: Umbrella, label: "Demandes congés", href: "/time-off" },
       { icon: Settings, label: "Politiques congés", href: "/admin/policies/time-off" },
+      { icon: Settings, label: "Politique heures sup", href: "/admin/policies/overtime" },
+      { icon: Settings, label: "Politique accumulation", href: "/admin/policies/accrual" },
       { icon: Calendar, label: "Jours fériés", href: "/admin/public-holidays" },
-      { icon: MapPin, label: "Géolocalisation", href: "/admin/geofencing" },
+    ],
+  },
+  {
+    title: "Paramètres",
+    items: [
+      { icon: Settings, label: "Composants salaire", href: "/settings/salary-components" },
+      { icon: Building, label: "Secteurs", href: "/settings/sectors" },
     ],
   },
   {
