@@ -1,17 +1,17 @@
 /**
- * Marketing Homepage - Côte d'Ivoire (Default)
+ * Marketing Homepage - Sénégal
  *
- * Main entry point redirects to country-specific homepage
- * Default: Côte d'Ivoire
+ * Country-specific homepage for Senegal
+ * Features: IRPP, IPRES, SMIG 52,500 FCFA
  */
 
 import { CountryHomepage } from '@/components/marketing/country-homepage';
 import { COUNTRIES, AVAILABLE_COUNTRIES } from '@/lib/config/countries';
 
-export default function HomePage() {
+export default function SenegalHomePage() {
   return (
     <CountryHomepage
-      country={COUNTRIES.ci}
+      country={COUNTRIES.sn}
       availableCountries={AVAILABLE_COUNTRIES}
     />
   );
