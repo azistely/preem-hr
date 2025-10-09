@@ -34,8 +34,27 @@ export const dashboardRouter = router({
   getEmployeeDashboard: employeeProcedure.query(async ({ ctx }) => {
     const employeeId = ctx.user.employeeId;
 
+    // If user doesn't have an employee record (e.g., tenant_admin without employee profile)
+    // Return placeholder data instead of throwing error
     if (!employeeId) {
-      throw new Error('Aucun employé associé à cet utilisateur');
+      return {
+        employee: {
+          firstName: ctx.user.email?.split('@')[0] || 'Utilisateur',
+          lastName: '',
+          position: 'Administrateur',
+        },
+        salary: {
+          netSalary: 0,
+          month: new Date(),
+        },
+        leaveBalance: {
+          used: 0,
+          total: 0,
+          remaining: 0,
+        },
+        recentPayslips: [],
+        recentTimeEntries: [],
+      };
     }
 
     // Get employee record
@@ -44,7 +63,26 @@ export const dashboardRouter = router({
     });
 
     if (!employee) {
-      throw new Error('Employé non trouvé');
+      // Employee ID exists in user table but not in employees table
+      // Return placeholder data
+      return {
+        employee: {
+          firstName: ctx.user.email?.split('@')[0] || 'Utilisateur',
+          lastName: '',
+          position: 'Non configuré',
+        },
+        salary: {
+          netSalary: 0,
+          month: new Date(),
+        },
+        leaveBalance: {
+          used: 0,
+          total: 0,
+          remaining: 0,
+        },
+        recentPayslips: [],
+        recentTimeEntries: [],
+      };
     }
 
     // Get latest payslip
@@ -111,8 +149,24 @@ export const dashboardRouter = router({
   getManagerDashboard: managerProcedure.query(async ({ ctx }) => {
     const employeeId = ctx.user.employeeId;
 
+    // If user doesn't have an employee record, return empty data
     if (!employeeId) {
-      throw new Error('Aucun employé associé à cet utilisateur');
+      return {
+        team: {
+          total: 0,
+          present: 0,
+          absent: 0,
+        },
+        pendingApprovals: {
+          leave: 0,
+          total: 0,
+          items: [],
+        },
+        costs: {
+          monthly: 0,
+        },
+        recentActivity: [],
+      };
     }
 
     // Get manager's employee record
@@ -121,7 +175,23 @@ export const dashboardRouter = router({
     });
 
     if (!manager) {
-      throw new Error('Manager non trouvé');
+      // Return empty data if employee record not found
+      return {
+        team: {
+          total: 0,
+          present: 0,
+          absent: 0,
+        },
+        pendingApprovals: {
+          leave: 0,
+          total: 0,
+          items: [],
+        },
+        costs: {
+          monthly: 0,
+        },
+        recentActivity: [],
+      };
     }
 
     // Get team members
@@ -334,7 +404,7 @@ export const dashboardRouter = router({
       const employeeId = ctx.user.employeeId;
 
       if (!employeeId) {
-        throw new Error('Aucun employé associé à cet utilisateur');
+        return []; // Return empty array if no employee ID
       }
 
       const employee = await db.query.employees.findFirst({
@@ -342,7 +412,7 @@ export const dashboardRouter = router({
       });
 
       if (!employee) {
-        throw new Error('Employé non trouvé');
+        return []; // Return empty array if employee not found
       }
 
       return db.query.payrollLineItems.findMany({
@@ -362,7 +432,7 @@ export const dashboardRouter = router({
     const employeeId = ctx.user.employeeId;
 
     if (!employeeId) {
-      throw new Error('Aucun employé associé à cet utilisateur');
+      return []; // Return empty array if no employee ID
     }
 
     const manager = await db.query.employees.findFirst({
@@ -370,7 +440,7 @@ export const dashboardRouter = router({
     });
 
     if (!manager) {
-      throw new Error('Manager non trouvé');
+      return []; // Return empty array if manager not found
     }
 
     const teamMembers = await db.query.employees.findMany({
