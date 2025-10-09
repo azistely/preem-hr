@@ -56,7 +56,7 @@ export default function EmployeeDashboardPage() {
       <div className="lg:hidden space-y-4">
         {/* Salary Card */}
         <SalaryOverview
-          netSalary={salary.netSalary}
+          netSalary={typeof salary.netSalary === 'string' ? parseFloat(salary.netSalary) : salary.netSalary}
           month={new Date(salary.month)}
         />
 
@@ -113,7 +113,7 @@ export default function EmployeeDashboardPage() {
         <div className="col-span-2 space-y-6">
           {/* Salary Overview with trend */}
           <SalaryOverview
-            netSalary={salary.netSalary}
+            netSalary={typeof salary.netSalary === 'string' ? parseFloat(salary.netSalary) : salary.netSalary}
             month={new Date(salary.month)}
             showTrend={true}
           />

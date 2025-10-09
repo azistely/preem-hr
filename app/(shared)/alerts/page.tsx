@@ -99,7 +99,7 @@ export default function AlertsPage() {
 
     if (confirm) {
       bulkDismissMutation.mutate({
-        ids: data.alerts.map((a) => a.id),
+        ids: data.alerts.map((a: any) => a.id),
       });
     }
   };
@@ -235,7 +235,7 @@ export default function AlertsPage() {
       {/* Alerts List */}
       {!isLoading && !isError && alerts.length > 0 && (
         <div className="space-y-4">
-          {alerts.map((alert) => (
+          {alerts.map((alert: any) => (
             <AlertCard
               key={alert.id}
               alert={alert}

@@ -157,8 +157,8 @@ export default function PolicyDetailPage({
   }
 
   const isLocked =
-    policy.complianceLevel === 'locked' ||
-    policy.complianceLevel === 'convention_collective';
+    (policy as any).complianceLevel === 'locked' ||
+    (policy as any).complianceLevel === 'convention_collective';
   const isArchived = !!policy.effectiveTo;
   const canEdit = !isLocked && !isArchived;
 
@@ -182,7 +182,7 @@ export default function PolicyDetailPage({
                 {policy.name || POLICY_LABELS[policy.policyType]}
               </h1>
               <ComplianceBadge
-                level={policy.complianceLevel || 'freeform'}
+                level={(policy as any).complianceLevel || 'freeform'}
               />
             </div>
             <p className="text-muted-foreground">
@@ -262,7 +262,7 @@ export default function PolicyDetailPage({
                 <p className="font-medium">Politique archivée</p>
                 <p className="text-sm text-muted-foreground">
                   Cette politique n'est plus active depuis le{' '}
-                  {format(new Date(policy.effectiveTo), 'PPP', { locale: fr })}
+                  {policy.effectiveTo && format(new Date(policy.effectiveTo), 'PPP', { locale: fr })}
                 </p>
               </div>
             </div>
@@ -361,7 +361,7 @@ export default function PolicyDetailPage({
                     {policy.accrualRate} jours/mois
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    = {(parseFloat(policy.accrualRate) * 12).toFixed(1)} jours/an
+                    = {(parseFloat(policy.accrualRate || '0') * 12).toFixed(1)} jours/an
                   </p>
                 </div>
               )}
@@ -411,12 +411,12 @@ export default function PolicyDetailPage({
             )}
           </div>
 
-          {policy.legalReference && (
+          {(policy as any).legalReference && (
             <div className="pt-4 border-t">
               <p className="text-sm text-muted-foreground mb-1">
                 Référence légale
               </p>
-              <p className="font-medium">{policy.legalReference}</p>
+              <p className="font-medium">{(policy as any).legalReference}</p>
             </div>
           )}
         </CardContent>
@@ -509,7 +509,7 @@ export default function PolicyDetailPage({
 
           {policy.blackoutPeriods &&
             Array.isArray(policy.blackoutPeriods) &&
-            policy.blackoutPeriods.length > 0 && (
+            policy.blackoutPeriods.length > 0 ? (
               <div className="pt-4 border-t">
                 <p className="text-sm text-muted-foreground mb-3">
                   Périodes interdites
@@ -530,7 +530,7 @@ export default function PolicyDetailPage({
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
         </CardContent>
       </Card>
 

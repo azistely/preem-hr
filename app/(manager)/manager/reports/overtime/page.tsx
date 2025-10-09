@@ -92,18 +92,18 @@ export default function MonthlyOvertimeReportPage() {
 
     // Data rows
     overtimeData.forEach(({ employee, summary }) => {
-      if (summary && summary.totalOvertimeHours > 0) {
-        const breakdown = summary.breakdown;
+      if (summary && (summary as any).totalOvertimeHours > 0) {
+        const breakdown = (summary as any).breakdown;
         csv.push(
-          `"${employee.firstName} ${employee.lastName}",` +
-          `${summary.totalOvertimeHours.toFixed(2)},` +
+          `"${(employee as any).firstName} ${(employee as any).lastName}",` +
+          `${(summary as any).totalOvertimeHours.toFixed(2)},` +
           `${breakdown.hours_41_to_46?.toFixed(2) || 0},` +
           `${breakdown.hours_above_46?.toFixed(2) || 0},` +
           `${breakdown.saturday?.toFixed(2) || 0},` +
           `${breakdown.sunday?.toFixed(2) || 0},` +
           `${breakdown.night_work?.toFixed(2) || 0},` +
           `${breakdown.public_holiday?.toFixed(2) || 0},` +
-          `${summary.overtimePay?.toFixed(0) || 0}`
+          `${(summary as any).overtimePay?.toFixed(0) || 0}`
         );
       }
     });
@@ -299,20 +299,20 @@ export default function MonthlyOvertimeReportPage() {
           ) : (
             <div className="space-y-3">
               {overtimeData
-                .filter((d) => d.summary && d.summary.totalOvertimeHours > 0)
-                .sort((a, b) => (b.summary?.totalOvertimeHours || 0) - (a.summary?.totalOvertimeHours || 0))
+                .filter((d) => d.summary && (d.summary as any).totalOvertimeHours > 0)
+                .sort((a, b) => ((b.summary as any)?.totalOvertimeHours || 0) - ((a.summary as any)?.totalOvertimeHours || 0))
                 .map(({ employee, summary }) => {
                   if (!summary) return null;
 
                   const weeklyLimit = 15;
                   const weeksInMonth = 4.33;
                   const monthlyLimit = weeklyLimit * weeksInMonth;
-                  const percentage = (summary.totalOvertimeHours / monthlyLimit) * 100;
+                  const percentage = ((summary as any).totalOvertimeHours / monthlyLimit) * 100;
                   const isHighUsage = percentage > 80;
 
                   return (
                     <div
-                      key={employee.id}
+                      key={(employee as any).id}
                       className={`p-4 border rounded-lg ${
                         isHighUsage ? 'border-orange-300 bg-orange-50' : ''
                       }`}
@@ -321,7 +321,7 @@ export default function MonthlyOvertimeReportPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-1">
                             <p className="font-semibold text-lg">
-                              {employee.firstName} {employee.lastName}
+                              {(employee as any).firstName} {(employee as any).lastName}
                             </p>
                             {isHighUsage && (
                               <Badge variant="secondary" className="text-xs">
@@ -331,16 +331,16 @@ export default function MonthlyOvertimeReportPage() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {employee.position || 'Position non définie'}
+                            {(employee as any).position || 'Position non définie'}
                           </p>
                         </div>
 
                         <div className="text-right">
                           <p className="text-2xl font-bold text-primary">
-                            {formatDuration(summary.totalOvertimeHours)}
+                            {formatDuration((summary as any).totalOvertimeHours)}
                           </p>
                           <p className="text-sm font-semibold text-orange-600 mt-1">
-                            {formatCurrency(summary.overtimePay || 0)}
+                            {formatCurrency((summary as any).overtimePay || 0)}
                           </p>
                         </div>
                       </div>
@@ -353,56 +353,56 @@ export default function MonthlyOvertimeReportPage() {
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-3">
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-muted/30 rounded-lg">
-                            {summary.breakdown.hours_41_to_46 > 0 && (
+                            {(summary as any).breakdown.hours_41_to_46 > 0 && (
                               <div className="flex flex-col">
                                 <span className="text-xs text-muted-foreground">Heures 41-46</span>
                                 <span className="font-semibold">
-                                  {formatDuration(summary.breakdown.hours_41_to_46)}
+                                  {formatDuration((summary as any).breakdown.hours_41_to_46)}
                                 </span>
                                 <span className="text-xs text-green-600">×1.15</span>
                               </div>
                             )}
-                            {summary.breakdown.hours_above_46 > 0 && (
+                            {(summary as any).breakdown.hours_above_46 > 0 && (
                               <div className="flex flex-col">
                                 <span className="text-xs text-muted-foreground">Heures 46+</span>
                                 <span className="font-semibold">
-                                  {formatDuration(summary.breakdown.hours_above_46)}
+                                  {formatDuration((summary as any).breakdown.hours_above_46)}
                                 </span>
                                 <span className="text-xs text-green-600">×1.50</span>
                               </div>
                             )}
-                            {summary.breakdown.saturday > 0 && (
+                            {(summary as any).breakdown.saturday > 0 && (
                               <div className="flex flex-col">
                                 <span className="text-xs text-muted-foreground">Samedi</span>
                                 <span className="font-semibold">
-                                  {formatDuration(summary.breakdown.saturday)}
+                                  {formatDuration((summary as any).breakdown.saturday)}
                                 </span>
                                 <span className="text-xs text-green-600">×1.50</span>
                               </div>
                             )}
-                            {summary.breakdown.sunday > 0 && (
+                            {(summary as any).breakdown.sunday > 0 && (
                               <div className="flex flex-col">
                                 <span className="text-xs text-muted-foreground">Dimanche</span>
                                 <span className="font-semibold">
-                                  {formatDuration(summary.breakdown.sunday)}
+                                  {formatDuration((summary as any).breakdown.sunday)}
                                 </span>
                                 <span className="text-xs text-orange-600">×1.75</span>
                               </div>
                             )}
-                            {summary.breakdown.night_work > 0 && (
+                            {(summary as any).breakdown.night_work > 0 && (
                               <div className="flex flex-col">
                                 <span className="text-xs text-muted-foreground">Travail de nuit</span>
                                 <span className="font-semibold">
-                                  {formatDuration(summary.breakdown.night_work)}
+                                  {formatDuration((summary as any).breakdown.night_work)}
                                 </span>
                                 <span className="text-xs text-orange-600">×1.75</span>
                               </div>
                             )}
-                            {summary.breakdown.public_holiday > 0 && (
+                            {(summary as any).breakdown.public_holiday > 0 && (
                               <div className="flex flex-col">
                                 <span className="text-xs text-muted-foreground">Jour férié</span>
                                 <span className="font-semibold">
-                                  {formatDuration(summary.breakdown.public_holiday)}
+                                  {formatDuration((summary as any).breakdown.public_holiday)}
                                 </span>
                                 <span className="text-xs text-red-600">×2.00</span>
                               </div>

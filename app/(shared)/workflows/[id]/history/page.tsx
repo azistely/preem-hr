@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,21 +9,22 @@ import { api } from "@/trpc/react";
 import { ArrowLeft, History } from "lucide-react";
 import { WorkflowExecutionLog } from "@/components/workflow/workflow-execution-log";
 
-export default function WorkflowHistoryPage({ params }: { params: { id: string } }) {
+export default function WorkflowHistoryPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const [statusFilter, setStatusFilter] = useState<"all" | "running" | "success" | "failed" | "skipped">("all");
   const [limit, setLimit] = useState(50);
 
-  const { data: workflow } = api.workflows.getById.useQuery({ id: params.id });
+  const { id } = use(params);
+  const { data: workflow } = api.workflows.getById.useQuery({ id });
 
   const { data: executionsData, isLoading } = api.workflows.getExecutionHistory.useQuery({
-    workflowId: params.id,
+    workflowId: id,
     status: statusFilter === "all" ? undefined : statusFilter,
     limit,
     offset: 0,
   });
 
-  const { data: stats } = api.workflows.getStats.useQuery({ id: params.id });
+  const { data: stats } = api.workflows.getStats.useQuery({ id });
 
   return (
     <div className="container py-8">

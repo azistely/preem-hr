@@ -39,12 +39,12 @@ export default function ManagerTeamRosterPage() {
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null);
 
   // Get current manager's employee record
-  const { employee: manager, isLoading: managerLoading } = useCurrentEmployee();
+  const { employeeId: managerId, isLoading: managerLoading } = useCurrentEmployee();
 
   // Fetch team members (employees reporting to this manager)
   const { data: teamMembers, isLoading: teamLoading } = trpc.employees.getTeamMembers.useQuery(
-    { managerId: manager?.id || '' },
-    { enabled: !!manager?.id }
+    { managerId: managerId || '' },
+    { enabled: !!managerId }
   );
 
   const isLoading = managerLoading || teamLoading;

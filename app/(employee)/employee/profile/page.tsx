@@ -96,15 +96,15 @@ export default function EmployeeProfilePage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">
-              {employee.firstName} {employee.lastName}
+              {(employee as any).firstName} {(employee as any).lastName}
             </h1>
             <p className="text-muted-foreground mt-2">
-              {employee.preferredName && `(${employee.preferredName}) • `}
-              Employé #{employee.employeeNumber}
+              {(employee as any).preferredName && `(${(employee as any).preferredName}) • `}
+              Employé #{(employee as any).employeeNumber}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {getStatusBadge(employee.status)}
+            {getStatusBadge((employee as any).status)}
             <Button
               onClick={() => router.push('/employee/profile/edit')}
               className="min-h-[44px]"
@@ -132,7 +132,7 @@ export default function EmployeeProfilePage() {
                 <Mail className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Email</p>
-                  <p className="font-semibold">{employee.email}</p>
+                  <p className="font-semibold">{(employee as any).email}</p>
                 </div>
               </div>
 
@@ -140,47 +140,47 @@ export default function EmployeeProfilePage() {
                 <Phone className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Téléphone</p>
-                  <p className="font-semibold">{employee.phone || 'Non renseigné'}</p>
+                  <p className="font-semibold">{(employee as any).phone || 'Non renseigné'}</p>
                 </div>
               </div>
 
-              {employee.dateOfBirth && (
+              {(employee as any).dateOfBirth && (
                 <div className="flex items-start gap-3">
                   <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-sm text-muted-foreground">Date de naissance</p>
                     <p className="font-semibold">
-                      {format(new Date(employee.dateOfBirth), 'dd MMMM yyyy', { locale: fr })}
+                      {format(new Date((employee as any).dateOfBirth), 'dd MMMM yyyy', { locale: fr })}
                     </p>
                   </div>
                 </div>
               )}
 
-              {employee.gender && (
+              {(employee as any).gender && (
                 <div className="flex items-start gap-3">
                   <User className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-sm text-muted-foreground">Genre</p>
                     <p className="font-semibold">
-                      {employee.gender === 'male' ? 'Masculin' :
-                       employee.gender === 'female' ? 'Féminin' :
-                       employee.gender === 'other' ? 'Autre' : 'Non spécifié'}
+                      {(employee as any).gender === 'male' ? 'Masculin' :
+                       (employee as any).gender === 'female' ? 'Féminin' :
+                       (employee as any).gender === 'other' ? 'Autre' : 'Non spécifié'}
                     </p>
                   </div>
                 </div>
               )}
 
-              {(employee.addressLine1 || employee.city) && (
+              {((employee as any).addressLine1 || (employee as any).city) && (
                 <div className="flex items-start gap-3 md:col-span-2">
                   <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-sm text-muted-foreground">Adresse</p>
                     <p className="font-semibold">
-                      {employee.addressLine1}
-                      {employee.addressLine2 && <>, {employee.addressLine2}</>}
+                      {(employee as any).addressLine1}
+                      {(employee as any).addressLine2 && <>, {(employee as any).addressLine2}</>}
                       <br />
-                      {employee.city} {employee.postalCode}
-                      {employee.countryCode && <>, {employee.countryCode}</>}
+                      {(employee as any).city} {(employee as any).postalCode}
+                      {(employee as any).countryCode && <>, {(employee as any).countryCode}</>}
                     </p>
                   </div>
                 </div>
@@ -221,7 +221,7 @@ export default function EmployeeProfilePage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Date d'embauche</p>
                   <p className="font-semibold">
-                    {format(new Date(employee.hireDate), 'dd MMMM yyyy', { locale: fr })}
+                    {format(new Date((employee as any).hireDate), 'dd MMMM yyyy', { locale: fr })}
                   </p>
                 </div>
               </div>
@@ -230,18 +230,18 @@ export default function EmployeeProfilePage() {
                 <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Coefficient</p>
-                  <p className="font-semibold">{employee.coefficient}</p>
+                  <p className="font-semibold">{(employee as any).coefficient}</p>
                 </div>
               </div>
 
-              {employee.terminationDate && (
+              {(employee as any).terminationDate && (
                 <div className="flex items-start gap-3 md:col-span-2">
                   <Calendar className="h-5 w-5 text-destructive mt-0.5" />
                   <div>
                     <p className="text-sm text-muted-foreground">Date de cessation</p>
                     <p className="font-semibold text-destructive">
-                      {format(new Date(employee.terminationDate), 'dd MMMM yyyy', { locale: fr })}
-                      {employee.terminationReason && ` - ${employee.terminationReason}`}
+                      {format(new Date((employee as any).terminationDate), 'dd MMMM yyyy', { locale: fr })}
+                      {(employee as any).terminationReason && ` - ${(employee as any).terminationReason}`}
                     </p>
                   </div>
                 </div>
@@ -261,12 +261,12 @@ export default function EmployeeProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {employee.bankName && (
+              {(employee as any).bankName && (
                 <div className="flex items-start gap-3">
                   <Building className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-sm text-muted-foreground">Banque</p>
-                    <p className="font-semibold">{employee.bankName}</p>
+                    <p className="font-semibold">{(employee as any).bankName}</p>
                   </div>
                 </div>
               )}
@@ -281,22 +281,22 @@ export default function EmployeeProfilePage() {
                 </div>
               )}
 
-              {employee.cnpsNumber && (
+              {(employee as any).cnpsNumber && (
                 <div className="flex items-start gap-3">
                   <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-sm text-muted-foreground">Numéro CNPS</p>
-                    <p className="font-semibold font-mono">{employee.cnpsNumber}</p>
+                    <p className="font-semibold font-mono">{(employee as any).cnpsNumber}</p>
                   </div>
                 </div>
               )}
 
-              {employee.taxNumber && (
+              {(employee as any).taxNumber && (
                 <div className="flex items-start gap-3">
                   <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-sm text-muted-foreground">Numéro fiscal</p>
-                    <p className="font-semibold font-mono">{employee.taxNumber}</p>
+                    <p className="font-semibold font-mono">{(employee as any).taxNumber}</p>
                   </div>
                 </div>
               )}
@@ -315,7 +315,7 @@ export default function EmployeeProfilePage() {
                 <FileText className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Personnes à charge fiscales</p>
-                  <p className="font-semibold">{employee.taxDependents || 0}</p>
+                  <p className="font-semibold">{(employee as any).taxDependents || 0}</p>
                 </div>
               </div>
             </div>

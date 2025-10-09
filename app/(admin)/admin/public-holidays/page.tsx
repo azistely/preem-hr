@@ -426,7 +426,7 @@ export default function PublicHolidaysPage() {
                     <div className="flex items-center gap-3 mb-1">
                       <CalendarIcon className="h-5 w-5 text-primary" />
                       <CardTitle className="text-lg">
-                        {holiday.name?.fr || 'Sans nom'}
+                        {(holiday.name as any)?.fr || 'Sans nom'}
                       </CardTitle>
                     </div>
                     <CardDescription className="flex items-center gap-2 mt-2">
@@ -603,10 +603,10 @@ export default function PublicHolidaysPage() {
                 </div>
               </CardHeader>
 
-              {holiday.description?.fr && (
+              {(holiday.description as any)?.fr && (
                 <CardContent className="pt-0">
                   <p className="text-sm text-muted-foreground">
-                    {holiday.description.fr}
+                    {(holiday.description as any).fr}
                   </p>
                 </CardContent>
               )}

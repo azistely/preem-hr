@@ -334,7 +334,7 @@ export default function ManagerTimeTrackingPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <p className="font-semibold text-lg">
-                            {entry.employee?.firstName} {entry.employee?.lastName}
+                            {(entry.employee as any)?.firstName} {(entry.employee as any)?.lastName}
                           </p>
                           {warning && (
                             <Badge

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,14 +39,15 @@ import {
 import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { WorkflowExecutionLog } from "@/components/workflow/workflow-execution-log";
 
-export default function WorkflowDetailsPage({ params }: { params: { id: string } }) {
+export default function WorkflowDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
-  const { data: workflow, isLoading } = api.workflows.getById.useQuery({ id: params.id });
-  const { data: stats } = api.workflows.getStats.useQuery({ id: params.id });
+  const { id } = use(params);
+  const { data: workflow, isLoading } = api.workflows.getById.useQuery({ id });
+  const { data: stats } = api.workflows.getStats.useQuery({ id });
   const { data: executions } = api.workflows.getExecutionHistory.useQuery({
-    workflowId: params.id,
+    workflowId: id,
     limit: 10,
   });
 
@@ -55,7 +56,7 @@ export default function WorkflowDetailsPage({ params }: { params: { id: string }
   const activateMutation = api.workflows.activate.useMutation({
     onSuccess: () => {
       toast.success("Workflow activé");
-      utils.workflows.getById.invalidate({ id: params.id });
+      utils.workflows.getById.invalidate({ id });
     },
     onError: (error) => {
       toast.error(`Erreur: ${error.message}`);
@@ -65,7 +66,7 @@ export default function WorkflowDetailsPage({ params }: { params: { id: string }
   const pauseMutation = api.workflows.pause.useMutation({
     onSuccess: () => {
       toast.success("Workflow mis en pause");
-      utils.workflows.getById.invalidate({ id: params.id });
+      utils.workflows.getById.invalidate({ id });
     },
     onError: (error) => {
       toast.error(`Erreur: ${error.message}`);

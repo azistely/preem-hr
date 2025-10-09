@@ -38,12 +38,12 @@ export default function EmployeePayslipsPage() {
   const [selectedPayslip, setSelectedPayslip] = useState<string | null>(null);
 
   // Get current employee from context
-  const { employee, isLoading: employeeLoading } = useCurrentEmployee();
+  const { employeeId, isLoading: employeeLoading } = useCurrentEmployee();
 
   // Fetch payslips for current employee
   const { data: payslips, isLoading: payslipsLoading } = trpc.payroll.getEmployeePayslips.useQuery(
-    { employeeId: employee?.id || '' },
-    { enabled: !!employee?.id }
+    { employeeId: employeeId || '' },
+    { enabled: !!employeeId }
   );
 
   const isLoading = employeeLoading || payslipsLoading;
@@ -185,7 +185,7 @@ export default function EmployeePayslipsPage() {
                       <CollapsibleContent className="mt-4">
                         <div className="space-y-4">
                           {/* Salary Components */}
-                          {payslip.salaryComponents && Array.isArray(payslip.salaryComponents) && payslip.salaryComponents.length > 0 && (
+                          {payslip.salaryComponents && Array.isArray(payslip.salaryComponents) && payslip.salaryComponents.length > 0 ? (
                             <div>
                               <h4 className="font-semibold mb-2">Composantes du salaire</h4>
                               <div className="space-y-2">
@@ -200,10 +200,10 @@ export default function EmployeePayslipsPage() {
                                 ))}
                               </div>
                             </div>
-                          )}
+                          ) : null}
 
                           {/* Deductions */}
-                          {payslip.deductions && Array.isArray(payslip.deductions) && payslip.deductions.length > 0 && (
+                          {payslip.deductions && Array.isArray(payslip.deductions) && payslip.deductions.length > 0 ? (
                             <div>
                               <h4 className="font-semibold mb-2">Retenues</h4>
                               <div className="space-y-2">
@@ -220,10 +220,10 @@ export default function EmployeePayslipsPage() {
                                 ))}
                               </div>
                             </div>
-                          )}
+                          ) : null}
 
                           {/* Employer Costs (Informational) */}
-                          {payslip.employerCosts && Array.isArray(payslip.employerCosts) && payslip.employerCosts.length > 0 && (
+                          {payslip.employerCosts && Array.isArray(payslip.employerCosts) && payslip.employerCosts.length > 0 ? (
                             <div>
                               <h4 className="font-semibold mb-2">Charges patronales (informatives)</h4>
                               <div className="space-y-2">
@@ -238,7 +238,7 @@ export default function EmployeePayslipsPage() {
                                 ))}
                               </div>
                             </div>
-                          )}
+                          ) : null}
 
                           {/* Total Summary */}
                           <div className="pt-4 border-t">

@@ -135,7 +135,7 @@ export default function TimeOffAdminPage() {
   // Filter requests by policy type
   const filteredRequests = requests?.filter((request) => {
     if (policyTypeFilter === 'all') return true;
-    return request.policy.policyType === policyTypeFilter;
+    return (request.policy as any).policyType === policyTypeFilter;
   });
 
   return (
@@ -212,7 +212,7 @@ export default function TimeOffAdminPage() {
             {filteredRequests.map((request) => (
               <LeaveRequestCard
                 key={request.id}
-                request={request as LeaveRequest}
+                request={request as unknown as LeaveRequest}
                 conflicts={requestConflicts[request.id] || []}
                 onApprove={handleApprove}
                 onReject={handleReject}

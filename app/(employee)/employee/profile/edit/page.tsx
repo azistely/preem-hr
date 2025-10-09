@@ -47,13 +47,13 @@ export default function EmployeeProfileEditPage() {
   const { register, handleSubmit, formState: { errors } } = useForm<ProfileEditForm>({
     resolver: zodResolver(profileEditSchema),
     defaultValues: {
-      phone: employee?.phone || '',
-      addressLine1: employee?.addressLine1 || '',
-      addressLine2: employee?.addressLine2 || '',
-      city: employee?.city || '',
-      postalCode: employee?.postalCode || '',
-      bankName: employee?.bankName || '',
-      bankAccount: employee?.bankAccount || '',
+      phone: (employee as any)?.phone || '',
+      addressLine1: (employee as any)?.addressLine1 || '',
+      addressLine2: (employee as any)?.addressLine2 || '',
+      city: (employee as any)?.city || '',
+      postalCode: (employee as any)?.postalCode || '',
+      bankName: (employee as any)?.bankName || '',
+      bankAccount: (employee as any)?.bankAccount || '',
     },
   });
 

@@ -98,9 +98,9 @@ export default function NewPolicyPage() {
   });
 
   // Get templates
-  const { data: templates } = trpc.policies.getTemplates.useQuery({
-    countryCode: 'CI',
-  });
+  // const { data: templates } = trpc.policies.getTemplates.useQuery({
+  //   countryCode: 'CI',
+  // });
 
   // Real-time compliance validation
   const watchedValues = form.watch();
@@ -162,14 +162,14 @@ export default function NewPolicyPage() {
     });
   };
 
-  const nextStep = () => {
+  const nextStep = async () => {
     if (step === 1) {
       // Validate step 1 fields
-      const isValid = form.trigger(['policyType', 'name', 'effectiveFrom']);
+      const isValid = await form.trigger(['policyType', 'name', 'effectiveFrom']);
       if (isValid) setStep(2);
     } else if (step === 2) {
       // Validate step 2 fields
-      const isValid = form.trigger(['accrualMethod', 'accrualRate']);
+      const isValid = await form.trigger(['accrualMethod', 'accrualRate']);
       if (isValid) setStep(3);
     }
   };
@@ -618,7 +618,7 @@ export default function NewPolicyPage() {
                           <FormControl>
                             <Textarea
                               {...field}
-                              placeholder='[{"start": "2025-12-20", "end": "2025-12-31", "reason": "Période de fin d\'année"}]'
+                              placeholder='[{"start": "2025-12-20", "end": "2025-12-31", "reason": "Période de fin d&#39;année"}]'
                               className="font-mono text-sm"
                               rows={4}
                             />

@@ -645,7 +645,7 @@ export default function GeofencingPage() {
 
                       <div className="max-h-[400px] overflow-y-auto py-4">
                         <div className="space-y-2">
-                          {employees.map((emp) => (
+                          {employees.map((emp: any) => (
                             <div
                               key={emp.id}
                               className="flex items-center space-x-2 p-2 hover:bg-muted rounded"
