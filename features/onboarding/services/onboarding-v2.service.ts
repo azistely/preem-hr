@@ -221,8 +221,9 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     const componentsWithCalculated = await autoInjectCalculatedComponents({
       tenantId: input.tenantId,
       countryCode: tenant.countryCode || 'CI',
-      components: [],
       baseSalary: input.baseSalary,
+      hireDate: hireDate, // Required for seniority bonus calculation
+      numberOfDependents: input.dependentChildren,
     });
 
     const [salary] = await tx
@@ -247,7 +248,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     const periodStart = new Date(today.getFullYear(), today.getMonth(), 1);
     const periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-    const payslipPreview = await calculatePayrollV2({
+    const payrollResult = await calculatePayrollV2({
       employeeId: employee.id,
       countryCode: tenant.countryCode || 'CI',
       periodStart,
@@ -260,6 +261,23 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       mealAllowance: input.mealAllowance || 0,
       sectorCode: tenant.sectorCode || 'SERVICES',
     });
+
+    // Map payroll result to payslip preview format (field name mapping)
+    const payslipPreview = {
+      grossSalary: payrollResult.grossSalary,
+      baseSalary: payrollResult.baseSalary,
+      transportAllowance: input.transportAllowance || 0,
+      housingAllowance: input.housingAllowance || 0,
+      mealAllowance: input.mealAllowance || 0,
+      cnpsEmployee: payrollResult.cnpsEmployee,
+      cmuEmployee: payrollResult.cmuEmployee || 0,
+      incomeTax: payrollResult.its, // Field name mapping: its → incomeTax
+      netSalary: payrollResult.netSalary,
+      fiscalParts: fiscalParts,
+      cnpsEmployer: payrollResult.cnpsEmployer,
+      cmuEmployer: payrollResult.cmuEmployer || 0,
+      totalEmployerCost: payrollResult.employerCost, // Field name mapping: employerCost → totalEmployerCost
+    };
 
     // Update onboarding state
     const currentSettings = (tenant.settings as any) || {};

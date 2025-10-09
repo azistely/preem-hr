@@ -223,8 +223,8 @@ export async function middleware(request: NextRequest) {
     const defaultPath = getDefaultPath(userRole);
     const redirectUrl = new URL(defaultPath, request.url);
 
-    // Add a query param to show a message (optional)
-    redirectUrl.searchParams.set('error', 'access_denied');
+    // Don't add error parameter - just silently redirect to their dashboard
+    // Users will naturally end up at their role-appropriate dashboard
 
     return NextResponse.redirect(redirectUrl);
   }

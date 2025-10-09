@@ -15,7 +15,6 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { ChecklistItem, FeatureCard } from '@/features/onboarding/components/progressive-feature-cards';
 import { Sparkles, ArrowRight, FileText, LayoutDashboard } from 'lucide-react';
-import confetti from 'canvas-confetti';
 
 export default function OnboardingSuccessPage() {
   const router = useRouter();
@@ -24,30 +23,31 @@ export default function OnboardingSuccessPage() {
   // tRPC queries and mutations
   const completeOnboardingMutation = api.onboarding.completeOnboardingV2.useMutation();
   const { data: summary } = api.onboarding.getSummary.useQuery();
+  const { data: user } = api.auth.me.useQuery();
 
   useEffect(() => {
     // Mark onboarding as complete (runs once on mount)
     if (!hasCompleted) {
       completeOnboardingMutation.mutate();
       setHasCompleted(true);
-
-      // Confetti celebration!
-      confetti({
-        particleCount: 150,
-        spread: 100,
-        origin: { y: 0.5 }
-      });
-
-      // Second burst after 300ms
-      setTimeout(() => {
-        confetti({
-          particleCount: 100,
-          spread: 80,
-          origin: { y: 0.6 }
-        });
-      }, 300);
     }
   }, [hasCompleted, completeOnboardingMutation]);
+
+  // Helper to get role-specific dashboard
+  const getDashboardPath = () => {
+    const role = user?.role || 'employee';
+    switch (role) {
+      case 'super_admin':
+      case 'tenant_admin':
+        return '/admin/settings/dashboard';
+      case 'hr_manager':
+        return '/admin/dashboard';
+      case 'manager':
+        return '/manager/dashboard';
+      default:
+        return '/employee/dashboard';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-6">
@@ -81,10 +81,10 @@ export default function OnboardingSuccessPage() {
           <Card>
             <CardContent className="pt-6 text-center">
               <div className="text-4xl font-bold text-green-600 mb-1">
-                {summary?.totalNetSalary?.toLocaleString('fr-FR') || '0'}
+                ✓
               </div>
               <div className="text-sm text-muted-foreground">
-                FCFA de salaire net total
+                Entreprise configurée
               </div>
             </CardContent>
           </Card>
@@ -92,10 +92,10 @@ export default function OnboardingSuccessPage() {
           <Card>
             <CardContent className="pt-6 text-center">
               <div className="text-4xl font-bold text-blue-600 mb-1">
-                {summary?.frequency === 'monthly' ? '1x' : '2x'}
+                ✓
               </div>
               <div className="text-sm text-muted-foreground">
-                {summary?.frequency === 'monthly' ? 'Mensuel' : 'Bi-mensuel'}
+                Prêt pour la paie
               </div>
             </CardContent>
           </Card>
@@ -135,17 +135,17 @@ export default function OnboardingSuccessPage() {
           <Button
             size="lg"
             className="flex-1 min-h-[56px]"
-            onClick={() => router.push('/payroll')}
+            onClick={() => router.push('/employees')}
           >
             <FileText className="w-5 h-5 mr-2" />
-            Voir le bulletin de paie
+            Voir mes employés
           </Button>
 
           <Button
             size="lg"
             variant="outline"
             className="flex-1 min-h-[56px]"
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push(getDashboardPath())}
           >
             <LayoutDashboard className="w-5 h-5 mr-2" />
             Aller au tableau de bord
@@ -195,7 +195,7 @@ export default function OnboardingSuccessPage() {
         <div className="text-center">
           <Button
             variant="link"
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push(getDashboardPath())}
           >
             Passer et aller au tableau de bord
             <ArrowRight className="w-4 h-4 ml-2" />

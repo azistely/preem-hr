@@ -43,7 +43,13 @@ export default function OnboardingQ2Page() {
     mealAllowance?: number;
   }) => {
     try {
-      const result = await createEmployeeMutation.mutateAsync(data);
+      // Ensure hireDate is a valid Date object before sending
+      const submitData = {
+        ...data,
+        hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
+      };
+
+      const result = await createEmployeeMutation.mutateAsync(submitData);
 
       // Store results
       setEmployeeData(result.employee);
