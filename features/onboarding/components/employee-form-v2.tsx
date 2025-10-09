@@ -249,7 +249,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
         className="w-full min-h-[56px]"
         disabled={isSubmitting}
       >
-        {isSubmitting ? 'Création...' : 'Créer mon profil'}
+        {isSubmitting ? 'Ajout en cours...' : 'Ajouter cet employé →'}
       </Button>
     </form>
   );
