@@ -25,6 +25,7 @@ import {
   TrendingUp,
   Download,
   Shield,
+  Workflow,
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
@@ -123,6 +124,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: Home, label: "Tableau de bord", href: "/admin/dashboard" },
       { icon: Bell, label: "Alertes", href: "/alerts" },
+      { icon: Workflow, label: "Workflows", href: "/workflows" },
     ],
   },
   {
@@ -191,6 +193,7 @@ export const adminDesktopSections: NavSection[] = [
       { icon: Home, label: "Tableau de bord admin", href: "/admin/settings/dashboard" },
       { icon: Home, label: "Tableau de bord RH", href: "/admin/dashboard" },
       { icon: Bell, label: "Alertes", href: "/alerts" },
+      { icon: Workflow, label: "Workflows", href: "/workflows" },
     ],
   },
   {
