@@ -571,6 +571,11 @@ export async function createFirstEmployee(input: CreateFirstEmployeeInput) {
     throw new NotFoundError('Entreprise', input.tenantId);
   }
 
+  // Validate hireDate
+  if (!input.hireDate || isNaN(input.hireDate.getTime())) {
+    throw new ValidationError('La date d\'embauche est invalide');
+  }
+
   // Step 1: Create default position
   const [position] = await db
     .insert(positions)
@@ -701,6 +706,11 @@ export async function addEmployeeToOnboarding(input: AddEmployeeInput) {
 
   if (!tenant) {
     throw new NotFoundError('Entreprise', input.tenantId);
+  }
+
+  // Validate hireDate
+  if (!input.hireDate || isNaN(input.hireDate.getTime())) {
+    throw new ValidationError('La date d\'embauche est invalide');
   }
 
   // Create position
