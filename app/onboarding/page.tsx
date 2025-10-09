@@ -14,19 +14,36 @@ import { api } from '@/trpc/react';
 export default function OnboardingPage() {
   const router = useRouter();
   const { data: state, isLoading } = api.onboarding.getState.useQuery();
+  const { data: user } = api.auth.me.useQuery();
 
   useEffect(() => {
     if (isLoading) return;
 
-    // If onboarding complete, redirect to dashboard
+    // If onboarding complete, redirect to role-specific dashboard
     if (state?.onboarding_complete) {
-      router.push('/dashboard');
+      const role = user?.role || 'employee';
+
+      // Redirect based on role
+      switch (role) {
+        case 'super_admin':
+        case 'tenant_admin':
+          router.push('/admin/settings/dashboard');
+          break;
+        case 'hr_manager':
+          router.push('/admin/dashboard');
+          break;
+        case 'manager':
+          router.push('/manager/dashboard');
+          break;
+        default:
+          router.push('/employee/dashboard');
+      }
       return;
     }
 
     // Otherwise, start V2 onboarding flow at Q1
     router.push('/onboarding/q1');
-  }, [state, isLoading, router]);
+  }, [state, isLoading, user, router]);
 
   // Loading state
   return (
