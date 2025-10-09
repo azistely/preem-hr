@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { publicProcedure, router } from '@/server/api/trpc';
+import { publicProcedure, protectedProcedure, router } from '@/server/api/trpc';
 import { db } from '@/lib/db';
 import { tenants, users } from '@/drizzle/schema';
 import { createClient } from '@supabase/supabase-js';
@@ -88,23 +88,7 @@ export const authRouter = router({
           });
         }
 
-        // 2. Create Supabase auth user (using admin client)
-        const supabase = createSupabaseAdmin();
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true, // Auto-confirm email for now
-        });
-
-        if (authError || !authData.user) {
-          console.error('[Auth] Supabase signup error:', authError);
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Erreur lors de la création du compte',
-          });
-        }
-
-        // 3. Create tenant
+        // 2. Create tenant first (needed for app_metadata)
         const slug = generateTenantSlug(companyName);
         const [tenant] = await db
           .insert(tenants)
@@ -124,6 +108,28 @@ export const authRouter = router({
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Erreur lors de la création de l\'entreprise',
+          });
+        }
+
+        // 3. Create Supabase auth user with app_metadata
+        const supabase = createSupabaseAdmin();
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true, // Auto-confirm email for now
+          app_metadata: {
+            tenant_id: tenant.id,
+            role: 'tenant_admin', // First user is admin
+          },
+        });
+
+        if (authError || !authData.user) {
+          console.error('[Auth] Supabase signup error:', authError);
+          // Rollback: delete tenant if user creation failed
+          await db.delete(tenants).where(eq(tenants.id, tenant.id));
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Erreur lors de la création du compte',
           });
         }
 
@@ -222,4 +228,17 @@ export const authRouter = router({
         });
       }
     }),
+
+  /**
+   * Get current authenticated user
+   */
+  me: protectedProcedure.query(async ({ ctx }) => {
+    return {
+      id: ctx.user.id,
+      email: ctx.user.email,
+      role: ctx.user.role,
+      tenantId: ctx.user.tenantId,
+      employeeId: ctx.user.employeeId,
+    };
+  }),
 });

@@ -27,9 +27,11 @@ import { policiesRouter } from './policies';
 import { publicHolidaysRouter } from './public-holidays';
 import { geofencingRouter } from './geofencing';
 import { onboardingRouter } from './onboarding';
+import { dashboardRouter } from './dashboard';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
+  dashboard: dashboardRouter,
   payroll: payrollRouter,
   tenant: tenantRouter,
   employees: employeesRouter,

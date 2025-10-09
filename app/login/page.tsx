@@ -14,7 +14,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -39,9 +39,32 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
+/**
+ * Validate redirect URL to prevent open redirect attacks
+ * Only allow internal paths (no external URLs)
+ */
+function getSafeRedirectUrl(redirect: string | null): string {
+  // Default to onboarding if no redirect
+  if (!redirect) return '/onboarding';
+
+  // Only allow paths that start with / (internal)
+  if (!redirect.startsWith('/')) return '/onboarding';
+
+  // Don't allow redirects to login/signup (infinite loop)
+  if (redirect.startsWith('/login') || redirect.startsWith('/signup')) {
+    return '/onboarding';
+  }
+
+  return redirect;
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Get safe redirect URL from query params (set by middleware)
+  const redirectUrl = getSafeRedirectUrl(searchParams.get('redirect'));
 
   const {
     register,
@@ -94,8 +117,8 @@ export default function LoginPage() {
       // Small delay to ensure session is set
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Redirect to onboarding (will auto-redirect to dashboard if complete)
-      router.push('/onboarding');
+      // Redirect to original requested page or onboarding
+      router.push(redirectUrl);
     } catch (error) {
       console.error('Login error:', error);
       toast.error('Erreur de connexion', {
