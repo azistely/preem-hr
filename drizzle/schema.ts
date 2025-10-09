@@ -313,6 +313,11 @@ export const employees = pgTable("employees", {
 	cnpsNumber: text("cnps_number"),
 	taxNumber: text("tax_number"),
 	taxDependents: integer("tax_dependents").default(0).notNull(),
+	// Family status fields (for payroll correctness)
+	maritalStatus: varchar("marital_status", { length: 20 }),
+	dependentChildren: integer("dependent_children").default(0),
+	fiscalParts: numeric("fiscal_parts", { precision: 3, scale: 1 }).default('1.0'),
+	hasFamily: boolean("has_family").default(false),
 	customFields: jsonb("custom_fields").default({}).notNull(),
 	reportingManagerId: uuid("reporting_manager_id"),
 	status: text().default('active').notNull(),
@@ -354,6 +359,7 @@ export const employees = pgTable("employees", {
 	unique("unique_employee_number").on(table.tenantId, table.employeeNumber),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
 	check("valid_gender", sql`(gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text, 'prefer_not_to_say'::text])) OR (gender IS NULL)`),
+	check("valid_marital_status", sql`(marital_status = ANY (ARRAY['single'::text, 'married'::text, 'divorced'::text, 'widowed'::text])) OR (marital_status IS NULL)`),
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'terminated'::text, 'suspended'::text])`),
 ]);
 
