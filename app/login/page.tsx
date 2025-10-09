@@ -21,7 +21,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { createAuthClient } from '@/lib/supabase/auth-client';
-import { api } from '@/trpc/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,15 +73,10 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  const getUserQuery = api.auth.getUserById.useQuery(
-    { userId: '' },
-    { enabled: false }
-  );
-
   const onSubmit = async (data: LoginFormData) => {
     setIsSubmitting(true);
     try {
-      // 1. Sign in with Supabase (client-side)
+      // Sign in with Supabase (client-side)
       const supabase = createAuthClient();
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: data.email,
@@ -97,28 +91,14 @@ export default function LoginPage() {
         return;
       }
 
-      // 2. Fetch user details from database
-      const { data: userData } = await getUserQuery.refetch({
-        queryKey: [['auth', 'getUserById'], { input: { userId: authData.user.id }, type: 'query' }] as any,
-      });
-
-      if (!userData) {
-        toast.error('Erreur de connexion', {
-          description: 'Utilisateur non trouvé',
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      toast.success('Connexion réussie!', {
-        description: `Bienvenue ${userData.user.firstName}!`,
-      });
+      toast.success('Connexion réussie!');
 
       // Small delay to ensure session is set
       await new Promise(resolve => setTimeout(resolve, 500));
 
       // Redirect to original requested page or onboarding
       router.push(redirectUrl);
+      router.refresh(); // Refresh to update auth state
     } catch (error) {
       console.error('Login error:', error);
       toast.error('Erreur de connexion', {
