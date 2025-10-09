@@ -59,16 +59,18 @@ async function getUserFromSession() {
       }
     );
 
-    const { data: { session } } = await supabase.auth.getSession();
+    // Use getUser() for secure server-side authentication
+    // This validates the token with Supabase Auth server
+    const { data: { user: authUser } } = await supabase.auth.getUser();
 
-    if (!session?.user) {
-      // No session - return null to use dev mock or trigger auth error
+    if (!authUser) {
+      // No authenticated user - return null to use dev mock or trigger auth error
       return null;
     }
 
     // Fetch user details from database
     const user = await db.query.users.findFirst({
-      where: eq(users.id, session.user.id),
+      where: eq(users.id, authUser.id),
       columns: {
         id: true,
         email: true,
@@ -79,7 +81,7 @@ async function getUserFromSession() {
     });
 
     if (!user) {
-      console.warn('[Context] User authenticated but not found in database:', session.user.id);
+      console.warn('[Context] User authenticated but not found in database:', authUser.id);
       return null;
     }
 
