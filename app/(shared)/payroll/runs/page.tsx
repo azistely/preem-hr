@@ -56,15 +56,18 @@ export default function PayrollRunsPage() {
   const router = useRouter();
   const [selectedStatus, setSelectedStatus] = useState<RunStatus | 'all'>('all');
 
-  // Mock tenant ID - in production, get from auth context
-  const tenantId = '00000000-0000-0000-0000-000000000001';
+  // Get authenticated user from auth context
+  const { data: user } = api.auth.me.useQuery();
+  const tenantId = user?.tenantId;
 
   // Load payroll runs
   const { data: runs, isLoading, refetch } = api.payroll.listRuns.useQuery({
-    tenantId,
+    tenantId: tenantId!,
     status: selectedStatus === 'all' ? undefined : selectedStatus,
     limit: 50,
     offset: 0,
+  }, {
+    enabled: !!tenantId, // Only run query when tenantId is available
   });
 
   const formatCurrency = (amount: number) => {
