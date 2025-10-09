@@ -68,6 +68,9 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   // Test routes (development only - should be removed in production)
   '/test-dashboard': ['tenant_admin', 'super_admin'],
 
+  // Onboarding routes (all authenticated users)
+  '/onboarding': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+
   // Shared routes (HR Manager+)
   '/employees': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/employees/new': ['hr_manager', 'tenant_admin', 'super_admin'],
@@ -173,11 +176,6 @@ export async function middleware(request: NextRequest) {
 
   // Allow public routes
   if (isPublicRoute(pathname)) {
-    return NextResponse.next();
-  }
-
-  // Special handling for onboarding routes
-  if (pathname.startsWith('/onboarding')) {
     return NextResponse.next();
   }
 
