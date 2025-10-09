@@ -230,15 +230,33 @@ export const authRouter = router({
     }),
 
   /**
-   * Get current authenticated user
+   * Get current authenticated user with full details
    */
   me: protectedProcedure.query(async ({ ctx }) => {
+    // Fetch full user details with tenant info
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, ctx.user.id),
+      with: {
+        tenant: true,
+      },
+    });
+
+    if (!user) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Utilisateur non trouvé',
+      });
+    }
+
     return {
-      id: ctx.user.id,
-      email: ctx.user.email,
-      role: ctx.user.role,
-      tenantId: ctx.user.tenantId,
-      employeeId: ctx.user.employeeId,
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      tenantId: user.tenantId,
+      employeeId: user.employeeId,
+      companyName: user.tenant.name,
     };
   }),
 });
