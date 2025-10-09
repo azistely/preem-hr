@@ -1,7 +1,7 @@
 'use client';
 
 import { Card } from '@/components/ui/card';
-import { Check, Loader2, CheckCircle2 } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CountrySelectorProps {
@@ -117,18 +117,11 @@ export function CountrySelector({ value, status = 'idle', onSelect }: CountrySel
         />
       </div>
 
-      {/* Status indicator */}
+      {/* Loading indicator only */}
       {status === 'saving' && (
         <div className="flex items-center justify-center gap-2 text-muted-foreground py-4">
           <Loader2 className="w-4 h-4 animate-spin" />
           <span className="text-sm">Configuration en cours...</span>
-        </div>
-      )}
-
-      {status === 'saved' && (
-        <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 py-3 rounded-lg">
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="text-sm font-medium">Pays configuré avec succès!</span>
         </div>
       )}
     </div>
