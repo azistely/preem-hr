@@ -13,3 +13,4 @@ export * from './export-templates';
 export * from './time-tracking';
 export * from './system';
 export * from './workflows';
+export * from './automation';
