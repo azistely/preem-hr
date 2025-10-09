@@ -122,6 +122,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     title: "Tableau de bord",
     items: [
       { icon: Home, label: "Tableau de bord", href: "/admin/dashboard" },
+      { icon: Bell, label: "Alertes", href: "/alerts" },
     ],
   },
   {
@@ -189,6 +190,7 @@ export const adminDesktopSections: NavSection[] = [
     items: [
       { icon: Home, label: "Tableau de bord admin", href: "/admin/settings/dashboard" },
       { icon: Home, label: "Tableau de bord RH", href: "/admin/dashboard" },
+      { icon: Bell, label: "Alertes", href: "/alerts" },
     ],
   },
   {
