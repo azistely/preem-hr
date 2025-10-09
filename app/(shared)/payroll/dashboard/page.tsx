@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, TrendingUp, Users, DollarSign, Building, Download } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { AlertsDashboardWidget } from '@/components/workflow/alerts-dashboard-widget';
 
 export default function PayrollDashboardPage() {
   // Default to current month
@@ -67,6 +68,11 @@ export default function PayrollDashboardPage() {
 
   return (
     <div className="container mx-auto max-w-6xl py-8 px-4">
+      {/* Alerts Widget */}
+      <div className="mb-8">
+        <AlertsDashboardWidget />
+      </div>
+
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">

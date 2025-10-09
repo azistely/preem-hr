@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AlertsDashboardWidget } from "@/components/workflow/alerts-dashboard-widget";
 
 export default function TenantAdminDashboardPage() {
   const { data: dashboardData, isLoading } = api.dashboard.getAdminDashboard.useQuery();
@@ -58,6 +59,9 @@ export default function TenantAdminDashboardPage() {
 
       {/* Mobile View */}
       <div className="lg:hidden space-y-4">
+        {/* Alerts Widget */}
+        <AlertsDashboardWidget />
+
         {/* Organization Info */}
         <OrganizationHeader
           name={organization.name}
@@ -119,6 +123,9 @@ export default function TenantAdminDashboardPage() {
       {/* Tablet View (768px+) */}
       <div className="hidden md:block lg:hidden">
         <div className="space-y-6">
+          {/* Alerts Widget - Full width */}
+          <AlertsDashboardWidget />
+
           {/* Organization Header - Full width */}
           <OrganizationHeader
             name={organization.name}
@@ -159,6 +166,9 @@ export default function TenantAdminDashboardPage() {
       {/* Desktop View (1024px+) */}
       <div className="hidden lg:block">
         <div className="space-y-8">
+          {/* Alerts Widget - Full width */}
+          <AlertsDashboardWidget />
+
           {/* Organization Header */}
           <OrganizationHeader
             name={organization.name}
