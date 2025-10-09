@@ -233,12 +233,9 @@ export const authRouter = router({
    * Get current authenticated user with full details
    */
   me: protectedProcedure.query(async ({ ctx }) => {
-    // Fetch full user details with tenant info
+    // Fetch user and tenant info
     const user = await db.query.users.findFirst({
       where: eq(users.id, ctx.user.id),
-      with: {
-        tenant: true,
-      },
     });
 
     if (!user) {
@@ -248,6 +245,11 @@ export const authRouter = router({
       });
     }
 
+    // Fetch tenant separately
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.id, user.tenantId),
+    });
+
     return {
       id: user.id,
       email: user.email,
@@ -256,7 +258,7 @@ export const authRouter = router({
       role: user.role,
       tenantId: user.tenantId,
       employeeId: user.employeeId,
-      companyName: user.tenant.name,
+      companyName: tenant?.name || '',
     };
   }),
 });
