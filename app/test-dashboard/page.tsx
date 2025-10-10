@@ -63,7 +63,7 @@ export default function TestDashboardPage() {
             title="Salaire Net"
             value={`${mockEmployeeData.salary.toLocaleString()} FCFA`}
             icon={Wallet}
-            trend={{ value: 0, label: "Stable" }}
+            trend={{ value: "0", label: "Stable", direction: "neutral" }}
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -110,19 +110,16 @@ export default function TestDashboardPage() {
               title="Équipe"
               value={mockManagerData.team.total}
               icon={Users}
-              compact
             />
             <MetricCard
               title="Présents"
               value={mockManagerData.team.present}
               icon={CheckSquare}
-              compact
             />
             <MetricCard
               title="Approbations"
               value={mockManagerData.pendingApprovals}
               icon={AlertCircle}
-              compact
             />
           </div>
 
@@ -151,7 +148,7 @@ export default function TestDashboardPage() {
             title="Masse Salariale"
             value={`${(mockHRData.payrollCost / 1000000).toFixed(1)}M FCFA`}
             icon={DollarSign}
-            trend={{ value: 2.5, label: "+2.5% vs mois dernier" }}
+            trend={{ value: "+2.5%", label: "vs mois dernier", direction: "up" }}
           />
 
           <ResponsiveDataDisplay
@@ -187,7 +184,7 @@ export default function TestDashboardPage() {
                 title="Salaire Net"
                 value={`${mockEmployeeData.salary.toLocaleString()} FCFA`}
                 icon={Wallet}
-                trend={{ value: 0, label: "Stable" }}
+                trend={{ value: "0", label: "Stable", direction: "neutral" }}
               />
               <QuickActionCard
                 icon={FileText}
@@ -236,13 +233,13 @@ export default function TestDashboardPage() {
                 title="Effectif Total"
                 value={mockHRData.employeeCount}
                 icon={Building}
-                trend={{ value: 3, label: "+3 ce mois" }}
+                trend={{ value: "+3", label: "ce mois", direction: "up" }}
               />
               <MetricCard
                 title="Masse Salariale"
                 value={`${(mockHRData.payrollCost / 1000000).toFixed(1)}M`}
                 icon={DollarSign}
-                trend={{ value: 2.5, label: "+2.5%" }}
+                trend={{ value: "+2.5%", label: "", direction: "up" }}
               />
               <Card>
                 <CardHeader>
@@ -269,7 +266,6 @@ export default function TestDashboardPage() {
           { icon: Calendar, label: "Congés", href: "/test-dashboard" },
           { icon: Users, label: "Équipe", href: "/test-dashboard" },
         ]}
-        currentPath="/test-dashboard"
       />
     </div>
   );

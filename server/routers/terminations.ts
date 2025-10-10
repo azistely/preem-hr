@@ -29,7 +29,7 @@ const createTerminationSchema = z.object({
   vacationPayoutAmount: z.number().min(0).optional(),
   averageSalary12m: z.number().positive(),
   yearsOfService: z.number().positive(),
-  severanceRate: z.enum([0, 30, 35, 40]).transform(Number),
+  severanceRate: z.enum(['0', '30', '35', '40']).transform(Number),
 });
 
 const updateTerminationSchema = z.object({

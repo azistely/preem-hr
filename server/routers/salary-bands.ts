@@ -7,6 +7,7 @@ import {
   getSalaryCompaRatio,
   listSalaryBands,
   updateSalaryBand,
+  deleteSalaryBand,
 } from '@/features/employees/services/salary-band.service';
 import { TRPCError } from '@trpc/server';
 
@@ -43,6 +44,10 @@ const getByPositionSchema = z.object({
 const listSchema = z.object({
   activeOnly: z.boolean().default(true),
 }).optional().default({ activeOnly: true });
+
+const deleteBandSchema = z.object({
+  id: z.string().uuid('ID invalide'),
+});
 
 export const salaryBandsRouter = createTRPCRouter({
   create: publicProcedure
@@ -112,7 +117,7 @@ export const salaryBandsRouter = createTRPCRouter({
 
         // Calculate compa-ratio if band exists
         if (result.band) {
-          const midpoint = parseFloat(result.band.midpoint || '0');
+          const midpoint = parseFloat(result.band.midSalary || '0');
           const compaRatio = getSalaryCompaRatio(input.salary, midpoint);
 
           return {
@@ -132,6 +137,19 @@ export const salaryBandsRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: error.message || 'Erreur lors de la validation',
+        });
+      }
+    }),
+
+  delete: publicProcedure
+    .input(deleteBandSchema)
+    .mutation(async ({ input, ctx }) => {
+      try {
+        return await deleteSalaryBand(input.id, ctx.user.tenantId);
+      } catch (error: any) {
+        throw new TRPCError({
+          code: error.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la suppression',
         });
       }
     }),

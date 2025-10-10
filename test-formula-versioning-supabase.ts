@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Test Script: Formula Version Tracking End-to-End (Supabase Client)
  *

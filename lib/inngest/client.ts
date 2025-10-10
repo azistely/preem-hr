@@ -23,7 +23,7 @@ export const inngest = new Inngest({
   env: process.env.NODE_ENV === 'production' ? 'production' : 'development',
 
   // Retry configuration for all functions
-  retryFunction: async (attempt) => {
+  retryFunction: async (attempt: number) => {
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s
     return {
       delay: Math.min(1000 * Math.pow(2, attempt), 16000),

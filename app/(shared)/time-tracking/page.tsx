@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/collapsible';
 import { useCurrentEmployee } from '@/hooks/use-current-employee';
 import { Loader2 } from 'lucide-react';
+import type { OvertimeSummary } from '@/features/time-tracking/types/overtime';
 
 export default function TimeTrackingPage() {
   // Get current employee from auth context
@@ -70,7 +71,7 @@ export default function TimeTrackingPage() {
     enabled: !!employeeId,
     staleTime: 60000, // 1 minute
     refetchOnWindowFocus: false,
-  });
+  }) as { data: OvertimeSummary | undefined };
 
   // Show loading state while fetching employee
   if (loadingEmployee || !employeeId) {
@@ -158,35 +159,35 @@ export default function TimeTrackingPage() {
                 Voir le détail ↓
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-4 space-y-2">
-                {overtimeSummary.breakdown.hours_41_to_46 > 0 && (
+                {(overtimeSummary.breakdown.hours_41_to_46 || 0) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span>Heures 41-46 (×1.15)</span>
                     <span className="font-medium">
-                      {formatDuration(overtimeSummary.breakdown.hours_41_to_46)}
+                      {formatDuration(overtimeSummary.breakdown.hours_41_to_46 || 0)}
                     </span>
                   </div>
                 )}
-                {overtimeSummary.breakdown.hours_above_46 > 0 && (
+                {(overtimeSummary.breakdown.hours_above_46 || 0) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span>Heures 46+ (×1.50)</span>
                     <span className="font-medium">
-                      {formatDuration(overtimeSummary.breakdown.hours_above_46)}
+                      {formatDuration(overtimeSummary.breakdown.hours_above_46 || 0)}
                     </span>
                   </div>
                 )}
-                {overtimeSummary.breakdown.night_work > 0 && (
+                {(overtimeSummary.breakdown.night_work || 0) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span>Travail de nuit (×1.75)</span>
                     <span className="font-medium">
-                      {formatDuration(overtimeSummary.breakdown.night_work)}
+                      {formatDuration(overtimeSummary.breakdown.night_work || 0)}
                     </span>
                   </div>
                 )}
-                {overtimeSummary.breakdown.weekend > 0 && (
+                {(overtimeSummary.breakdown.weekend || 0) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span>Weekend (×1.75)</span>
                     <span className="font-medium">
-                      {formatDuration(overtimeSummary.breakdown.weekend)}
+                      {formatDuration(overtimeSummary.breakdown.weekend || 0)}
                     </span>
                   </div>
                 )}

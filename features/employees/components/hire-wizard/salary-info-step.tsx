@@ -203,7 +203,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                           onClick={() =>
                             handleAddComponent(
                               template,
-                              parseFloat(template.suggestedAmount || '10000')
+                              parseFloat(String(template.suggestedAmount || '10000'))
                             )
                           }
                         >
@@ -221,7 +221,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                               </div>
                               {template.suggestedAmount && (
                                 <Badge variant="outline">
-                                  {parseFloat(template.suggestedAmount).toLocaleString('fr-FR')} FCFA
+                                  {parseFloat(String(template.suggestedAmount)).toLocaleString('fr-FR')} FCFA
                                 </Badge>
                               )}
                             </div>

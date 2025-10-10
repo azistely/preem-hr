@@ -10,12 +10,12 @@ import { CheckCircle, XCircle, Clock, ChevronDown, AlertCircle, User } from "luc
 interface ExecutionLog {
   id: string;
   workflowId: string;
-  status: "running" | "success" | "failed" | "skipped";
-  startedAt: Date;
-  completedAt?: Date;
-  durationMs?: number;
+  status: string; // Can be "running" | "success" | "failed" | "skipped" but database returns string
+  startedAt: Date | string;
+  completedAt?: Date | string | null;
+  durationMs?: number | null;
   actionsExecuted?: any[];
-  errorMessage?: string;
+  errorMessage?: string | null;
   executionLog?: any[];
   employee?: {
     id: string;
@@ -90,7 +90,7 @@ export function WorkflowExecutionLog({ executions, isLoading }: WorkflowExecutio
   return (
     <div className="space-y-4">
       {executions.map((execution) => {
-        const config = STATUS_CONFIG[execution.status];
+        const config = STATUS_CONFIG[execution.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.skipped;
         const Icon = config.icon;
 
         return (

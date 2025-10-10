@@ -17,6 +17,7 @@ import {
   salaryComponentTemplates,
   sectorConfigurations,
   tenantSalaryComponentActivations,
+  customSalaryComponents,
 } from '@/drizzle/schema';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import type {
@@ -147,7 +148,7 @@ export const salaryComponentsRouter = createTRPCRouter({
         .where(and(...conditions))
         .orderBy(salaryComponentTemplates.displayOrder);
 
-      return templates as SalaryComponentTemplate[];
+      return templates as unknown as SalaryComponentTemplate[];
     }),
 
   /**
@@ -165,7 +166,7 @@ export const salaryComponentsRouter = createTRPCRouter({
         .where(eq(sectorConfigurations.countryCode, countryCode))
         .orderBy(sectorConfigurations.name);
 
-      return sectors as SectorConfiguration[];
+      return sectors as unknown as SectorConfiguration[];
     }),
 
   /**
@@ -177,7 +178,7 @@ export const salaryComponentsRouter = createTRPCRouter({
    * - Customizations from activation (tenant choice)
    */
   getCustomComponents: publicProcedure.query(async ({ ctx }) => {
-    const { tenantId } = ctx;
+    const tenantId = ctx.user?.tenantId;
 
     if (!tenantId) {
       throw new TRPCError({
@@ -234,7 +235,8 @@ export const salaryComponentsRouter = createTRPCRouter({
   addFromTemplate: publicProcedure
     .input(addFromTemplateSchema)
     .mutation(async ({ input, ctx }) => {
-      const { tenantId, userId } = ctx;
+      const tenantId = ctx.user?.tenantId;
+      const userId = ctx.user?.id;
 
       if (!tenantId) {
         throw new TRPCError({
@@ -337,7 +339,8 @@ export const salaryComponentsRouter = createTRPCRouter({
   updateCustomComponent: publicProcedure
     .input(updateCustomComponentSchema)
     .mutation(async ({ input, ctx }) => {
-      const { tenantId, userId } = ctx;
+      const tenantId = ctx.user?.tenantId;
+      const userId = ctx.user?.id;
 
       if (!tenantId) {
         throw new TRPCError({
@@ -455,7 +458,7 @@ export const salaryComponentsRouter = createTRPCRouter({
   deleteCustomComponent: publicProcedure
     .input(deleteCustomComponentSchema)
     .mutation(async ({ input, ctx }) => {
-      const { tenantId } = ctx;
+      const tenantId = ctx.user?.tenantId;
 
       if (!tenantId) {
         throw new TRPCError({
@@ -505,7 +508,7 @@ export const salaryComponentsRouter = createTRPCRouter({
   getFormulaHistory: publicProcedure
     .input(getFormulaHistorySchema)
     .query(async ({ input, ctx }) => {
-      const { tenantId } = ctx;
+      const tenantId = ctx.user?.tenantId;
 
       if (!tenantId) {
         throw new TRPCError({

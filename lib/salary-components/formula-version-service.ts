@@ -14,7 +14,7 @@
 import { db } from '@/lib/db';
 import { salaryComponentFormulaVersions } from '@/drizzle/schema';
 import { eq, and, lte, gte, or, isNull, desc, sql } from 'drizzle-orm';
-import type { ComponentMetadata } from '@/features/employees/types/salary-components';
+import type { CalculationRule, ComponentMetadata } from '@/features/employees/types/salary-components';
 
 // ============================================================================
 // Types
@@ -27,7 +27,7 @@ export interface FormulaVersion {
   componentId: string;
   componentType: ComponentType;
   versionNumber: number;
-  calculationRule: ComponentMetadata['calculationRule'];
+  calculationRule: CalculationRule | null | undefined;
   effectiveFrom: string; // ISO date
   effectiveTo: string | null;
   changedBy: string | null;
@@ -38,7 +38,7 @@ export interface FormulaVersion {
 export interface CreateFormulaVersionInput {
   componentId: string;
   componentType: ComponentType;
-  calculationRule: ComponentMetadata['calculationRule'];
+  calculationRule: CalculationRule | null | undefined;
   changedBy: string;
   changeReason?: string;
   effectiveFrom?: string; // ISO date, defaults to today
@@ -101,7 +101,7 @@ export async function getActiveFormulaVersion(
     componentId: version.componentId,
     componentType: version.componentType as ComponentType,
     versionNumber: version.versionNumber,
-    calculationRule: version.calculationRule as ComponentMetadata['calculationRule'],
+    calculationRule: version.calculationRule as CalculationRule | null | undefined,
     effectiveFrom: version.effectiveFrom,
     effectiveTo: version.effectiveTo,
     changedBy: version.changedBy,
@@ -198,7 +198,7 @@ export async function createFormulaVersion(
       componentId: newVersion.componentId,
       componentType: newVersion.componentType as ComponentType,
       versionNumber: newVersion.versionNumber,
-      calculationRule: newVersion.calculationRule as ComponentMetadata['calculationRule'],
+      calculationRule: newVersion.calculationRule as CalculationRule | null | undefined,
       effectiveFrom: newVersion.effectiveFrom,
       effectiveTo: newVersion.effectiveTo,
       changedBy: newVersion.changedBy,
@@ -242,7 +242,7 @@ export async function getVersionHistory(
     componentId: v.componentId,
     componentType: v.componentType as ComponentType,
     versionNumber: v.versionNumber,
-    calculationRule: v.calculationRule as ComponentMetadata['calculationRule'],
+    calculationRule: v.calculationRule as CalculationRule | null | undefined,
     effectiveFrom: v.effectiveFrom,
     effectiveTo: v.effectiveTo,
     changedBy: v.changedBy,
@@ -288,7 +288,7 @@ export async function getVersionByNumber(input: {
     componentId: version.componentId,
     componentType: version.componentType as ComponentType,
     versionNumber: version.versionNumber,
-    calculationRule: version.calculationRule as ComponentMetadata['calculationRule'],
+    calculationRule: version.calculationRule as CalculationRule | null | undefined,
     effectiveFrom: version.effectiveFrom,
     effectiveTo: version.effectiveTo,
     changedBy: version.changedBy,

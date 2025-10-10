@@ -91,20 +91,24 @@ export const salaryChangedFunction = inngest.createFunction(
           tenantId,
           eventType: 'salary_change',
           employeeId,
-          eventDate: effectiveDateObj,
+          eventDate: effectiveDateObj.toISOString(),
           amountCalculated:
-            recalculation.needsProration ? recalculation.totalSalary : newSalary,
+            recalculation.needsProration && 'totalSalary' in recalculation
+              ? recalculation.totalSalary
+              : newSalary,
           isProrated: recalculation.needsProration,
-          workingDays: recalculation.needsProration
+          workingDays: recalculation.needsProration && 'totalWorkingDays' in recalculation
             ? recalculation.totalWorkingDays
             : null,
-          daysWorked: recalculation.needsProration ? recalculation.daysAtNewSalary : null,
+          daysWorked: recalculation.needsProration && 'daysAtNewSalary' in recalculation
+            ? recalculation.daysAtNewSalary
+            : null,
           metadata: {
             oldSalary,
             newSalary,
             effectiveDate: format(effectiveDateObj, 'yyyy-MM-dd'),
             needsProration: recalculation.needsProration,
-            ...(recalculation.needsProration && {
+            ...(recalculation.needsProration && 'daysAtOldSalary' in recalculation && {
               daysAtOldSalary: recalculation.daysAtOldSalary,
               daysAtNewSalary: recalculation.daysAtNewSalary,
               salaryFromOldRate: recalculation.salaryFromOldRate,
@@ -112,9 +116,9 @@ export const salaryChangedFunction = inngest.createFunction(
             }),
           },
           processingStatus: 'completed',
-          processedAt: new Date(),
-          createdAt: new Date(),
-        })
+          processedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        } as any)
         .returning();
 
       return event;
@@ -157,8 +161,6 @@ export const salaryChangedFunction = inngest.createFunction(
             effectiveDate: format(effectiveDateObj, 'dd/MM/yyyy'),
             needsProration: recalculation.needsProration,
           },
-          createdAt: new Date(),
-          updatedAt: new Date(),
         })
         .returning();
 

@@ -4,9 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:safe": "concurrently --kill-others-on-fail \"npm run dev\" \"npm run type-check:watch\"",
+    "type-check": "tsc --noEmit",
+    "type-check:watch": "tsc --noEmit --watch --preserveWatchOutput",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "lint:fix": "next lint --fix",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
@@ -16,7 +20,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "prepare": "husky"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -82,7 +87,10 @@
     "@vitest/browser": "^3.2.4",
     "@vitest/ui": "^3.2.4",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.3",
     "playwright": "^1.55.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api } from "@/trpc/react";
 import { ArrowLeft, History } from "lucide-react";
 import { WorkflowExecutionLog } from "@/components/workflow/workflow-execution-log";
+import type { WorkflowStatsResponse } from "@/features/workflows/types/workflow-stats";
 
 export default function WorkflowHistoryPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -24,7 +25,17 @@ export default function WorkflowHistoryPage({ params }: { params: Promise<{ id: 
     offset: 0,
   });
 
-  const { data: stats } = api.workflows.getStats.useQuery({ id });
+  const { data: statsData } = api.workflows.getStats.useQuery({ id });
+
+  // Transform stats array into computed metrics
+  const stats = statsData ? {
+    executionCount: statsData.stats.reduce((sum, s) => sum + s.count, 0),
+    successCount: statsData.stats.find(s => s.status === 'success')?.count || 0,
+    errorCount: statsData.stats.find(s => s.status === 'failed')?.count || 0,
+    get successRate() {
+      return this.executionCount > 0 ? Math.round((this.successCount / this.executionCount) * 100) : 0;
+    }
+  } : null;
 
   return (
     <div className="container py-8">
@@ -134,7 +145,10 @@ export default function WorkflowHistoryPage({ params }: { params: Promise<{ id: 
         </CardHeader>
         <CardContent>
           <WorkflowExecutionLog
-            executions={executionsData?.executions || []}
+            executions={(executionsData?.executions || []).map(exec => ({
+              ...exec,
+              actionsExecuted: exec.actionsExecuted as any[]
+            })) as any}
             isLoading={isLoading}
           />
 

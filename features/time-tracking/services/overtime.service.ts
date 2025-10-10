@@ -316,7 +316,7 @@ export async function getOvertimeSummary(
   employeeId: string,
   periodStart: Date,
   periodEnd: Date
-): Promise<OvertimeBreakdown> {
+): Promise<import('../types/overtime').OvertimeSummary> {
   const entries = await db.query.timeEntries.findMany({
     where: and(
       eq(timeEntries.employeeId, employeeId),
@@ -326,7 +326,7 @@ export async function getOvertimeSummary(
     ),
   });
 
-  const summary: OvertimeBreakdown = {
+  const breakdown: OvertimeBreakdown = {
     regular: 0,
     hours_41_to_46: 0,
     hours_above_46: 0,
@@ -337,19 +337,32 @@ export async function getOvertimeSummary(
   };
 
   for (const entry of entries) {
-    const breakdown = entry.overtimeBreakdown as OvertimeBreakdown;
-    if (breakdown) {
-      summary.regular += breakdown.regular || 0;
-      summary.hours_41_to_46 = (summary.hours_41_to_46 || 0) + (breakdown.hours_41_to_46 || 0);
-      summary.hours_above_46 = (summary.hours_above_46 || 0) + (breakdown.hours_above_46 || 0);
-      summary.night_work = (summary.night_work || 0) + (breakdown.night_work || 0);
-      summary.saturday = (summary.saturday || 0) + (breakdown.saturday || 0);
-      summary.sunday = (summary.sunday || 0) + (breakdown.sunday || 0);
-      summary.public_holiday = (summary.public_holiday || 0) + (breakdown.public_holiday || 0);
+    const entryBreakdown = entry.overtimeBreakdown as OvertimeBreakdown;
+    if (entryBreakdown) {
+      breakdown.regular += entryBreakdown.regular || 0;
+      breakdown.hours_41_to_46 = (breakdown.hours_41_to_46 || 0) + (entryBreakdown.hours_41_to_46 || 0);
+      breakdown.hours_above_46 = (breakdown.hours_above_46 || 0) + (entryBreakdown.hours_above_46 || 0);
+      breakdown.night_work = (breakdown.night_work || 0) + (entryBreakdown.night_work || 0);
+      breakdown.saturday = (breakdown.saturday || 0) + (entryBreakdown.saturday || 0);
+      breakdown.sunday = (breakdown.sunday || 0) + (entryBreakdown.sunday || 0);
+      breakdown.public_holiday = (breakdown.public_holiday || 0) + (entryBreakdown.public_holiday || 0);
     }
   }
 
-  return summary;
+  // Calculate total overtime hours (excluding regular)
+  const totalOvertimeHours = (breakdown.hours_41_to_46 || 0) +
+    (breakdown.hours_above_46 || 0) +
+    (breakdown.night_work || 0) +
+    (breakdown.saturday || 0) +
+    (breakdown.sunday || 0) +
+    (breakdown.public_holiday || 0);
+
+  return {
+    totalOvertimeHours,
+    breakdown,
+    periodStart,
+    periodEnd,
+  };
 }
 
 /**

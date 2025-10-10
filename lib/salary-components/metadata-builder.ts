@@ -182,13 +182,13 @@ export function buildMetadata(options: MetadataBuilderOptions): ComponentMetadat
 
   switch (countryCode) {
     case 'CI':
-      return buildCIMetadata(userInputs as CIMetadataFormInputs);
+      return buildCIMetadata(userInputs as unknown as CIMetadataFormInputs);
     case 'BF':
-      return buildBFMetadata(userInputs as BFMetadataFormInputs);
+      return buildBFMetadata(userInputs as unknown as BFMetadataFormInputs);
     case 'SN':
-      return buildSNMetadata(userInputs as SNMetadataFormInputs);
+      return buildSNMetadata(userInputs as unknown as SNMetadataFormInputs);
     default:
-      return buildGenericMetadata(userInputs as GenericMetadataFormInputs);
+      return buildGenericMetadata(userInputs as unknown as GenericMetadataFormInputs);
   }
 }
 

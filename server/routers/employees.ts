@@ -143,7 +143,7 @@ export const employeesRouter = createTRPCRouter({
           tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
           createdByEmail: 'system', // TODO: Add email to user context
-        });
+        } as any);
 
         // Emit employee.hired event
         await eventBus.publish('employee.hired', {

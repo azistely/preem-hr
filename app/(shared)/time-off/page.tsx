@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { useCurrentEmployee } from '@/hooks/use-current-employee';
 import { Loader2 } from 'lucide-react';
+import type { TimeOffPolicy, TimeOffBalance, TimeOffRequest } from '@/features/time-off/types/time-off';
 
 export default function TimeOffPage() {
   const [showRequestForm, setShowRequestForm] = useState(false);
@@ -125,11 +126,13 @@ export default function TimeOffPage() {
             </CardContent>
           </Card>
         ) : balances && balances.length > 0 ? (
-          balances.map((balance) => (
+          balances.map((balance) => {
+            const policy = balance.policy as unknown as TimeOffPolicy;
+            return (
             <Card key={balance.id}>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium">
-                  {balance.policy?.name || 'Inconnu'}
+                  {policy?.name || 'Inconnu'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -153,7 +156,8 @@ export default function TimeOffPage() {
                 )}
               </CardContent>
             </Card>
-          ))
+            );
+          })
         ) : (
           <Card>
             <CardContent className="p-6">
@@ -184,18 +188,20 @@ export default function TimeOffPage() {
             <TabsContent value="pending" className="mt-4">
               {loadingRequests ? (
                 <p className="text-sm text-muted-foreground">Chargement...</p>
-              ) : requests?.filter((r) => r.status === 'pending').length > 0 ? (
+              ) : requests && requests.filter((r) => r.status === 'pending').length > 0 ? (
                 <div className="space-y-3">
                   {requests
                     .filter((r) => r.status === 'pending')
-                    .map((request) => (
+                    .map((request) => {
+                      const requestPolicy = request.policy as unknown as TimeOffPolicy;
+                      return (
                       <div
                         key={request.id}
                         className="flex items-start justify-between p-4 border rounded-lg"
                       >
                         <div className="flex-1">
                           <p className="font-medium">
-                            {request.policy?.name || 'Inconnu'}
+                            {requestPolicy?.name || 'Inconnu'}
                           </p>
                           <p className="text-sm text-muted-foreground mt-1">
                             {formatDate(request.startDate)} -{' '}
@@ -216,7 +222,8 @@ export default function TimeOffPage() {
                           En attente
                         </Badge>
                       </div>
-                    ))}
+                      );
+                    })}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-8">
@@ -226,18 +233,20 @@ export default function TimeOffPage() {
             </TabsContent>
 
             <TabsContent value="approved" className="mt-4">
-              {requests?.filter((r) => r.status === 'approved').length > 0 ? (
+              {requests && requests.filter((r) => r.status === 'approved').length > 0 ? (
                 <div className="space-y-3">
                   {requests
                     .filter((r) => r.status === 'approved')
-                    .map((request) => (
+                    .map((request) => {
+                      const requestPolicy = request.policy as unknown as TimeOffPolicy;
+                      return (
                       <div
                         key={request.id}
                         className="flex items-start justify-between p-4 border rounded-lg bg-green-50 border-green-200"
                       >
                         <div className="flex-1">
                           <p className="font-medium">
-                            {request.policy?.name || 'Inconnu'}
+                            {requestPolicy?.name || 'Inconnu'}
                           </p>
                           <p className="text-sm text-muted-foreground mt-1">
                             {formatDate(request.startDate)} -{' '}
@@ -258,7 +267,8 @@ export default function TimeOffPage() {
                           Approuvé
                         </Badge>
                       </div>
-                    ))}
+                      );
+                    })}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-8">
@@ -268,18 +278,20 @@ export default function TimeOffPage() {
             </TabsContent>
 
             <TabsContent value="rejected" className="mt-4">
-              {requests?.filter((r) => r.status === 'rejected').length > 0 ? (
+              {requests && requests.filter((r) => r.status === 'rejected').length > 0 ? (
                 <div className="space-y-3">
                   {requests
                     .filter((r) => r.status === 'rejected')
-                    .map((request) => (
+                    .map((request) => {
+                      const requestPolicy = request.policy as unknown as TimeOffPolicy;
+                      return (
                       <div
                         key={request.id}
                         className="flex items-start justify-between p-4 border rounded-lg bg-red-50 border-red-200"
                       >
                         <div className="flex-1">
                           <p className="font-medium">
-                            {request.policy?.name || 'Inconnu'}
+                            {requestPolicy?.name || 'Inconnu'}
                           </p>
                           <p className="text-sm text-muted-foreground mt-1">
                             {formatDate(request.startDate)} -{' '}
@@ -300,7 +312,8 @@ export default function TimeOffPage() {
                           Rejeté
                         </Badge>
                       </div>
-                    ))}
+                      );
+                    })}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-8">

@@ -151,7 +151,7 @@ export function mergeTemplatesWithActivations(
  * deepMerge(base, overrides); // { a: 1, b: { c: 2, d: 4 } }
  */
 function deepMerge<T extends Record<string, any>>(base: T, overrides: Record<string, any>): T {
-  const result = { ...base };
+  const result = { ...base } as any;
 
   for (const key in overrides) {
     if (overrides[key] !== undefined && overrides[key] !== null) {
@@ -170,7 +170,7 @@ function deepMerge<T extends Record<string, any>>(base: T, overrides: Record<str
     }
   }
 
-  return result;
+  return result as T;
 }
 
 // ============================================================================

@@ -52,17 +52,23 @@ export interface SectorConfiguration {
 
 export interface CustomSalaryComponent {
   id: string;
-  tenantId: string;
-  countryCode: string;
+  tenantId?: string;
+  countryCode?: string;
   code: string;
   name: string;
   description?: string;
+  category?: string;
   templateCode?: string;
   metadata: ComponentMetadata;
+  complianceLevel?: string; // locked | configurable | freeform
+  customizableFields?: string[]; // ["calculationRule.rate"]
+  canModify?: boolean;
+  canDeactivate?: boolean;
+  legalReference?: string | null;
   isActive: boolean;
   displayOrder: number;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
   createdBy?: string;
 }
 
@@ -83,6 +89,15 @@ export interface SalaryComponentInstance {
 // Metadata Types (Country-Specific)
 // ============================================================================
 
+// Common calculation rule type used across all metadata variants
+export interface CalculationRule {
+  type: 'fixed' | 'percentage' | 'auto-calculated';
+  baseAmount?: number;
+  rate?: number;
+  cap?: number;
+  value?: number;
+}
+
 export type ComponentMetadata =
   | CIComponentMetadata
   | BFComponentMetadata
@@ -100,12 +115,7 @@ export interface CIComponentMetadata {
   socialSecurityTreatment?: {
     includeInCnpsBase: boolean;
   };
-  calculationRule?: {
-    type: 'fixed' | 'percentage' | 'auto-calculated';
-    baseAmount?: number;
-    rate?: number; // For seniority: 0.02 (2% per year)
-    cap?: number; // For seniority: 0.25 (max 25%)
-  };
+  calculationRule?: CalculationRule;
 }
 
 // Burkina Faso (BF) - Percentage-based exemptions
@@ -143,10 +153,7 @@ export interface GenericComponentMetadata {
   socialSecurityTreatment?: {
     includedInBase: boolean;
   };
-  calculationRule?: {
-    type: 'fixed' | 'percentage' | 'auto-calculated';
-    value?: number;
-  };
+  calculationRule?: CalculationRule;
 }
 
 // ============================================================================

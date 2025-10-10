@@ -321,6 +321,7 @@ export const onboardingRouter = createTRPCRouter({
           tenantId: ctx.user.tenantId,
           userId: ctx.user.id,
           ...input,
+          email: input.email || '',
         });
 
         return {
@@ -355,6 +356,7 @@ export const onboardingRouter = createTRPCRouter({
           tenantId: ctx.user.tenantId,
           userId: ctx.user.id,
           ...input,
+          email: input.email || '',
         });
 
         return {

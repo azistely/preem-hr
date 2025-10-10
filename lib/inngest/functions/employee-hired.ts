@@ -103,9 +103,9 @@ export const employeeHiredFunction = inngest.createFunction(
             hireDate: format(hireDateObj, 'yyyy-MM-dd'),
           },
           processingStatus: 'completed',
-          processedAt: new Date(),
-          createdAt: new Date(),
-        })
+          processedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        } as any)
         .returning();
 
       return event;
@@ -124,7 +124,7 @@ export const employeeHiredFunction = inngest.createFunction(
 
       const [newAlert] = await db
         .insert(alerts)
-        .values({
+        .values({ 
           tenantId,
           type: 'prorated_payroll_created',
           severity: 'info',
@@ -144,8 +144,6 @@ export const employeeHiredFunction = inngest.createFunction(
             daysWorked: firstPayroll.daysWorked,
             totalWorkingDays: firstPayroll.totalWorkingDays,
           },
-          createdAt: new Date(),
-          updatedAt: new Date(),
         })
         .returning();
 

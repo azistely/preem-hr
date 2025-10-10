@@ -7,7 +7,7 @@
 
 import { db } from '@/lib/db';
 import { tenants, employees, positions, assignments, employeeSalaries } from '@/drizzle/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { ValidationError, NotFoundError } from '@/lib/errors';
 import { generateEmployeeNumber } from '@/features/employees/services/employee-number';
 import { autoInjectCalculatedComponents } from '@/lib/salary-components/component-calculator';
@@ -331,8 +331,7 @@ export async function createFirstPayrollRun(input: CreateFirstPayrollRunInput) {
   const employeesList = await db
     .select()
     .from(employees)
-    .where(eq(employees.tenantId, input.tenantId))
-    .where(eq(employees.status, 'active'));
+    .where(and(eq(employees.tenantId, input.tenantId), eq(employees.status, 'active')));
 
   const employeeCount = employeesList.length;
 
@@ -342,8 +341,7 @@ export async function createFirstPayrollRun(input: CreateFirstPayrollRunInput) {
     const [salary] = await db
       .select()
       .from(employeeSalaries)
-      .where(eq(employeeSalaries.employeeId, emp.id))
-      .where(eq(employeeSalaries.tenantId, input.tenantId))
+      .where(and(eq(employeeSalaries.employeeId, emp.id), eq(employeeSalaries.tenantId, input.tenantId)))
       .orderBy(desc(employeeSalaries.effectiveFrom))
       .limit(1);
 

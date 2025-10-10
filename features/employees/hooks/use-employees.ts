@@ -4,6 +4,7 @@
  * Provides tRPC hooks for listing, filtering, and searching employees
  */
 
+import { keepPreviousData } from '@tanstack/react-query';
 import { trpc } from '@/lib/trpc/client';
 
 export interface EmployeeFilters {
@@ -27,7 +28,7 @@ export function useEmployees(filters?: EmployeeFilters) {
     limit: filters?.limit || 50,
     cursor: filters?.cursor,
   }, {
-    keepPreviousData: true, // For smooth pagination
+    placeholderData: keepPreviousData, // For smooth pagination (tRPC v11)
   });
 }
 
@@ -50,7 +51,9 @@ export function useUpdateEmployee() {
   return trpc.employees.update.useMutation({
     onSuccess: (data) => {
       // Invalidate employee queries to refresh data
-      utils.employees.getById.invalidate({ id: data.id });
+      if (data && 'id' in data) {
+        utils.employees.getById.invalidate({ id: data.id as string });
+      }
       utils.employees.list.invalidate();
     },
   });

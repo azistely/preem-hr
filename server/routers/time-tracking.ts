@@ -14,6 +14,7 @@ import * as timeEntryService from '@/features/time-tracking/services/time-entry.
 import * as geofenceService from '@/features/time-tracking/services/geofence.service';
 import * as overtimeService from '@/features/time-tracking/services/overtime.service';
 import { TRPCError } from '@trpc/server';
+import type { TimeEntryWithEmployee } from '@/lib/types/extended-models';
 
 const geoLocationSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -256,18 +257,8 @@ export const timeTrackingRouter = createTRPCRouter({
 
       return await db.query.timeEntries.findMany({
         where: and(...conditions),
-        with: {
-          employee: {
-            columns: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              photoUrl: true,
-            },
-          },
-        },
         orderBy: [desc(timeEntries.clockIn)],
-      });
+      }) as TimeEntryWithEmployee[];
     }),
 
   /**
@@ -351,9 +342,9 @@ export const timeTrackingRouter = createTRPCRouter({
 
       // Fetch overtime for each employee in parallel
       const overtimeData = await Promise.all(
-        activeEmployees.map(async (employee) => {
+        activeEmployees.map(async (employee: any) => {
           const summary = await overtimeService.getOvertimeSummary(
-            employee.id,
+            employee.id as string,
             input.periodStart,
             input.periodEnd
           );

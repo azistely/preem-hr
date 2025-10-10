@@ -251,7 +251,7 @@ export function WorkflowWizard({ onComplete, initialTemplateId }: WorkflowWizard
                       category={template.templateCategory || "other"}
                       triggerType={template.triggerType}
                       actionCount={(template.actions as any[])?.length || 0}
-                      onSelect={handleTemplateSelect}
+                      onUse={handleTemplateSelect}
                     />
                   ))}
                 </div>

@@ -111,9 +111,9 @@ export const leaveApprovedFunction = inngest.createFunction(
             deductionAmount: deduction.deductionAmount,
           },
           processingStatus: 'completed',
-          processedAt: new Date(),
-          createdAt: new Date(),
-        })
+          processedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        } as any)
         .returning();
 
       return event;
@@ -151,9 +151,7 @@ export const leaveApprovedFunction = inngest.createFunction(
             days,
             deductionAmount: deduction.deductionAmount,
           },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
+        } as any)
         .returning();
 
       return newAlert;

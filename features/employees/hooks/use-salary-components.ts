@@ -18,7 +18,10 @@ import { toast } from 'sonner';
 /**
  * Get standard salary components for a country
  */
-export function useStandardComponents(countryCode: string, category?: string) {
+export function useStandardComponents(
+  countryCode: string,
+  category?: 'base' | 'allowance' | 'bonus' | 'deduction' | 'benefit'
+) {
   return trpc.salaryComponents.getStandardComponents.useQuery(
     { countryCode, category },
     {
@@ -69,21 +72,34 @@ export function useCustomComponents() {
 
 /**
  * Create a custom component
+ * TODO: Implement createCustomComponent endpoint in salaryComponents router
  */
 export function useCreateCustomComponent() {
-  const utils = trpc.useUtils();
+  // const utils = trpc.useUtils();
 
-  return trpc.salaryComponents.createCustomComponent.useMutation({
-    onSuccess: (newComponent) => {
-      toast.success(`Composant "${newComponent.name}" créé avec succès`);
+  // Temporary mock until endpoint is implemented
+  return {
+    mutate: () => {
+      toast.error('Fonctionnalité en cours de développement');
+    },
+    mutateAsync: async () => {
+      throw new Error('Fonctionnalité en cours de développement');
+    },
+    isPending: false,
+    isError: false,
+    isSuccess: false,
+    isIdle: true,
+  } as any;
 
-      // Invalidate custom components list
-      utils.salaryComponents.getCustomComponents.invalidate();
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Erreur lors de la création du composant');
-    },
-  });
+  // return trpc.salaryComponents.createCustomComponent.useMutation({
+  //   onSuccess: (newComponent: any) => {
+  //     toast.success(`Composant "${newComponent.name}" créé avec succès`);
+  //     utils.salaryComponents.getCustomComponents.invalidate();
+  //   },
+  //   onError: (error: Error) => {
+  //     toast.error(error.message || 'Erreur lors de la création du composant');
+  //   },
+  // });
 }
 
 /**

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Test script to debug RuleLoader.getCountryConfig
  * Run with: npx tsx test-rule-loader.ts

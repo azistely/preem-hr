@@ -26,7 +26,7 @@ export default function WorkflowsPage() {
 
   const { data: templates } = api.workflows.getTemplates.useQuery({});
 
-  const filteredWorkflows = workflowsData?.workflows.filter((workflow) => {
+  const filteredWorkflows = workflowsData?.workflows.filter((workflow: any) => {
     const matchesSearch =
       searchQuery === "" ||
       workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -75,7 +75,7 @@ export default function WorkflowsPage() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {templates?.map((template) => (
+                {templates?.map((template: any) => (
                   <WorkflowTemplateCard
                     key={template.id}
                     id={template.id}
@@ -84,7 +84,7 @@ export default function WorkflowsPage() {
                     category={template.templateCategory || "other"}
                     triggerType={template.triggerType}
                     actionCount={(template.actions as any[])?.length || 0}
-                    onSelect={(id) => router.push(`/workflows/new?template=${id}`)}
+                    onUse={(id) => router.push(`/workflows/new?template=${id}`)}
                   />
                 ))}
               </div>
@@ -150,11 +150,17 @@ export default function WorkflowsPage() {
                 </div>
               ) : filteredWorkflows && filteredWorkflows.length > 0 ? (
                 <div className="space-y-4">
-                  {filteredWorkflows.map((workflow) => (
+                  {filteredWorkflows.map((workflow: any) => (
                     <WorkflowListItem
                       key={workflow.id}
-                      workflow={workflow}
-                      onView={(id) => router.push(`/workflows/${id}`)}
+                      id={workflow.id}
+                      name={workflow.name}
+                      description={workflow.description}
+                      status={workflow.status}
+                      executionCount={workflow.executionCount || 0}
+                      successCount={workflow.successCount || 0}
+                      errorCount={workflow.errorCount || 0}
+                      lastExecutedAt={workflow.lastExecutedAt}
                       onEdit={(id) => router.push(`/workflows/${id}?edit=true`)}
                     />
                   ))}

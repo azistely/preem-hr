@@ -1,0 +1,60 @@
+
+> preem-hr@0.1.0 build
+> next build
+
+   ▲ Next.js 15.5.4
+   - Environments: .env.local, .env
+
+   Creating an optimized production build ...
+ ⚠ Compiled with warnings in 16.9s
+
+./lib/workflow/alert-engine.ts
+Attempted import error: 'employeeAssignments' is not exported from '@/lib/db/schema' (imported as 'employeeAssignments').
+
+Import trace for requested module:
+./lib/workflow/alert-engine.ts
+./lib/inngest/functions/daily-alerts.ts
+./app/api/inngest/route.ts
+
+./lib/workflow/alert-engine.ts
+Attempted import error: 'employeeAssignments' is not exported from '@/lib/db/schema' (imported as 'employeeAssignments').
+
+Import trace for requested module:
+./lib/workflow/alert-engine.ts
+./lib/inngest/functions/daily-alerts.ts
+./app/api/inngest/route.ts
+
+./lib/workflow/alert-engine.ts
+Attempted import error: 'employeeAssignments' is not exported from '@/lib/db/schema' (imported as 'employeeAssignments').
+
+Import trace for requested module:
+./lib/workflow/alert-engine.ts
+./lib/inngest/functions/daily-alerts.ts
+./app/api/inngest/route.ts
+
+./lib/workflow/alert-engine.ts
+Attempted import error: 'employeeAssignments' is not exported from '@/lib/db/schema' (imported as 'employeeAssignments').
+
+Import trace for requested module:
+./lib/workflow/alert-engine.ts
+./lib/inngest/functions/daily-alerts.ts
+./app/api/inngest/route.ts
+
+   Linting and checking validity of types ...
+Failed to compile.
+
+./app/(shared)/employees/new/page.tsx:110:5
+Type error: Type 'Resolver<{ firstName: string; lastName: string; hireDate: Date; positionId: string; baseSalary: number; email?: string | undefined; preferredName?: string | undefined; dateOfBirth?: Date | undefined; ... 7 more ...; components?: { ...; }[] | undefined; }, any, { ...; }>' is not assignable to type 'Resolver<{ firstName: string; lastName: string; coefficient: number; hireDate: Date; taxDependents: number; positionId: string; baseSalary: number; components: { name: string; code: string; amount: number; sourceType: "custom" | ... 1 more ... | "standard"; metadata?: Record<...> | undefined; }[]; ... 7 more ...; ba...'.
+  Types of parameters 'options' and 'options' are incompatible.
+    Type 'ResolverOptions<{ firstName: string; lastName: string; coefficient: number; hireDate: Date; taxDependents: number; positionId: string; baseSalary: number; components: { name: string; code: string; amount: number; sourceType: "custom" | ... 1 more ... | "standard"; metadata?: Record<...> | undefined; }[]; ... 7 more ...' is not assignable to type 'ResolverOptions<{ firstName: string; lastName: string; hireDate: Date; positionId: string; baseSalary: number; email?: string | undefined; preferredName?: string | undefined; dateOfBirth?: Date | undefined; ... 7 more ...; components?: { ...; }[] | undefined; }>'.
+      Type 'number | undefined' is not assignable to type 'number'.
+        Type 'undefined' is not assignable to type 'number'.
+
+[0m [90m 108 |[39m
+ [90m 109 |[39m   [36mconst[39m form [33m=[39m useForm[33m<[39m[33mFormData[39m[33m>[39m({
+[31m[1m>[22m[39m[90m 110 |[39m     resolver[33m:[39m zodResolver(createEmployeeSchema)[33m,[39m
+ [90m     |[39m     [31m[1m^[22m[39m
+ [90m 111 |[39m     defaultValues[33m:[39m {
+ [90m 112 |[39m       firstName[33m:[39m [32m''[39m[33m,[39m
+ [90m 113 |[39m       lastName[33m:[39m [32m''[39m[33m,[39m[0m
+Next.js build worker exited with code: 1 and signal: null

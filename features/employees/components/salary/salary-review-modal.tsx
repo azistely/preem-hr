@@ -35,7 +35,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { SalaryComparisonCard } from './salary-comparison-card';
-import { api } from '@/lib/trpc/client';
+import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
 
 const reviewDecisionSchema = z.object({
@@ -80,7 +80,7 @@ export function SalaryReviewModal({
     },
   });
 
-  const reviewMutation = api.salaryReviews.review.useMutation({
+  const reviewMutation = trpc.salaryReviews.review.useMutation({
     onSuccess: () => {
       toast.success(
         pendingDecision === 'approved'
@@ -90,7 +90,7 @@ export function SalaryReviewModal({
       onClose();
       onSuccess?.();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(error.message);
     },
   });

@@ -22,7 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import type { ComponentMetadata } from '@/features/employees/types/salary-components';
+import type { CalculationRule } from '@/features/employees/types/salary-components';
 
 // ============================================================================
 // Types
@@ -31,7 +31,7 @@ import type { ComponentMetadata } from '@/features/employees/types/salary-compon
 export interface FormulaVersion {
   id: string;
   versionNumber: number;
-  calculationRule: ComponentMetadata['calculationRule'];
+  calculationRule: CalculationRule | null | undefined;
   effectiveFrom: string; // ISO date
   effectiveTo: string | null;
   changedBy: string | null;
@@ -228,7 +228,7 @@ function formatDateTime(isoDateTime: string): string {
   });
 }
 
-function formatFormulaSummary(rule: ComponentMetadata['calculationRule']): string {
+function formatFormulaSummary(rule: CalculationRule | null | undefined): string {
   if (!rule) return 'Aucune formule définie';
 
   if (rule.type === 'fixed') {
@@ -249,7 +249,7 @@ function formatFormulaSummary(rule: ComponentMetadata['calculationRule']): strin
   return 'Formule inconnue';
 }
 
-function formatFormulaDetails(rule: ComponentMetadata['calculationRule']) {
+function formatFormulaDetails(rule: CalculationRule | null | undefined) {
   if (!rule) {
     return <p className="text-sm text-muted-foreground">Aucune formule définie</p>;
   }

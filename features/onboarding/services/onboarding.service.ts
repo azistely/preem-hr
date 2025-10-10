@@ -636,8 +636,8 @@ export async function createFirstEmployee(input: CreateFirstEmployeeInput) {
   const componentsWithCalculated = await autoInjectCalculatedComponents({
     tenantId: input.tenantId,
     countryCode: tenant.countryCode || 'CI',
-    components: [], // No additional components for first employee
     baseSalary: input.baseSalary,
+    hireDate: input.hireDate,
   });
 
   const [salary] = await db
@@ -773,8 +773,8 @@ export async function addEmployeeToOnboarding(input: AddEmployeeInput) {
   const componentsWithCalculated = await autoInjectCalculatedComponents({
     tenantId: input.tenantId,
     countryCode: tenant.countryCode || 'CI',
-    components: [],
     baseSalary: input.baseSalary,
+    hireDate: input.hireDate,
   });
 
   const [salary] = await db

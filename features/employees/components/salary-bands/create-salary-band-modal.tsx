@@ -90,7 +90,16 @@ export function CreateSalaryBandModal({ open, onClose }: CreateSalaryBandModalPr
   const spread = midpoint > 0 ? ((maxSalary - minSalary) / midpoint) * 100 : 0;
 
   const onSubmit = async (data: FormData) => {
-    await createBand.mutateAsync(data);
+    await createBand.mutateAsync({
+      name: data.name,
+      code: data.name.toUpperCase().replace(/\s+/g, '_'),
+      minSalary: data.minSalary,
+      maxSalary: data.maxSalary,
+      midSalary: Math.round((data.minSalary + data.maxSalary) / 2),
+      jobLevel: data.jobLevel || 'ENTRY',
+      currency: 'XOF',
+      effectiveFrom: new Date(),
+    });
   };
 
   return (

@@ -69,10 +69,11 @@ export default function EditSalaryComponentPage() {
   // Load component data into form
   useEffect(() => {
     if (component) {
+      const metadata = component.metadata as any;
       form.reset({
         name: component.name,
-        rate: component.metadata?.calculationRule?.rate,
-        baseAmount: component.metadata?.calculationRule?.baseAmount,
+        rate: metadata?.calculationRule?.rate,
+        baseAmount: metadata?.calculationRule?.baseAmount,
       });
     }
   }, [component, form]);
@@ -133,6 +134,9 @@ export default function EditSalaryComponentPage() {
   const isModifiable = component.customizableFields && component.customizableFields.length > 0;
   const hasRateField = component.customizableFields?.includes('calculationRule.rate');
   const hasAmountField = component.customizableFields?.includes('calculationRule.baseAmount');
+
+  // Type assertion for metadata to access template-specific properties
+  const metadata = component.metadata as any;
 
   return (
     <div className="container mx-auto max-w-3xl py-8">
@@ -226,8 +230,8 @@ export default function EditSalaryComponentPage() {
                     config={{
                       fieldPath: 'calculationRule.rate',
                       fieldType: 'percentage',
-                      complianceLevel: component.complianceLevel || 'configurable',
-                      legalBounds: component.metadata?.legalBounds?.rate || {
+                      complianceLevel: (component.complianceLevel || 'configurable') as 'locked' | 'configurable' | 'freeform',
+                      legalBounds: metadata?.legalBounds?.rate || {
                         min: 0.20,
                         max: 0.30,
                         recommended: 0.25,
@@ -236,7 +240,7 @@ export default function EditSalaryComponentPage() {
                       label: 'Taux',
                       description: 'Taux appliqué au salaire de base',
                     }}
-                    currentValue={component.metadata?.calculationRule?.rate}
+                    currentValue={metadata?.calculationRule?.rate}
                     isCustomizable={true}
                   />
                 )}
@@ -248,13 +252,13 @@ export default function EditSalaryComponentPage() {
                     config={{
                       fieldPath: 'calculationRule.baseAmount',
                       fieldType: 'amount',
-                      complianceLevel: component.complianceLevel || 'configurable',
-                      legalBounds: component.metadata?.legalBounds?.baseAmount,
+                      complianceLevel: (component.complianceLevel || 'configurable') as 'locked' | 'configurable' | 'freeform',
+                      legalBounds: metadata?.legalBounds?.baseAmount,
                       label: 'Montant fixe',
                       description: 'Montant fixe versé à tous les employés',
                       placeholder: 'Ex: 50000',
                     }}
-                    currentValue={component.metadata?.calculationRule?.baseAmount}
+                    currentValue={metadata?.calculationRule?.baseAmount}
                     isCustomizable={true}
                   />
                 )}
@@ -276,21 +280,21 @@ export default function EditSalaryComponentPage() {
             <CardContent className="space-y-4">
               <ReadOnlyField
                 label="Imposable (ITS)"
-                value={component.metadata?.taxTreatment?.isTaxable ? 'Oui' : 'Non'}
+                value={metadata?.taxTreatment?.isTaxable ? 'Oui' : 'Non'}
                 description="Soumis à l'impôt sur les traitements et salaires"
                 reason="Code Général des Impôts"
               />
-              {component.metadata?.taxTreatment?.isTaxable && (
+              {metadata?.taxTreatment?.isTaxable && (
                 <>
                   <ReadOnlyField
                     label="Brut Imposable"
-                    value={component.metadata?.taxTreatment?.includeInBrutImposable ? 'Oui' : 'Non'}
+                    value={metadata?.taxTreatment?.includeInBrutImposable ? 'Oui' : 'Non'}
                     description="Inclus dans la base de calcul ITS"
                     reason="Code Général des Impôts"
                   />
                   <ReadOnlyField
                     label="Salaire Catégoriel"
-                    value={component.metadata?.taxTreatment?.includeInSalaireCategoriel ? 'Oui' : 'Non'}
+                    value={metadata?.taxTreatment?.includeInSalaireCategoriel ? 'Oui' : 'Non'}
                     description="Inclus dans la base pour cotisations CNPS"
                     reason="Code Général des Impôts"
                   />
@@ -313,7 +317,7 @@ export default function EditSalaryComponentPage() {
             <CardContent>
               <ReadOnlyField
                 label="Base CNPS"
-                value={component.metadata?.socialSecurityTreatment?.includeInCnpsBase ? 'Oui' : 'Non'}
+                value={metadata?.socialSecurityTreatment?.includeInCnpsBase ? 'Oui' : 'Non'}
                 description="Soumis aux cotisations CNPS (employé + employeur)"
                 reason="Décret CNPS"
               />

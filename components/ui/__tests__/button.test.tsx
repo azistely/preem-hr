@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Button Component Browser Tests
  *

@@ -181,28 +181,19 @@ export async function listTerminations(tenantId: string, options?: {
   limit?: number;
   offset?: number;
 }) {
-  let query = db
+  // Build where conditions
+  const conditions = [eq(employeeTerminations.tenantId, tenantId)];
+  if (options?.status) {
+    conditions.push(eq(employeeTerminations.status, options.status));
+  }
+
+  const query = db
     .select()
     .from(employeeTerminations)
-    .where(eq(employeeTerminations.tenantId, tenantId))
-    .orderBy(employeeTerminations.terminationDate);
-
-  if (options?.status) {
-    query = query.where(
-      and(
-        eq(employeeTerminations.tenantId, tenantId),
-        eq(employeeTerminations.status, options.status)
-      )
-    ) as any;
-  }
-
-  if (options?.limit) {
-    query = query.limit(options.limit);
-  }
-
-  if (options?.offset) {
-    query = query.offset(options.offset);
-  }
+    .where(and(...conditions))
+    .orderBy(employeeTerminations.terminationDate)
+    .limit(options?.limit || 50)
+    .offset(options?.offset || 0);
 
   return query;
 }

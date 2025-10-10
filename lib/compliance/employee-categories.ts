@@ -101,9 +101,12 @@ export async function getEmployeeCategory(
  */
 export async function calculateNoticePeriod(employeeId: string): Promise<{
   noticePeriodDays: number;
+  category: {
+    code: string;
+    friendlyLabel: string;
+  };
   workDays: number;
   searchDays: number;
-  category: string;
 } | null> {
   const employeeWithCategory = await getEmployeeCategory(employeeId);
 
@@ -121,9 +124,12 @@ export async function calculateNoticePeriod(employeeId: string): Promise<{
 
   return {
     noticePeriodDays: category.noticePeriodDays,
+    category: {
+      code: category.category,
+      friendlyLabel: category.labelFr,
+    },
     workDays,
     searchDays,
-    category: category.category,
   };
 }
 
@@ -234,7 +240,13 @@ export async function calculateSeverancePay(
   hireDate: Date,
   terminationDate: Date,
   countryMinimumWage: number
-): Promise<{ severancePay: number; yearsOfService: number } | null> {
+): Promise<{
+  severancePay: number;
+  totalAmount: number;
+  averageSalary: number;
+  rate: number;
+  yearsOfService: number;
+} | null> {
   const employee = await db.query.employees.findFirst({
     where: eq(employees.id, employeeId),
     columns: { coefficient: true },
@@ -249,7 +261,13 @@ export async function calculateSeverancePay(
     / (1000 * 60 * 60 * 24 * 365.25);
 
   if (yearsOfService < 1) {
-    return { severancePay: 0, yearsOfService };
+    return {
+      severancePay: 0,
+      totalAmount: 0,
+      averageSalary: 0,
+      rate: 0,
+      yearsOfService,
+    };
   }
 
   // Calculate monthly salary
@@ -265,5 +283,11 @@ export async function calculateSeverancePay(
 
   const severancePay = monthlySalary * rate * yearsOfService;
 
-  return { severancePay, yearsOfService };
+  return {
+    severancePay,
+    totalAmount: severancePay,
+    averageSalary: monthlySalary,
+    rate: rate * 100, // Convert to percentage
+    yearsOfService,
+  };
 }

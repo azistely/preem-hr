@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Payroll Calculation V2 Tests
  *

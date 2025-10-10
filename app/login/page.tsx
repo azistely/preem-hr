@@ -13,7 +13,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
@@ -57,7 +57,10 @@ function getSafeRedirectUrl(redirect: string | null): string {
   return redirect;
 }
 
-export default function LoginPage() {
+/**
+ * Login form component (uses searchParams)
+ */
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -217,5 +220,20 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Login page wrapper with Suspense boundary
+ */
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-preem-teal" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

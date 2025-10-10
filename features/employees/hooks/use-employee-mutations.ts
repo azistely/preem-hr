@@ -43,7 +43,9 @@ export function useUpdateEmployee() {
 
       // Invalidate caches
       utils.employees.list.invalidate();
-      utils.employees.getById.invalidate({ id: employee.id });
+      if (employee && 'id' in employee) {
+        utils.employees.getById.invalidate({ id: employee.id as string });
+      }
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la mise à jour');

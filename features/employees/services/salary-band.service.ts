@@ -212,3 +212,36 @@ export async function updateSalaryBand(
 
   return updated!;
 }
+
+/**
+ * Delete (soft delete) salary band
+ */
+export async function deleteSalaryBand(bandId: string, tenantId: string) {
+  const [band] = await db
+    .select()
+    .from(salaryBands)
+    .where(
+      and(
+        eq(salaryBands.id, bandId),
+        eq(salaryBands.tenantId, tenantId)
+      )
+    )
+    .limit(1);
+
+  if (!band) {
+    throw new NotFoundError('Bande salariale', bandId);
+  }
+
+  // Soft delete by setting isActive to false and effectiveTo to today
+  const [deleted] = await db
+    .update(salaryBands)
+    .set({
+      isActive: false,
+      effectiveTo: new Date().toISOString().split('T')[0],
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(salaryBands.id, bandId))
+    .returning();
+
+  return deleted!;
+}

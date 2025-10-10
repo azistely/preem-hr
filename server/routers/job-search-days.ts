@@ -51,7 +51,7 @@ export const jobSearchDaysRouter = createTRPCRouter({
         const jobSearchDay = await createJobSearchDay({
           ...input,
           tenantId: ctx.user.tenantId,
-          createdBy: ctx.userId,
+          createdBy: ctx.user.id,
         });
 
         return jobSearchDay;
@@ -73,8 +73,8 @@ export const jobSearchDaysRouter = createTRPCRouter({
         const updated = await updateJobSearchDay({
           ...input,
           tenantId: ctx.user.tenantId,
-          updatedBy: ctx.userId,
-          approvedBy: input.status === 'approved' ? ctx.userId : undefined,
+          updatedBy: ctx.user.id,
+          approvedBy: input.status === 'approved' ? ctx.user.id : undefined,
         });
 
         return updated;

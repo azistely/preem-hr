@@ -97,7 +97,7 @@ export async function getTenantSector(tenantId: string): Promise<SectorInfo | nu
 export async function getEmployeeSector(employeeId: string): Promise<SectorInfo | null> {
   // Phase 1: Use tenant sector
   const employee = await db.query.employees.findFirst({
-    where: eq(db.schema.employees.id, employeeId),
+    where: (employees, { eq }) => eq(employees.id, employeeId),
     columns: { tenantId: true },
   });
 

@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { WorkflowPreview } from "@/components/workflow/workflow-preview";
 import { WorkflowExecutionLog } from "@/components/workflow/workflow-execution-log";
+import type { WorkflowStatsResponse, WorkflowTestResult } from "@/features/workflows/types/workflow-stats";
 
 export default function WorkflowDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -45,11 +46,21 @@ export default function WorkflowDetailsPage({ params }: { params: Promise<{ id: 
 
   const { id } = use(params);
   const { data: workflow, isLoading } = api.workflows.getById.useQuery({ id });
-  const { data: stats } = api.workflows.getStats.useQuery({ id });
+  const { data: statsData } = api.workflows.getStats.useQuery({ id });
   const { data: executions } = api.workflows.getExecutionHistory.useQuery({
     workflowId: id,
     limit: 10,
   });
+
+  // Transform stats array into computed metrics
+  const stats = statsData ? {
+    executionCount: statsData.stats.reduce((sum, s) => sum + s.count, 0),
+    successCount: statsData.stats.find(s => s.status === 'success')?.count || 0,
+    errorCount: statsData.stats.find(s => s.status === 'failed')?.count || 0,
+    get successRate() {
+      return this.executionCount > 0 ? Math.round((this.successCount / this.executionCount) * 100) : 0;
+    }
+  } : null;
 
   const utils = api.useUtils();
 
@@ -85,7 +96,8 @@ export default function WorkflowDetailsPage({ params }: { params: Promise<{ id: 
 
   const testMutation = api.workflows.testWorkflow.useMutation({
     onSuccess: (result) => {
-      toast.success(`Test réussi: ${result.conditionsPassed ? "Conditions validées" : "Conditions non validées"}`);
+      // Result is of type WorkflowTestResult
+      toast.success(`Test réussi: ${result.message}`);
     },
     onError: (error) => {
       toast.error(`Erreur lors du test: ${error.message}`);
@@ -300,7 +312,10 @@ export default function WorkflowDetailsPage({ params }: { params: Promise<{ id: 
             </div>
           </CardHeader>
           <CardContent>
-            <WorkflowExecutionLog executions={executions?.executions || []} />
+            <WorkflowExecutionLog executions={(executions?.executions || []).map(exec => ({
+              ...exec,
+              actionsExecuted: exec.actionsExecuted as any[]
+            })) as any} />
           </CardContent>
         </Card>
       )}

@@ -169,9 +169,9 @@ export function PolicyAuditTrail({
                       </div>
                     </div>
 
-                    {version.legalReference && (
+                    {(version as any).legalReference && (
                       <p className="text-xs text-muted-foreground italic mt-2">
-                        Référence: {version.legalReference}
+                        Référence: {(version as any).legalReference}
                       </p>
                     )}
                   </div>

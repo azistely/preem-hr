@@ -27,8 +27,8 @@ export function useCurrentEmployee() {
 
   // Memoize employee ID to prevent downstream queries from refetching
   const employeeId = useMemo(
-    () => currentEmployee?.id,
-    [currentEmployee?.id]
+    () => (currentEmployee && 'id' in currentEmployee ? currentEmployee.id as string : undefined),
+    [currentEmployee]
   );
 
   return {

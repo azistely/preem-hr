@@ -23,7 +23,6 @@ export default function OnboardingQ3Page() {
     try {
       await createPayrollRunMutation.mutateAsync({
         frequency,
-        startDate: new Date(),
       });
 
       toast.success('Configuration enregistrée');

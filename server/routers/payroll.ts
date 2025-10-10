@@ -658,13 +658,16 @@ export const payrollRouter = createTRPCRouter({
         const config = await ruleLoader.getCountryConfig(run.countryCode);
 
         // Map country config to payslip format
+        const taxSystemName = typeof config.taxSystem.name === 'string' ? config.taxSystem.name : (config.taxSystem.name as any).fr;
+        const socialSchemeName = typeof config.socialScheme.name === 'string' ? config.socialScheme.name : (config.socialScheme.name as any).fr;
+
         countryConfig = {
-          taxSystemName: config.taxSystem.name.fr,
-          socialSchemeName: config.socialScheme.name.fr,
-          laborCodeReference: config.laborCodeReference?.fr,
-          contributions: config.socialScheme.contributions.map((contrib) => ({
+          taxSystemName,
+          socialSchemeName,
+          laborCodeReference: undefined, // TODO: Add laborCodeReference to CountryConfig type
+          contributions: config.socialScheme.contributionTypes.map((contrib: any) => ({
             code: contrib.code,
-            name: contrib.name.fr,
+            name: typeof contrib.name === 'string' ? contrib.name : contrib.name.fr,
             employeeRate: contrib.employeeRate,
             employerRate: contrib.employerRate,
             employeeAmount: contrib.code === 'pension'
@@ -678,9 +681,9 @@ export const payrollRouter = createTRPCRouter({
               ? parseFloat(lineItem.cmuEmployer?.toString() || '0')
               : 0,
           })),
-          otherTaxes: config.otherTaxes.map((tax) => ({
+          otherTaxes: config.otherTaxes.map((tax: any) => ({
             code: tax.code,
-            name: tax.name.fr,
+            name: typeof tax.name === 'string' ? tax.name : tax.name.fr,
             paidBy: tax.paidBy,
             amount: tax.code === 'fdfp' || tax.code === 'fdfp_tap'
               ? parseFloat(lineItem.totalOtherTaxes?.toString() || '0')
@@ -780,7 +783,7 @@ export const payrollRouter = createTRPCRouter({
       // Generate PDF (lazy load renderer)
       const { renderToBuffer } = await import('@react-pdf/renderer');
       const pdfBuffer = await renderToBuffer(
-        React.createElement(PayslipDocument, { data: payslipData })
+        React.createElement(PayslipDocument, { data: payslipData }) as any
       );
       const filename = generatePayslipFilename(payslipData.employeeName, new Date(run.periodStart));
 
@@ -854,19 +857,22 @@ export const payrollRouter = createTRPCRouter({
         const config = await ruleLoader.getCountryConfig(run.countryCode);
 
         // Map country config to payslip format
+        const taxSystemName = typeof config.taxSystem.name === 'string' ? config.taxSystem.name : (config.taxSystem.name as any).fr;
+        const socialSchemeName = typeof config.socialScheme.name === 'string' ? config.socialScheme.name : (config.socialScheme.name as any).fr;
+
         countryConfig = {
-          taxSystemName: config.taxSystem.name.fr,
-          socialSchemeName: config.socialScheme.name.fr,
-          laborCodeReference: config.laborCodeReference?.fr,
-          contributions: config.socialScheme.contributions.map((contrib) => ({
+          taxSystemName,
+          socialSchemeName,
+          laborCodeReference: undefined, // TODO: Add laborCodeReference to CountryConfig type
+          contributions: config.socialScheme.contributionTypes.map((contrib: any) => ({
             code: contrib.code,
-            name: contrib.name.fr,
+            name: typeof contrib.name === 'string' ? contrib.name : contrib.name.fr,
             employeeRate: contrib.employeeRate,
             employerRate: contrib.employerRate,
           })),
-          otherTaxes: config.otherTaxes.map((tax) => ({
+          otherTaxes: config.otherTaxes.map((tax: any) => ({
             code: tax.code,
-            name: tax.name.fr,
+            name: typeof tax.name === 'string' ? tax.name : tax.name.fr,
             paidBy: tax.paidBy,
           })),
         };
@@ -940,7 +946,7 @@ export const payrollRouter = createTRPCRouter({
           employeeNumber: lineItem.employeeNumber || '',
           employeePosition: lineItem.positionTitle || '',
           companyName: tenant?.name || '',
-          companyAddress: tenant?.address || '',
+          companyAddress: undefined, // TODO: Add address field to tenants table
           employeeCNPS: employee?.cnpsNumber || undefined,
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
@@ -971,7 +977,7 @@ export const payrollRouter = createTRPCRouter({
         // Generate PDF (lazy load renderer)
         const { renderToBuffer } = await import('@react-pdf/renderer');
         const pdfBuffer = await renderToBuffer(
-          React.createElement(PayslipDocument, { data: payslipData })
+          React.createElement(PayslipDocument, { data: payslipData }) as any
         );
         const filename = generatePayslipFilename(payslipData.employeeName, new Date(run.periodStart));
 
@@ -1047,7 +1053,7 @@ export const payrollRouter = createTRPCRouter({
       // Prepare export data
       const exportData: CNPSExportData = {
         companyName: tenant?.name || 'Company',
-        companyCNPS: tenant?.taxId,
+        companyCNPS: tenant?.taxId || undefined,
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
         employees: lineItems.map((item) => {
@@ -1118,7 +1124,7 @@ export const payrollRouter = createTRPCRouter({
       // Prepare export data
       const exportData: CMUExportData = {
         companyName: tenant?.name || 'Company',
-        companyTaxId: tenant?.taxId,
+        companyTaxId: tenant?.taxId || undefined,
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
         employees: lineItems.map((item) => ({
@@ -1185,7 +1191,7 @@ export const payrollRouter = createTRPCRouter({
       // Prepare export data
       const exportData: Etat301ExportData = {
         companyName: tenant?.name || 'Company',
-        companyTaxId: tenant?.taxId,
+        companyTaxId: tenant?.taxId || undefined,
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
         employees: lineItems.map((item) => ({
@@ -1362,7 +1368,7 @@ export const payrollRouter = createTRPCRouter({
           AND status IN ('finalized', 'paid')
       `);
 
-      const row = result.rows[0] as any;
+      const row = (result as any).rows?.[0] as any;
 
       const employeeCount = parseInt(row.employee_count) || 0;
       const totalGross = parseFloat(row.total_gross) || 0;

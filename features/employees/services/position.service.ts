@@ -94,7 +94,7 @@ export async function createPosition(input: CreatePositionInput) {
 /**
  * Get position hierarchy (recursive)
  */
-export async function getPositionHierarchy(positionId: string, tenantId: string) {
+export async function getPositionHierarchy(positionId: string, tenantId: string): Promise<any> {
   const position = await db.query.positions.findFirst({
     where: and(
       eq(positions.id, positionId),
@@ -115,8 +115,8 @@ export async function getPositionHierarchy(positionId: string, tenantId: string)
   });
 
   // Recursively get hierarchy for each report
-  const reportsWithHierarchy = await Promise.all(
-    reports.map(async (report) => getPositionHierarchy(report.id, tenantId))
+  const reportsWithHierarchy: any[] = await Promise.all(
+    reports.map(async (report): Promise<any> => getPositionHierarchy(report.id, tenantId))
   );
 
   return {

@@ -14,6 +14,7 @@ import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
 import { geofenceConfigurations, geofenceEmployeeAssignments } from '@/drizzle/schema';
 import { eq, and, inArray } from 'drizzle-orm';
+import type { GeofenceConfigurationWithAssignments } from '@/lib/types/extended-models';
 
 // Zod Schemas
 const createGeofenceSchema = z.object({
@@ -48,7 +49,7 @@ export const geofencingRouter = createTRPCRouter({
    * List all geofences for tenant
    * Public access - used by employee time tracking apps
    */
-  list: publicProcedure.query(async ({ ctx }) => {
+  list: publicProcedure.query(async ({ ctx }): Promise<GeofenceConfigurationWithAssignments[]> => {
     try {
       const geofences = await db.query.geofenceConfigurations.findMany({
         where: eq(geofenceConfigurations.tenantId, ctx.user.tenantId),
@@ -66,10 +67,10 @@ export const geofencingRouter = createTRPCRouter({
               },
             },
           },
-        },
+        } as any,
       });
 
-      return geofences;
+      return geofences as GeofenceConfigurationWithAssignments[];
     } catch (error: any) {
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
@@ -84,7 +85,7 @@ export const geofencingRouter = createTRPCRouter({
    */
   getById: publicProcedure
     .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
+    .query(async ({ input, ctx }): Promise<GeofenceConfigurationWithAssignments> => {
       try {
         const geofence = await db.query.geofenceConfigurations.findFirst({
           where: and(
@@ -105,7 +106,7 @@ export const geofencingRouter = createTRPCRouter({
                 },
               },
             },
-          },
+          } as any,
         });
 
         if (!geofence) {
@@ -115,7 +116,7 @@ export const geofencingRouter = createTRPCRouter({
           });
         }
 
-        return geofence;
+        return geofence as GeofenceConfigurationWithAssignments;
       } catch (error: any) {
         throw new TRPCError({
           code: error.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'INTERNAL_SERVER_ERROR',
@@ -135,8 +136,14 @@ export const geofencingRouter = createTRPCRouter({
         const [newGeofence] = await db
           .insert(geofenceConfigurations)
           .values({
-            ...input,
             tenantId: ctx.user.tenantId,
+            name: input.name,
+            description: input.description,
+            latitude: input.latitude.toString(),
+            longitude: input.longitude.toString(),
+            radiusMeters: input.radiusMeters,
+            isActive: input.isActive,
+            appliesToAll: input.appliesToAll,
           })
           .returning();
 
@@ -178,6 +185,8 @@ export const geofencingRouter = createTRPCRouter({
           .update(geofenceConfigurations)
           .set({
             ...updateData,
+            latitude: updateData.latitude !== undefined ? updateData.latitude.toString() : undefined,
+            longitude: updateData.longitude !== undefined ? updateData.longitude.toString() : undefined,
             updatedAt: new Date().toISOString(),
           })
           .where(eq(geofenceConfigurations.id, id))

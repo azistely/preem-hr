@@ -79,31 +79,29 @@ export async function processBulkSalaryUpdate(operationId: string) {
           }
 
           // Calculate new salary
+          const currentBase = Number(currentSalary.baseSalary);
           const newBaseSalary =
             updateType === 'absolute'
               ? value
-              : currentSalary.baseSalary * (1 + value / 100);
+              : currentBase * (1 + value / 100);
 
           // Close current salary
           await tx
             .update(employeeSalaries)
             .set({
-              effectiveTo: new Date(effectiveDate),
-              updatedAt: new Date(),
+              effectiveTo: effectiveDate,
             })
             .where(eq(employeeSalaries.id, currentSalary.id));
 
           // Insert new salary
-          await tx.insert(employeeSalaries).values({
+          await tx.insert(employeeSalaries).values({ 
             tenantId: operation.tenantId,
             employeeId,
-            baseSalary: newBaseSalary,
-            effectiveFrom: new Date(effectiveDate),
+            baseSalary: newBaseSalary.toString(),
+            effectiveFrom: effectiveDate,
             effectiveTo: null,
             currency: currentSalary.currency,
             payFrequency: currentSalary.payFrequency,
-            createdAt: new Date(),
-            updatedAt: new Date(),
           });
 
           successCount++;
@@ -134,11 +132,11 @@ export async function processBulkSalaryUpdate(operationId: string) {
       // Create audit log for the bulk operation
       await tx.insert(auditLogs).values({
         tenantId: operation.tenantId,
-        userId: operation.startedBy,
+        createdBy: operation.startedBy || null,
         action: 'bulk_salary_update',
-        entityType: 'employee_salaries',
-        entityId: operationId,
-        metadata: {
+        tableName: 'employee_salaries',
+        recordId: operationId,
+        newValues: {
           updateType,
           value,
           effectiveDate,
@@ -146,8 +144,7 @@ export async function processBulkSalaryUpdate(operationId: string) {
           successCount,
           errorCount,
         },
-        createdAt: new Date(),
-      });
+      } as any);
     });
 
     // Mark operation as completed
@@ -324,13 +321,14 @@ export async function calculateSalaryUpdatePreview(params: {
       };
     }
 
+    const currentBase = Number(currentSalary.baseSalary);
     const newSalary =
       updateType === 'absolute'
         ? value
-        : currentSalary.baseSalary * (1 + value / 100);
+        : currentBase * (1 + value / 100);
 
-    const change = newSalary - currentSalary.baseSalary;
-    const changePercentage = (change / currentSalary.baseSalary) * 100;
+    const change = newSalary - currentBase;
+    const changePercentage = (change / currentBase) * 100;
 
     return {
       employeeId: employee.id,

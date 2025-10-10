@@ -138,9 +138,9 @@ export const employeeTerminatedFunction = inngest.createFunction(
             exitBenefits: finalPayroll.exitBenefits,
           },
           processingStatus: 'completed',
-          processedAt: new Date(),
-          createdAt: new Date(),
-        })
+          processedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        } as any)
         .returning();
 
       return event;
@@ -178,9 +178,7 @@ export const employeeTerminatedFunction = inngest.createFunction(
             daysWorked: finalPayroll.daysWorked,
             totalWorkingDays: finalPayroll.totalWorkingDays,
           },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
+        } as any)
         .returning();
 
       return newAlert;

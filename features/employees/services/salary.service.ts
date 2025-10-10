@@ -151,16 +151,18 @@ export async function changeSalary(input: ChangeSalaryInput) {
         employeeId: input.employeeId,
         baseSalary: input.newBaseSalary.toString(),
         currency: 'XOF',
-        housingAllowance: input.housingAllowance?.toString() || '0',
-        transportAllowance: input.transportAllowance?.toString() || '0',
-        mealAllowance: input.mealAllowance?.toString() || '0',
-        otherAllowances: input.otherAllowances || [],
+        allowances: {
+          housing: input.housingAllowance || 0,
+          transport: input.transportAllowance || 0,
+          meal: input.mealAllowance || 0,
+          other: input.otherAllowances || [],
+        },
         effectiveFrom: input.effectiveFrom.toISOString().split('T')[0],
         effectiveTo: null,
         changeReason: input.changeReason,
         notes: input.notes,
         createdBy: input.createdBy,
-      })
+      } as any)
       .returning();
 
     // Create audit log entry
@@ -173,17 +175,11 @@ export async function changeSalary(input: ChangeSalaryInput) {
       entityId: input.employeeId,
       oldValues: currentSalary ? {
         baseSalary: currentSalary.baseSalary,
-        housingAllowance: currentSalary.housingAllowance,
-        transportAllowance: currentSalary.transportAllowance,
-        mealAllowance: currentSalary.mealAllowance,
-        otherAllowances: currentSalary.otherAllowances,
+        allowances: currentSalary.allowances,
       } : null,
       newValues: {
         baseSalary: newSalary.baseSalary,
-        housingAllowance: newSalary.housingAllowance,
-        transportAllowance: newSalary.transportAllowance,
-        mealAllowance: newSalary.mealAllowance,
-        otherAllowances: newSalary.otherAllowances,
+        allowances: newSalary.allowances,
         effectiveFrom: newSalary.effectiveFrom,
         reason: input.changeReason,
       },
@@ -252,15 +248,18 @@ export async function getSalaryHistory(employeeId: string) {
  */
 export function calculateGrossSalary(salaryRecord: typeof employeeSalaries.$inferSelect): number {
   const base = parseFloat(salaryRecord.baseSalary);
-  const housing = parseFloat(salaryRecord.housingAllowance || '0');
-  const transport = parseFloat(salaryRecord.transportAllowance || '0');
-  const meal = parseFloat(salaryRecord.mealAllowance || '0');
+
+  // Get allowances from JSONB field
+  const allowancesData = salaryRecord.allowances as any || {};
+  const housing = allowancesData.housing || 0;
+  const transport = allowancesData.transport || 0;
+  const meal = allowancesData.meal || 0;
 
   // Other allowances (from JSONB array)
   let otherTotal = 0;
-  if (Array.isArray(salaryRecord.otherAllowances)) {
-    otherTotal = salaryRecord.otherAllowances.reduce(
-      (sum, allowance: any) => sum + (allowance.amount || 0),
+  if (Array.isArray(allowancesData.other)) {
+    otherTotal = allowancesData.other.reduce(
+      (sum: number, allowance: any) => sum + (allowance.amount || 0),
       0
     );
   }

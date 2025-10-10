@@ -11,7 +11,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/trpc/client';
+import { trpc } from '@/lib/trpc/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -25,7 +25,7 @@ interface PolicyAuditTrailProps {
 }
 
 export function PolicyAuditTrail({ policyId }: PolicyAuditTrailProps) {
-  const { data: history, isLoading } = api.policies.getPolicyHistory.useQuery(policyId);
+  const { data: history, isLoading } = trpc.policies.getPolicyHistory.useQuery(policyId);
 
   if (isLoading) {
     return (
@@ -72,7 +72,7 @@ export function PolicyAuditTrail({ policyId }: PolicyAuditTrailProps) {
           {/* Timeline line */}
           <div className="absolute left-[11px] top-0 bottom-0 w-px bg-border" />
 
-          {history.map((version, index) => {
+          {history.map((version: typeof history[number], index: number) => {
             const isActive = !version.effectiveTo;
             const isFuture = version.effectiveFrom && new Date(version.effectiveFrom) > new Date();
 
@@ -158,10 +158,10 @@ export function PolicyAuditTrail({ policyId }: PolicyAuditTrailProps) {
                       )}
                     </div>
 
-                    {version.legalReference && (
+                    {(version as any).legalReference && (
                       <div className="flex items-start gap-1.5 text-xs text-muted-foreground pt-2 border-t">
                         <FileText className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                        <span>{version.legalReference}</span>
+                        <span>{(version as any).legalReference}</span>
                       </div>
                     )}
 

@@ -31,7 +31,7 @@ export function PreviewStep({ adjustmentId }: PreviewStepProps) {
     );
   }
 
-  if (!preview || preview.length === 0) {
+  if (!preview || !preview.items || preview.items.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">
@@ -41,8 +41,9 @@ export function PreviewStep({ adjustmentId }: PreviewStepProps) {
     );
   }
 
-  const totalCurrentSalary = preview.reduce((sum, emp) => sum + emp.currentSalary, 0);
-  const totalNewSalary = preview.reduce((sum, emp) => sum + emp.newSalary, 0);
+  const items = preview.items;
+  const totalCurrentSalary = items.reduce((sum: number, emp: typeof items[number]) => sum + emp.currentSalary, 0);
+  const totalNewSalary = items.reduce((sum: number, emp: typeof items[number]) => sum + emp.newSalary, 0);
   const totalIncrease = totalNewSalary - totalCurrentSalary;
 
   return (
@@ -51,7 +52,7 @@ export function PreviewStep({ adjustmentId }: PreviewStepProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-600 font-medium">Employés affectés</p>
-          <p className="text-3xl font-bold text-blue-700 mt-2">{preview.length}</p>
+          <p className="text-3xl font-bold text-blue-700 mt-2">{items.length}</p>
         </div>
 
         <div className="bg-gray-50 border rounded-lg p-4">
@@ -91,7 +92,7 @@ export function PreviewStep({ adjustmentId }: PreviewStepProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {preview.map((employee: any) => {
+              {items.map((employee: typeof items[number]) => {
                 const change = employee.newSalary - employee.currentSalary;
                 const changePercent = (change / employee.currentSalary) * 100;
 
@@ -101,7 +102,7 @@ export function PreviewStep({ adjustmentId }: PreviewStepProps) {
                       {employee.employeeName}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {employee.positionTitle || '-'}
+                      {(employee as any).positionTitle || '-'}
                     </TableCell>
                     <TableCell className="text-right font-mono">
                       {formatCurrency(employee.currentSalary)}
@@ -128,7 +129,7 @@ export function PreviewStep({ adjustmentId }: PreviewStepProps) {
       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
         <p className="text-sm text-yellow-800">
           ⚠️ <strong>Attention:</strong> Vérifiez attentivement les changements avant de confirmer.
-          Cette action modifiera les salaires de {preview.length} employé(s).
+          Cette action modifiera les salaires de {items.length} employé(s).
         </p>
       </div>
     </div>

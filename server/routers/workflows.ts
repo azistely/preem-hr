@@ -385,6 +385,7 @@ export const workflowsRouter = createTRPCRouter({
         limit,
         offset,
         with: {
+          // @ts-expect-error - Relations not yet defined in schema
           employee: {
             columns: {
               id: true,

@@ -384,7 +384,7 @@ async function executeCreateAlert(
       assigneeId: config.assigneeId,
       dueDate: config.dueDate ? new Date(config.dueDate) : null,
       status: 'active',
-    })
+    } as any)
     .returning();
 
   return {
@@ -535,7 +535,7 @@ async function logExecution(
       executionLog: data.executionLog,
       triggerEventId: data.triggerEventId,
       employeeId: data.employeeId,
-    })
+    } as any)
     .returning();
 
   return execution.id;

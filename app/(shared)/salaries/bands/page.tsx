@@ -29,12 +29,22 @@ export default function SalaryBandsPage() {
   const [editingBand, setEditingBand] = useState<any>(null);
   const { toast } = useToast();
 
+  const utils = trpc.useUtils();
   const { data: bands, isLoading } = trpc.salaryBands.list.useQuery();
   const deleteBand = trpc.salaryBands.delete.useMutation({
     onSuccess: () => {
       toast({
         title: 'Bande supprimée',
         description: 'La bande salariale a été supprimée avec succès',
+      });
+      // Invalidate cache to refresh the list
+      utils.salaryBands.list.invalidate();
+    },
+    onError: (error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Erreur lors de la suppression',
+        variant: 'destructive',
       });
     },
   });

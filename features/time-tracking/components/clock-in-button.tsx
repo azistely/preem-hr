@@ -123,7 +123,7 @@ export function ClockInButton({ employeeId, currentEntry, onUpdate }: ClockInBut
   };
 
   const isClockedIn = !!currentEntry && !currentEntry.clockOut;
-  const isLoading = clockInMutation.isLoading || clockOutMutation.isLoading || isGettingLocation;
+  const isLoading = clockInMutation.isPending || clockOutMutation.isPending || isGettingLocation;
 
   return (
     <Card className="w-full max-w-md">

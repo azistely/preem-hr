@@ -72,8 +72,6 @@ export async function sendTerminationNotification(input: SendTerminationNotifica
   const [tenant] = await db
     .select({
       name: tenants.name,
-      email: tenants.email,
-      hrEmail: tenants.hrEmail,
     })
     .from(tenants)
     .where(eq(tenants.id, input.tenantId))
@@ -135,21 +133,22 @@ export async function sendTerminationNotification(input: SendTerminationNotifica
   });
 
   // 6. Send email to HR (if configured)
-  let hrEmailResult = null;
-  const hrEmail = tenant.hrEmail || tenant.email;
+  // TODO: Add HR email field to tenants table
+  // let hrEmailResult = null;
+  // const hrEmail = tenant.hrEmail || tenant.email;
 
-  if (hrEmail) {
-    const hrEmailHtml = generateHRTerminationEmail({
-      ...emailData,
-      hrRecipient: 'Équipe RH',
-    });
+  // if (hrEmail) {
+  //   const hrEmailHtml = generateHRTerminationEmail({
+  //     ...emailData,
+  //     hrRecipient: 'Équipe RH',
+  //   });
 
-    hrEmailResult = await sendEmail({
-      to: hrEmail,
-      subject: `[RH] Documents de cessation générés - ${employee.firstName} ${employee.lastName}`,
-      html: hrEmailHtml,
-    });
-  }
+  //   hrEmailResult = await sendEmail({
+  //     to: hrEmail,
+  //     subject: `[RH] Documents de cessation générés - ${employee.firstName} ${employee.lastName}`,
+  //     html: hrEmailHtml,
+  //   });
+  // }
 
   return {
     success: employeeEmailResult.success,
@@ -157,10 +156,10 @@ export async function sendTerminationNotification(input: SendTerminationNotifica
       sent: employeeEmailResult.success,
       to: employee.email,
     },
-    hrEmail: hrEmail ? {
-      sent: hrEmailResult?.success || false,
-      to: hrEmail,
-    } : null,
+    // hrEmail: hrEmail ? {
+    //   sent: hrEmailResult?.success || false,
+    //   to: hrEmail,
+    // } : null,
   };
 }
 

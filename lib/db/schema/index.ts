@@ -11,6 +11,7 @@ export * from './payroll';
 export * from './payroll-config';
 export * from './export-templates';
 export * from './time-tracking';
+export * from './time-tracking-relations';
 export * from './system';
 export * from './workflows';
 export * from './automation';

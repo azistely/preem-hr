@@ -13,6 +13,8 @@ export const tenants = pgTable('tenants', {
   taxId: text('tax_id'),
   businessRegistration: text('business_registration'),
   industry: text('industry'),
+  email: text('email'),
+  hrEmail: text('hr_email'),
 
   // Subscription & features
   plan: text('plan').notNull().default('trial'),

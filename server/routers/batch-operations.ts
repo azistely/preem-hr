@@ -48,6 +48,7 @@ export const batchOperationsRouter = createTRPCRouter({
         limit,
         offset,
         with: {
+          // @ts-expect-error - Relations not yet defined in schema
           startedBy: {
             columns: {
               id: true,
@@ -84,6 +85,7 @@ export const batchOperationsRouter = createTRPCRouter({
           eq(batchOperations.tenantId, ctx.user.tenantId)
         ),
         with: {
+          // @ts-expect-error - Relations not yet defined in schema
           startedBy: {
             columns: {
               id: true,
@@ -140,7 +142,7 @@ export const batchOperationsRouter = createTRPCRouter({
       // Calculate progress percentage
       const progressPercentage =
         operation.totalCount > 0
-          ? Math.round((operation.processedCount / operation.totalCount) * 100)
+          ? Math.round((operation.processedCount || 0 / operation.totalCount) * 100)
           : 0;
 
       return {
@@ -288,7 +290,7 @@ export const batchOperationsRouter = createTRPCRouter({
           entityType: operation.entityType,
           entityIds: failedIds,
           params: {
-            ...operation.params,
+            ...(operation.params as object || {}),
             retryOf: operation.id,
           },
           status: 'pending',

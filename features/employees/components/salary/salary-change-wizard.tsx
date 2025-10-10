@@ -50,7 +50,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { api } from '@/lib/trpc/client';
+import { trpc } from '@/lib/trpc/client';
 import { useSalaryValidation, formatCurrency } from '../../hooks/use-salary-validation';
 import { SalaryComparisonCard } from './salary-comparison-card';
 import { toast } from 'sonner';
@@ -131,7 +131,7 @@ export function SalaryChangeWizard({
     (currentSalary.mealAllowance || 0);
 
   // Mutation
-  const changeSalaryMutation = api.salaries.change.useMutation({
+  const changeSalaryMutation = trpc.salaries.change.useMutation({
     onSuccess: () => {
       toast.success('Salaire modifié avec succès');
       if (onSuccess) {
@@ -140,7 +140,7 @@ export function SalaryChangeWizard({
         router.push(`/employees/${employeeId}`);
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(error.message);
     },
   });
@@ -149,6 +149,7 @@ export function SalaryChangeWizard({
     changeSalaryMutation.mutate({
       employeeId,
       ...data,
+      effectiveFrom: new Date(data.effectiveFrom),
     });
   };
 

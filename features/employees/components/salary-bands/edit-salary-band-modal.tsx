@@ -95,7 +95,14 @@ export function EditSalaryBandModal({ band, open, onClose }: EditSalaryBandModal
   const spread = midpoint > 0 ? ((maxSalary - minSalary) / midpoint) * 100 : 0;
 
   const onSubmit = async (data: FormData) => {
-    await updateBand.mutateAsync(data);
+    await updateBand.mutateAsync({
+      bandId: data.id,
+      name: data.name,
+      minSalary: data.minSalary,
+      maxSalary: data.maxSalary,
+      midSalary: Math.round((data.minSalary + data.maxSalary) / 2),
+      jobLevel: data.jobLevel,
+    });
   };
 
   return (

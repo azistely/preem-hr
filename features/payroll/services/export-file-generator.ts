@@ -315,7 +315,7 @@ export class ExportFileGenerator {
           const cellValue = row[columnName];
           return total + (typeof cellValue === 'number' ? cellValue : 0);
         }, 0);
-        value = sum;
+        value = String(sum);
       }
 
       values[cell.column - 1] = value;

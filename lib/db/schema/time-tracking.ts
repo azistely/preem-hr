@@ -1,5 +1,5 @@
 import { pgTable, uuid, timestamp, numeric, text, boolean, pgPolicy, date, integer } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import { sql, relations } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { employees } from './employees';
 import { tenantUser } from './roles';

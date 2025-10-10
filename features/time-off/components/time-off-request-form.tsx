@@ -274,11 +274,11 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
             {/* Submit button */}
             <Button
               type="submit"
-              disabled={requestMutation.isLoading || !hasSufficientBalance}
+              disabled={requestMutation.isPending || !hasSufficientBalance}
               className="w-full min-h-[56px] text-lg"
               size="lg"
             >
-              {requestMutation.isLoading ? 'Envoi en cours...' : 'Envoyer la demande'}
+              {requestMutation.isPending ? 'Envoi en cours...' : 'Envoyer la demande'}
             </Button>
           </form>
         </Form>

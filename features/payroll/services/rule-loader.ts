@@ -151,7 +151,7 @@ export class RuleLoader {
         minAmount: Number(b.minAmount),
         maxAmount: b.maxAmount ? Number(b.maxAmount) : null,
         rate: Number(b.rate),
-        description: b.description,
+        description: (b.description as string) || null,
       })),
       familyDeductions: familyDeductions.map((fd) => ({
         id: fd.id,
@@ -335,9 +335,9 @@ export class RuleLoader {
     const override = contribution.sectorOverrides.find((so) => so.sectorCode === sectorCode);
 
     if (override) {
-      const overrideRate = rateType === 'employee' ? override.employeeRate : override.employerRate;
-      if (overrideRate !== null) {
-        return overrideRate;
+      // Sector overrides only apply to employer rates
+      if (rateType === 'employer' && override.employerRate !== null) {
+        return override.employerRate;
       }
     }
 

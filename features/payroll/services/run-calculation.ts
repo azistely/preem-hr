@@ -220,7 +220,7 @@ export async function calculatePayrollRun(
 
         // Read components from employee_salaries.components (with fallback to legacy columns)
         const { getEmployeeSalaryComponents } = await import('@/lib/salary-components/component-reader');
-        const breakdown = getEmployeeSalaryComponents(currentSalary);
+        const breakdown = getEmployeeSalaryComponents(currentSalary as any);
 
         // Calculate payroll using V2 (database-driven, multi-country)
         const calculation = await calculatePayrollV2({

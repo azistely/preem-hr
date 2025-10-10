@@ -1,3 +1,4 @@
+// @ts-nocheck - Deno runtime, separate from main TypeScript compilation
 /**
  * Monthly Leave Accrual Edge Function
  *

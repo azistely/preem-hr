@@ -228,14 +228,14 @@ export const policiesRouter = createTRPCRouter({
           maxDaysPerRequest: input.maxDaysPerRequest?.toString(),
           blackoutPeriods: input.blackoutPeriods as any,
           isPaid: input.isPaid,
-          effectiveFrom: input.effectiveFrom || new Date(),
+          effectiveFrom: (input.effectiveFrom || new Date()).toISOString().split('T')[0],
           effectiveTo: null,
           createdBy: ctx.user.id,
           // Compliance metadata
           templateId: input.templateId || null,
           complianceLevel: complianceResult.complianceLevel,
           legalReference: complianceResult.legalReferences[0] || null,
-        })
+        } as any)
         .returning();
 
       return policy;
@@ -275,7 +275,7 @@ export const policiesRouter = createTRPCRouter({
 
         // Step 3: Validate compliance for changes
         const countryCode = 'CI'; // TODO: Get from tenant
-        const updatedPolicy = {
+        const updatedPolicy: any = {
           ...currentPolicy,
           ...input,
           accrualRate: input.accrualRate || parseFloat(currentPolicy.accrualRate || '0'),
@@ -434,7 +434,7 @@ export const policiesRouter = createTRPCRouter({
         });
 
         if (existingRate) {
-          const effectiveFrom = input.effectiveFrom || new Date();
+          const effectiveFrom = (input.effectiveFrom || new Date()).toISOString().split('T')[0];
           await tx
             .update(overtimeRates)
             .set({ effectiveTo: effectiveFrom })
@@ -449,9 +449,9 @@ export const policiesRouter = createTRPCRouter({
               rateMultiplier: input.rateMultiplier.toString(),
               effectiveFrom,
               effectiveTo: null,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            })
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as any)
             .returning();
 
           return newRate;
@@ -543,9 +543,10 @@ export const policiesRouter = createTRPCRouter({
 
         if (existingRule) {
           // Close existing rule
+          const effectiveFromStr = effectiveFrom.toISOString().split('T')[0];
           await tx
             .update(leaveAccrualRules)
-            .set({ effectiveTo: effectiveFrom })
+            .set({ effectiveTo: effectiveFromStr })
             .where(eq(leaveAccrualRules.id, existingRule.id));
 
           // Insert new rule
@@ -556,17 +557,18 @@ export const policiesRouter = createTRPCRouter({
               id: undefined,
               daysPerMonth: input.daysPerMonth.toString(),
               bonusDays: input.bonusDays,
-              effectiveFrom,
+              effectiveFrom: effectiveFromStr,
               effectiveTo: null,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            })
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as any)
             .returning();
 
           return newRule;
         }
 
         // Create new rule
+        const effectiveFromStr = effectiveFrom.toISOString().split('T')[0];
         const [newRule] = await tx
           .insert(leaveAccrualRules)
           .values({
@@ -575,9 +577,9 @@ export const policiesRouter = createTRPCRouter({
             seniorityYears: input.seniorityYears || null,
             daysPerMonth: input.daysPerMonth.toString(),
             bonusDays: input.bonusDays,
-            effectiveFrom,
+            effectiveFrom: effectiveFromStr,
             effectiveTo: null,
-          })
+          } as any)
           .returning();
 
         return newRule;

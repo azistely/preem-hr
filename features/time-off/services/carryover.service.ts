@@ -117,7 +117,7 @@ export async function expireOldBalances(
           ...metadata,
           expired_history: expiredHistory,
         },
-        updatedAt: new Date(),
+        updatedAt: new Date().toISOString(),
       })
       .where(eq(timeOffBalances.id, balance.id));
 

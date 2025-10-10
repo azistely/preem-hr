@@ -1,4 +1,4 @@
-import { pgTable, index, unique, uuid, varchar, jsonb, integer, boolean, timestamp, pgPolicy, check, text, type AnyPgColumn, foreignKey, inet, date, numeric, pgView, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, unique, uuid, varchar, jsonb, integer, boolean, timestamp, pgPolicy, check, text, type AnyPgColumn, foreignKey, inet, date, numeric, pgView, customType, type PgTableWithColumns } from "drizzle-orm/pg-core"
 import { sql, relations } from "drizzle-orm"
 
 // Custom type for PostGIS/Postgres name type
@@ -77,7 +77,7 @@ export const tenants = pgTable("tenants", {
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'archived'::text])`),
 ]);
 
-export const users = pgTable("users", {
+export const users: PgTableWithColumns<any> = pgTable("users", {
 	id: uuid().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeId: uuid("employee_id"),
@@ -93,7 +93,7 @@ export const users = pgTable("users", {
 	status: text().default('active').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
+}, (table): any => [
 	index("idx_users_email").using("btree", table.email.asc().nullsLast().op("text_ops")),
 	index("idx_users_role").using("btree", table.role.asc().nullsLast().op("text_ops")),
 	index("idx_users_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("uuid_ops")).where(sql`(status = 'active'::text)`),
@@ -286,7 +286,7 @@ export const familyDeductionRules = pgTable("family_deduction_rules", {
 	unique("family_deduction_rules_tax_system_id_fiscal_parts_key").on(table.taxSystemId, table.fiscalParts),
 ]);
 
-export const employees = pgTable("employees", {
+export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeNumber: text("employee_number").notNull(),
@@ -325,7 +325,7 @@ export const employees = pgTable("employees", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	createdBy: uuid("created_by"),
 	updatedBy: uuid("updated_by"),
-}, (table) => [
+}, (table): any => [
 	index("idx_employees_email").using("btree", table.email.asc().nullsLast().op("text_ops")),
 	index("idx_employees_hire_date").using("btree", table.tenantId.asc().nullsLast().op("date_ops"), table.hireDate.asc().nullsLast().op("uuid_ops")),
 	index("idx_employees_number").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.employeeNumber.asc().nullsLast().op("text_ops")),
@@ -395,7 +395,7 @@ export const employeesRelations = relations(employees, ({ one, many }) => ({
 	payslips: many(payslips),
 }));
 
-export const employeeTerminations = pgTable("employee_terminations", {
+export const employeeTerminations: PgTableWithColumns<any> = pgTable("employee_terminations", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeId: uuid("employee_id").notNull(),
@@ -429,7 +429,7 @@ export const employeeTerminations = pgTable("employee_terminations", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedBy: uuid("updated_by"),
 	updatedByEmail: text("updated_by_email"),
-}, (table) => [
+}, (table): any => [
 	index("idx_terminations_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
 	index("idx_terminations_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
 	index("idx_terminations_date").using("btree", table.terminationDate.asc().nullsLast().op("date_ops")),
@@ -577,6 +577,21 @@ export const assignments = pgTable("assignments", {
 	check("valid_assignment_reason", sql`(assignment_reason = ANY (ARRAY['hire'::text, 'promotion'::text, 'transfer'::text, 'demotion'::text, 'other'::text])) OR (assignment_reason IS NULL)`),
 	check("valid_assignment_type", sql`assignment_type = ANY (ARRAY['primary'::text, 'secondary'::text, 'temporary'::text])`),
 ]);
+
+export const assignmentsRelations = relations(assignments, ({ one }) => ({
+	tenant: one(tenants, {
+		fields: [assignments.tenantId],
+		references: [tenants.id],
+	}),
+	employee: one(employees, {
+		fields: [assignments.employeeId],
+		references: [employees.id],
+	}),
+	position: one(positions, {
+		fields: [assignments.positionId],
+		references: [positions.id],
+	}),
+}));
 
 export const contributionTypes = pgTable("contribution_types", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -1542,66 +1557,10 @@ export const auditLogs = pgTable("audit_logs", {
 		}),
 ]);
 
-export const workflows = pgTable("workflows", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	tenantId: uuid("tenant_id").notNull(),
-	name: text().notNull(),
-	description: text(),
-	triggerEvent: text("trigger_event").notNull(),
-	definition: jsonb().notNull(),
-	isActive: boolean("is_active").default(true).notNull(),
-	version: integer().default(1).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	createdBy: uuid("created_by"),
-}, (table) => [
-	foreignKey({
-			columns: [table.createdBy],
-			foreignColumns: [users.id],
-			name: "workflows_created_by_fkey"
-		}),
-	foreignKey({
-			columns: [table.tenantId],
-			foreignColumns: [tenants.id],
-			name: "workflows_tenant_id_fkey"
-		}).onDelete("cascade"),
-	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
-]);
-
 // NOTE: Views below (geography_columns, geometry_columns) are PostGIS system views
 // They are NOT exported to prevent Drizzle initialization issues
 // If you need them, query them directly with raw SQL
-
-export const workflowInstances = pgTable("workflow_instances", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	tenantId: uuid("tenant_id").notNull(),
-	workflowId: uuid("workflow_id").notNull(),
-	entityType: text("entity_type").notNull(),
-	entityId: uuid("entity_id").notNull(),
-	currentState: text("current_state").notNull(),
-	status: text().default('running').notNull(),
-	context: jsonb().default({}).notNull(),
-	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
-	error: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("idx_workflow_instances_entity").using("btree", table.entityType.asc().nullsLast().op("text_ops"), table.entityId.asc().nullsLast().op("text_ops")),
-	index("idx_workflow_instances_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("uuid_ops")),
-	foreignKey({
-			columns: [table.tenantId],
-			foreignColumns: [tenants.id],
-			name: "workflow_instances_tenant_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.workflowId],
-			foreignColumns: [workflows.id],
-			name: "workflow_instances_workflow_id_fkey"
-		}),
-	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
-	check("valid_status_workflow", sql`status = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])`),
-]);
+// NOTE: workflows and workflowInstances are imported from @/lib/db/schema/workflows
 
 export const complianceRules = pgTable("compliance_rules", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -1737,14 +1696,6 @@ export const geofenceConfigurations = pgTable("geofence_configurations", {
 	check("valid_radius", sql`(radius_meters > 0) AND (radius_meters <= 10000)`),
 ]);
 
-export const geofenceConfigurationsRelations = relations(geofenceConfigurations, ({ one, many }) => ({
-	tenant: one(tenants, {
-		fields: [geofenceConfigurations.tenantId],
-		references: [tenants.id],
-	}),
-	employeeAssignments: many(geofenceEmployeeAssignments),
-}));
-
 export const geofenceEmployeeAssignments = pgTable("geofence_employee_assignments", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	geofenceId: uuid("geofence_id").notNull(),
@@ -1778,11 +1729,36 @@ export const geofenceEmployeeAssignmentsRelations = relations(geofenceEmployeeAs
 	}),
 }));
 
+export const geofenceConfigurationsRelations = relations(geofenceConfigurations, ({ one, many }) => ({
+	tenant: one(tenants, {
+		fields: [geofenceConfigurations.tenantId],
+		references: [tenants.id],
+	}),
+	employeeAssignments: many(geofenceEmployeeAssignments),
+}));
+
 // ============================================================================
 // Policy Configuration Schema
 // ============================================================================
 
 export { overtimeRates, leaveAccrualRules } from '@/lib/db/schema/policies';
+
+// ============================================================================
+// Workflow Automation Schema
+// ============================================================================
+
+export {
+  workflowDefinitions,
+  workflowExecutions,
+  workflows,
+  workflowInstances
+} from '@/lib/db/schema/workflows';
+
+export {
+  alerts,
+  batchOperations,
+  payrollEvents
+} from '@/lib/db/schema/automation';
 
 // PostGIS system views - NOT EXPORTED
 // Commented out to prevent Drizzle schema initialization errors
