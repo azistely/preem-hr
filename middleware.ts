@@ -53,6 +53,11 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   // Admin employee management (HR Manager+)
   '/admin/employees/import-export': ['hr_manager', 'tenant_admin', 'super_admin'],
 
+  // Alerts and Workflows (HR Manager+)
+  '/alerts': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/workflows': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/workflows/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+
   // Admin settings (Tenant Admin only)
   '/admin/settings': ['tenant_admin', 'super_admin'],
   '/admin/settings/dashboard': ['tenant_admin', 'super_admin'],
@@ -100,6 +105,8 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
  */
 const PUBLIC_ROUTES = [
   '/',
+  '/sn',  // Senegal homepage
+  '/bf',  // Burkina Faso homepage
   '/login',
   '/signup',
   '/api',
