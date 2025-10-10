@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { BottomNav } from "./bottom-nav";
+import { MobileHeader } from "./mobile-header";
+import { HamburgerMenu } from "./hamburger-menu";
 import { Sidebar } from "./sidebar";
 import { getNavigationByRole } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -20,25 +21,45 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const pathname = usePathname();
   const navigation = getNavigationByRole(userRole);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+
+  const handleMenuClick = React.useCallback(() => {
+    setIsMobileMenuOpen(true);
+  }, []);
+
+  const handleMenuClose = React.useCallback(() => {
+    setIsMobileMenuOpen(false);
+  }, []);
 
   return (
     <div className={cn("min-h-screen", className)}>
+      {/* Mobile Header */}
+      <MobileHeader
+        onMenuClick={handleMenuClick}
+        notificationCount={0}
+      />
+
+      {/* Mobile Hamburger Menu */}
+      <HamburgerMenu
+        sections={navigation.mobile}
+        isOpen={isMobileMenuOpen}
+        onClose={handleMenuClose}
+      />
+
       <div className="flex">
         {/* Desktop Sidebar */}
         <Sidebar
           sections={navigation.desktop}
+          advancedSections={navigation.advanced}
           showSearch={userRole === "hr_manager" || userRole === "admin"}
           collapsible={true}
         />
 
         {/* Main Content */}
-        <main className="flex-1">
+        <main className="flex-1 pb-16 lg:pb-0">
           {children}
         </main>
       </div>
-
-      {/* Mobile Bottom Navigation */}
-      <BottomNav items={navigation.mobile} />
     </div>
   );
 }
