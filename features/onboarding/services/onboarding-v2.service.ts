@@ -226,13 +226,54 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       numberOfDependents: input.dependentChildren,
     });
 
+    // Convert manual allowances to component format
+    const manualAllowanceComponents: Array<{
+      code: string;
+      name: string;
+      amount: number;
+      sourceType: 'standard';
+    }> = [];
+
+    if (input.transportAllowance && input.transportAllowance > 0) {
+      manualAllowanceComponents.push({
+        code: 'TPT_TRANSPORT_CI',
+        name: 'Indemnité de transport',
+        amount: input.transportAllowance,
+        sourceType: 'standard',
+      });
+    }
+
+    if (input.housingAllowance && input.housingAllowance > 0) {
+      manualAllowanceComponents.push({
+        code: 'TPT_HOUSING_CI',
+        name: 'Indemnité de logement',
+        amount: input.housingAllowance,
+        sourceType: 'standard',
+      });
+    }
+
+    if (input.mealAllowance && input.mealAllowance > 0) {
+      manualAllowanceComponents.push({
+        code: 'TPT_MEAL_ALLOWANCE',
+        name: 'Indemnité de panier',
+        amount: input.mealAllowance,
+        sourceType: 'standard',
+      });
+    }
+
+    // Combine all components (auto-calculated + manual allowances)
+    const allComponents = [
+      ...componentsWithCalculated,
+      ...manualAllowanceComponents,
+    ];
+
     const [salary] = await tx
       .insert(employeeSalaries)
       .values({
         tenantId: input.tenantId,
         employeeId: employee.id,
         baseSalary: String(input.baseSalary),
-        components: componentsWithCalculated,
+        components: allComponents,
         currency: tenant.currency || 'XOF',
         effectiveFrom: hireDate.toISOString().split('T')[0],
         effectiveTo: null,
