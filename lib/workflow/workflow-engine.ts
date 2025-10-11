@@ -25,7 +25,7 @@ export interface WorkflowCondition {
  * Workflow action structure
  */
 export interface WorkflowAction {
-  type: 'create_alert' | 'send_notification' | 'create_payroll_event' | 'update_employee_status';
+  type: 'create_alert' | 'send_notification' | 'create_payroll_event' | 'update_employee_status' | 'wait_delay' | 'conditional' | 'parallel';
   config: Record<string, any>;
 }
 
@@ -340,6 +340,15 @@ export async function executeActions(
         case 'update_employee_status':
           result = await executeUpdateEmployeeStatus(action, context);
           break;
+        case 'wait_delay':
+          result = await executeWaitDelay(action, context);
+          break;
+        case 'conditional':
+          result = await executeConditional(action, context);
+          break;
+        case 'parallel':
+          result = await executeParallel(action, context);
+          break;
         default:
           result = {
             type: action.type,
@@ -558,4 +567,82 @@ function getNestedValue(obj: Record<string, any>, path: string): any {
   }
 
   return value;
+}
+
+/**
+ * Action: Wait Delay
+ * Pauses execution for a specified duration (simulated in workflow context)
+ */
+async function executeWaitDelay(
+  action: WorkflowAction,
+  context: WorkflowContext
+): Promise<ActionResult> {
+  const { config } = action;
+  const duration = config.duration || 0; // Duration in milliseconds
+
+  // In a real implementation, this would schedule the next step to run after the delay
+  // For now, we just log the delay and continue
+  return {
+    type: 'wait_delay',
+    success: true,
+    data: {
+      duration,
+      message: `Workflow would pause for ${duration}ms`,
+    },
+  };
+}
+
+/**
+ * Action: Conditional Branch
+ * Evaluates a condition and executes trueBranch or falseBranch actions
+ */
+async function executeConditional(
+  action: WorkflowAction,
+  context: WorkflowContext
+): Promise<ActionResult> {
+  const { config } = action;
+  const { condition, trueBranch = [], falseBranch = [] } = config;
+
+  // Evaluate the condition
+  const conditionResult = await evaluateConditions([condition], context.triggerData);
+
+  // Execute appropriate branch
+  const branchActions = conditionResult ? trueBranch : falseBranch;
+  const branchResults = await executeActions(branchActions, context);
+
+  return {
+    type: 'conditional',
+    success: true,
+    data: {
+      conditionResult,
+      branchExecuted: conditionResult ? 'true' : 'false',
+      branchResults,
+    },
+  };
+}
+
+/**
+ * Action: Parallel Execution
+ * Executes multiple actions in parallel (Promise.all)
+ */
+async function executeParallel(
+  action: WorkflowAction,
+  context: WorkflowContext
+): Promise<ActionResult> {
+  const { config } = action;
+  const { actions = [] } = config;
+
+  // Execute all actions in parallel
+  const results = await Promise.all(
+    actions.map((a: WorkflowAction) => executeActions([a], context))
+  );
+
+  return {
+    type: 'parallel',
+    success: true,
+    data: {
+      parallelResults: results.flat(),
+      totalActions: actions.length,
+    },
+  };
 }
