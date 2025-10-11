@@ -18,12 +18,22 @@ import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { formatCurrency, calculatePercentageChange } from '../../hooks/use-salary-validation';
 
+interface SalaryComponent {
+  code: string;
+  name: string;
+  amount: number;
+  metadata?: any;
+  sourceType: 'standard' | 'custom' | 'template';
+  sourceId?: string;
+}
+
 interface SalaryHistoryEntry {
   id: string;
   baseSalary: number;
-  housingAllowance?: number;
-  transportAllowance?: number;
-  mealAllowance?: number;
+  components?: SalaryComponent[]; // New components architecture
+  housingAllowance?: number; // Legacy - for backward compatibility
+  transportAllowance?: number; // Legacy
+  mealAllowance?: number; // Legacy
   effectiveFrom: string;
   effectiveTo: string | null;
   changeReason: string;
@@ -52,6 +62,12 @@ export function SalaryHistoryTimeline({
   }
 
   const calculateTotalSalary = (entry: SalaryHistoryEntry) => {
+    // New components architecture (preferred)
+    if (entry.components && entry.components.length > 0) {
+      return entry.components.reduce((sum, component) => sum + (component.amount || 0), 0);
+    }
+
+    // Fallback to legacy allowances architecture
     return (
       entry.baseSalary +
       (entry.housingAllowance || 0) +
@@ -176,42 +192,56 @@ export function SalaryHistoryTimeline({
 
                   {/* Details */}
                   <div className="bg-muted/50 p-4 rounded-lg space-y-2 text-sm">
-                    {/* Breakdown */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-muted-foreground">Base:</span>
-                        <span className="font-medium ml-2">
-                          {formatCurrency(entry.baseSalary)}
-                        </span>
+                    {/* Breakdown - New components architecture */}
+                    {entry.components && entry.components.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {entry.components.map((component, idx) => (
+                          <div key={idx}>
+                            <span className="text-muted-foreground">{component.name}:</span>
+                            <span className="font-medium ml-2">
+                              {formatCurrency(component.amount)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-
-                      {entry.housingAllowance && entry.housingAllowance > 0 && (
+                    ) : (
+                      /* Fallback to legacy allowances display */
+                      <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <span className="text-muted-foreground">Logement:</span>
+                          <span className="text-muted-foreground">Base:</span>
                           <span className="font-medium ml-2">
-                            {formatCurrency(entry.housingAllowance)}
+                            {formatCurrency(entry.baseSalary)}
                           </span>
                         </div>
-                      )}
 
-                      {entry.transportAllowance && entry.transportAllowance > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Transport:</span>
-                          <span className="font-medium ml-2">
-                            {formatCurrency(entry.transportAllowance)}
-                          </span>
-                        </div>
-                      )}
+                        {entry.housingAllowance && entry.housingAllowance > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Logement:</span>
+                            <span className="font-medium ml-2">
+                              {formatCurrency(entry.housingAllowance)}
+                            </span>
+                          </div>
+                        )}
 
-                      {entry.mealAllowance && entry.mealAllowance > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Repas:</span>
-                          <span className="font-medium ml-2">
-                            {formatCurrency(entry.mealAllowance)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                        {entry.transportAllowance && entry.transportAllowance > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Transport:</span>
+                            <span className="font-medium ml-2">
+                              {formatCurrency(entry.transportAllowance)}
+                            </span>
+                          </div>
+                        )}
+
+                        {entry.mealAllowance && entry.mealAllowance > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Repas:</span>
+                            <span className="font-medium ml-2">
+                              {formatCurrency(entry.mealAllowance)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Reason */}
                     <Separator className="my-2" />
