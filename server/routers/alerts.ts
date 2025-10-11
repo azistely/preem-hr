@@ -25,12 +25,15 @@ export const alertsRouter = createTRPCRouter({
       z.object({
         status: z.enum(['active', 'dismissed', 'completed']).optional(),
         severity: z.enum(['info', 'warning', 'urgent']).optional(),
+        type: z
+          .enum(['contract_expiry', 'leave_request_pending', 'leave_upcoming', 'document_expiry', 'payroll_reminder'])
+          .optional(),
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
       })
     )
     .query(async ({ input, ctx }) => {
-      const { status, severity, limit, offset } = input;
+      const { status, severity, type, limit, offset } = input;
       const userId = ctx.user.id;
 
       // Build where conditions
@@ -42,6 +45,10 @@ export const alertsRouter = createTRPCRouter({
 
       if (severity) {
         conditions.push(eq(alerts.severity, severity));
+      }
+
+      if (type) {
+        conditions.push(eq(alerts.type, type));
       }
 
       // Fetch alerts
@@ -222,6 +229,38 @@ export const alertsRouter = createTRPCRouter({
 
       return { success: true, count: input.ids.length };
     }),
+
+  /**
+   * Mark all active alerts as read (completed)
+   */
+  markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
+    const userId = ctx.user.id;
+
+    // Find all active alerts for user
+    const activeAlerts = await ctx.db.query.alerts.findMany({
+      where: and(eq(alerts.assigneeId, userId), eq(alerts.status, 'active')),
+      columns: { id: true },
+    });
+
+    if (activeAlerts.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    // Mark all as completed
+    await ctx.db
+      .update(alerts)
+      .set({
+        status: 'completed',
+        completedAt: new Date(),
+        completedBy: userId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(alerts.assigneeId, userId), eq(alerts.status, 'active'))
+      );
+
+    return { success: true, count: activeAlerts.length };
+  }),
 
   /**
    * Delete an alert (admin only)

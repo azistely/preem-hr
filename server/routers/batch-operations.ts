@@ -13,6 +13,7 @@ import { createTRPCRouter, hrManagerProcedure } from '../api/trpc';
 import { batchOperations } from '@/lib/db/schema';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { sendEvent } from '@/lib/inngest/client';
 
 export const batchOperationsRouter = createTRPCRouter({
   /**
@@ -193,12 +194,23 @@ export const batchOperationsRouter = createTRPCRouter({
         })
         .returning();
 
-      // TODO: Trigger background job to process batch operation
-      // This will be implemented in the batch processing service
+      // Trigger background job to process batch operation
+      await sendEvent({
+        name: 'batch.operation.created',
+        data: {
+          operationId: operation.id,
+          operationType: 'salary_update',
+          tenantId: ctx.user.tenantId,
+          metadata: {
+            userId: ctx.user.id,
+            entityCount: employeeIds.length,
+          },
+        },
+      });
 
       return {
         operation,
-        message: 'Opération groupée créée avec succès',
+        message: 'Opération groupée créée avec succès et en cours de traitement',
       };
     }),
 
@@ -304,11 +316,24 @@ export const batchOperationsRouter = createTRPCRouter({
         })
         .returning();
 
-      // TODO: Trigger background job for retry operation
+      // Trigger background job for retry operation
+      await sendEvent({
+        name: 'batch.operation.created',
+        data: {
+          operationId: retryOperation.id,
+          operationType: retryOperation.operationType,
+          tenantId: ctx.user.tenantId,
+          metadata: {
+            userId: ctx.user.id,
+            entityCount: failedIds.length,
+            retryOf: operation.id,
+          },
+        },
+      });
 
       return {
         operation: retryOperation,
-        message: `Nouvelle tentative créée pour ${failedIds.length} élément(s)`,
+        message: `Nouvelle tentative créée pour ${failedIds.length} élément(s) et en cours de traitement`,
       };
     }),
 
