@@ -1,0 +1,8 @@
+
+> preem-hr@0.1.0 prebuild
+> npm run type-check
+
+
+> preem-hr@0.1.0 type-check
+> tsc --noEmit
+

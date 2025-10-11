@@ -135,14 +135,56 @@ export async function reviewSalaryChange(input: ReviewDecisionInput) {
     if (input.decision === 'approved') {
       const allowances = review.proposedAllowances as any || {};
 
+      // Build components array from proposed salary and allowances
+      const components = [
+        {
+          code: '01',
+          name: 'Salaire de base',
+          amount: parseFloat(review.proposedSalary),
+          sourceType: 'standard' as const,
+        }
+      ];
+
+      // Add allowances as components if they exist
+      if (allowances.housingAllowance) {
+        components.push({
+          code: '21',
+          name: 'Indemnité de logement',
+          amount: allowances.housingAllowance,
+          sourceType: 'standard' as const,
+        });
+      }
+      if (allowances.transportAllowance) {
+        components.push({
+          code: '22',
+          name: 'Indemnité de transport',
+          amount: allowances.transportAllowance,
+          sourceType: 'standard' as const,
+        });
+      }
+      if (allowances.mealAllowance) {
+        components.push({
+          code: '23',
+          name: 'Indemnité de repas',
+          amount: allowances.mealAllowance,
+          sourceType: 'standard' as const,
+        });
+      }
+      if (Array.isArray(allowances.otherAllowances)) {
+        allowances.otherAllowances.forEach((allowance: any, index: number) => {
+          components.push({
+            code: `90${index}`,
+            name: allowance.name || 'Autre indemnité',
+            amount: allowance.amount,
+            sourceType: 'standard' as const, // Changed to 'standard' since it's from salary review system
+          });
+        });
+      }
+
       await changeSalary({
         employeeId: review.employeeId,
         tenantId: review.tenantId,
-        newBaseSalary: parseFloat(review.proposedSalary),
-        housingAllowance: allowances.housingAllowance,
-        transportAllowance: allowances.transportAllowance,
-        mealAllowance: allowances.mealAllowance,
-        otherAllowances: allowances.otherAllowances,
+        components,
         effectiveFrom: new Date(review.effectiveFrom),
         changeReason: review.reason,
         notes: `Approuvé par révision #${review.id}`,

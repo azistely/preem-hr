@@ -257,7 +257,14 @@ export async function processBulkAdjustment(input: ProcessBulkAdjustmentInput) {
         await changeSalary({
           employeeId: item.employeeId,
           tenantId,
-          newBaseSalary: item.newSalary,
+          components: [
+            {
+              code: '01',
+              name: 'Salaire de base',
+              amount: item.newSalary,
+              sourceType: 'standard' as const,
+            }
+          ],
           effectiveFrom: new Date(adjustment.effectiveFrom),
           changeReason: 'bulk_adjustment',
           notes: `Ajustement en masse: ${adjustment.name}`,

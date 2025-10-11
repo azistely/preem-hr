@@ -38,6 +38,12 @@ export default function OnboardingQ2Page() {
     hireDate: Date;
     maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
     dependentChildren: number;
+    components?: Array<{
+      code: string;
+      name: string;
+      amount: number;
+      sourceType: 'standard' | 'template';
+    }>;
     transportAllowance?: number;
     housingAllowance?: number;
     mealAllowance?: number;

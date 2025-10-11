@@ -97,11 +97,6 @@ export default function NewPolicyPage() {
     },
   });
 
-  // Get templates
-  // const { data: templates } = trpc.policies.getTemplates.useQuery({
-  //   countryCode: 'CI',
-  // });
-
   // Real-time compliance validation
   const watchedValues = form.watch();
   const { data: validation } = trpc.policies.validatePolicyCompliance.useQuery(

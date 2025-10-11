@@ -32,7 +32,7 @@ const employeeSchemaV2 = z.object({
     name: z.string(),
     amount: z.number(),
     sourceType: z.enum(['standard', 'template']),
-  })).optional().default([]),
+  })),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchemaV2>;
