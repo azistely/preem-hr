@@ -34,9 +34,15 @@ import { TerminateEmployeeModal } from '@/features/employees/components/lifecycl
 import { SuspendEmployeeModal } from '@/features/employees/components/lifecycle/suspend-employee-modal';
 import { TransferWizard } from '@/features/employees/components/transfer-wizard';
 import { EditEmployeeModal } from '@/features/employees/components/edit-employee-modal';
+import { SalaryHistoryTimeline } from '@/features/employees/components/salary/salary-history-timeline';
+import { SalaryChangeWizard } from '@/features/employees/components/salary/salary-change-wizard';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@/components/ui/visually-hidden';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { CategoryBadge } from '@/components/employees/category-badge';
+import { trpc } from '@/lib/trpc/client';
+import { Label } from '@/components/ui/label';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -48,9 +54,16 @@ export default function EmployeeDetailPage() {
   const [showSuspendModal, setShowSuspendModal] = useState(false);
   const [showTransferWizard, setShowTransferWizard] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showSalaryWizard, setShowSalaryWizard] = useState(false);
 
   const { data: employee, isLoading, error } = useEmployee(employeeId);
   const reactivateEmployee = useReactivateEmployee();
+
+  // Salary history query - only fetch if employee has salary
+  const { data: salaryHistory, isLoading: isLoadingSalaryHistory } = trpc.salaries.getHistory.useQuery(
+    { employeeId: params.id as string },
+    { enabled: !!(employee as any)?.currentSalary }
+  );
 
   const handleReactivate = async () => {
     try {
@@ -215,7 +228,16 @@ export default function EmployeeDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Salaire brut</p>
                 <p className="font-medium text-lg">
-                  {formatCurrency((employee as any).currentSalary.baseSalary)}
+                  {formatCurrency(
+                    // New components architecture (preferred)
+                    (employee as any).currentSalary.components && (employee as any).currentSalary.components.length > 0
+                      ? (employee as any).currentSalary.components.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
+                      : // Fallback to legacy allowances
+                        (employee as any).currentSalary.baseSalary +
+                        ((employee as any).currentSalary.housingAllowance || 0) +
+                        ((employee as any).currentSalary.transportAllowance || 0) +
+                        ((employee as any).currentSalary.mealAllowance || 0)
+                  )}
                 </p>
               </div>
             )}
@@ -342,16 +364,145 @@ export default function EmployeeDetailPage() {
 
         {/* Salary Tab */}
         <TabsContent value="salary" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Historique salarial</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                Module d'historique salarial à venir
-              </p>
-            </CardContent>
-          </Card>
+          {(employee as any).currentSalary ? (
+            <>
+              {/* Current Salary Card */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Salaire actuel</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      En vigueur depuis le {format(new Date((employee as any).currentSalary.effectiveFrom), 'PPP', { locale: fr })}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setShowSalaryWizard(true)}
+                    className="min-h-[48px]"
+                  >
+                    <Edit className="mr-2 h-4 w-4" />
+                    Modifier
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* New Components Architecture */}
+                  {(employee as any).currentSalary.components && (employee as any).currentSalary.components.length > 0 ? (
+                    <>
+                      {/* Components Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {(employee as any).currentSalary.components.map((component: any, idx: number) => (
+                          <div key={idx}>
+                            <Label className="text-sm text-muted-foreground">{component.name}</Label>
+                            <p className="text-lg font-semibold">
+                              {formatCurrency(component.amount)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Total Gross Salary */}
+                      <div className="bg-muted/50 p-4 rounded-lg border-t">
+                        <Label className="text-sm text-muted-foreground">Salaire brut total</Label>
+                        <p className="text-2xl font-bold text-primary">
+                          {formatCurrency(
+                            (employee as any).currentSalary.components.reduce(
+                              (sum: number, c: any) => sum + (c.amount || 0),
+                              0
+                            )
+                          )}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    /* Fallback to Legacy Allowances */
+                    <>
+                      {/* Base Salary - Prominent Display */}
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Salaire de base</Label>
+                        <p className="text-2xl font-bold">
+                          {formatCurrency((employee as any).currentSalary.baseSalary)}
+                        </p>
+                      </div>
+
+                      {/* Allowances - Show if any exist */}
+                      {((employee as any).currentSalary.housingAllowance ||
+                        (employee as any).currentSalary.transportAllowance ||
+                        (employee as any).currentSalary.mealAllowance) && (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+                            {(employee as any).currentSalary.housingAllowance > 0 && (
+                              <div>
+                                <Label className="text-sm text-muted-foreground">Indemnité de logement</Label>
+                                <p className="text-lg font-semibold">
+                                  {formatCurrency((employee as any).currentSalary.housingAllowance)}
+                                </p>
+                              </div>
+                            )}
+
+                            {(employee as any).currentSalary.transportAllowance > 0 && (
+                              <div>
+                                <Label className="text-sm text-muted-foreground">Indemnité de transport</Label>
+                                <p className="text-lg font-semibold">
+                                  {formatCurrency((employee as any).currentSalary.transportAllowance)}
+                                </p>
+                              </div>
+                            )}
+
+                            {(employee as any).currentSalary.mealAllowance > 0 && (
+                              <div>
+                                <Label className="text-sm text-muted-foreground">Indemnité de repas</Label>
+                                <p className="text-lg font-semibold">
+                                  {formatCurrency((employee as any).currentSalary.mealAllowance)}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Total Gross Salary */}
+                          <div className="bg-muted/50 p-4 rounded-lg border-t">
+                            <Label className="text-sm text-muted-foreground">Salaire brut total</Label>
+                            <p className="text-2xl font-bold text-primary">
+                              {formatCurrency(
+                                (employee as any).currentSalary.baseSalary +
+                                ((employee as any).currentSalary.housingAllowance || 0) +
+                                ((employee as any).currentSalary.transportAllowance || 0) +
+                                ((employee as any).currentSalary.mealAllowance || 0)
+                              )}
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Salary History Timeline */}
+              {isLoadingSalaryHistory ? (
+                <Card>
+                  <CardContent className="py-12 flex justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </CardContent>
+                </Card>
+              ) : salaryHistory && salaryHistory.length > 0 ? (
+                <SalaryHistoryTimeline history={salaryHistory as any} />
+              ) : null}
+            </>
+          ) : (
+            /* Empty State - No Salary */
+            <Card>
+              <CardContent className="py-12 text-center">
+                <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">Aucun salaire enregistré</p>
+                <Button
+                  onClick={() => setShowSalaryWizard(true)}
+                  className="min-h-[48px]"
+                >
+                  <DollarSign className="mr-2 h-4 w-4" />
+                  Ajouter un salaire
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Time Tab */}
@@ -401,6 +552,29 @@ export default function EmployeeDetailPage() {
           onClose={() => setShowTransferWizard(false)}
         />
       )}
+
+      {/* Salary Change Wizard Modal */}
+      <Dialog open={showSalaryWizard} onOpenChange={setShowSalaryWizard}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <VisuallyHidden>
+            <DialogTitle>Modifier le salaire</DialogTitle>
+          </VisuallyHidden>
+          <SalaryChangeWizard
+            employeeId={employeeId}
+            currentSalary={(employee as any)?.currentSalary || {
+              baseSalary: 0,
+              housingAllowance: 0,
+              transportAllowance: 0,
+              mealAllowance: 0,
+            }}
+            employeeName={`${(employee as any)?.firstName} ${(employee as any)?.lastName}`}
+            onSuccess={() => {
+              setShowSalaryWizard(false);
+              router.refresh();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
