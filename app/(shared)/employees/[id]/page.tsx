@@ -36,13 +36,21 @@ import { TransferWizard } from '@/features/employees/components/transfer-wizard'
 import { EditEmployeeModal } from '@/features/employees/components/edit-employee-modal';
 import { SalaryHistoryTimeline } from '@/features/employees/components/salary/salary-history-timeline';
 import { SalaryChangeWizard } from '@/features/employees/components/salary/salary-change-wizard';
+import { AssignmentHistoryTimeline } from '@/features/employees/components/assignment/assignment-history-timeline';
+import { LeaveBalanceCard } from '@/features/time-off/components/leave-balance-card';
+import { LeaveRequestList } from '@/features/time-off/components/leave-request-list';
+import { TimeOffRequestForm } from '@/features/time-off/components/time-off-request-form';
+import { TimeEntryCalendar } from '@/features/time-tracking/components/time-entry-calendar';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@/components/ui/visually-hidden';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { CategoryBadge } from '@/components/employees/category-badge';
 import { trpc } from '@/lib/trpc/client';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Plus, ChevronDown } from 'lucide-react';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -55,6 +63,7 @@ export default function EmployeeDetailPage() {
   const [showTransferWizard, setShowTransferWizard] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showSalaryWizard, setShowSalaryWizard] = useState(false);
+  const [showTimeOffRequestForm, setShowTimeOffRequestForm] = useState(false);
 
   const { data: employee, isLoading, error } = useEmployee(employeeId);
   const reactivateEmployee = useReactivateEmployee();
@@ -63,6 +72,23 @@ export default function EmployeeDetailPage() {
   const { data: salaryHistory, isLoading: isLoadingSalaryHistory } = trpc.salaries.getHistory.useQuery(
     { employeeId: params.id as string },
     { enabled: !!(employee as any)?.currentSalary }
+  );
+
+  // Assignment history query
+  const { data: assignmentHistory, isLoading: isLoadingAssignments } = trpc.assignments.getHistory.useQuery(
+    { employeeId: params.id as string },
+    { enabled: !!employee }
+  );
+
+  // Time-off queries
+  const { data: timeOffBalances, isLoading: isLoadingBalances } = trpc.timeOff.getAllBalances.useQuery(
+    { employeeId: params.id as string },
+    { enabled: !!employee }
+  );
+
+  const { data: timeOffRequests, isLoading: isLoadingRequests } = trpc.timeOff.getEmployeeRequests.useQuery(
+    { employeeId: params.id as string },
+    { enabled: !!employee }
   );
 
   const handleReactivate = async () => {
@@ -337,29 +363,62 @@ export default function EmployeeDetailPage() {
 
         {/* Employment Tab */}
         <TabsContent value="employment" className="space-y-6">
+          {/* Current Assignment */}
           <Card>
             <CardHeader>
               <CardTitle>Poste actuel</CardTitle>
             </CardHeader>
             <CardContent>
-              {(employee as any).currentPosition ? (
+              {assignmentHistory && assignmentHistory.length > 0 ? (
                 <div className="space-y-3">
                   <div>
                     <p className="text-sm text-muted-foreground">Titre du poste</p>
-                    <p className="font-medium text-lg">{(employee as any).currentPosition.title}</p>
+                    <p className="font-medium text-lg">{(assignmentHistory[0] as any).position?.title || 'Non défini'}</p>
                   </div>
-                  {(employee as any).currentPosition.department && (
+                  {(assignmentHistory[0] as any).position?.department?.name && (
                     <div>
                       <p className="text-sm text-muted-foreground">Département</p>
-                      <p className="font-medium">{(employee as any).currentPosition.department}</p>
+                      <p className="font-medium">{(assignmentHistory[0] as any).position.department.name}</p>
                     </div>
                   )}
+                  <div>
+                    <p className="text-sm text-muted-foreground">Type d'affectation</p>
+                    <div className="flex gap-2 items-center mt-1">
+                      <Badge variant={
+                        (assignmentHistory[0] as any).assignmentType === 'primary' ? 'default' :
+                        (assignmentHistory[0] as any).assignmentType === 'secondary' ? 'secondary' :
+                        'outline'
+                      }>
+                        {(assignmentHistory[0] as any).assignmentType === 'primary' ? 'Principal' :
+                         (assignmentHistory[0] as any).assignmentType === 'secondary' ? 'Secondaire' :
+                         'Temporaire'}
+                      </Badge>
+                      <p className="text-sm text-muted-foreground">
+                        depuis le {format(new Date((assignmentHistory[0] as any).effectiveFrom), 'PPP', { locale: fr })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : isLoadingAssignments ? (
+                <div className="py-4 flex justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : (
                 <p className="text-muted-foreground">Aucun poste assigné</p>
               )}
             </CardContent>
           </Card>
+
+          {/* Assignment History Timeline */}
+          {isLoadingAssignments ? (
+            <Card>
+              <CardContent className="py-12 flex justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </CardContent>
+            </Card>
+          ) : assignmentHistory && assignmentHistory.length > 0 ? (
+            <AssignmentHistoryTimeline assignments={assignmentHistory as any} />
+          ) : null}
         </TabsContent>
 
         {/* Salary Tab */}
@@ -507,16 +566,64 @@ export default function EmployeeDetailPage() {
 
         {/* Time Tab */}
         <TabsContent value="time" className="space-y-6">
+          {/* Leave Balance Summary */}
+          {isLoadingBalances ? (
+            <Card>
+              <CardContent className="py-12 flex justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </CardContent>
+            </Card>
+          ) : timeOffBalances && timeOffBalances.length > 0 ? (
+            <LeaveBalanceCard balances={timeOffBalances as any} />
+          ) : null}
+
+          {/* Leave Requests */}
           <Card>
-            <CardHeader>
-              <CardTitle>Présence et congés</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <CardTitle>Demandes de congés</CardTitle>
+              <Button
+                onClick={() => setShowTimeOffRequestForm(true)}
+                className="min-h-[44px]"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Nouvelle demande
+              </Button>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground">
-                Module de présence à venir
-              </p>
+              {isLoadingRequests ? (
+                <div className="py-12 flex justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : timeOffRequests && timeOffRequests.length > 0 ? (
+                <LeaveRequestList
+                  requests={timeOffRequests as any}
+                  employeeId={employeeId}
+                  canApprove={false}
+                />
+              ) : (
+                <p className="text-muted-foreground text-center py-8">
+                  Aucune demande de congé
+                </p>
+              )}
             </CardContent>
           </Card>
+
+          {/* Time Entries Calendar (Collapsible) */}
+          <Collapsible>
+            <Card>
+              <CardHeader>
+                <CollapsibleTrigger className="flex w-full items-center justify-between hover:opacity-80 transition-opacity">
+                  <CardTitle>Pointages</CardTitle>
+                  <ChevronDown className="h-4 w-4 transition-transform duration-200 data-[state=open]:rotate-180" />
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent>
+                  <TimeEntryCalendar employeeId={employeeId} />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
         </TabsContent>
       </Tabs>
 
@@ -570,6 +677,22 @@ export default function EmployeeDetailPage() {
             employeeName={`${(employee as any)?.firstName} ${(employee as any)?.lastName}`}
             onSuccess={() => {
               setShowSalaryWizard(false);
+              router.refresh();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Time-Off Request Form Modal */}
+      <Dialog open={showTimeOffRequestForm} onOpenChange={setShowTimeOffRequestForm}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <VisuallyHidden>
+            <DialogTitle>Nouvelle demande de congé</DialogTitle>
+          </VisuallyHidden>
+          <TimeOffRequestForm
+            employeeId={employeeId}
+            onSuccess={() => {
+              setShowTimeOffRequestForm(false);
               router.refresh();
             }}
           />
