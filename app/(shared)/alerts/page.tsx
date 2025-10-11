@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 type AlertStatus = 'active' | 'dismissed' | 'completed';
 type AlertSeverity = 'info' | 'warning' | 'urgent';
+type AlertType = 'contract_expiry' | 'leave_request_pending' | 'leave_upcoming' | 'document_expiry' | 'payroll_reminder';
 
 export default function AlertsPage() {
   const router = useRouter();
@@ -36,11 +37,13 @@ export default function AlertsPage() {
   // Filters
   const [status, setStatus] = useState<AlertStatus>('active');
   const [severity, setSeverity] = useState<AlertSeverity | 'all'>('all');
+  const [type, setType] = useState<AlertType | 'all'>('all');
 
   // Fetch alerts
   const { data, isLoading, isError } = api.alerts.list.useQuery({
     status,
     severity: severity === 'all' ? undefined : severity,
+    type: type === 'all' ? undefined : type,
     limit: 50,
   });
 
@@ -78,6 +81,21 @@ export default function AlertsPage() {
     },
   });
 
+  const markAllAsReadMutation = api.alerts.markAllAsRead.useMutation({
+    onSuccess: (data) => {
+      if (data.count === 0) {
+        toast.info('Aucune alerte à marquer comme lue');
+      } else {
+        toast.success(`${data.count} alerte${data.count > 1 ? 's marquées' : ' marquée'} comme lue${data.count > 1 ? 's' : ''}`);
+      }
+      utils.alerts.list.invalidate();
+      utils.alerts.getSummary.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erreur lors du marquage des alertes');
+    },
+  });
+
   const handleDismiss = (id: string) => {
     dismissMutation.mutate({ id });
   };
@@ -104,6 +122,16 @@ export default function AlertsPage() {
     }
   };
 
+  const handleMarkAllAsRead = () => {
+    const confirm = window.confirm(
+      'Marquer toutes les alertes actives comme lues ?'
+    );
+
+    if (confirm) {
+      markAllAsReadMutation.mutate();
+    }
+  };
+
   const alerts = data?.alerts || [];
 
   return (
@@ -117,15 +145,26 @@ export default function AlertsPage() {
           </div>
 
           {status === 'active' && alerts.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDismissAll}
-              disabled={bulkDismissMutation.isPending}
-              className="min-h-[44px]"
-            >
-              Tout ignorer
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleMarkAllAsRead}
+                disabled={markAllAsReadMutation.isPending}
+                className="min-h-[44px]"
+              >
+                Tout marquer comme lu
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDismissAll}
+                disabled={bulkDismissMutation.isPending}
+                className="min-h-[44px]"
+              >
+                Tout ignorer
+              </Button>
+            </div>
           )}
         </div>
 
@@ -156,36 +195,55 @@ export default function AlertsPage() {
           </TabsList>
         </Tabs>
 
-        {/* Severity Filter (only for active) */}
+        {/* Filters (only for active) */}
         {status === 'active' && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Gravité:</span>
-            <Select value={severity} onValueChange={(v) => setSeverity(v as AlertSeverity | 'all')}>
-              <SelectTrigger className="w-[180px] min-h-[44px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Toutes</SelectItem>
-                <SelectItem value="urgent">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                    Urgentes
-                  </div>
-                </SelectItem>
-                <SelectItem value="warning">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                    Avertissements
-                  </div>
-                </SelectItem>
-                <SelectItem value="info">
-                  <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-blue-600" />
-                    Informations
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Type:</span>
+              <Select value={type} onValueChange={(v) => setType(v as AlertType | 'all')}>
+                <SelectTrigger className="w-[200px] min-h-[44px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les types</SelectItem>
+                  <SelectItem value="contract_expiry">Expiration contrat</SelectItem>
+                  <SelectItem value="leave_request_pending">Demande congé</SelectItem>
+                  <SelectItem value="leave_upcoming">Congé à venir</SelectItem>
+                  <SelectItem value="document_expiry">Document expiré</SelectItem>
+                  <SelectItem value="payroll_reminder">Rappel paie</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Gravité:</span>
+              <Select value={severity} onValueChange={(v) => setSeverity(v as AlertSeverity | 'all')}>
+                <SelectTrigger className="w-[180px] min-h-[44px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes</SelectItem>
+                  <SelectItem value="urgent">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                      Urgentes
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="warning">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                      Avertissements
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="info">
+                    <div className="flex items-center gap-2">
+                      <Bell className="h-4 w-4 text-blue-600" />
+                      Informations
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
       </div>
@@ -259,7 +317,8 @@ export default function AlertsPage() {
       {/* Loading overlay for mutations */}
       {(dismissMutation.isPending ||
         completeMutation.isPending ||
-        bulkDismissMutation.isPending) && (
+        bulkDismissMutation.isPending ||
+        markAllAsReadMutation.isPending) && (
         <div className="fixed inset-0 bg-background/50 flex items-center justify-center z-50">
           <div className="bg-background p-6 rounded-lg shadow-lg flex items-center gap-3">
             <Loader2 className="h-6 w-6 animate-spin" />

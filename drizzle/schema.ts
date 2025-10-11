@@ -1757,7 +1757,10 @@ export {
 export {
   alerts,
   batchOperations,
-  payrollEvents
+  payrollEvents,
+  alertsRelations,
+  batchOperationsRelations,
+  payrollEventsRelations
 } from '@/lib/db/schema/automation';
 
 // PostGIS system views - NOT EXPORTED

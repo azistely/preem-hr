@@ -19,7 +19,15 @@ import { salaryChangedFunction } from '@/lib/inngest/functions/salary-changed';
 import { leaveApprovedFunction } from '@/lib/inngest/functions/leave-approved';
 import { alertEscalationFunction } from '@/lib/inngest/functions/alert-escalation';
 import { batchOperationCompletedFunction } from '@/lib/inngest/functions/batch-operation-completed';
+import { batchOperationProcessorFunction } from '@/lib/inngest/functions/batch-operation-processor';
 import { workflowExecutorFunction, manualWorkflowTriggerFunction } from '@/lib/inngest/functions/workflow-executor';
+import { healthCheckFunction, manualHealthCheckFunction } from '@/lib/inngest/functions/health-check';
+import { sendAlertEmail } from '@/lib/inngest/functions/send-alert-email';
+
+// Phase 3: Additional event-driven functions
+import { employeeStatusChangedFunction } from '@/lib/inngest/functions/employee-status-changed';
+import { leaveStatusChangedFunction } from '@/lib/inngest/functions/leave-status-changed';
+import { payrollRunCompletedFunction } from '@/lib/inngest/functions/payroll-run-completed';
 
 /**
  * Register all Inngest functions with the API route
@@ -35,6 +43,8 @@ const handler = serve({
     // Scheduled jobs
     dailyAlertsFunction,
     manualAlertsFunction,
+    healthCheckFunction,
+    manualHealthCheckFunction,
 
     // Event-driven functions (employee lifecycle)
     employeeTerminatedFunction,
@@ -42,9 +52,16 @@ const handler = serve({
     salaryChangedFunction,
     leaveApprovedFunction,
 
+    // Phase 3: Additional event-driven functions
+    employeeStatusChangedFunction,
+    leaveStatusChangedFunction,
+    payrollRunCompletedFunction,
+
     // Event-driven functions (system)
     alertEscalationFunction,
+    sendAlertEmail, // Email notifications for alerts
     batchOperationCompletedFunction,
+    batchOperationProcessorFunction,
 
     // Workflow automation (Phase 4)
     workflowExecutorFunction,

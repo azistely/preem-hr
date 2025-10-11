@@ -61,6 +61,10 @@ export const employees = pgTable('employees', {
   // Custom fields (Zod validated)
   customFields: jsonb('custom_fields').notNull().default({}),
 
+  // Document expiry (for alerts)
+  nationalIdExpiry: date('national_id_expiry'),
+  workPermitExpiry: date('work_permit_expiry'),
+
   // Lifecycle
   status: text('status').notNull().default('active'),
 

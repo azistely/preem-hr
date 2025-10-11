@@ -9,7 +9,7 @@
  */
 
 import { pgTable, uuid, timestamp, text, jsonb, integer, boolean, numeric, date, pgPolicy } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import { sql, relations } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { users } from './users';
 import { employees } from './employees';
@@ -164,3 +164,60 @@ export type NewBatchOperation = typeof batchOperations.$inferInsert;
 
 export type PayrollEvent = typeof payrollEvents.$inferSelect;
 export type NewPayrollEvent = typeof payrollEvents.$inferInsert;
+
+// Relations
+export const alertsRelations = relations(alerts, ({one}) => ({
+  tenant: one(tenants, {
+    fields: [alerts.tenantId],
+    references: [tenants.id]
+  }),
+  assignee: one(users, {
+    fields: [alerts.assigneeId],
+    references: [users.id],
+    relationName: "alerts_assigneeId_users_id"
+  }),
+  employee: one(employees, {
+    fields: [alerts.employeeId],
+    references: [employees.id]
+  }),
+  dismissedByUser: one(users, {
+    fields: [alerts.dismissedBy],
+    references: [users.id],
+    relationName: "alerts_dismissedBy_users_id"
+  }),
+  completedByUser: one(users, {
+    fields: [alerts.completedBy],
+    references: [users.id],
+    relationName: "alerts_completedBy_users_id"
+  }),
+}));
+
+export const batchOperationsRelations = relations(batchOperations, ({one}) => ({
+  tenant: one(tenants, {
+    fields: [batchOperations.tenantId],
+    references: [tenants.id]
+  }),
+  startedByUser: one(users, {
+    fields: [batchOperations.startedBy],
+    references: [users.id]
+  }),
+}));
+
+export const payrollEventsRelations = relations(payrollEvents, ({one}) => ({
+  tenant: one(tenants, {
+    fields: [payrollEvents.tenantId],
+    references: [tenants.id]
+  }),
+  employee: one(employees, {
+    fields: [payrollEvents.employeeId],
+    references: [employees.id]
+  }),
+  payrollRun: one(payrollRuns, {
+    fields: [payrollEvents.payrollRunId],
+    references: [payrollRuns.id]
+  }),
+  createdByUser: one(users, {
+    fields: [payrollEvents.createdBy],
+    references: [users.id]
+  }),
+}));

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { employees, users, tenants, countries, taxSystems, departments, taxBrackets, positions, familyDeductionRules, socialSecuritySchemes, assignments, contributionTypes, employeeSalaries, sectorContributionOverrides, otherTaxes, payrollRuns, payrollLineItems, salaryComponentDefinitions, exportTemplates, timeEntries, timeOffPolicies, timeOffBalances, timeOffRequests, events, auditLogs, workflows, workflowInstances } from "./schema";
+import { employees, users, tenants, countries, taxSystems, departments, taxBrackets, positions, familyDeductionRules, socialSecuritySchemes, assignments, contributionTypes, employeeSalaries, sectorContributionOverrides, otherTaxes, payrollRuns, payrollLineItems, salaryComponentDefinitions, exportTemplates, timeEntries, timeOffPolicies, timeOffBalances, timeOffRequests, events, auditLogs, workflows, workflowInstances, workflowDefinitions, workflowExecutions, alerts, batchOperations, payrollEvents } from "./schema";
 
 export const usersRelations = relations(users, ({one, many}) => ({
 	employee: one(employees, {
@@ -50,6 +50,18 @@ export const usersRelations = relations(users, ({one, many}) => ({
 	events: many(events),
 	auditLogs: many(auditLogs),
 	workflows: many(workflows),
+	workflowDefinitions: many(workflowDefinitions),
+	alerts_assignee: many(alerts, {
+		relationName: "alerts_assigneeId_users_id"
+	}),
+	alerts_dismissedBy: many(alerts, {
+		relationName: "alerts_dismissedBy_users_id"
+	}),
+	alerts_completedBy: many(alerts, {
+		relationName: "alerts_completedBy_users_id"
+	}),
+	batchOperations: many(batchOperations),
+	payrollEvents: many(payrollEvents),
 }));
 
 export const employeesRelations = relations(employees, ({one, many}) => ({
@@ -77,6 +89,9 @@ export const employeesRelations = relations(employees, ({one, many}) => ({
 	timeEntries: many(timeEntries),
 	timeOffBalances: many(timeOffBalances),
 	timeOffRequests: many(timeOffRequests),
+	alerts: many(alerts),
+	workflowExecutions: many(workflowExecutions),
+	payrollEvents: many(payrollEvents),
 }));
 
 // usersInAuth table removed - not in current schema
@@ -101,6 +116,11 @@ export const tenantsRelations = relations(tenants, ({many}) => ({
 	auditLogs: many(auditLogs),
 	workflows: many(workflows),
 	workflowInstances: many(workflowInstances),
+	workflowDefinitions: many(workflowDefinitions),
+	workflowExecutions: many(workflowExecutions),
+	alerts: many(alerts),
+	batchOperations: many(batchOperations),
+	payrollEvents: many(payrollEvents),
 }));
 
 export const taxSystemsRelations = relations(taxSystems, ({one, many}) => ({
@@ -284,6 +304,7 @@ export const payrollRunsRelations = relations(payrollRuns, ({one, many}) => ({
 		relationName: "payrollRuns_updatedBy_users_id"
 	}),
 	payrollLineItems: many(payrollLineItems),
+	payrollEvents: many(payrollEvents),
 }));
 
 export const payrollLineItemsRelations = relations(payrollLineItems, ({one}) => ({
@@ -419,5 +440,88 @@ export const workflowInstancesRelations = relations(workflowInstances, ({one}) =
 	workflow: one(workflows, {
 		fields: [workflowInstances.workflowId],
 		references: [workflows.id]
+	}),
+}));
+
+export const workflowDefinitionsRelations = relations(workflowDefinitions, ({one, many}) => ({
+	tenant: one(tenants, {
+		fields: [workflowDefinitions.tenantId],
+		references: [tenants.id]
+	}),
+	createdByUser: one(users, {
+		fields: [workflowDefinitions.createdBy],
+		references: [users.id]
+	}),
+	workflowExecutions: many(workflowExecutions),
+}));
+
+export const workflowExecutionsRelations = relations(workflowExecutions, ({one}) => ({
+	tenant: one(tenants, {
+		fields: [workflowExecutions.tenantId],
+		references: [tenants.id]
+	}),
+	workflowDefinition: one(workflowDefinitions, {
+		fields: [workflowExecutions.workflowId],
+		references: [workflowDefinitions.id]
+	}),
+	employee: one(employees, {
+		fields: [workflowExecutions.employeeId],
+		references: [employees.id]
+	}),
+}));
+
+export const alertsRelations = relations(alerts, ({one}) => ({
+	tenant: one(tenants, {
+		fields: [alerts.tenantId],
+		references: [tenants.id]
+	}),
+	assignee: one(users, {
+		fields: [alerts.assigneeId],
+		references: [users.id],
+		relationName: "alerts_assigneeId_users_id"
+	}),
+	employee: one(employees, {
+		fields: [alerts.employeeId],
+		references: [employees.id]
+	}),
+	dismissedByUser: one(users, {
+		fields: [alerts.dismissedBy],
+		references: [users.id],
+		relationName: "alerts_dismissedBy_users_id"
+	}),
+	completedByUser: one(users, {
+		fields: [alerts.completedBy],
+		references: [users.id],
+		relationName: "alerts_completedBy_users_id"
+	}),
+}));
+
+export const batchOperationsRelations = relations(batchOperations, ({one}) => ({
+	tenant: one(tenants, {
+		fields: [batchOperations.tenantId],
+		references: [tenants.id]
+	}),
+	startedByUser: one(users, {
+		fields: [batchOperations.startedBy],
+		references: [users.id]
+	}),
+}));
+
+export const payrollEventsRelations = relations(payrollEvents, ({one}) => ({
+	tenant: one(tenants, {
+		fields: [payrollEvents.tenantId],
+		references: [tenants.id]
+	}),
+	employee: one(employees, {
+		fields: [payrollEvents.employeeId],
+		references: [employees.id]
+	}),
+	payrollRun: one(payrollRuns, {
+		fields: [payrollEvents.payrollRunId],
+		references: [payrollRuns.id]
+	}),
+	createdByUser: one(users, {
+		fields: [payrollEvents.createdBy],
+		references: [users.id]
 	}),
 }));
