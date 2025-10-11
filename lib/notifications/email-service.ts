@@ -6,8 +6,22 @@
 
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@preem.app';
+
+/**
+ * Lazy initialization of Resend client
+ * Only creates instance when needed (not during build time)
+ */
+let resendClient: Resend | null = null;
+function getResendClient(): Resend {
+  if (!resendClient && process.env.RESEND_API_KEY) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  if (!resendClient) {
+    throw new Error('Resend client not initialized - RESEND_API_KEY missing');
+  }
+  return resendClient;
+}
 
 export interface EmailNotification {
   to: string;
@@ -26,6 +40,7 @@ export async function sendEmail(notification: EmailNotification): Promise<{ succ
       return { success: false, error: 'RESEND_API_KEY not configured' };
     }
 
+    const resend = getResendClient();
     const { data, error } = await resend.emails.send({
       from: FROM_EMAIL,
       to: notification.to,
