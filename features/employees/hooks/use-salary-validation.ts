@@ -53,7 +53,10 @@ export function useSalaryValidation(salary: number | null | undefined) {
 /**
  * Format currency (FCFA)
  */
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amount: number | undefined | null): string {
+  if (amount === undefined || amount === null) {
+    return '0 FCFA';
+  }
   return `${amount.toLocaleString('fr-FR')} FCFA`;
 }
 

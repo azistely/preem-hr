@@ -60,14 +60,13 @@ export async function getTenantCountryCode(tenantId: string): Promise<string> {
 export interface ChangeSalaryInput {
   employeeId: string;
   tenantId: string;
-  newBaseSalary: number;
-  housingAllowance?: number;
-  transportAllowance?: number;
-  mealAllowance?: number;
-  otherAllowances?: Array<{
+  components: Array<{
+    code: string;
     name: string;
     amount: number;
-    taxable: boolean;
+    metadata?: any;
+    sourceType: 'standard' | 'custom' | 'template';
+    sourceId?: string;
   }>;
   effectiveFrom: Date;
   changeReason: string;
@@ -88,8 +87,14 @@ export async function changeSalary(input: ChangeSalaryInput) {
   // Get country-specific minimum wage
   const minimumWage = await getMinimumWage(countryCode);
 
+  // Extract base salary from components
+  const baseComponent = input.components.find(c =>
+    c.code === '01' || c.name.toLowerCase().includes('base') || c.name.toLowerCase().includes('salaire de base')
+  );
+  const baseSalary = baseComponent?.amount || 0;
+
   // Validate against country SMIG
-  if (input.newBaseSalary < minimumWage) {
+  if (baseSalary < minimumWage) {
     const [country] = await db
       .select({ name: countries.name })
       .from(countries)
@@ -100,7 +105,7 @@ export async function changeSalary(input: ChangeSalaryInput) {
 
     throw new ValidationError(
       `Le salaire doit être >= SMIG du ${countryName} (${minimumWage} FCFA)`,
-      { newBaseSalary: input.newBaseSalary, minimumWage, countryCode }
+      { baseSalary, minimumWage, countryCode }
     );
   }
 
@@ -135,34 +140,34 @@ export async function changeSalary(input: ChangeSalaryInput) {
 
     if (currentSalary) {
       // Close current salary record
+      // Convert Date to string format that matches PostgreSQL date type
+      const effectiveToDate = input.effectiveFrom.toISOString().split('T')[0];
       await tx
         .update(employeeSalaries)
         .set({
-          effectiveTo: input.effectiveFrom.toISOString().split('T')[0],
+          effectiveTo: effectiveToDate as any,
         })
         .where(eq(employeeSalaries.id, currentSalary.id));
     }
 
     // Create new salary record
+    const valuesToInsert = {
+      tenantId: input.tenantId,
+      employeeId: input.employeeId,
+      baseSalary: baseSalary.toString(),
+      currency: 'XOF',
+      components: input.components, // New components architecture
+      allowances: {}, // Legacy field (kept empty for backward compatibility)
+      effectiveFrom: input.effectiveFrom.toISOString().split('T')[0],
+      effectiveTo: null,
+      changeReason: input.changeReason,
+      notes: input.notes,
+      createdBy: input.createdBy,
+    } as any;
+
     const [newSalary] = await tx
       .insert(employeeSalaries)
-      .values({
-        tenantId: input.tenantId,
-        employeeId: input.employeeId,
-        baseSalary: input.newBaseSalary.toString(),
-        currency: 'XOF',
-        allowances: {
-          housing: input.housingAllowance || 0,
-          transport: input.transportAllowance || 0,
-          meal: input.mealAllowance || 0,
-          other: input.otherAllowances || [],
-        },
-        effectiveFrom: input.effectiveFrom.toISOString().split('T')[0],
-        effectiveTo: null,
-        changeReason: input.changeReason,
-        notes: input.notes,
-        createdBy: input.createdBy,
-      } as any)
+      .values(valuesToInsert)
       .returning();
 
     // Create audit log entry
@@ -175,11 +180,11 @@ export async function changeSalary(input: ChangeSalaryInput) {
       entityId: input.employeeId,
       oldValues: currentSalary ? {
         baseSalary: currentSalary.baseSalary,
-        allowances: currentSalary.allowances,
+        components: currentSalary.components,
       } : null,
       newValues: {
         baseSalary: newSalary.baseSalary,
-        allowances: newSalary.allowances,
+        components: newSalary.components,
         effectiveFrom: newSalary.effectiveFrom,
         reason: input.changeReason,
       },
@@ -247,15 +252,21 @@ export async function getSalaryHistory(employeeId: string) {
  * @returns Total gross amount
  */
 export function calculateGrossSalary(salaryRecord: typeof employeeSalaries.$inferSelect): number {
-  const base = parseFloat(salaryRecord.baseSalary);
+  // New components architecture (preferred)
+  const componentsData = salaryRecord.components as any;
+  if (Array.isArray(componentsData) && componentsData.length > 0) {
+    return componentsData.reduce((sum: number, component: any) => {
+      return sum + (component.amount || 0);
+    }, 0);
+  }
 
-  // Get allowances from JSONB field
+  // Fallback to old allowances architecture for backward compatibility
+  const base = parseFloat(salaryRecord.baseSalary);
   const allowancesData = salaryRecord.allowances as any || {};
   const housing = allowancesData.housing || 0;
   const transport = allowancesData.transport || 0;
   const meal = allowancesData.meal || 0;
 
-  // Other allowances (from JSONB array)
   let otherTotal = 0;
   if (Array.isArray(allowancesData.other)) {
     otherTotal = allowancesData.other.reduce(

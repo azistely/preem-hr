@@ -339,8 +339,12 @@ export async function getEmployeeById(employeeId: string, tenantId: string) {
     .where(eq(assignments.employeeId, employeeId))
     .orderBy(desc(assignments.effectiveFrom));
 
+  // Get current salary (most recent active salary)
+  const currentSalary = salaryHistory.find(s => !s.effectiveTo) || salaryHistory[0] || null;
+
   return {
     ...decrypted,
+    currentSalary,
     salaryHistory,
     assignmentHistory,
   };

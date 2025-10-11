@@ -15,19 +15,18 @@ import {
 import { eventBus } from '@/lib/event-bus';
 import { TRPCError } from '@trpc/server';
 
-const allowanceSchema = z.object({
+const componentSchema = z.object({
+  code: z.string().min(1),
   name: z.string().min(1),
   amount: z.number().min(0),
-  taxable: z.boolean().default(true),
+  metadata: z.any().optional(),
+  sourceType: z.enum(['standard', 'custom', 'template']),
+  sourceId: z.string().optional(),
 });
 
 const changeSalarySchema = z.object({
   employeeId: z.string().uuid(),
-  newBaseSalary: z.number().min(75000, 'Salaire >= 75000 FCFA (SMIG)'),
-  housingAllowance: z.number().min(0).optional(),
-  transportAllowance: z.number().min(0).optional(),
-  mealAllowance: z.number().min(0).optional(),
-  otherAllowances: z.array(allowanceSchema).optional(),
+  components: z.array(componentSchema).min(1, 'Au moins un composant requis'),
   effectiveFrom: z.date(),
   changeReason: z.string().min(1, 'La raison est requise'),
   notes: z.string().optional(),
@@ -40,6 +39,17 @@ const getCurrentSalarySchema = z.object({
 
 const getSalaryHistorySchema = z.object({
   employeeId: z.string().uuid(),
+});
+
+const previewPayrollSchema = z.object({
+  employeeId: z.string().uuid(),
+  components: z.array(z.object({
+    code: z.string(),
+    name: z.string(),
+    amount: z.number(),
+    sourceType: z.string(),
+  })),
+  countryCode: z.string().length(2).optional(),
 });
 
 export const salariesRouter = createTRPCRouter({
@@ -147,6 +157,149 @@ export const salariesRouter = createTRPCRouter({
           countryCode: 'CI',
           countryName: 'Côte d\'Ivoire',
         };
+      }
+    }),
+
+  /**
+   * Preview payroll calculation for new salary components
+   * Returns: gross, deductions, net salary for preview purposes
+   */
+  previewPayroll: publicProcedure
+    .input(previewPayrollSchema)
+    .query(async ({ input, ctx }) => {
+      try {
+        const { calculatePayrollV2 } = await import('@/features/payroll/services/payroll-calculation-v2');
+        const { db } = await import('@/lib/db');
+        const { employees } = await import('@/drizzle/schema');
+        const { eq, and } = await import('drizzle-orm');
+
+        // Get employee data
+        const [employee] = await db
+          .select()
+          .from(employees)
+          .where(
+            and(
+              eq(employees.id, input.employeeId),
+              eq(employees.tenantId, ctx.user.tenantId)
+            )
+          )
+          .limit(1);
+
+        if (!employee) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Employé non trouvé',
+          });
+        }
+
+        // Get country code
+        const countryCode = input.countryCode || employee.countryCode || await getTenantCountryCode(ctx.user.tenantId);
+
+        // Fetch component metadata from database to understand component types
+        const { salaryComponentDefinitions } = await import('@/drizzle/schema');
+        const { inArray } = await import('drizzle-orm');
+
+        const componentCodes = input.components.map(c => c.code);
+        const definitions = await db
+          .select()
+          .from(salaryComponentDefinitions)
+          .where(inArray(salaryComponentDefinitions.code, componentCodes));
+
+        // Create a map of code -> metadata
+        const metadataMap = new Map(definitions.map(d => [d.code, d]));
+
+        // Categorize components by their type using database metadata
+        let baseSalary = 0;
+        let housingAllowance = 0;
+        let transportAllowance = 0;
+        let familyAllowance = 0;
+        let mealAllowance = 0;
+        let seniorityBonus = 0;
+        let otherBonuses = 0;
+
+        for (const component of input.components) {
+          const metadata = metadataMap.get(component.code);
+          if (!metadata) {
+            // No metadata found - treat as other bonus
+            otherBonuses += component.amount || 0;
+            continue;
+          }
+
+          const amount = component.amount || 0;
+
+          // Map by component_type (from database metadata)
+          switch (metadata.componentType) {
+            case 'base':
+              baseSalary += amount;
+              break;
+            case 'housing':
+              housingAllowance += amount;
+              break;
+            case 'transport':
+              transportAllowance += amount;
+              break;
+            case 'family':
+              familyAllowance += amount;
+              break;
+            case 'meal':
+              mealAllowance += amount;
+              break;
+            case 'seniority':
+              if (metadata.category === 'bonus') {
+                seniorityBonus += amount;
+              } else {
+                otherBonuses += amount;
+              }
+              break;
+            default:
+              // All other types (performance, responsibility, etc.) go into bonuses
+              if (metadata.category === 'bonus' || metadata.category === 'allowance') {
+                otherBonuses += amount;
+              }
+              break;
+          }
+        }
+
+        // Calculate payroll
+        // For preview, use current month as period
+        const now = new Date();
+        const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        const result = await calculatePayrollV2({
+          employeeId: input.employeeId,
+          tenantId: ctx.user.tenantId,
+          periodStart,
+          periodEnd,
+          baseSalary,
+          housingAllowance,
+          transportAllowance,
+          mealAllowance,
+          familyAllowance,
+          seniorityBonus,
+          bonuses: otherBonuses,
+          taxDependents: employee.taxDependents || 0,
+          countryCode,
+        });
+
+        return {
+          grossSalary: result.grossSalary,
+          cnpsEmployee: result.cnpsEmployee,
+          tax: result.its,
+          netSalary: result.netSalary,
+          breakdown: {
+            baseSalary,
+            housingAllowance,
+            transportAllowance,
+            taxableIncome: result.taxableIncome,
+          },
+        };
+      } catch (error: any) {
+        console.error('Payroll preview error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors du calcul de la paie',
+        });
       }
     }),
 });
