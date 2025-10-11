@@ -156,27 +156,45 @@ export const workflowsRouter = createTRPCRouter({
         conditions: z.array(workflowConditionSchema).default([]),
         actions: z.array(workflowActionSchema).min(1),
         status: z.enum(['draft', 'active']).default('draft'),
-        templateId: z.union([z.string().uuid(), z.literal(''), z.null(), z.undefined()]).optional().transform(val => val === '' || !val ? undefined : val), // Transform empty string/null to undefined
+        templateId: z.preprocess(
+          // Preprocess to handle empty strings, null, and undefined before validation
+          (val) => {
+            if (val === '' || val === null || val === undefined) {
+              return undefined;
+            }
+            return val;
+          },
+          // Accept any string (template keys or UUIDs), not just UUIDs
+          z.string().optional()
+        ),
       })
     )
     .mutation(async ({ input, ctx }) => {
       const { templateId, ...workflowData } = input;
 
-      // If creating from template, fetch template data
-      let templateData = null;
+      // If creating from template, determine the template category (supports both code-based and database templates)
+      let templateCategory: string | null = null;
       if (templateId) {
-        templateData = await ctx.db.query.workflowDefinitions.findFirst({
-          where: and(
-            eq(workflowDefinitions.id, templateId),
-            eq(workflowDefinitions.isTemplate, true)
-          ),
-        });
+        // First, try to find it in code-based templates
+        const { workflowTemplates } = await import('@/lib/workflow/templates');
+        const codeTemplate = workflowTemplates[templateId as keyof typeof workflowTemplates];
 
-        if (!templateData) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Modèle non trouvé',
+        if (codeTemplate) {
+          // Code-based template - extract category
+          templateCategory = ('templateCategory' in codeTemplate ? codeTemplate.templateCategory : ('category' in codeTemplate ? codeTemplate.category : null)) as string | null;
+        } else {
+          // Not a code template, try database template
+          const dbTemplate = await ctx.db.query.workflowDefinitions.findFirst({
+            where: and(
+              eq(workflowDefinitions.id, templateId),
+              eq(workflowDefinitions.isTemplate, true)
+            ),
           });
+
+          if (dbTemplate) {
+            templateCategory = dbTemplate.templateCategory;
+          }
+          // If neither found, just continue without template category (template may have been deleted)
         }
       }
 
@@ -194,7 +212,7 @@ export const workflowsRouter = createTRPCRouter({
           actions: workflowData.actions,
           status: workflowData.status,
           isTemplate: false,
-          templateCategory: templateData?.templateCategory,
+          templateCategory,
         })
         .returning();
 
@@ -398,16 +416,6 @@ export const workflowsRouter = createTRPCRouter({
         orderBy: [desc(workflowExecutions.startedAt)],
         limit,
         offset,
-        with: {
-          // @ts-expect-error - Relations not yet defined in schema
-          employee: {
-            columns: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-        },
       });
 
       // Get total count

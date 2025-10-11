@@ -180,7 +180,7 @@ export function WorkflowWizard({ onComplete, initialTemplateId }: WorkflowWizard
       conditions: formData.conditions,
       actions: formData.actions,
       status: "draft",
-      templateId: formData.templateId,
+      ...(formData.templateId && { templateId: formData.templateId }),
     });
   };
 
@@ -198,7 +198,7 @@ export function WorkflowWizard({ onComplete, initialTemplateId }: WorkflowWizard
       conditions: formData.conditions,
       actions: formData.actions,
       status: "active",
-      templateId: formData.templateId,
+      ...(formData.templateId && { templateId: formData.templateId }),
     });
   };
 
