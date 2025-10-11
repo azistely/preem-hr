@@ -100,3 +100,17 @@
     box-shadow: 0 10px 25px -5px rgba(244, 196, 48, 0.15), 0 8px 10px -6px rgba(244, 196, 48, 0.1);
   }
 }
+
+/* WhatsApp Support Button Animation */
+@keyframes pulse-soft {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 3s ease-in-out infinite;
+}

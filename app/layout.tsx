@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { TRPCReactProvider } from '@/trpc/react';
 import { Toaster } from '@/components/ui/toaster';
+import { WhatsAppSupportButton } from '@/components/whatsapp-support-button';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -21,6 +22,7 @@ export default function RootLayout({
       <body className={inter.className} suppressHydrationWarning>
         <TRPCReactProvider>{children}</TRPCReactProvider>
         <Toaster />
+        <WhatsAppSupportButton />
       </body>
     </html>
   );
