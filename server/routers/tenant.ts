@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure } from '../api/trpc';
+import { createTRPCRouter, protectedProcedure } from '../api/trpc';
 import { db } from '@/lib/db';
 import { tenants } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -15,6 +15,7 @@ export const tenantRouter = createTRPCRouter({
    * Get current tenant information
    *
    * Returns tenant details including country code for payroll configuration.
+   * Uses the authenticated user's tenantId from the session context.
    *
    * @example
    * ```typescript
@@ -22,12 +23,11 @@ export const tenantRouter = createTRPCRouter({
    * // tenant = { id: '...', name: 'Company', countryCode: 'CI', ... }
    * ```
    */
-  getCurrent: publicProcedure
-    .query(async () => {
-      // In production, get tenant ID from auth context
-      // For now, use the first tenant
+  getCurrent: protectedProcedure
+    .query(async ({ ctx }) => {
+      // Get tenant ID from authenticated user's context
       const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.id, '00000000-0000-0000-0000-000000000001'),
+        where: eq(tenants.id, ctx.user.tenantId),
       });
 
       if (!tenant) {
