@@ -156,7 +156,7 @@ export const workflowsRouter = createTRPCRouter({
         conditions: z.array(workflowConditionSchema).default([]),
         actions: z.array(workflowActionSchema).min(1),
         status: z.enum(['draft', 'active']).default('draft'),
-        templateId: z.string().uuid().optional().or(z.literal('')).transform(val => val === '' ? undefined : val), // Transform empty string to undefined
+        templateId: z.union([z.string().uuid(), z.literal(''), z.null(), z.undefined()]).optional().transform(val => val === '' || !val ? undefined : val), // Transform empty string/null to undefined
       })
     )
     .mutation(async ({ input, ctx }) => {
