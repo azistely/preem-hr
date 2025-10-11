@@ -5,8 +5,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { FormField } from './form-field';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useState } from 'react';
+import { trpc } from '@/lib/trpc/client';
+import { usePopularTemplates } from '@/features/employees/hooks/use-salary-components';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Plus, X, Edit2, CheckCircle } from 'lucide-react';
 
 const employeeSchemaV2 = z.object({
   firstName: z.string().min(1, 'Le prénom est requis'),
@@ -16,13 +21,18 @@ const employeeSchemaV2 = z.object({
   positionTitle: z.string().min(1, 'La fonction est requise'),
   baseSalary: z.number().min(75000, 'Inférieur au SMIG de Côte d\'Ivoire (75,000 FCFA)'),
   hireDate: z.date({ required_error: 'La date d\'embauche est requise', invalid_type_error: 'Date invalide' }),
+
   // CRITICAL: Family status
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
   dependentChildren: z.number().min(0).max(10),
-  // OPTIONAL: Allowances
-  transportAllowance: z.number().optional(),
-  housingAllowance: z.number().optional(),
-  mealAllowance: z.number().optional(),
+
+  // NEW: Components array (replaces individual allowance fields)
+  components: z.array(z.object({
+    code: z.string(),
+    name: z.string(),
+    amount: z.number(),
+    sourceType: z.enum(['standard', 'template']),
+  })).optional().default([]),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchemaV2>;
@@ -48,21 +58,236 @@ function calculateFiscalParts(maritalStatus: string, dependents: number): number
   return parts;
 }
 
-export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }: EmployeeFormV2Props) {
-  const [showAllowances, setShowAllowances] = useState(false);
+// ============================================================================
+// Component Picker Section
+// ============================================================================
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<EmployeeFormData>({
+interface ComponentPickerSectionProps {
+  components: Array<{code: string; name: string; amount: number; sourceType: string}>;
+  onAddComponent: (component: any, amount: number) => void;
+  onRemoveComponent: (index: number) => void;
+  onEditComponent: (index: number, amount: number) => void;
+}
+
+function ComponentPickerSection({
+  components,
+  onAddComponent,
+  onRemoveComponent,
+  onEditComponent
+}: ComponentPickerSectionProps) {
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editAmount, setEditAmount] = useState<number>(0);
+
+  // Get minimum wage for country code
+  const { data: minWageData } = trpc.salaries.getMinimumWage.useQuery();
+  const countryCode = minWageData?.countryCode || 'CI';
+
+  // Load popular templates for this country
+  const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
+
+  return (
+    <div className="space-y-3">
+      {/* Added Components List */}
+      {components.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Indemnités ajoutées</p>
+          {components.map((component, index) => (
+            <div
+              key={index}
+              className="flex items-center justify-between p-3 bg-primary/5 rounded-lg border"
+            >
+              <div className="flex-1">
+                <p className="font-medium text-sm">{component.name}</p>
+                {editingIndex === index ? (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="number"
+                      value={editAmount}
+                      onChange={(e) => setEditAmount(parseFloat(e.target.value) || 0)}
+                      className="h-8 w-32 px-2 border rounded"
+                      min={0}
+                      step={1000}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onEditComponent(index, editAmount);
+                        setEditingIndex(null);
+                      }}
+                      className="p-1 hover:bg-muted rounded"
+                    >
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingIndex(null)}
+                      className="p-1 hover:bg-muted rounded"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {component.amount.toLocaleString('fr-FR')} FCFA
+                  </p>
+                )}
+              </div>
+              {editingIndex !== index && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingIndex(index);
+                      setEditAmount(component.amount);
+                    }}
+                    className="p-2 hover:bg-muted rounded"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveComponent(index)}
+                    className="p-2 hover:bg-destructive/10 hover:text-destructive rounded"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add Component Button with Dialog */}
+      <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
+        <DialogTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Ajouter des indemnités (transport, logement...)
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Ajouter une indemnité</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-2 mt-4">
+            {loadingTemplates && (
+              <p className="text-sm text-muted-foreground">Chargement...</p>
+            )}
+
+            {templates && templates.length > 0 ? (
+              templates.map((template) => (
+                <Card
+                  key={template.id}
+                  className="cursor-pointer hover:border-primary transition-colors"
+                  onClick={() => {
+                    onAddComponent(
+                      template,
+                      parseFloat(String(template.suggestedAmount || '10000'))
+                    );
+                    setShowTemplates(false);
+                  }}
+                >
+                  <CardHeader className="py-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-sm">
+                          {(template.name as Record<string, string>).fr}
+                        </CardTitle>
+                        {template.description && (
+                          <CardDescription className="text-xs mt-1">
+                            {template.description}
+                          </CardDescription>
+                        )}
+                      </div>
+                      {template.suggestedAmount && (
+                        <Badge variant="outline">
+                          {parseFloat(String(template.suggestedAmount)).toLocaleString('fr-FR')} FCFA
+                        </Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                </Card>
+              ))
+            ) : (
+              !loadingTemplates && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Aucun modèle d'indemnité disponible
+                </p>
+              )
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Total Preview */}
+      {components.length > 0 && (
+        <div className="p-3 bg-muted/50 rounded-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Total indemnités</span>
+            <span className="font-bold">
+              {components.reduce((sum, c) => sum + c.amount, 0).toLocaleString('fr-FR')} FCFA
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }: EmployeeFormV2Props) {
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<EmployeeFormData>({
     resolver: zodResolver(employeeSchemaV2),
     defaultValues: {
       maritalStatus: 'single',
       dependentChildren: 0,
+      components: [],
       ...defaultValues,
     },
   });
 
   const maritalStatus = watch('maritalStatus');
   const dependentChildren = watch('dependentChildren') || 0;
+  const components = watch('components') || [];
   const fiscalParts = calculateFiscalParts(maritalStatus, dependentChildren);
+
+  // Component handlers
+  const handleAddComponent = (template: any, amount: number) => {
+    const name =
+      typeof template.name === 'object'
+        ? (template.name as Record<string, string>).fr
+        : template.name;
+
+    const newComponent = {
+      code: template.code,
+      name,
+      amount,
+      sourceType: 'template' as const,
+    };
+
+    setValue('components', [...components, newComponent], { shouldValidate: true });
+  };
+
+  const handleRemoveComponent = (index: number) => {
+    setValue(
+      'components',
+      components.filter((_, i) => i !== index),
+      { shouldValidate: true }
+    );
+  };
+
+  const handleEditComponent = (index: number, amount: number) => {
+    const updated = components.map((c, i) =>
+      i === index ? { ...c, amount } : c
+    );
+    setValue('components', updated, { shouldValidate: true });
+  };
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -180,10 +405,11 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
         </div>
       </div>
 
-      {/* Salary */}
+      {/* Salary with Component Picker */}
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Rémunération</h3>
 
+        {/* Base Salary (Always Visible) */}
         <FormField
           label="Salaire de base mensuel"
           type="number"
@@ -196,56 +422,13 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           helperText="Minimum légal: 75,000 FCFA (SMIG Côte d'Ivoire)"
         />
 
-        {/* Optional: Allowances (collapsible) */}
-        <Collapsible open={showAllowances} onOpenChange={setShowAllowances}>
-          <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-            >
-              {showAllowances ? 'Masquer' : 'Ajouter'} les indemnités (transport, logement)
-            </Button>
-          </CollapsibleTrigger>
-
-          <CollapsibleContent className="space-y-4 mt-4">
-            <FormField
-              label="Indemnité de transport"
-              type="number"
-              {...register('transportAllowance', {
-                setValueAs: (value) => value ? parseFloat(value) : undefined,
-              })}
-              error={errors.transportAllowance?.message}
-              suffix="FCFA"
-              placeholder="Ex: 25,000"
-              helperText="Montant mensuel (optionnel)"
-            />
-
-            <FormField
-              label="Indemnité de logement"
-              type="number"
-              {...register('housingAllowance', {
-                setValueAs: (value) => value ? parseFloat(value) : undefined,
-              })}
-              error={errors.housingAllowance?.message}
-              suffix="FCFA"
-              placeholder="Ex: 50,000"
-              helperText="Montant mensuel (optionnel)"
-            />
-
-            <FormField
-              label="Indemnité de repas"
-              type="number"
-              {...register('mealAllowance', {
-                setValueAs: (value) => value ? parseFloat(value) : undefined,
-              })}
-              error={errors.mealAllowance?.message}
-              suffix="FCFA"
-              placeholder="Ex: 15,000"
-              helperText="Montant mensuel (optionnel)"
-            />
-          </CollapsibleContent>
-        </Collapsible>
+        {/* Component Picker Section */}
+        <ComponentPickerSection
+          components={components}
+          onAddComponent={handleAddComponent}
+          onRemoveComponent={handleRemoveComponent}
+          onEditComponent={handleEditComponent}
+        />
       </div>
 
       <Button

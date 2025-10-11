@@ -38,7 +38,14 @@ export interface CreateFirstEmployeeV2Input {
   // CRITICAL: Family status (payroll correctness)
   maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
   dependentChildren: number; // 0-10
-  // OPTIONAL: Allowances
+  // NEW: Component-based salary structure
+  components?: Array<{
+    code: string;
+    name: string;
+    amount: number;
+    sourceType: 'standard' | 'template';
+  }>;
+  // DEPRECATED (kept for backward compatibility)
   transportAllowance?: number;
   housingAllowance?: number;
   mealAllowance?: number;
@@ -226,45 +233,51 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       numberOfDependents: input.dependentChildren,
     });
 
-    // Convert manual allowances to component format
-    const manualAllowanceComponents: Array<{
+    // Handle user-provided components (NEW approach)
+    let userComponents: Array<{
       code: string;
       name: string;
       amount: number;
-      sourceType: 'standard';
+      sourceType: 'standard' | 'template';
     }> = [];
 
-    if (input.transportAllowance && input.transportAllowance > 0) {
-      manualAllowanceComponents.push({
-        code: 'TPT_TRANSPORT_CI',
-        name: 'Indemnité de transport',
-        amount: input.transportAllowance,
-        sourceType: 'standard',
-      });
+    if (input.components && input.components.length > 0) {
+      // Modern component-based approach
+      userComponents = input.components;
+    } else {
+      // BACKWARD COMPATIBILITY: Convert individual allowance fields to components
+      if (input.transportAllowance && input.transportAllowance > 0) {
+        userComponents.push({
+          code: 'TPT_TRANSPORT_CI',
+          name: 'Indemnité de transport',
+          amount: input.transportAllowance,
+          sourceType: 'standard',
+        });
+      }
+
+      if (input.housingAllowance && input.housingAllowance > 0) {
+        userComponents.push({
+          code: 'TPT_HOUSING_CI',
+          name: 'Indemnité de logement',
+          amount: input.housingAllowance,
+          sourceType: 'standard',
+        });
+      }
+
+      if (input.mealAllowance && input.mealAllowance > 0) {
+        userComponents.push({
+          code: 'TPT_MEAL_ALLOWANCE',
+          name: 'Indemnité de panier',
+          amount: input.mealAllowance,
+          sourceType: 'standard',
+        });
+      }
     }
 
-    if (input.housingAllowance && input.housingAllowance > 0) {
-      manualAllowanceComponents.push({
-        code: 'TPT_HOUSING_CI',
-        name: 'Indemnité de logement',
-        amount: input.housingAllowance,
-        sourceType: 'standard',
-      });
-    }
-
-    if (input.mealAllowance && input.mealAllowance > 0) {
-      manualAllowanceComponents.push({
-        code: 'TPT_MEAL_ALLOWANCE',
-        name: 'Indemnité de panier',
-        amount: input.mealAllowance,
-        sourceType: 'standard',
-      });
-    }
-
-    // Combine all components (auto-calculated + manual allowances)
+    // Combine all components (auto-calculated + user-provided)
     const allComponents = [
       ...componentsWithCalculated,
-      ...manualAllowanceComponents,
+      ...userComponents,
     ];
 
     const [salary] = await tx
