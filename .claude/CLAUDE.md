@@ -15,8 +15,9 @@ Before implementing ANY feature, you MUST read:
 
 1. **`docs/01-CONSTRAINTS-AND-RULES.md`** - Hard constraints that can NEVER be violated
 2. **`docs/HCI-DESIGN-PRINCIPLES.md`** - UX principles for low digital literacy + **Multi-Country UX Patterns**
-3. Relevant EPIC document (e.g., `docs/05-EPIC-PAYROLL.md`)
-4. **`docs/MULTI-COUNTRY-MIGRATION-SUMMARY.md`** - Multi-country architecture (if working on payroll/config)
+3. **`docs/TYPESCRIPT-BEST-PRACTICES.md`** - TypeScript guidelines to avoid common errors
+4. Relevant EPIC document (e.g., `docs/05-EPIC-PAYROLL.md`)
+5. **`docs/MULTI-COUNTRY-MIGRATION-SUMMARY.md`** - Multi-country architecture (if working on payroll/config)
 
 ## 🎨 UI/UX Non-Negotiables
 
@@ -110,6 +111,14 @@ Every UI feature MUST pass this checklist:
 ```
 
 ## 🔧 Technical Requirements
+
+### TypeScript (MANDATORY)
+- **ALWAYS run `npm run type-check` before committing**
+- **Read `docs/TYPESCRIPT-BEST-PRACTICES.md` before writing code**
+- **Never use `as any`** - Fix types properly or ask for help
+- **Use manual joins** for Drizzle ORM (not `with:` relations) - see docs
+- **Handle optionals** - Always use `??`, `?.`, or explicit checks
+- **Derive types from schema** - Use `$inferSelect`, `$inferInsert`
 
 ### UI Library: shadcn/ui (Radix UI + Tailwind)
 - **Buttons:** min-h-[44px] for touch targets
