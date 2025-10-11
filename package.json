@@ -8,6 +8,10 @@
     "type-check": "tsc --noEmit",
     "type-check:watch": "tsc --noEmit --watch --preserveWatchOutput",
     "build": "next build",
+    "build:vercel": "vercel build",
+    "build:test": "npm run type-check && npm run build",
+    "prebuild": "npm run type-check",
+    "predeploy": "npm run build:test",
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
@@ -21,7 +25,11 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "prepare": "husky"
+    "prepare": "husky",
+    "vercel:pull": "vercel env pull",
+    "vercel:dev": "vercel dev",
+    "vercel:deploy": "vercel deploy --prebuilt",
+    "check": "./scripts/pre-deploy-check.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

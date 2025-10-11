@@ -1,0 +1,45 @@
+name: Build Check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          # Add any required build-time environment variables here
+          # DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SKIP_ENV_VALIDATION: true
+
+      - name: Build summary
+        if: success()
+        run: |
+          echo "✅ Build completed successfully!"
+          echo "- TypeScript: ✓"
+          echo "- Lint: ✓"
+          echo "- Next.js Build: ✓"
