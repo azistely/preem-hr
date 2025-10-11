@@ -110,23 +110,24 @@ export const workflowsRouter = createTRPCRouter({
         category: z.string().optional(),
       })
     )
-    .query(async ({ input, ctx }) => {
-      const conditions = [
-        eq(workflowDefinitions.isTemplate, true),
-        // Templates are stored with a null tenantId (system-wide)
-        isNull(workflowDefinitions.tenantId),
-      ];
+    .query(async ({ input }) => {
+      // Import templates from code (not database)
+      const { workflowTemplates } = await import('@/lib/workflow/templates');
 
+      // Convert templates object to array with IDs
+      const templatesArray = Object.entries(workflowTemplates).map(([key, template]) => ({
+        id: key, // Use template key as ID for consistency
+        ...template,
+      }));
+
+      // Filter by category if provided
       if (input.category) {
-        conditions.push(eq(workflowDefinitions.templateCategory, input.category));
+        return templatesArray.filter(
+          (template) => ('templateCategory' in template ? template.templateCategory : ('category' in template ? template.category : null)) === input.category
+        );
       }
 
-      const templates = await ctx.db.query.workflowDefinitions.findMany({
-        where: and(...conditions),
-        orderBy: [desc(workflowDefinitions.createdAt)],
-      });
-
-      return templates;
+      return templatesArray;
     }),
 
   /**

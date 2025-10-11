@@ -144,7 +144,7 @@ export function WorkflowWizard({ onComplete, initialTemplateId }: WorkflowWizard
         name: template.name,
         description: template.description || "",
         triggerType: template.triggerType,
-        triggerConfig: template.triggerConfig as Record<string, any>,
+        triggerConfig: ('triggerConfig' in template ? template.triggerConfig : {}) as Record<string, any>,
         conditions: (template.conditions as any[]) || [],
         actions: (template.actions as any[]) || [],
         templateId: templateId,
@@ -248,7 +248,7 @@ export function WorkflowWizard({ onComplete, initialTemplateId }: WorkflowWizard
                       id={template.id}
                       name={template.name}
                       description={template.description || ""}
-                      category={template.templateCategory || "other"}
+                      category={('templateCategory' in template ? template.templateCategory : ('category' in template ? template.category : 'other')) || "other"}
                       triggerType={template.triggerType}
                       actionCount={(template.actions as any[])?.length || 0}
                       onUse={handleTemplateSelect}
