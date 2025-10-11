@@ -57,6 +57,8 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/alerts': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/workflows': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/workflows/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/batch-operations': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/events': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // Admin settings (Tenant Admin only)
   '/admin/settings': ['tenant_admin', 'super_admin'],
