@@ -68,7 +68,13 @@ export default function GeofencingPage() {
     limit: 100,
   });
 
-  const employees = employeesData?.employees || [];
+  const employees = (employeesData?.employees || []) as unknown as Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    employeeNumber: string;
+    [key: string]: any;
+  }>;
 
   // Mutations
   const createMutation = trpc.geofencing.create.useMutation({
@@ -645,7 +651,7 @@ export default function GeofencingPage() {
 
                       <div className="max-h-[400px] overflow-y-auto py-4">
                         <div className="space-y-2">
-                          {employees.map((emp: any) => (
+                          {employees.map((emp) => (
                             <div
                               key={emp.id}
                               className="flex items-center space-x-2 p-2 hover:bg-muted rounded"

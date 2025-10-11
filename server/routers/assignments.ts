@@ -11,6 +11,9 @@ import {
 } from '@/features/employees/services/assignment.service';
 import { eventBus } from '@/lib/event-bus';
 import { TRPCError } from '@trpc/server';
+import { db } from '@/db';
+import { assignments } from '@/db';
+import { eq, and, desc } from 'drizzle-orm';
 
 const createAssignmentSchema = z.object({
   employeeId: z.string().uuid(),
@@ -119,19 +122,12 @@ export const assignmentsRouter = createTRPCRouter({
       employeeId: z.string().uuid(),
     }))
     .query(async ({ input, ctx }) => {
-      const { db } = await import('@/lib/db');
-      const { assignments } = await import('@/drizzle/schema');
-      const { eq, and, desc } = await import('drizzle-orm');
-
       try {
         const history = await db.query.assignments.findMany({
           where: and(
             eq(assignments.employeeId, input.employeeId),
             eq(assignments.tenantId, ctx.user.tenantId)
           ),
-          with: {
-            position: true,
-          },
           orderBy: [desc(assignments.effectiveFrom)],
         });
 

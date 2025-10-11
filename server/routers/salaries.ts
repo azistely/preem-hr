@@ -268,7 +268,6 @@ export const salariesRouter = createTRPCRouter({
 
         const result = await calculatePayrollV2({
           employeeId: input.employeeId,
-          tenantId: ctx.user.tenantId,
           periodStart,
           periodEnd,
           baseSalary,
@@ -278,7 +277,7 @@ export const salariesRouter = createTRPCRouter({
           familyAllowance,
           seniorityBonus,
           bonuses: otherBonuses,
-          taxDependents: employee.taxDependents || 0,
+          fiscalParts: employee.taxDependents || 1.0,
           countryCode,
         });
 
