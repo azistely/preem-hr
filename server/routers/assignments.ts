@@ -110,4 +110,37 @@ export const assignmentsRouter = createTRPCRouter({
         });
       }
     }),
+
+  /**
+   * Get assignment history for an employee
+   */
+  getHistory: publicProcedure
+    .input(z.object({
+      employeeId: z.string().uuid(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const { db } = await import('@/lib/db');
+      const { assignments } = await import('@/drizzle/schema');
+      const { eq, and, desc } = await import('drizzle-orm');
+
+      try {
+        const history = await db.query.assignments.findMany({
+          where: and(
+            eq(assignments.employeeId, input.employeeId),
+            eq(assignments.tenantId, ctx.user.tenantId)
+          ),
+          with: {
+            position: true,
+          },
+          orderBy: [desc(assignments.effectiveFrom)],
+        });
+
+        return history;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la récupération de l\'historique',
+        });
+      }
+    }),
 });

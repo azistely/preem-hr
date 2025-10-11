@@ -629,6 +629,7 @@ export const employeeSalaries = pgTable("employee_salaries", {
 	notes: text(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	createdBy: uuid("created_by"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	payFrequency: text("pay_frequency").default('monthly').notNull(),
 	// Single source of truth: components JSONB array
 	// Contains SalaryComponentInstance[] with code, name, amount, sourceType, metadata
@@ -639,6 +640,7 @@ export const employeeSalaries = pgTable("employee_salaries", {
 	index("idx_employee_salaries_effective_dates").using("btree", table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")),
 	index("idx_employee_salaries_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
 	index("idx_employee_salaries_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_salaries_updated_at").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
 	foreignKey({
 			columns: [table.createdBy],
 			foreignColumns: [users.id],
