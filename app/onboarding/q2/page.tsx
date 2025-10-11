@@ -19,10 +19,11 @@ import { toast } from 'sonner';
 export default function OnboardingQ2Page() {
   const router = useRouter();
   const [showSuccess, setShowSuccess] = useState(false);
-  const [employeeData, setEmployeeData] = useState<any>(null);
+  const [formData, setFormData] = useState<any>(null); // Store form data, not employee
   const [payslipPreview, setPayslipPreview] = useState<any>(null);
 
-  // tRPC mutation
+  // tRPC mutations
+  const calculatePreviewMutation = api.onboarding.calculatePayslipPreview.useMutation();
   const createEmployeeMutation = api.onboarding.createFirstEmployeeV2.useMutation();
 
   // Get user info for pre-filling
@@ -55,27 +56,43 @@ export default function OnboardingQ2Page() {
         hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
       };
 
-      const result = await createEmployeeMutation.mutateAsync(submitData);
+      // PHASE 1: Calculate preview only (no DB write)
+      const result = await calculatePreviewMutation.mutateAsync({
+        baseSalary: submitData.baseSalary,
+        hireDate: submitData.hireDate,
+        maritalStatus: submitData.maritalStatus,
+        dependentChildren: submitData.dependentChildren,
+        components: submitData.components,
+      });
 
-      // Store results
-      setEmployeeData(result.employee);
+      // Store form data and preview
+      setFormData(submitData);
       setPayslipPreview(result.payslipPreview);
       setShowSuccess(true);
 
-      toast.success(`${data.firstName} ${data.lastName} ajouté avec succès! 🎉`);
+      toast.success(`Aperçu du bulletin de paie généré! 🎉`);
+    } catch (error: any) {
+      toast.error(error.message || 'Impossible de calculer la paie');
+    }
+  };
+
+  const handleContinue = async () => {
+    if (!formData) return;
+
+    try {
+      // PHASE 2: Actually create the employee in DB
+      await createEmployeeMutation.mutateAsync(formData);
+
+      toast.success(`${formData.firstName} ${formData.lastName} créé avec succès! 🎉`);
+      router.push('/onboarding/q3');
     } catch (error: any) {
       toast.error(error.message || 'Impossible de créer l\'employé');
     }
   };
 
-  const handleContinue = () => {
-    router.push('/onboarding/q3');
-  };
-
   const handleEdit = () => {
     setShowSuccess(false);
-    setEmployeeData(null);
-    setPayslipPreview(null);
+    // Keep formData so form can be prefilled
   };
 
   return (
@@ -86,27 +103,30 @@ export default function OnboardingQ2Page() {
     >
       {!showSuccess ? (
         <EmployeeFormV2
-          defaultValues={{
-            firstName: user?.firstName || '',
-            lastName: user?.lastName || '',
-            email: user?.email || '',
-            positionTitle: 'Propriétaire',
-            hireDate: new Date(),
-            maritalStatus: 'single',
-            dependentChildren: 0,
-          }}
+          defaultValues={
+            formData || {
+              firstName: user?.firstName || '',
+              lastName: user?.lastName || '',
+              email: user?.email || '',
+              positionTitle: 'Propriétaire',
+              hireDate: new Date(),
+              maritalStatus: 'single',
+              dependentChildren: 0,
+            }
+          }
           onSubmit={handleEmployeeSubmit}
-          isSubmitting={createEmployeeMutation.isPending}
+          isSubmitting={calculatePreviewMutation.isPending}
         />
       ) : (
         <PayslipPreviewCard
           employee={{
-            firstName: employeeData.firstName,
-            lastName: employeeData.lastName,
+            firstName: formData.firstName,
+            lastName: formData.lastName,
           }}
           payslip={payslipPreview}
           onContinue={handleContinue}
           onEdit={handleEdit}
+          isCreating={createEmployeeMutation.isPending}
         />
       )}
     </OnboardingQuestion>

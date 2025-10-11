@@ -10,7 +10,7 @@
  */
 
 import { db } from '@/lib/db';
-import { employees, employeeSalaries, assignments } from '@/drizzle/schema';
+import { employees, employeeSalaries, assignments, positions } from '@/drizzle/schema';
 import { eq, and, or, like, desc, isNull, sql } from 'drizzle-orm';
 import { encrypt, decrypt } from '@/lib/crypto';
 import { eventBus, type EmployeeHiredEvent, type EmployeeUpdatedEvent, type EmployeeTerminatedEvent } from '@/lib/event-bus';
@@ -332,21 +332,33 @@ export async function getEmployeeById(employeeId: string, tenantId: string) {
     .where(eq(employeeSalaries.employeeId, employeeId))
     .orderBy(desc(employeeSalaries.effectiveFrom));
 
-  // Get assignment history
+  // Get assignment history with position details
   const assignmentHistory = await db
-    .select()
+    .select({
+      assignment: assignments,
+      position: positions,
+    })
     .from(assignments)
+    .leftJoin(positions, eq(assignments.positionId, positions.id))
     .where(eq(assignments.employeeId, employeeId))
     .orderBy(desc(assignments.effectiveFrom));
 
   // Get current salary (most recent active salary)
   const currentSalary = salaryHistory.find(s => !s.effectiveTo) || salaryHistory[0] || null;
 
+  // Get current position (most recent active assignment)
+  const currentAssignment = assignmentHistory.find(a => !a.assignment.effectiveTo) || assignmentHistory[0] || null;
+  const currentPosition = currentAssignment?.position || null;
+
   return {
     ...decrypted,
     currentSalary,
+    currentPosition,
     salaryHistory,
-    assignmentHistory,
+    assignmentHistory: assignmentHistory.map(a => ({
+      ...a.assignment,
+      position: a.position,
+    })),
   };
 }
 

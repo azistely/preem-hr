@@ -12,7 +12,7 @@ import {
 import { eventBus } from '@/lib/event-bus';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { assignments } from '@/db';
+import { assignments, positions } from '@/db';
 import { eq, and, desc } from 'drizzle-orm';
 
 const createAssignmentSchema = z.object({
@@ -123,13 +123,31 @@ export const assignmentsRouter = createTRPCRouter({
     }))
     .query(async ({ input, ctx }) => {
       try {
-        const history = await db.query.assignments.findMany({
-          where: and(
-            eq(assignments.employeeId, input.employeeId),
-            eq(assignments.tenantId, ctx.user.tenantId)
-          ),
-          orderBy: [desc(assignments.effectiveFrom)],
-        });
+        // Use manual join instead of relations to avoid TypeScript issues
+        const history = await db
+          .select({
+            id: assignments.id,
+            employeeId: assignments.employeeId,
+            positionId: assignments.positionId,
+            tenantId: assignments.tenantId,
+            assignmentType: assignments.assignmentType,
+            effectiveFrom: assignments.effectiveFrom,
+            effectiveTo: assignments.effectiveTo,
+            assignmentReason: assignments.assignmentReason,
+            notes: assignments.notes,
+            createdAt: assignments.createdAt,
+            createdBy: assignments.createdBy,
+            position: positions,
+          })
+          .from(assignments)
+          .leftJoin(positions, eq(assignments.positionId, positions.id))
+          .where(
+            and(
+              eq(assignments.employeeId, input.employeeId),
+              eq(assignments.tenantId, ctx.user.tenantId)
+            )
+          )
+          .orderBy(desc(assignments.effectiveFrom));
 
         return history;
       } catch (error: any) {

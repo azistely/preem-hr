@@ -511,7 +511,14 @@ export const onboardingRouter = createTRPCRouter({
       // CRITICAL: Family status
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
       dependentChildren: z.number().min(0).max(10),
-      // OPTIONAL: Allowances
+      // NEW: Components array (replaces individual allowance fields)
+      components: z.array(z.object({
+        code: z.string(),
+        name: z.string(),
+        amount: z.number(),
+        sourceType: z.enum(['standard', 'template']),
+      })).optional(),
+      // DEPRECATED (kept for backward compatibility)
       transportAllowance: z.number().optional(),
       housingAllowance: z.number().optional(),
       mealAllowance: z.number().optional(),
@@ -562,6 +569,98 @@ export const onboardingRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: error.message || 'Impossible de créer la configuration de paie',
+        });
+      }
+    }),
+
+  /**
+   * Calculate payslip preview WITHOUT creating employee (V2)
+   * Used during onboarding to show preview before confirming
+   */
+  calculatePayslipPreview: publicProcedure
+    .input(z.object({
+      baseSalary: z.number().min(75000, 'Inférieur au SMIG'),
+      hireDate: z.date(),
+      maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
+      dependentChildren: z.number().min(0).max(10),
+      components: z.array(z.object({
+        code: z.string(),
+        name: z.string(),
+        amount: z.number(),
+        sourceType: z.enum(['standard', 'template']),
+      })).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const { calculatePayrollV2 } = await import('@/features/payroll/services/payroll-calculation-v2');
+        const { db } = await import('@/lib/db');
+        const { tenants } = await import('@/drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+
+        // Get tenant info for countryCode and sectorCode
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, ctx.user.tenantId))
+          .limit(1);
+
+        if (!tenant) {
+          throw new Error('Entreprise non trouvée');
+        }
+
+        // Calculate fiscal parts
+        let fiscalParts = 1.0;
+        if (input.maritalStatus === 'married') {
+          fiscalParts += 1.0;
+        }
+        const countedChildren = Math.min(input.dependentChildren, 4);
+        fiscalParts += countedChildren * 0.5;
+
+        // Calculate total components amount
+        const totalComponentsAmount = input.components
+          ? input.components.reduce((sum, c) => sum + c.amount, 0)
+          : 0;
+
+        // Calculate payroll
+        const today = new Date();
+        const periodStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+        const payrollResult = await calculatePayrollV2({
+          employeeId: 'preview', // Dummy ID for preview
+          countryCode: tenant.countryCode || 'CI',
+          periodStart,
+          periodEnd,
+          baseSalary: input.baseSalary,
+          hireDate: input.hireDate,
+          fiscalParts: fiscalParts,
+          transportAllowance: totalComponentsAmount,
+          housingAllowance: 0,
+          mealAllowance: 0,
+          sectorCode: tenant.sectorCode || 'SERVICES',
+        });
+
+        // Return preview in expected format
+        return {
+          success: true,
+          payslipPreview: {
+            grossSalary: payrollResult.grossSalary,
+            baseSalary: payrollResult.baseSalary,
+            components: input.components || [],
+            cnpsEmployee: payrollResult.cnpsEmployee,
+            cmuEmployee: payrollResult.cmuEmployee || 0,
+            incomeTax: payrollResult.its,
+            netSalary: payrollResult.netSalary,
+            fiscalParts: fiscalParts,
+            cnpsEmployer: payrollResult.cnpsEmployer,
+            cmuEmployer: payrollResult.cmuEmployer || 0,
+            totalEmployerCost: payrollResult.employerCost,
+          },
+        };
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Impossible de calculer la paie',
         });
       }
     }),

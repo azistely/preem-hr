@@ -14,6 +14,12 @@ interface PayslipPreviewCardProps {
   payslip: {
     grossSalary: number;
     baseSalary: number;
+    components?: Array<{
+      code: string;
+      name: string;
+      amount: number;
+      sourceType: 'standard' | 'template';
+    }>;
     transportAllowance?: number;
     housingAllowance?: number;
     mealAllowance?: number;
@@ -28,6 +34,7 @@ interface PayslipPreviewCardProps {
   };
   onContinue: () => void;
   onEdit: () => void;
+  isCreating?: boolean;
 }
 
 export function PayslipPreviewCard({
@@ -35,6 +42,7 @@ export function PayslipPreviewCard({
   payslip,
   onContinue,
   onEdit,
+  isCreating = false,
 }: PayslipPreviewCardProps) {
   // Helper to safely format numbers
   const formatCurrency = (value: number | undefined): string => {
@@ -117,23 +125,37 @@ export function PayslipPreviewCard({
                     <span>Salaire de base:</span>
                     <span>{formatCurrency(payslip.baseSalary)} FCFA</span>
                   </div>
-                  {payslip.transportAllowance && payslip.transportAllowance > 0 && (
-                    <div className="flex justify-between">
-                      <span>Indemnité transport:</span>
-                      <span>{formatCurrency(payslip.transportAllowance)} FCFA</span>
-                    </div>
+                  {/* Display modern components array */}
+                  {payslip.components && payslip.components.length > 0 && (
+                    payslip.components.map((component, index) => (
+                      <div key={index} className="flex justify-between">
+                        <span>{component.name}:</span>
+                        <span>{formatCurrency(component.amount)} FCFA</span>
+                      </div>
+                    ))
                   )}
-                  {payslip.housingAllowance && payslip.housingAllowance > 0 && (
-                    <div className="flex justify-between">
-                      <span>Indemnité logement:</span>
-                      <span>{formatCurrency(payslip.housingAllowance)} FCFA</span>
-                    </div>
-                  )}
-                  {payslip.mealAllowance && payslip.mealAllowance > 0 && (
-                    <div className="flex justify-between">
-                      <span>Indemnité repas:</span>
-                      <span>{formatCurrency(payslip.mealAllowance)} FCFA</span>
-                    </div>
+                  {/* Backward compatibility: display individual allowances if no components array */}
+                  {(!payslip.components || payslip.components.length === 0) && (
+                    <>
+                      {payslip.transportAllowance && payslip.transportAllowance > 0 && (
+                        <div className="flex justify-between">
+                          <span>Indemnité transport:</span>
+                          <span>{formatCurrency(payslip.transportAllowance)} FCFA</span>
+                        </div>
+                      )}
+                      {payslip.housingAllowance && payslip.housingAllowance > 0 && (
+                        <div className="flex justify-between">
+                          <span>Indemnité logement:</span>
+                          <span>{formatCurrency(payslip.housingAllowance)} FCFA</span>
+                        </div>
+                      )}
+                      {payslip.mealAllowance && payslip.mealAllowance > 0 && (
+                        <div className="flex justify-between">
+                          <span>Indemnité repas:</span>
+                          <span>{formatCurrency(payslip.mealAllowance)} FCFA</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -171,14 +193,16 @@ export function PayslipPreviewCard({
             onClick={onContinue}
             size="lg"
             className="flex-1 min-h-[56px]"
+            disabled={isCreating}
           >
-            C'est correct, continuer
+            {isCreating ? 'Création en cours...' : "C'est correct, continuer"}
           </Button>
 
           <Button
             onClick={onEdit}
             variant="outline"
             size="lg"
+            disabled={isCreating}
           >
             Modifier
           </Button>

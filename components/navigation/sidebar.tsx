@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LucideIcon, ChevronLeft, Search } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LucideIcon, ChevronLeft, Search, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { createAuthClient } from "@/lib/supabase/auth-client";
 
 export interface NavSection {
   title: string;
@@ -40,9 +41,24 @@ export function Sidebar({
   className,
 }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      const supabase = createAuthClient();
+      await supabase.auth.signOut();
+      router.push('/login');
+      router.refresh();
+    } catch (error) {
+      console.error('Logout error:', error);
+      setIsLoggingOut(false);
+    }
+  };
 
   // Filter items based on search
   const filteredSections = React.useMemo(() => {
@@ -216,6 +232,21 @@ export function Sidebar({
           )}
         </div>
       </ScrollArea>
+
+      {/* Logout Button */}
+      <div className="border-t p-4">
+        <Button
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          variant="ghost"
+          className="w-full justify-start gap-3 min-h-[44px] text-muted-foreground hover:text-foreground"
+        >
+          <LogOut className="h-5 w-5 shrink-0" />
+          {!isCollapsed && (
+            <span>{isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}</span>
+          )}
+        </Button>
+      </div>
     </aside>
   );
 }

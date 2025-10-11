@@ -302,6 +302,10 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     const periodStart = new Date(today.getFullYear(), today.getMonth(), 1);
     const periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
+    // Calculate total component amount for gross salary
+    // Sum ALL user components (not just specific types like transport/housing/meal)
+    const totalComponentsAmount = userComponents.reduce((sum, component) => sum + component.amount, 0);
+
     const payrollResult = await calculatePayrollV2({
       employeeId: employee.id,
       countryCode: tenant.countryCode || 'CI',
@@ -310,9 +314,10 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       baseSalary: input.baseSalary,
       hireDate: hireDate,
       fiscalParts: fiscalParts, // Use calculated fiscal parts
-      transportAllowance: input.transportAllowance || 0,
-      housingAllowance: input.housingAllowance || 0,
-      mealAllowance: input.mealAllowance || 0,
+      // Pass total components amount to be added to gross salary
+      transportAllowance: totalComponentsAmount, // Using this param to pass all component amounts
+      housingAllowance: 0,
+      mealAllowance: 0,
       sectorCode: tenant.sectorCode || 'SERVICES',
     });
 
@@ -320,9 +325,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     const payslipPreview = {
       grossSalary: payrollResult.grossSalary,
       baseSalary: payrollResult.baseSalary,
-      transportAllowance: input.transportAllowance || 0,
-      housingAllowance: input.housingAllowance || 0,
-      mealAllowance: input.mealAllowance || 0,
+      components: userComponents, // Include user-selected components
       cnpsEmployee: payrollResult.cnpsEmployee,
       cmuEmployee: payrollResult.cmuEmployee || 0,
       incomeTax: payrollResult.its, // Field name mapping: its → incomeTax

@@ -62,14 +62,21 @@ export function SalaryHistoryTimeline({
   }
 
   const calculateTotalSalary = (entry: SalaryHistoryEntry) => {
+    const baseSalary = typeof entry.baseSalary === 'string'
+      ? parseFloat(entry.baseSalary)
+      : entry.baseSalary;
+
     // New components architecture (preferred)
     if (entry.components && entry.components.length > 0) {
-      return entry.components.reduce((sum, component) => sum + (component.amount || 0), 0);
+      return (
+        baseSalary +
+        entry.components.reduce((sum, component) => sum + (component.amount || 0), 0)
+      );
     }
 
     // Fallback to legacy allowances architecture
     return (
-      entry.baseSalary +
+      baseSalary +
       (entry.housingAllowance || 0) +
       (entry.transportAllowance || 0) +
       (entry.mealAllowance || 0)

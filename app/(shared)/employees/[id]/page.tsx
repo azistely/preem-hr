@@ -257,9 +257,10 @@ export default function EmployeeDetailPage() {
                   {formatCurrency(
                     // New components architecture (preferred)
                     (employee as any).currentSalary.components && (employee as any).currentSalary.components.length > 0
-                      ? (employee as any).currentSalary.components.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
+                      ? parseFloat((employee as any).currentSalary.baseSalary) +
+                        (employee as any).currentSalary.components.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
                       : // Fallback to legacy allowances
-                        (employee as any).currentSalary.baseSalary +
+                        parseFloat((employee as any).currentSalary.baseSalary) +
                         ((employee as any).currentSalary.housingAllowance || 0) +
                         ((employee as any).currentSalary.transportAllowance || 0) +
                         ((employee as any).currentSalary.mealAllowance || 0)
@@ -446,6 +447,14 @@ export default function EmployeeDetailPage() {
                   {/* New Components Architecture */}
                   {(employee as any).currentSalary.components && (employee as any).currentSalary.components.length > 0 ? (
                     <>
+                      {/* Base Salary - Always Show First */}
+                      <div className="bg-primary/5 p-4 rounded-lg border">
+                        <Label className="text-sm text-muted-foreground">Salaire de base</Label>
+                        <p className="text-2xl font-bold">
+                          {formatCurrency(parseFloat((employee as any).currentSalary.baseSalary))}
+                        </p>
+                      </div>
+
                       {/* Components Grid */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {(employee as any).currentSalary.components.map((component: any, idx: number) => (
@@ -463,6 +472,7 @@ export default function EmployeeDetailPage() {
                         <Label className="text-sm text-muted-foreground">Salaire brut total</Label>
                         <p className="text-2xl font-bold text-primary">
                           {formatCurrency(
+                            parseFloat((employee as any).currentSalary.baseSalary) +
                             (employee as any).currentSalary.components.reduce(
                               (sum: number, c: any) => sum + (c.amount || 0),
                               0
