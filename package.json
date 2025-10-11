@@ -29,7 +29,8 @@
     "vercel:pull": "vercel env pull",
     "vercel:dev": "vercel dev",
     "vercel:deploy": "vercel deploy --prebuilt",
-    "check": "./scripts/pre-deploy-check.sh"
+    "check": "./scripts/pre-deploy-check.sh",
+    "check:quick": "./scripts/quick-build-check.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
