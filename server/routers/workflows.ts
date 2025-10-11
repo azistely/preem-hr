@@ -25,7 +25,15 @@ const workflowConditionSchema = z.object({
   value: z.any(),
 });
 const workflowActionSchema = z.object({
-  type: z.enum(['create_alert', 'send_notification', 'create_payroll_event', 'update_employee_status']),
+  type: z.enum([
+    'create_alert',
+    'send_notification',
+    'create_payroll_event',
+    'update_employee_status',
+    'wait_delay',
+    'conditional',
+    'parallel',
+  ]),
   config: z.record(z.any()),
 });
 
@@ -143,7 +151,7 @@ export const workflowsRouter = createTRPCRouter({
         conditions: z.array(workflowConditionSchema).default([]),
         actions: z.array(workflowActionSchema).min(1),
         status: z.enum(['draft', 'active']).default('draft'),
-        templateId: z.string().uuid().optional(), // If creating from template
+        templateId: z.string().uuid().nullish(), // If creating from template (can be null, undefined, or UUID)
       })
     )
     .mutation(async ({ input, ctx }) => {
