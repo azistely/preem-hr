@@ -280,7 +280,7 @@ export function SalaryChangeWizard({
       name,
       amount: suggestedAmount,
       sourceType: 'template',
-      metadata: {}, // Metadata will be set from template or can be customized later
+      metadata: undefined, // Metadata will be set from template or can be customized later
     };
 
     const currentComponents = form.getValues('components') || [];
