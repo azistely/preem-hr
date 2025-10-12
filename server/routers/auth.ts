@@ -75,16 +75,21 @@ export const authRouter = router({
     .mutation(async ({ input }) => {
       const { email, password, firstName, lastName, companyName } = input;
 
+      console.log('[Auth] Starting signup for:', email);
+
       // Use service role DB to bypass RLS (no auth exists yet during signup)
       const serviceDb = getServiceRoleDb();
+      console.log('[Auth] Service role DB initialized');
 
       try {
         // 1. Check if email already exists
+        console.log('[Auth] Checking if email exists...');
         const existingUser = await serviceDb.query.users.findFirst({
           where: eq(users.email, email),
         });
 
         if (existingUser) {
+          console.log('[Auth] Email already exists');
           throw new TRPCError({
             code: 'CONFLICT',
             message: 'Un compte avec cet email existe déjà',
@@ -92,6 +97,7 @@ export const authRouter = router({
         }
 
         // 2. Create tenant first (needed for app_metadata)
+        console.log('[Auth] Creating tenant...');
         const slug = generateTenantSlug(companyName);
         const [tenant] = await serviceDb
           .insert(tenants)
@@ -108,13 +114,17 @@ export const authRouter = router({
           .returning();
 
         if (!tenant) {
+          console.error('[Auth] Tenant creation returned null');
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Erreur lors de la création de l\'entreprise',
           });
         }
 
+        console.log('[Auth] Tenant created:', tenant.id);
+
         // 3. Create Supabase auth user with app_metadata
+        console.log('[Auth] Creating Supabase auth user...');
         const supabase = createSupabaseAdmin();
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
           email,
@@ -132,11 +142,14 @@ export const authRouter = router({
           await serviceDb.delete(tenants).where(eq(tenants.id, tenant.id));
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: 'Erreur lors de la création du compte',
+            message: `Erreur lors de la création du compte: ${authError?.message || 'Unknown error'}`,
           });
         }
 
+        console.log('[Auth] Supabase user created:', authData.user.id);
+
         // 4. Create user in database
+        console.log('[Auth] Creating user in database...');
         const [user] = await serviceDb
           .insert(users)
           .values({
@@ -152,11 +165,14 @@ export const authRouter = router({
           .returning();
 
         if (!user) {
+          console.error('[Auth] User creation returned null');
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Erreur lors de la création de l\'utilisateur',
           });
         }
+
+        console.log('[Auth] User created successfully:', user.id);
 
         return {
           success: true,
@@ -174,12 +190,21 @@ export const authRouter = router({
         };
       } catch (error) {
         console.error('[Auth] Signup error:', error);
+        console.error('[Auth] Error details:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          name: error instanceof Error ? error.name : undefined,
+        });
+
         if (error instanceof TRPCError) {
           throw error;
         }
+
+        // Provide more detailed error for debugging
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'Erreur lors de l\'inscription',
+          message: `Erreur lors de l'inscription: ${errorMessage}`,
         });
       }
     }),
