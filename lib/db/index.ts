@@ -43,7 +43,14 @@ const dateTypeConfig = {
 };
 
 // Create postgres-js client with custom type configuration
-const client = postgres(connectionString, dateTypeConfig);
+// IMPORTANT: Set search_path to 'public' to avoid conflicts with auth.users table
+const client = postgres(connectionString, {
+  ...dateTypeConfig,
+  connection: {
+    search_path: 'public'
+  },
+  onnotice: () => {}, // Suppress notices
+});
 
 console.log('[DB] Date parsers configured for Drizzle compatibility');
 
@@ -76,7 +83,14 @@ export function getServiceRoleDb() {
       console.warn('[DB] SERVICE_ROLE_DATABASE_URL not set, using standard connection (RLS will apply)');
     }
 
-    serviceRoleClient = postgres(serviceConnectionString, dateTypeConfig);
+    // Apply same schema fix as main client
+    serviceRoleClient = postgres(serviceConnectionString, {
+      ...dateTypeConfig,
+      connection: {
+        search_path: 'public'
+      },
+      onnotice: () => {},
+    });
     serviceRoleDb = drizzle({ client: serviceRoleClient, schema });
     console.log('[DB] Service role client initialized');
   }
