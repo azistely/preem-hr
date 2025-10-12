@@ -10,6 +10,7 @@ if (!process.env.DATABASE_URL) {
 // Add search_path to connection string to avoid conflicts with auth.users table
 const connectionString = process.env.DATABASE_URL + '?options=-c%20search_path%3Dpublic';
 console.log('[DB] Initializing connection with search_path=public...');
+console.log('[DB] Connection string:', connectionString.replace(/:[^:@]+@/, ':****@')); // Mask password
 
 // ✅ FIX: Override postgres.js default date parsers
 // This resolves the "Received an instance of Date" error
