@@ -7,8 +7,9 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
 }
 
-const connectionString = process.env.DATABASE_URL;
-console.log('[DB] Initializing connection...');
+// Add search_path to connection string to avoid conflicts with auth.users table
+const connectionString = process.env.DATABASE_URL + '?options=-c%20search_path%3Dpublic';
+console.log('[DB] Initializing connection with search_path=public...');
 
 // ✅ FIX: Override postgres.js default date parsers
 // This resolves the "Received an instance of Date" error
@@ -43,12 +44,8 @@ const dateTypeConfig = {
 };
 
 // Create postgres-js client with custom type configuration
-// IMPORTANT: Set search_path to 'public' to avoid conflicts with auth.users table
 const client = postgres(connectionString, {
   ...dateTypeConfig,
-  connection: {
-    search_path: 'public'
-  },
   onnotice: () => {}, // Suppress notices
 });
 
@@ -77,18 +74,20 @@ let serviceRoleDb: any = null;
 export function getServiceRoleDb() {
   if (!serviceRoleDb) {
     // Use service role connection string or fall back to standard with a warning
-    const serviceConnectionString = process.env.SERVICE_ROLE_DATABASE_URL || connectionString;
+    // Add search_path parameter to avoid auth.users conflicts
+    let serviceConnectionString = process.env.SERVICE_ROLE_DATABASE_URL || connectionString;
+
+    // Ensure search_path is set (connectionString already has it)
+    if (!serviceConnectionString.includes('search_path')) {
+      serviceConnectionString += '?options=-c%20search_path%3Dpublic';
+    }
 
     if (!process.env.SERVICE_ROLE_DATABASE_URL) {
       console.warn('[DB] SERVICE_ROLE_DATABASE_URL not set, using standard connection (RLS will apply)');
     }
 
-    // Apply same schema fix as main client
     serviceRoleClient = postgres(serviceConnectionString, {
       ...dateTypeConfig,
-      connection: {
-        search_path: 'public'
-      },
       onnotice: () => {},
     });
     serviceRoleDb = drizzle({ client: serviceRoleClient, schema });
