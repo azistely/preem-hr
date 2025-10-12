@@ -130,17 +130,16 @@ export default function NewEmployeePage() {
   });
 
   const onSubmit = async (data: FormInput) => {
-    // Ensure required fields are set (email is required by API but optional in form for UX)
-    if (!data.email || data.email === '') {
-      form.setError('email', { message: 'L\'email est requis' });
-      setCurrentStep(1); // Go back to personal info step
-      return;
-    }
+    // Generate default email if not provided (DB requires email field)
+    // Remove accents and special characters for valid email format
+    const email = data.email && data.email !== ''
+      ? data.email
+      : `${data.firstName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}.${data.lastName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}@example.com`;
 
     // Transform to API format (all defaults are applied by Zod)
     await createEmployee.mutateAsync({
       ...data,
-      email: data.email, // TypeScript now knows email is defined
+      email,
       coefficient: data.coefficient ?? 100,
       taxDependents: data.taxDependents ?? 0,
       components: data.components ?? [],

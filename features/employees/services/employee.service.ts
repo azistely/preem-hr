@@ -125,30 +125,11 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
   // Get country-specific minimum wage
   const minimumWage = await getMinimumWage(countryCode);
 
-  // Validate components array
-  if (!input.components || input.components.length === 0) {
-    throw new ValidationError(
-      'Au moins un composant salarial (salaire de base) est requis',
-      { components: input.components }
-    );
-  }
-
-  // Extract base salary from components (code '11')
-  const baseSalaryComponent = input.components.find(c => c.code === '11');
-  if (!baseSalaryComponent) {
-    throw new ValidationError(
-      'Le salaire de base (code 11) est requis dans les composants',
-      { components: input.components }
-    );
-  }
-
-  const baseSalary = baseSalaryComponent.amount;
-
-  // Validate salary >= country SMIG
-  if (baseSalary < minimumWage) {
+  // Validate base salary >= country SMIG
+  if (input.baseSalary < minimumWage) {
     throw new ValidationError(
       `Le salaire doit être supérieur ou égal au SMIG (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
-      { baseSalary, minimumWage, countryCode }
+      { baseSalary: input.baseSalary, minimumWage, countryCode }
     );
   }
 
@@ -214,15 +195,15 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
 
     // Use components array directly from input (single source of truth)
     // Components are already built in the UI with proper metadata
-    const components = input.components;
+    const components = input.components || [];
 
-    // Create initial salary record (components-only architecture)
+    // Create initial salary record
     await tx.insert(employeeSalaries).values({
       tenantId: input.tenantId,
       employeeId: employee!.id,
-      baseSalary: baseSalary.toString(), // Denormalized for queries/constraints
+      baseSalary: input.baseSalary.toString(), // Denormalized for queries/constraints
       currency: 'XOF',
-      components, // Single source of truth
+      components, // Allowances and bonuses
       effectiveFrom: input.hireDate.toISOString().split('T')[0],
       effectiveTo: null,
       changeReason: 'hire',
