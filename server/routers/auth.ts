@@ -82,14 +82,16 @@ export const authRouter = router({
       console.log('[Auth] Service role DB initialized');
 
       try {
-        // 1. Check if email already exists
+        // 1. Check if email already exists using Supabase Admin API (bypasses RLS)
         console.log('[Auth] Checking if email exists...');
-        const existingUser = await serviceDb.query.users.findFirst({
-          where: eq(users.email, email),
-        });
+        const supabase = createSupabaseAdmin();
+
+        // Use admin API to check if user exists by email
+        const { data: existingUsers } = await supabase.auth.admin.listUsers();
+        const existingUser = existingUsers?.users?.find(u => u.email === email);
 
         if (existingUser) {
-          console.log('[Auth] Email already exists');
+          console.log('[Auth] Email already exists in Supabase Auth');
           throw new TRPCError({
             code: 'CONFLICT',
             message: 'Un compte avec cet email existe déjà',
@@ -126,7 +128,7 @@ export const authRouter = router({
         // 3. Create Supabase auth user with app_metadata
         // Using signUp instead of admin.createUser to trigger automatic confirmation email
         console.log('[Auth] Creating Supabase auth user...');
-        const supabase = createSupabaseAdmin();
+        // supabase already created above for email check
 
         // Option 1: Use regular signUp (sends confirmation email automatically)
         const { data: authData, error: authError } = await supabase.auth.signUp({
