@@ -106,18 +106,26 @@ export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) =
   const { req } = opts || {};
 
   // Extract user from Supabase session (production) or use dev mock
-  const user = await getUserFromSession() || DEV_MOCK_USER;
+  const user = await getUserFromSession();
 
   // Set PostgreSQL session variables for RLS policies
   // This allows RLS policies to access tenant_id via current_setting()
-  await db.execute(sql`
-    SELECT set_config('app.tenant_id', ${user.tenantId}, true),
-           set_config('app.user_role', ${user.role}, true),
-           set_config('app.user_id', ${user.id}, true);
-  `);
+  // Only set config if we have a real authenticated user (not for public procedures like signup)
+  if (user) {
+    try {
+      await db.execute(sql`
+        SELECT set_config('app.tenant_id', ${user.tenantId}, true),
+               set_config('app.user_role', ${user.role}, true),
+               set_config('app.user_id', ${user.id}, true);
+      `);
+    } catch (error) {
+      console.error('[Context] Failed to set RLS config:', error);
+      // Don't throw - allow unauthenticated requests to proceed
+    }
+  }
 
   return {
-    user,
+    user: user || DEV_MOCK_USER, // Use dev mock only for local development
     db,
   };
 });

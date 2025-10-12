@@ -10,7 +10,7 @@
 
 import { z } from 'zod';
 import { publicProcedure, protectedProcedure, router } from '@/server/api/trpc';
-import { db } from '@/lib/db';
+import { db, getServiceRoleDb } from '@/lib/db';
 import { tenants, users } from '@/drizzle/schema';
 import { createClient } from '@supabase/supabase-js';
 import { TRPCError } from '@trpc/server';
@@ -75,9 +75,12 @@ export const authRouter = router({
     .mutation(async ({ input }) => {
       const { email, password, firstName, lastName, companyName } = input;
 
+      // Use service role DB to bypass RLS (no auth exists yet during signup)
+      const serviceDb = getServiceRoleDb();
+
       try {
         // 1. Check if email already exists
-        const existingUser = await db.query.users.findFirst({
+        const existingUser = await serviceDb.query.users.findFirst({
           where: eq(users.email, email),
         });
 
@@ -90,7 +93,7 @@ export const authRouter = router({
 
         // 2. Create tenant first (needed for app_metadata)
         const slug = generateTenantSlug(companyName);
-        const [tenant] = await db
+        const [tenant] = await serviceDb
           .insert(tenants)
           .values({
             name: companyName,
@@ -126,7 +129,7 @@ export const authRouter = router({
         if (authError || !authData.user) {
           console.error('[Auth] Supabase signup error:', authError);
           // Rollback: delete tenant if user creation failed
-          await db.delete(tenants).where(eq(tenants.id, tenant.id));
+          await serviceDb.delete(tenants).where(eq(tenants.id, tenant.id));
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Erreur lors de la création du compte',
@@ -134,7 +137,7 @@ export const authRouter = router({
         }
 
         // 4. Create user in database
-        const [user] = await db
+        const [user] = await serviceDb
           .insert(users)
           .values({
             id: authData.user.id,

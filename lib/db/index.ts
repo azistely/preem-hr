@@ -15,8 +15,8 @@ console.log('[DB] Initializing connection...');
 // See: https://github.com/porsager/postgres/discussions/761
 // Required for Drizzle ORM v0.30.0+ compatibility
 
-// Create postgres-js client with custom type configuration
-const client = postgres(connectionString, {
+// Date type configuration for postgres-js
+const dateTypeConfig = {
   types: {
     // Timestamp with timezone - OID 1184
     timestamptz: {
@@ -40,8 +40,46 @@ const client = postgres(connectionString, {
       parse: (x: string) => x
     },
   }
-});
+};
+
+// Create postgres-js client with custom type configuration
+const client = postgres(connectionString, dateTypeConfig);
 
 console.log('[DB] Date parsers configured for Drizzle compatibility');
 
+/**
+ * Standard database client
+ * Subject to RLS policies based on JWT auth
+ */
 export const db = drizzle({ client, schema });
+
+/**
+ * Service role database client
+ * Bypasses RLS policies - USE WITH CAUTION
+ *
+ * Only use for:
+ * - User signup (before auth exists)
+ * - Admin operations that need to bypass tenant isolation
+ * - System maintenance tasks
+ *
+ * NEVER expose this to client-side code or untrusted endpoints
+ */
+let serviceRoleClient: any = null;
+let serviceRoleDb: any = null;
+
+export function getServiceRoleDb() {
+  if (!serviceRoleDb) {
+    // Use service role connection string or fall back to standard with a warning
+    const serviceConnectionString = process.env.SERVICE_ROLE_DATABASE_URL || connectionString;
+
+    if (!process.env.SERVICE_ROLE_DATABASE_URL) {
+      console.warn('[DB] SERVICE_ROLE_DATABASE_URL not set, using standard connection (RLS will apply)');
+    }
+
+    serviceRoleClient = postgres(serviceConnectionString, dateTypeConfig);
+    serviceRoleDb = drizzle({ client: serviceRoleClient, schema });
+    console.log('[DB] Service role client initialized');
+  }
+
+  return serviceRoleDb as typeof db;
+}
