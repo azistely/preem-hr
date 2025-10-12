@@ -107,7 +107,7 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
           name="phone"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Téléphone (optionnel)</FormLabel>
+              <FormLabel>Téléphone *</FormLabel>
               <FormControl>
                 <Input
                   {...field}

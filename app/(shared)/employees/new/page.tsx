@@ -45,7 +45,7 @@ const createEmployeeSchema = z.object({
   lastName: z.string().min(1, 'Le nom est requis'),
   preferredName: z.string().optional(),
   email: z.string().email('Email invalide').optional().or(z.literal('')),
-  phone: z.string().optional(),
+  phone: z.string().min(1, 'Le numéro de téléphone est requis'),
   dateOfBirth: z.date().optional(),
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
   nationalId: z.string().optional(),
@@ -153,7 +153,7 @@ export default function NewEmployeePage() {
     // Validate current step fields
     switch (currentStep) {
       case 1:
-        isValid = await form.trigger(['firstName', 'lastName', 'email']);
+        isValid = await form.trigger(['firstName', 'lastName', 'phone']);
         break;
       case 2:
         isValid = await form.trigger(['hireDate', 'positionId', 'coefficient']);
