@@ -62,6 +62,8 @@
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
     "@types/canvas-confetti": "^1.9.0",
+    "@upstash/ratelimit": "^2.0.6",
+    "@upstash/redis": "^1.35.5",
     "@xyflow/react": "^12.8.6",
     "canvas-confetti": "^1.9.3",
     "class-variance-authority": "^0.7.1",

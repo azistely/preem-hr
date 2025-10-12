@@ -129,7 +129,7 @@ export const authRouter = router({
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
           email,
           password,
-          email_confirm: true, // Auto-confirm email for now
+          email_confirm: false, // Require email verification
           app_metadata: {
             tenant_id: tenant.id,
             role: 'tenant_admin', // First user is admin

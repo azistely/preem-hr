@@ -11,7 +11,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+import { updateSession } from '@/lib/supabase/middleware';
 
 /**
  * User role type
@@ -119,6 +119,12 @@ const PUBLIC_ROUTES = [
   '/login',
   '/signup',
   '/api',
+  '/auth/confirm',           // Email verification callback
+  '/auth/verify-email',      // Email verification pending page
+  '/auth/forgot-password',   // Forgot password page
+  '/auth/reset-password',    // Reset password page
+  '/auth/auth-code-error',   // Auth error page
+  '/auth/resend-verification', // Resend verification (future)
 ];
 
 /**
@@ -195,33 +201,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Create Supabase client
-  const response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value);
-            response.cookies.set(name, value, options);
-          });
-        },
-      },
-    }
-  );
-
-  // Get authenticated user (secure - validates with Supabase Auth server)
-  const { data: { user } } = await supabase.auth.getUser();
+  // Update Supabase session (validates session and refreshes cookies)
+  const { supabaseResponse, user } = await updateSession(request);
 
   // Redirect to login if not authenticated
   if (!user) {
@@ -245,8 +226,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  // User has access - allow request
-  return response;
+  // User has access - return response with updated session cookies
+  return supabaseResponse;
 }
 
 /**

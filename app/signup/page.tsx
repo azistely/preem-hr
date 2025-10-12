@@ -14,21 +14,19 @@
 
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { createAuthClient } from '@/lib/supabase/auth-client';
-import { api } from '@/trpc/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { PreemLogo } from '@/components/brand/preem-logo';
+import { signup } from './actions';
 
 /**
  * Signup form validation schema
@@ -48,8 +46,8 @@ const signupSchema = z.object({
 type SignupFormData = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
-  const router = useRouter();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const {
     register,
@@ -59,58 +57,30 @@ export default function SignupPage() {
     resolver: zodResolver(signupSchema),
   });
 
-  const signupMutation = api.auth.signup.useMutation();
-
   const onSubmit = async (data: SignupFormData) => {
-    setIsSubmitting(true);
-    try {
-      // 1. Create user account (this creates Supabase auth + DB records)
-      const result = await signupMutation.mutateAsync({
-        email: data.email,
-        password: data.password,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        companyName: data.companyName,
-      });
+    setError(null);
 
-      if (!result) {
-        toast.error('Erreur lors de l\'inscription');
-        setIsSubmitting(false);
-        return;
-      }
+    startTransition(async () => {
+      // Create FormData for Server Action
+      const formData = new FormData();
+      formData.append('email', data.email);
+      formData.append('password', data.password);
+      formData.append('confirmPassword', data.confirmPassword);
+      formData.append('firstName', data.firstName);
+      formData.append('lastName', data.lastName);
+      formData.append('companyName', data.companyName);
 
-      // 2. Sign in to create session
-      const supabase = createAuthClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
+      // Call Server Action
+      const result = await signup(formData);
 
-      if (signInError) {
-        console.error('Auto sign-in error:', signInError);
-        toast.success('Compte créé avec succès!', {
-          description: 'Veuillez vous connecter pour continuer',
+      // Handle error (success redirects automatically)
+      if (!result.success) {
+        setError(result.error);
+        toast.error('Erreur lors de l\'inscription', {
+          description: result.error,
         });
-        router.push('/login');
-        return;
       }
-
-      toast.success('Compte créé avec succès!', {
-        description: `Bienvenue ${result.user.firstName}!`,
-      });
-
-      // Small delay to ensure session is set
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Redirect to onboarding
-      router.push('/onboarding');
-    } catch (error: any) {
-      console.error('Signup error:', error);
-      toast.error('Erreur lors de l\'inscription', {
-        description: error?.message || 'Une erreur s\'est produite',
-      });
-      setIsSubmitting(false);
-    }
+    });
   };
 
   return (
@@ -149,7 +119,7 @@ export default function SignupPage() {
                   placeholder="Ex: Mon Entreprise SARL"
                   className="min-h-[48px] text-base"
                   {...register('companyName')}
-                  disabled={isSubmitting}
+                  disabled={isPending}
                 />
                 {errors.companyName && (
                   <p className="text-sm text-destructive">{errors.companyName.message}</p>
@@ -168,7 +138,7 @@ export default function SignupPage() {
                     placeholder="Ex: Jean"
                     className="min-h-[48px] text-base"
                     {...register('firstName')}
-                    disabled={isSubmitting}
+                    disabled={isPending}
                   />
                   {errors.firstName && (
                     <p className="text-sm text-destructive">{errors.firstName.message}</p>
@@ -185,7 +155,7 @@ export default function SignupPage() {
                     placeholder="Ex: Kouassi"
                     className="min-h-[48px] text-base"
                     {...register('lastName')}
-                    disabled={isSubmitting}
+                    disabled={isPending}
                   />
                   {errors.lastName && (
                     <p className="text-sm text-destructive">{errors.lastName.message}</p>
@@ -204,7 +174,7 @@ export default function SignupPage() {
                   placeholder="Ex: jean@monentreprise.com"
                   className="min-h-[48px] text-base"
                   {...register('email')}
-                  disabled={isSubmitting}
+                  disabled={isPending}
                 />
                 {errors.email && (
                   <p className="text-sm text-destructive">{errors.email.message}</p>
@@ -222,7 +192,7 @@ export default function SignupPage() {
                   placeholder="Minimum 8 caractères"
                   className="min-h-[48px] text-base"
                   {...register('password')}
-                  disabled={isSubmitting}
+                  disabled={isPending}
                 />
                 {errors.password && (
                   <p className="text-sm text-destructive">{errors.password.message}</p>
@@ -240,20 +210,27 @@ export default function SignupPage() {
                   placeholder="Retapez votre mot de passe"
                   className="min-h-[48px] text-base"
                   {...register('confirmPassword')}
-                  disabled={isSubmitting}
+                  disabled={isPending}
                 />
                 {errors.confirmPassword && (
                   <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
                 )}
               </div>
 
+              {/* Error Message */}
+              {error && (
+                <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+                  {error}
+                </div>
+              )}
+
               {/* Submit Button */}
               <Button
                 type="submit"
                 className="w-full min-h-[56px] text-lg bg-preem-teal hover:bg-preem-teal-600 text-white shadow-preem-teal transition-all"
-                disabled={isSubmitting}
+                disabled={isPending}
               >
-                {isSubmitting ? (
+                {isPending ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                     Création en cours...
