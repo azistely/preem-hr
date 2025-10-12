@@ -302,9 +302,12 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     const periodStart = new Date(today.getFullYear(), today.getMonth(), 1);
     const periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-    // Calculate total component amount for gross salary
-    // Sum ALL user components (not just specific types like transport/housing/meal)
-    const totalComponentsAmount = userComponents.reduce((sum, component) => sum + component.amount, 0);
+    // Pass user components as otherAllowances (template components like TPT_*, PHONE, etc.)
+    const otherAllowances = userComponents.map(c => ({
+      name: c.name,
+      amount: c.amount,
+      taxable: true, // All template components are taxable by default
+    }));
 
     const payrollResult = await calculatePayrollV2({
       employeeId: employee.id,
@@ -314,10 +317,9 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       baseSalary: input.baseSalary,
       hireDate: hireDate,
       fiscalParts: fiscalParts, // Use calculated fiscal parts
-      // Pass total components amount to be added to gross salary
-      transportAllowance: totalComponentsAmount, // Using this param to pass all component amounts
-      housingAllowance: 0,
-      mealAllowance: 0,
+      hasFamily: hasFamily, // For CMU employer contribution
+      // Pass template components properly as otherAllowances
+      otherAllowances: otherAllowances,
       sectorCode: tenant.sectorCode || 'SERVICES',
     });
 

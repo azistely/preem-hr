@@ -616,10 +616,17 @@ export const onboardingRouter = createTRPCRouter({
         const countedChildren = Math.min(input.dependentChildren, 4);
         fiscalParts += countedChildren * 0.5;
 
-        // Calculate total components amount
-        const totalComponentsAmount = input.components
-          ? input.components.reduce((sum, c) => sum + c.amount, 0)
-          : 0;
+        // Calculate hasFamily flag (for CMU employer contribution)
+        const hasFamily = input.maritalStatus === 'married' || input.dependentChildren > 0;
+
+        // Pass user components as otherAllowances (template components like TPT_*, PHONE, etc.)
+        const otherAllowances = input.components
+          ? input.components.map(c => ({
+              name: c.name,
+              amount: c.amount,
+              taxable: true, // All template components are taxable by default
+            }))
+          : [];
 
         // Calculate payroll
         const today = new Date();
@@ -634,9 +641,9 @@ export const onboardingRouter = createTRPCRouter({
           baseSalary: input.baseSalary,
           hireDate: input.hireDate,
           fiscalParts: fiscalParts,
-          transportAllowance: totalComponentsAmount,
-          housingAllowance: 0,
-          mealAllowance: 0,
+          hasFamily: hasFamily, // For CMU employer contribution
+          // Pass template components properly as otherAllowances
+          otherAllowances: otherAllowances,
           sectorCode: tenant.sectorCode || 'SERVICES',
         });
 
