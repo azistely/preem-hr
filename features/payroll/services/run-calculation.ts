@@ -18,7 +18,7 @@ import {
   payrollLineItems,
   tenants,
 } from '@/lib/db/schema';
-import { and, eq, lte, gte, or, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, lte, gte, or, isNotNull, isNull, sql, desc } from 'drizzle-orm';
 import { calculatePayrollV2 } from './payroll-calculation-v2';
 import type { PayrollRunSummary } from '../types';
 
@@ -165,27 +165,39 @@ export async function calculatePayrollRun(
       throw new Error('Tenant not found');
     }
 
-    // Get all active employees for this tenant
-    // Include those hired before period end OR terminated after period start
-    const activeEmployees = await db.query.employees.findMany({
-      where: and(
-        eq(employees.tenantId, run.tenantId),
-        or(
-          // Active employees
-          and(
-            eq(employees.status, 'active'),
-            lte(employees.hireDate, run.periodEnd)
-          ),
-          // Terminated employees who worked during period
-          and(
-            eq(employees.status, 'terminated'),
-            lte(employees.hireDate, run.periodEnd),
-            isNotNull(employees.terminationDate),
-            gte(employees.terminationDate, run.periodStart)
+    // DEBUG: Log the date values to understand what Drizzle returns
+    console.log('[PAYROLL DEBUG] run.periodStart:', run.periodStart, 'type:', typeof run.periodStart);
+    console.log('[PAYROLL DEBUG] run.periodEnd:', run.periodEnd, 'type:', typeof run.periodEnd);
+
+    // FIX: Use sql operator for direct SQL date comparison instead of Drizzle's lte()
+    // Drizzle's relational query API has issues with date comparisons when dates are returned as strings
+    const activeEmployees = await db
+      .select()
+      .from(employees)
+      .where(
+        and(
+          eq(employees.tenantId, run.tenantId),
+          or(
+            // Active employees hired before period end
+            and(
+              eq(employees.status, 'active'),
+              sql`${employees.hireDate} <= ${run.periodEnd}`
+            ),
+            // Terminated employees who worked during period
+            and(
+              eq(employees.status, 'terminated'),
+              sql`${employees.hireDate} <= ${run.periodEnd}`,
+              isNotNull(employees.terminationDate),
+              sql`${employees.terminationDate} >= ${run.periodStart}`
+            )
           )
         )
-      ),
-    });
+      );
+
+    console.log('[PAYROLL DEBUG] activeEmployees.length:', activeEmployees.length);
+    if (activeEmployees.length > 0) {
+      console.log('[PAYROLL DEBUG] First employee hireDate:', activeEmployees[0].hireDate, 'type:', typeof activeEmployees[0].hireDate);
+    }
 
     if (activeEmployees.length === 0) {
       throw new Error('Aucun employé trouvé pour cette période');
@@ -197,18 +209,26 @@ export async function calculatePayrollRun(
     // Process each employee
     for (const employee of activeEmployees) {
       try {
-        // Get current salary for this employee
-        const currentSalary = await db.query.employeeSalaries.findFirst({
-          where: and(
-            eq(employeeSalaries.employeeId, employee.id),
-            lte(employeeSalaries.effectiveFrom, run.periodEnd),
-            or(
-              isNull(employeeSalaries.effectiveTo),
-              gte(employeeSalaries.effectiveTo, run.periodStart)
+        // FIX: Get current salary using sql operator for date comparisons
+        // Drizzle's lte()/gte() have issues with date strings
+        const salaries = await db
+          .select()
+          .from(employeeSalaries)
+          .where(
+            and(
+              eq(employeeSalaries.employeeId, employee.id),
+              sql`${employeeSalaries.effectiveFrom} <= ${run.periodEnd}`,
+              or(
+                isNull(employeeSalaries.effectiveTo),
+                sql`${employeeSalaries.effectiveTo} >= ${run.periodStart}`
+              )
             )
-          ),
-          orderBy: (salaries, { desc }) => [desc(salaries.effectiveFrom)],
-        });
+          )
+          .orderBy(desc(employeeSalaries.effectiveFrom)); // Order by most recent first
+
+        const currentSalary = salaries[0]; // Get most recent (first in descending order)
+
+        console.log(`[PAYROLL DEBUG] Employee ${employee.id}: Found ${salaries.length} salaries, currentSalary:`, currentSalary ? 'YES' : 'NO');
 
         if (!currentSalary) {
           throw new Error('Aucun salaire trouvé pour cet employé');
@@ -235,6 +255,7 @@ export async function calculatePayrollRun(
           mealAllowance: breakdown.mealAllowance,
           seniorityBonus: breakdown.seniorityBonus,
           familyAllowance: breakdown.familyAllowance,
+          otherAllowances: breakdown.otherAllowances, // Include template components (TPT_*, PHONE, PERFORMANCE, etc.)
           customComponents: breakdown.customComponents,
           fiscalParts,
           hasFamily,
@@ -251,7 +272,7 @@ export async function calculatePayrollRun(
           // Denormalized employee info (for historical accuracy and exports)
           employeeName: `${employee.firstName} ${employee.lastName}`,
           employeeNumber: employee.employeeNumber,
-          positionTitle: employee.position,
+          positionTitle: null, // Position is tracked separately in job_details table
 
           // Salary information
           baseSalary: String(calculation.baseSalary),
@@ -308,11 +329,18 @@ export async function calculatePayrollRun(
         });
       } catch (error) {
         // Log error but continue with other employees
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[PAYROLL ERROR] Employee ${employee.id} (${employee.firstName} ${employee.lastName}):`, errorMsg);
         errors.push({
           employeeId: employee.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: errorMsg,
         });
       }
+    }
+
+    console.log(`[PAYROLL DEBUG] Processing complete: ${lineItemsData.length} line items created, ${errors.length} errors`);
+    if (errors.length > 0) {
+      console.error('[PAYROLL ERROR] Errors during processing:', errors);
     }
 
     // Insert all line items

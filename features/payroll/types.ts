@@ -129,6 +129,11 @@ export interface GrossCalculationInput {
   mealAllowance?: number;
   seniorityBonus?: number;
   familyAllowance?: number;
+  otherAllowances?: Array<{
+    name: string;
+    amount: number;
+    taxable: boolean;
+  }>;
   bonuses?: number;
   overtimeHours?: OvertimeHours[];
 }

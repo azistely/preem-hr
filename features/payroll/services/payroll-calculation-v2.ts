@@ -26,6 +26,7 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   sectorCode?: string; // For sector-specific contributions
   seniorityBonus?: number; // Seniority bonus from components
   familyAllowance?: number; // Family allowance from components
+  otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }>; // Template components (TPT_*, PHONE, etc.)
   customComponents?: SalaryComponentInstance[]; // Custom components for future use
 }
 
@@ -87,6 +88,7 @@ export async function calculatePayrollV2(
     mealAllowance: input.mealAllowance,
     seniorityBonus: input.seniorityBonus || 0,
     familyAllowance: input.familyAllowance || 0,
+    otherAllowances: input.otherAllowances, // Include template components
     bonuses: input.bonuses,
     overtimeHours: input.overtimeHours,
   });

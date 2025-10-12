@@ -91,22 +91,27 @@ function calculateBasePay(
 }
 
 /**
- * Calculate total allowances (including new component types)
+ * Calculate total allowances (including new component types and otherAllowances)
  */
 function calculateAllowances(
   housingAllowance: number = 0,
   transportAllowance: number = 0,
   mealAllowance: number = 0,
   seniorityBonus: number = 0,
-  familyAllowance: number = 0
+  familyAllowance: number = 0,
+  otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }>
 ): number {
-  return Math.round(
-    housingAllowance +
+  const standardAllowances = housingAllowance +
     transportAllowance +
     mealAllowance +
     seniorityBonus +
-    familyAllowance
-  );
+    familyAllowance;
+
+  const otherAllowancesTotal = otherAllowances
+    ? otherAllowances.reduce((sum, allowance) => sum + allowance.amount, 0)
+    : 0;
+
+  return Math.round(standardAllowances + otherAllowancesTotal);
 }
 
 /**
@@ -163,7 +168,8 @@ export function calculateGrossSalary(
     input.transportAllowance,
     input.mealAllowance,
     input.seniorityBonus,
-    input.familyAllowance
+    input.familyAllowance,
+    input.otherAllowances
   );
 
   // Calculate overtime if provided
