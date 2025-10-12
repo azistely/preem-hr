@@ -55,9 +55,9 @@ export default function EventsPage() {
       {/* Page Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Événements Système</h1>
+          <h1 className="text-3xl font-bold">Suivi d'activité</h1>
           <p className="text-muted-foreground mt-2">
-            Surveillance des événements et automatisations Inngest
+            Consultez l'historique de toutes les actions automatisées
           </p>
         </div>
 

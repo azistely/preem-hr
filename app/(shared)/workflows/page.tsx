@@ -47,10 +47,10 @@ export default function WorkflowsPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <WorkflowIcon className="h-8 w-8" />
-            Workflows automatisés
+            Règles intelligentes
           </h1>
           <p className="text-muted-foreground mt-2">
-            Créez des workflows pour automatiser vos tâches RH répétitives
+            Automatisez vos tâches RH répétitives avec des règles simples
           </p>
         </div>
         <Button

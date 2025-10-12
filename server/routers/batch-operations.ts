@@ -42,23 +42,12 @@ export const batchOperationsRouter = createTRPCRouter({
         conditions.push(eq(batchOperations.operationType, operationType));
       }
 
-      // Fetch operations
+      // Fetch operations (without relations - use manual joins if needed)
       const operations = await ctx.db.query.batchOperations.findMany({
         where: and(...conditions),
         orderBy: [desc(batchOperations.createdAt)],
         limit,
         offset,
-        with: {
-          // @ts-expect-error - Relations not yet defined in schema
-          startedBy: {
-            columns: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-        },
       });
 
       // Get total count
@@ -85,17 +74,6 @@ export const batchOperationsRouter = createTRPCRouter({
           eq(batchOperations.id, input.id),
           eq(batchOperations.tenantId, ctx.user.tenantId)
         ),
-        with: {
-          // @ts-expect-error - Relations not yet defined in schema
-          startedBy: {
-            columns: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-        },
       });
 
       if (!operation) {

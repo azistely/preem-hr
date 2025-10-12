@@ -29,6 +29,7 @@ import {
   FileStack,
   Activity,
   BarChart3,
+  Sparkles,
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
@@ -146,16 +147,14 @@ export const managerDesktopSections: NavSection[] = [
   },
 ];
 
-// HR Manager Navigation (STREAMLINED - 14 visible + 7 collapsible)
+// HR Manager Navigation (STREAMLINED - 11 visible + 7 collapsible)
+// HCI-COMPLIANT: Consolidated automation into single task-oriented entry point
 export const hrManagerMobileSections: NavSection[] = [
   {
     title: "",
     items: [
       { icon: Home, label: "Accueil", href: "/admin/dashboard" },
-      { icon: Bell, label: "Alertes", href: "/alerts" },
-      { icon: Workflow, label: "Workflows", href: "/workflows" },
-      { icon: FileStack, label: "Opérations groupées", href: "/batch-operations" },
-      { icon: Activity, label: "Événements", href: "/events" },
+      { icon: Sparkles, label: "Automatisations", href: "/automation" },
     ],
   },
   {
@@ -206,10 +205,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     title: "",
     items: [
       { icon: Home, label: "Tableau de bord", href: "/admin/dashboard" },
-      { icon: Bell, label: "Alertes", href: "/alerts" },
-      { icon: Workflow, label: "Workflows", href: "/workflows" },
-      { icon: FileStack, label: "Opérations groupées", href: "/batch-operations" },
-      { icon: Activity, label: "Événements", href: "/events" },
+      { icon: Sparkles, label: "Automatisations", href: "/automation" },
     ],
   },
   {

@@ -141,7 +141,7 @@ export default function AlertsPage() {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <Bell className="h-8 w-8 text-muted-foreground" />
-            <h1 className="text-2xl md:text-3xl font-bold">Alertes</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Rappels automatiques</h1>
           </div>
 
           {status === 'active' && alerts.length > 0 && (
@@ -169,7 +169,7 @@ export default function AlertsPage() {
         </div>
 
         <p className="text-muted-foreground">
-          Notifications importantes et actions à effectuer
+          Ne manquez aucune échéance importante - Soyez alerté automatiquement
         </p>
       </div>
 

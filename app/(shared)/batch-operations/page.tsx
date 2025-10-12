@@ -182,7 +182,7 @@ export default function BatchOperationsPage() {
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <FileStack className="h-8 w-8 text-muted-foreground" />
-            <h1 className="text-2xl md:text-3xl font-bold">Opérations groupées</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Actions groupées</h1>
           </div>
 
           {pollingEnabled && (
@@ -194,7 +194,7 @@ export default function BatchOperationsPage() {
         </div>
 
         <p className="text-muted-foreground">
-          Suivez vos opérations groupées en temps réel
+          Modifiez plusieurs employés en même temps - Gagnez du temps
         </p>
       </div>
 
