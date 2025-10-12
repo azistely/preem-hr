@@ -106,6 +106,11 @@ export async function signup(formData: FormData): Promise<SignupResult> {
         error: 'Erreur lors de l\'inscription',
       };
     }
+
+    // 2. Revalidate and redirect to email verification page
+    // Return success with redirect URL for client-side navigation (more Vercel-compatible)
+    revalidatePath('/', 'layout');
+    redirect('/auth/verify-email?email=' + encodeURIComponent(email));
   } catch (error: any) {
     console.error('[Signup] Error:', error);
 
@@ -124,8 +129,4 @@ export async function signup(formData: FormData): Promise<SignupResult> {
       error: errorMessage,
     };
   }
-
-  // 2. Redirect to email verification page (no auto sign-in)
-  // This must be outside try/catch because redirect() throws a special error
-  redirect('/auth/verify-email?email=' + encodeURIComponent(email));
 }
