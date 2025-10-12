@@ -124,17 +124,34 @@ export const authRouter = router({
         console.log('[Auth] Tenant created:', tenant.id);
 
         // 3. Create Supabase auth user with app_metadata
+        // Using signUp instead of admin.createUser to trigger automatic confirmation email
         console.log('[Auth] Creating Supabase auth user...');
         const supabase = createSupabaseAdmin();
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+
+        // Option 1: Use regular signUp (sends confirmation email automatically)
+        const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password,
-          email_confirm: false, // Require email verification
-          app_metadata: {
-            tenant_id: tenant.id,
-            role: 'tenant_admin', // First user is admin
+          options: {
+            data: {
+              tenant_id: tenant.id,
+              role: 'tenant_admin',
+              first_name: firstName,
+              last_name: lastName,
+            },
+            emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/confirm`,
           },
         });
+
+        // Update app_metadata using admin API (signUp puts data in user_metadata, not app_metadata)
+        if (authData.user) {
+          await supabase.auth.admin.updateUserById(authData.user.id, {
+            app_metadata: {
+              tenant_id: tenant.id,
+              role: 'tenant_admin',
+            },
+          });
+        }
 
         if (authError || !authData.user) {
           console.error('[Auth] Supabase signup error:', authError);
@@ -147,6 +164,7 @@ export const authRouter = router({
         }
 
         console.log('[Auth] Supabase user created:', authData.user.id);
+        console.log('[Auth] Confirmation email sent automatically by Supabase');
 
         // 4. Create user in database
         console.log('[Auth] Creating user in database...');
