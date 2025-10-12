@@ -161,13 +161,6 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
         )}
       </div>
 
-      <MinimumWageAlert
-        coefficient={coefficient}
-        currentSalary={baseSalary}
-        countryMinimumWage={countryMinimumWage}
-        countryCode={countryCode}
-      />
-
       {/* Components List (excluding base salary) */}
       <div className="space-y-4 pt-4 border-t">
         <div className="flex items-center justify-between">
@@ -370,6 +363,14 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
           </div>
         </div>
       )}
+
+      {/* SMIG Validation - Check gross salary against coefficient minimum */}
+      <MinimumWageAlert
+        coefficient={coefficient}
+        currentSalary={totalGross}
+        countryMinimumWage={countryMinimumWage}
+        countryCode={countryCode}
+      />
     </div>
   );
 }

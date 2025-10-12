@@ -112,37 +112,30 @@ export function CoefficientSelector({
             <SelectItem
               key={category.category}
               value={category.minCoefficient.toString()}
-              className="min-h-[56px] py-3"
+              className="py-2"
             >
-              <div className="flex flex-col gap-1">
-                {/* Primary: Category label */}
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{category.labelFr}</span>
-                  <Badge variant="outline" className="text-xs">
-                    {category.category}
-                  </Badge>
-                </div>
-
-                {/* Secondary: Coefficient range */}
-                <span className="text-sm text-muted-foreground">
-                  Coefficient {category.minCoefficient}-{category.maxCoefficient}
-                </span>
-
-                {/* Tertiary: Examples (optional) */}
-                {showExamples && category.notes && (
-                  <span className="text-xs text-muted-foreground">
-                    Ex: {category.notes}
-                  </span>
-                )}
+              {/* Simplified: Only show category label and code */}
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{category.labelFr}</span>
+                <Badge variant="outline" className="text-xs font-normal">
+                  {category.category}
+                </Badge>
               </div>
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      {/* Immediate Feedback: Show category info */}
+      {/* Immediate Feedback: Show category info after selection */}
       {currentCategory && (
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 space-y-3">
+          {/* Coefficient Range - Show prominently */}
+          <div className="rounded-md bg-muted/50 p-3">
+            <p className="text-sm font-medium">
+              Coefficient: {currentCategory.minCoefficient} - {currentCategory.maxCoefficient}
+            </p>
+          </div>
+
           {/* Notice Period Info */}
           <Alert>
             <Info className="h-4 w-4" />
