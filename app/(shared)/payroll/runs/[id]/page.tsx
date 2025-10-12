@@ -14,7 +14,7 @@
 
 import { useState, use } from 'react';
 import { useRouter } from 'next/navigation';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
   ArrowLeft,
@@ -381,11 +381,11 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-3">
               <Calendar className="h-8 w-8" />
-              {run.name || format(new Date(run.periodStart), 'MMMM yyyy', { locale: fr })}
+              {run.name || format(parseISO(run.periodStart), 'MMMM yyyy', { locale: fr })}
             </h1>
             <p className="text-muted-foreground text-lg mt-2">
-              {format(new Date(run.periodStart), 'dd MMM', { locale: fr })} -{' '}
-              {format(new Date(run.periodEnd), 'dd MMM yyyy', { locale: fr })}
+              {format(parseISO(run.periodStart), 'dd MMM', { locale: fr })} -{' '}
+              {format(parseISO(run.periodEnd), 'dd MMM yyyy', { locale: fr })}
             </p>
           </div>
           <Badge variant={statusConfig[status]?.variant || 'secondary'} className="text-lg px-4 py-2">
@@ -414,11 +414,15 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
       <div className="grid gap-4 md:grid-cols-4 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Employés</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {status === 'draft' ? 'Employés Éligibles' : 'Employés Traités'}
+            </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{run.employeeCount || 0}</div>
+            <div className="text-2xl font-bold">
+              {status === 'draft' ? 'À calculer' : (run.employeeCount || 0)}
+            </div>
           </CardContent>
         </Card>
 
@@ -453,7 +457,7 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
           </CardHeader>
           <CardContent>
             <div className="text-lg font-semibold">
-              {run.payDate ? format(new Date(run.payDate), 'dd MMM yyyy', { locale: fr }) : '-'}
+              {run.payDate ? format(parseISO(run.payDate), 'dd MMM yyyy', { locale: fr }) : '-'}
             </div>
           </CardContent>
         </Card>

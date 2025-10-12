@@ -12,6 +12,7 @@ import type {
 
 export interface EmployeeSalaryData {
   components: SalaryComponentInstance[];
+  baseSalary?: string | number; // Fallback: base_salary column
   // Allow additional properties for database compatibility
   [key: string]: string | number | boolean | null | undefined | unknown;
 }
@@ -40,11 +41,27 @@ export function getEmployeeSalaryComponents(
     throw new Error('Components array is required. Legacy format is no longer supported.');
   }
 
-  if (salaryData.components.length === 0) {
-    throw new Error('Components array cannot be empty. Must contain at least base salary.');
+  // Allow empty components array if we have base_salary column (for backward compatibility)
+  // This handles cases where salary was created before components migration
+  const breakdown = readFromComponents(salaryData.components);
+
+  // FALLBACK: If base salary not found in components (code '11'), use base_salary column
+  if (breakdown.baseSalary === 0 && salaryData.baseSalary) {
+    const baseSalaryValue = typeof salaryData.baseSalary === 'string'
+      ? parseFloat(salaryData.baseSalary)
+      : salaryData.baseSalary;
+
+    if (!isNaN(baseSalaryValue) && baseSalaryValue > 0) {
+      breakdown.baseSalary = baseSalaryValue;
+    }
   }
 
-  return readFromComponents(salaryData.components);
+  // Validate that we have a base salary from somewhere
+  if (breakdown.baseSalary === 0) {
+    throw new Error('Base salary is required (either in components array with code "11" or in baseSalary column).');
+  }
+
+  return breakdown;
 }
 
 /**

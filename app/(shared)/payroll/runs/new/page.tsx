@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { format, addMonths, startOfMonth, endOfMonth } from 'date-fns';
+import { format, addMonths, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Calendar, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '@/trpc/react';
@@ -35,9 +35,8 @@ const formSchema = z.object({
   name: z.string().optional(),
 }).refine(
   (data) => {
-    const start = new Date(data.periodStart);
-    const end = new Date(data.periodEnd);
-    return start < end;
+    // Compare as strings (YYYY-MM-DD format sorts correctly)
+    return data.periodStart < data.periodEnd;
   },
   {
     message: 'La date de fin doit être postérieure à la date de début',
@@ -102,9 +101,9 @@ export default function NewPayrollRunPage() {
       await createRun.mutateAsync({
         tenantId,
         countryCode: values.countryCode,
-        periodStart: new Date(values.periodStart),
-        periodEnd: new Date(values.periodEnd),
-        paymentDate: new Date(values.paymentDate),
+        periodStart: parseISO(values.periodStart), // Use parseISO to avoid timezone issues
+        periodEnd: parseISO(values.periodEnd),
+        paymentDate: parseISO(values.paymentDate),
         name: values.name || undefined,
         createdBy: userId,
       });

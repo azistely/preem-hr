@@ -14,14 +14,13 @@ export const employeeSalaries = pgTable('employee_salaries', {
   currency: text('currency').notNull().default('XOF'),
   payFrequency: text('pay_frequency').notNull().default('monthly'),
 
-  // Individual allowance fields
-  housingAllowance: numeric('housing_allowance', { precision: 15, scale: 2 }).default('0'),
-  transportAllowance: numeric('transport_allowance', { precision: 15, scale: 2 }).default('0'),
-  mealAllowance: numeric('meal_allowance', { precision: 15, scale: 2 }).default('0'),
-
-  // Other allowances (stored as JSONB for flexibility)
+  // Legacy: allowances JSONB (deprecated, use components instead)
   allowances: jsonb('allowances').notNull().default({}),
-  otherAllowances: jsonb('other_allowances').default('[]'),
+
+  // Single source of truth: components JSONB array
+  // Contains SalaryComponentInstance[] with code, name, amount, sourceType, metadata
+  // Must always contain base salary component (code '11')
+  components: jsonb('components').notNull().default([]),
 
   // Effective dating
   effectiveFrom: date('effective_from').notNull(),
