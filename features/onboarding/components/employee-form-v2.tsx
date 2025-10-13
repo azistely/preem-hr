@@ -8,7 +8,7 @@ import { FormField } from './form-field';
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc/client';
 import { usePopularTemplates } from '@/features/employees/hooks/use-salary-components';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Plus, X, Edit2, CheckCircle } from 'lucide-react';
@@ -176,6 +176,9 @@ function ComponentPickerSection({
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Ajouter une indemnité</DialogTitle>
+            <DialogDescription>
+              Sélectionnez un modèle d'indemnité courante (transport, logement, téléphone...)
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2 mt-4">

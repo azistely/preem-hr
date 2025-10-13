@@ -11,7 +11,6 @@ import { eq, desc, and } from 'drizzle-orm';
 import { ValidationError, NotFoundError } from '@/lib/errors';
 import { generateEmployeeNumber } from '@/features/employees/services/employee-number';
 import { autoInjectCalculatedComponents } from '@/lib/salary-components/component-calculator';
-import { calculatePayrollV2 } from '@/features/payroll/services/payroll-calculation-v2';
 
 // ========================================
 // TYPES
@@ -316,47 +315,14 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       .returning();
 
     // ========================================
-    // CALCULATE PAYSLIP PREVIEW (Immediate feedback)
+    // SKIP PAYSLIP CALCULATION (Already done in preview)
     // ========================================
-    const today = new Date();
-    const periodStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    // NOTE: Payslip preview is calculated separately via calculatePayslipPreview endpoint
+    // before calling this function. We don't need to recalculate it here.
+    // This significantly improves performance by avoiding redundant DB queries.
 
-    // Pass user components as otherAllowances (template components like TPT_*, PHONE, etc.)
-    const otherAllowances = userComponents.map(c => ({
-      name: c.name,
-      amount: c.amount,
-      taxable: true, // All template components are taxable by default
-    }));
-
-    const payrollResult = await calculatePayrollV2({
-      employeeId: employee.id,
-      countryCode: tenant.countryCode || 'CI',
-      periodStart,
-      periodEnd,
-      baseSalary: input.baseSalary,
-      hireDate: hireDate,
-      fiscalParts: fiscalParts, // Use calculated fiscal parts
-      hasFamily: hasFamily, // For CMU employer contribution
-      // Pass template components properly as otherAllowances
-      otherAllowances: otherAllowances,
-      sectorCode: tenant.sectorCode || 'SERVICES',
-    });
-
-    // Map payroll result to payslip preview format (field name mapping)
-    const payslipPreview = {
-      grossSalary: payrollResult.grossSalary,
-      baseSalary: payrollResult.baseSalary,
-      components: userComponents, // Include user-selected components
-      cnpsEmployee: payrollResult.cnpsEmployee,
-      cmuEmployee: payrollResult.cmuEmployee || 0,
-      incomeTax: payrollResult.its, // Field name mapping: its → incomeTax
-      netSalary: payrollResult.netSalary,
-      fiscalParts: fiscalParts,
-      cnpsEmployer: payrollResult.cnpsEmployer,
-      cmuEmployer: payrollResult.cmuEmployer || 0,
-      totalEmployerCost: payrollResult.employerCost, // Field name mapping: employerCost → totalEmployerCost
-    };
+    // Return null for payslipPreview - it's already been calculated and shown to user
+    const payslipPreview = null;
 
     // Update onboarding state
     const currentSettings = (tenant.settings as any) || {};
