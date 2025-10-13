@@ -179,8 +179,13 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
   // ========================================
   // CREATE RECORDS IN TRANSACTION
   // ========================================
+  console.log('[Employee Creation] Starting transaction...');
+  const startTime = Date.now();
+
   return await db.transaction(async (tx) => {
     // Step 1: Create position
+    console.time('[Employee Creation] Position insert');
+    const positionStart = Date.now();
     const [position] = await tx
       .insert(positions)
       .values({
@@ -197,11 +202,19 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         updatedBy: input.userId,
       })
       .returning();
+    console.timeEnd('[Employee Creation] Position insert');
+    console.log(`[Employee Creation] Position created in ${Date.now() - positionStart}ms`);
 
     // Step 2: Generate employee number
+    console.time('[Employee Creation] Employee number generation');
+    const empNumStart = Date.now();
     const employeeNumber = await generateEmployeeNumber(input.tenantId);
+    console.timeEnd('[Employee Creation] Employee number generation');
+    console.log(`[Employee Creation] Employee number generated in ${Date.now() - empNumStart}ms`);
 
     // Step 3: Create employee with fiscal parts
+    console.time('[Employee Creation] Employee insert');
+    const employeeStart = Date.now();
     const [employee] = await tx
       .insert(employees)
       .values({
@@ -227,8 +240,12 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         updatedBy: input.userId,
       })
       .returning();
+    console.timeEnd('[Employee Creation] Employee insert');
+    console.log(`[Employee Creation] Employee created in ${Date.now() - employeeStart}ms`);
 
     // Step 4: Create assignment
+    console.time('[Employee Creation] Assignment insert');
+    const assignmentStart = Date.now();
     const [assignment] = await tx
       .insert(assignments)
       .values({
@@ -241,9 +258,13 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         createdBy: input.userId,
       })
       .returning();
+    console.timeEnd('[Employee Creation] Assignment insert');
+    console.log(`[Employee Creation] Assignment created in ${Date.now() - assignmentStart}ms`);
 
     // Step 5: Create salary with components
     // Auto-inject CNPS, ITS, CMU components
+    console.time('[Employee Creation] Auto-inject components');
+    const componentsStart = Date.now();
     const componentsWithCalculated = await autoInjectCalculatedComponents({
       tenantId: input.tenantId,
       countryCode: tenant.countryCode || 'CI',
@@ -251,6 +272,8 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       hireDate: hireDate, // Required for seniority bonus calculation
       numberOfDependents: input.dependentChildren,
     });
+    console.timeEnd('[Employee Creation] Auto-inject components');
+    console.log(`[Employee Creation] Components auto-injected in ${Date.now() - componentsStart}ms`);
 
     // Handle user-provided components (NEW approach)
     let userComponents: Array<{
@@ -299,6 +322,8 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       ...userComponents,
     ];
 
+    console.time('[Employee Creation] Salary insert');
+    const salaryStart = Date.now();
     const [salary] = await tx
       .insert(employeeSalaries)
       .values({
@@ -313,6 +338,8 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         createdBy: input.userId,
       })
       .returning();
+    console.timeEnd('[Employee Creation] Salary insert');
+    console.log(`[Employee Creation] Salary created in ${Date.now() - salaryStart}ms`);
 
     // ========================================
     // SKIP PAYSLIP CALCULATION (Already done in preview)
@@ -325,6 +352,8 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     const payslipPreview = null;
 
     // Update onboarding state
+    console.time('[Employee Creation] Tenant settings update');
+    const tenantUpdateStart = Date.now();
     const currentSettings = (tenant.settings as any) || {};
     await tx
       .update(tenants)
@@ -340,6 +369,11 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         updatedAt: new Date().toISOString(),
       })
       .where(eq(tenants.id, input.tenantId));
+    console.timeEnd('[Employee Creation] Tenant settings update');
+    console.log(`[Employee Creation] Tenant updated in ${Date.now() - tenantUpdateStart}ms`);
+
+    const totalTime = Date.now() - startTime;
+    console.log(`[Employee Creation] TOTAL TRANSACTION TIME: ${totalTime}ms`);
 
     return {
       employee,

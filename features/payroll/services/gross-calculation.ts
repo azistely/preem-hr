@@ -71,11 +71,16 @@ function calculateDaysWorked(
 
 /**
  * Validate that salary meets minimum wage requirements (SMIG)
+ *
+ * ✅ CRITICAL FIX: Validate GROSS salary (base + allowances), not just base salary
+ * This aligns with frontend validation in employee-form-v2.tsx and backend in onboarding-v2.service.ts
  */
-function validateSMIG(baseSalary: number): void {
-  if (baseSalary < SMIG) {
+function validateSMIG(baseSalary: number, allowances: number): void {
+  const grossSalary = baseSalary + allowances;
+
+  if (grossSalary < SMIG) {
     throw new Error(
-      `Le salaire de base (${baseSalary} FCFA) est inférieur au SMIG (${SMIG} FCFA)`
+      `Le salaire brut total (salaire de base + indemnités: ${grossSalary.toLocaleString('fr-FR')} FCFA) doit être supérieur ou égal au SMIG (${SMIG.toLocaleString('fr-FR')} FCFA)`
     );
   }
 }
@@ -148,8 +153,18 @@ function calculateAllowances(
 export function calculateGrossSalary(
   input: GrossCalculationInput
 ): GrossCalculationResult {
-  // Validate SMIG
-  validateSMIG(input.baseSalary);
+  // Calculate allowances first (needed for SMIG validation)
+  const allowances = calculateAllowances(
+    input.housingAllowance,
+    input.transportAllowance,
+    input.mealAllowance,
+    input.seniorityBonus,
+    input.familyAllowance,
+    input.otherAllowances
+  );
+
+  // ✅ CRITICAL FIX: Validate SMIG on GROSS salary (base + allowances)
+  validateSMIG(input.baseSalary, allowances);
 
   // Calculate days worked and proration
   const { daysWorked, daysInPeriod, prorationFactor } = calculateDaysWorked(
@@ -161,16 +176,6 @@ export function calculateGrossSalary(
 
   // Calculate prorated base salary
   const proratedSalary = calculateBasePay(input.baseSalary, prorationFactor);
-
-  // Calculate allowances
-  const allowances = calculateAllowances(
-    input.housingAllowance,
-    input.transportAllowance,
-    input.mealAllowance,
-    input.seniorityBonus,
-    input.familyAllowance,
-    input.otherAllowances
-  );
 
   // Calculate overtime if provided
   let overtimePay = 0;

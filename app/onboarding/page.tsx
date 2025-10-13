@@ -13,15 +13,17 @@ import { api } from '@/trpc/react';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { data: state, isLoading } = api.onboarding.getState.useQuery();
-  const { data: user } = api.auth.me.useQuery();
+  // ✅ OPTIMIZATION: Only call auth.me (includes onboarding status now)
+  // BEFORE: 2 queries (auth.me + onboarding.getState) = ~3-5 seconds
+  // AFTER: 1 query (auth.me with onboarding status) = ~1.5-2 seconds
+  const { data: user, isLoading } = api.auth.me.useQuery();
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !user) return;
 
     // If onboarding complete, redirect to role-specific dashboard
-    if (state?.onboarding_complete) {
-      const role = user?.role || 'employee';
+    if (user.onboardingComplete) {
+      const role = user.role || 'employee';
 
       // Redirect based on role
       switch (role) {
@@ -43,7 +45,7 @@ export default function OnboardingPage() {
 
     // Otherwise, start V2 onboarding flow at Q1
     router.push('/onboarding/q1');
-  }, [state, isLoading, user, router]);
+  }, [user, isLoading, router]);
 
   // Loading state
   return (

@@ -77,25 +77,38 @@ export interface LoadedFormula {
 export async function loadFormulaMetadata(
   options: FormulaLoadOptions
 ): Promise<LoadedFormula> {
+  console.time(`[Formula Loader] Load ${options.componentCode}`);
+  const loadStart = Date.now();
+
   const { componentCode, tenantId, countryCode, asOfDate } = options;
 
   // 0. If asOfDate provided, try loading from version history first
   if (asOfDate) {
+    console.time(`[Formula Loader] Version history for ${componentCode}`);
+    const historyStart = Date.now();
     const versionedFormula = await loadFormulaFromVersionHistory(
       componentCode,
       tenantId,
       countryCode,
       asOfDate
     );
+    console.timeEnd(`[Formula Loader] Version history for ${componentCode}`);
+    console.log(`[Formula Loader] Version history query: ${Date.now() - historyStart}ms`);
     if (versionedFormula) {
+      console.log(`[Formula Loader] Total load time: ${Date.now() - loadStart}ms`);
       return versionedFormula;
     }
   }
 
   // 1. Check if this is a custom component (CUSTOM_XXX format)
   if (componentCode.startsWith('CUSTOM_')) {
+    console.time(`[Formula Loader] Custom component ${componentCode}`);
+    const customStart = Date.now();
     const customComponent = await loadCustomComponentMetadata(componentCode, tenantId);
+    console.timeEnd(`[Formula Loader] Custom component ${componentCode}`);
+    console.log(`[Formula Loader] Custom component query: ${Date.now() - customStart}ms`);
     if (customComponent) {
+      console.log(`[Formula Loader] Total load time: ${Date.now() - loadStart}ms`);
       return {
         metadata: customComponent.metadata,
         source: 'custom-component',
@@ -105,8 +118,13 @@ export async function loadFormulaMetadata(
   }
 
   // 2. Check standard component (codes 11-41)
+  console.time(`[Formula Loader] Standard component ${componentCode}`);
+  const standardStart = Date.now();
   const standardComponent = await loadStandardComponentMetadata(componentCode, countryCode);
+  console.timeEnd(`[Formula Loader] Standard component ${componentCode}`);
+  console.log(`[Formula Loader] Standard component query: ${Date.now() - standardStart}ms`);
   if (standardComponent) {
+    console.log(`[Formula Loader] Total load time: ${Date.now() - loadStart}ms`);
     return {
       metadata: standardComponent.metadata,
       source: 'standard-component',
@@ -115,6 +133,8 @@ export async function loadFormulaMetadata(
   }
 
   // 3. Fallback to hardcoded defaults
+  console.log(`[Formula Loader] Using hardcoded default for ${componentCode}`);
+  console.log(`[Formula Loader] Total load time: ${Date.now() - loadStart}ms`);
   return {
     metadata: getHardcodedDefaults(componentCode),
     source: 'hardcoded-default',

@@ -304,6 +304,11 @@ export const authRouter = router({
       });
     }
 
+    // ✅ OPTIMIZATION: Include onboarding status to avoid second query
+    // Extract onboarding state from tenant settings (already fetched in parallel)
+    const onboardingSettings = tenant ? (tenant.settings as any)?.onboarding : null;
+    const onboardingComplete = onboardingSettings?.onboarding_complete || false;
+
     return {
       id: user.id,
       email: user.email,
@@ -313,6 +318,8 @@ export const authRouter = router({
       tenantId: user.tenantId,
       employeeId: user.employeeId,
       companyName: tenant?.name || '',
+      // Include onboarding status to avoid separate query
+      onboardingComplete,
     };
   }),
 });

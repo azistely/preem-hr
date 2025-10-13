@@ -201,6 +201,9 @@ export interface AutoInjectOptions {
 export async function autoInjectCalculatedComponents(
   options: AutoInjectOptions
 ): Promise<SalaryComponentInstance[]> {
+  console.time('[Component Calculator] Total auto-inject time');
+  const autoInjectStart = Date.now();
+
   const {
     baseSalary,
     hireDate,
@@ -215,15 +218,21 @@ export async function autoInjectCalculatedComponents(
 
   // Auto-inject seniority bonus (if eligible)
   if (enableSeniority) {
+    console.time('[Component Calculator] Seniority calculation');
+    const seniorityStart = Date.now();
     const seniorityCalc = await calculateSeniorityBonus({
       baseSalary,
       hireDate,
       tenantId,
       countryCode,
     });
+    console.timeEnd('[Component Calculator] Seniority calculation');
+    console.log(`[Component Calculator] Seniority calculated in ${Date.now() - seniorityStart}ms`);
 
     // Only inject if employee has been there >= 1 year
     if (seniorityCalc.yearsOfService >= 1) {
+      console.time('[Component Calculator] Create seniority component');
+      const createStart = Date.now();
       const seniorityComponent = await createSeniorityComponent(
         baseSalary,
         hireDate,
@@ -231,14 +240,23 @@ export async function autoInjectCalculatedComponents(
         tenantId,
         countryCode
       );
+      console.timeEnd('[Component Calculator] Create seniority component');
+      console.log(`[Component Calculator] Component created in ${Date.now() - createStart}ms`);
       components.push(seniorityComponent);
     }
   }
 
   // Auto-inject family allowance (if has dependents)
   if (enableFamilyAllowance && numberOfDependents > 0) {
+    console.time('[Component Calculator] Family allowance');
+    const familyStart = Date.now();
     components.push(createFamilyAllowanceComponent(numberOfDependents, countryCode));
+    console.timeEnd('[Component Calculator] Family allowance');
+    console.log(`[Component Calculator] Family allowance created in ${Date.now() - familyStart}ms`);
   }
+
+  console.timeEnd('[Component Calculator] Total auto-inject time');
+  console.log(`[Component Calculator] TOTAL AUTO-INJECT: ${Date.now() - autoInjectStart}ms`);
 
   return components;
 }
