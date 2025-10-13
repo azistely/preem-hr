@@ -657,7 +657,9 @@ export const employeeSalaries = pgTable("employee_salaries", {
 			name: "employee_salaries_tenant_id_fkey"
 		}).onDelete("cascade"),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
-	check("employee_salaries_base_salary_check", sql`base_salary >= (75000)::numeric`),
+	// ✅ REMOVED: Hardcoded SMIG check (base_salary >= 75000)
+	// REASON: Base salary can be below SMIG if gross salary (base + allowances) meets SMIG
+	// VALIDATION: Now handled in gross-calculation.ts which validates gross salary
 	check("valid_pay_frequency", sql`pay_frequency = ANY (ARRAY['monthly'::text, 'biweekly'::text, 'weekly'::text])`),
 ]);
 
