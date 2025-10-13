@@ -118,13 +118,33 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     throw new NotFoundError('Entreprise', input.tenantId);
   }
 
-  // Validate minimum salary (country-specific)
+  // Validate minimum salary (country-specific) - Check GROSS salary (base + components)
   const countryCode = tenant.countryCode || 'CI';
-  const minimumWage = countryCode === 'CI' ? 75000 : 52500; // CI: 75K, SN: 52.5K
+  const minimumWages: Record<string, number> = {
+    CI: 75000,  // Côte d'Ivoire
+    SN: 52500,  // Sénégal
+    BF: 34664,  // Burkina Faso
+    ML: 40000,  // Mali
+    BJ: 40000,  // Bénin
+    TG: 35000,  // Togo
+  };
+  const minimumWage = minimumWages[countryCode] || 75000;
 
-  if (input.baseSalary < minimumWage) {
+  // Calculate gross salary (base + all components)
+  const componentsTotal = input.components?.reduce((sum, c) => sum + c.amount, 0) || 0;
+  const grossSalary = input.baseSalary + componentsTotal;
+
+  if (grossSalary < minimumWage) {
+    const countryNames: Record<string, string> = {
+      CI: 'Côte d\'Ivoire',
+      SN: 'Sénégal',
+      BF: 'Burkina Faso',
+      ML: 'Mali',
+      BJ: 'Bénin',
+      TG: 'Togo',
+    };
     throw new ValidationError(
-      `Le salaire doit être supérieur ou égal au SMIG de ${countryCode === 'CI' ? 'Côte d\'Ivoire' : 'Sénégal'} (${minimumWage.toLocaleString()} FCFA)`
+      `Le salaire brut total (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${countryNames[countryCode] || countryCode} (${minimumWage.toLocaleString('fr-FR')} FCFA)`
     );
   }
 

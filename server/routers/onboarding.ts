@@ -506,7 +506,7 @@ export const onboardingRouter = createTRPCRouter({
       email: z.union([z.string().email(), z.literal('')]).optional(),
       phone: z.string().min(1, 'Le numéro de téléphone est requis'),
       positionTitle: z.string().min(1, 'Le poste est requis'),
-      baseSalary: z.number().min(75000, 'Inférieur au SMIG de Côte d\'Ivoire (75,000 FCFA)'),
+      baseSalary: z.number().min(1, 'Le salaire de base est requis'),
       hireDate: z.date({ required_error: 'La date d\'embauche est requise' }),
       // CRITICAL: Family status
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
@@ -579,7 +579,7 @@ export const onboardingRouter = createTRPCRouter({
    */
   calculatePayslipPreview: publicProcedure
     .input(z.object({
-      baseSalary: z.number().min(75000, 'Inférieur au SMIG'),
+      baseSalary: z.number().min(1, 'Le salaire de base est requis'),
       hireDate: z.date(),
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
       dependentChildren: z.number().min(0).max(10),
@@ -606,6 +606,36 @@ export const onboardingRouter = createTRPCRouter({
 
         if (!tenant) {
           throw new Error('Entreprise non trouvée');
+        }
+
+        // SMIG validation: Check GROSS salary (base + all components) dynamically based on country
+        const countryCode = tenant.countryCode || 'CI';
+        const minimumWages: Record<string, number> = {
+          CI: 75000,  // Côte d'Ivoire
+          SN: 52500,  // Sénégal
+          BF: 34664,  // Burkina Faso
+          ML: 40000,  // Mali
+          BJ: 40000,  // Bénin
+          TG: 35000,  // Togo
+        };
+        const minimumWage = minimumWages[countryCode] || 75000;
+
+        const componentsTotal = input.components?.reduce((sum, c) => sum + c.amount, 0) || 0;
+        const grossSalary = input.baseSalary + componentsTotal;
+
+        if (grossSalary < minimumWage) {
+          const countryNames: Record<string, string> = {
+            CI: 'Côte d\'Ivoire',
+            SN: 'Sénégal',
+            BF: 'Burkina Faso',
+            ML: 'Mali',
+            BJ: 'Bénin',
+            TG: 'Togo',
+          };
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Le salaire brut total (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${countryNames[countryCode] || countryCode} (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
+          });
         }
 
         // Calculate fiscal parts

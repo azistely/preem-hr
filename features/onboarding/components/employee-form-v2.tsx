@@ -13,13 +13,15 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/ca
 import { Badge } from '@/components/ui/badge';
 import { Plus, X, Edit2, CheckCircle } from 'lucide-react';
 
+// Base schema without country-specific validation
+// Country-specific SMIG validation will be added dynamically in the component
 const employeeSchemaV2 = z.object({
   firstName: z.string().min(1, 'Le prénom est requis'),
   lastName: z.string().min(1, 'Le nom est requis'),
   email: z.union([z.string().email('Email invalide'), z.literal('')]).optional(),
   phone: z.string().min(1, 'Le téléphone est requis'),
   positionTitle: z.string().min(1, 'La fonction est requise'),
-  baseSalary: z.number().min(75000, 'Inférieur au SMIG de Côte d\'Ivoire (75,000 FCFA)'),
+  baseSalary: z.number().min(1, 'Le salaire de base est requis'),
   hireDate: z.date({ required_error: 'La date d\'embauche est requise', invalid_type_error: 'Date invalide' }),
 
   // CRITICAL: Family status
@@ -242,8 +244,25 @@ function ComponentPickerSection({
 }
 
 export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }: EmployeeFormV2Props) {
+  // Get minimum wage data (includes country code and minimum wage)
+  const { data: minWageData } = trpc.salaries.getMinimumWage.useQuery();
+  const minimumWage = minWageData?.minimumWage || 75000;
+  const countryCode = minWageData?.countryCode || 'CI';
+
+  // Create dynamic schema with country-specific minimum wage
+  const employeeSchemaWithCountry = employeeSchemaV2.refine((data) => {
+    // SMIG validation: Check GROSS salary (base + all components) not just base
+    const componentsTotal = data.components.reduce((sum, c) => sum + c.amount, 0);
+    const grossSalary = data.baseSalary + componentsTotal;
+
+    return grossSalary >= minimumWage;
+  }, {
+    message: `Le salaire brut total (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${minWageData?.countryName || 'votre pays'} (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
+    path: ['baseSalary'],
+  });
+
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<EmployeeFormData>({
-    resolver: zodResolver(employeeSchemaV2),
+    resolver: zodResolver(employeeSchemaWithCountry),
     defaultValues: {
       maritalStatus: 'single',
       dependentChildren: 0,
@@ -419,7 +438,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           error={errors.baseSalary?.message}
           suffix="FCFA"
           required
-          helperText="Minimum légal: 75,000 FCFA (SMIG Côte d'Ivoire)"
+          helperText={`Le salaire brut total (base + indemnités) doit atteindre ${minimumWage.toLocaleString('fr-FR')} FCFA minimum`}
         />
 
         {/* Component Picker Section */}
