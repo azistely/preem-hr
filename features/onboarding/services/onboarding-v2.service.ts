@@ -208,7 +208,10 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     // Step 2: Generate employee number
     console.time('[Employee Creation] Employee number generation');
     const empNumStart = Date.now();
-    const employeeNumber = await generateEmployeeNumber(input.tenantId);
+    // ✅ CRITICAL FIX: Pass transaction to avoid deadlock
+    // BEFORE: generateEmployeeNumber used separate db connection → deadlock/timeout
+    // AFTER: Use same transaction connection → no deadlock
+    const employeeNumber = await generateEmployeeNumber(input.tenantId, tx);
     console.timeEnd('[Employee Creation] Employee number generation');
     console.log(`[Employee Creation] Employee number generated in ${Date.now() - empNumStart}ms`);
 
