@@ -33,8 +33,9 @@ export default function OnboardingQ1Page() {
   // Get user info for pre-filling
   const { data: user } = api.auth.me.useQuery();
 
-  // Combined mutation: saves country + company info
-  const selectCountryMutation = api.onboarding.selectCountry.useMutation();
+  // ✅ OPTIMIZATION: Single mutation instead of two sequential calls
+  // BEFORE: selectCountry + setCompanyInfoV2 = 2 API calls = ~2-3 seconds
+  // AFTER: setCompanyInfoV2 with country = 1 API call = ~1 second
   const setCompanyInfoMutation = api.onboarding.setCompanyInfoV2.useMutation();
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<CompanySetupFormData>({
@@ -48,11 +49,9 @@ export default function OnboardingQ1Page() {
 
   const onSubmit = async (data: CompanySetupFormData) => {
     try {
-      // 1. Save country selection
-      await selectCountryMutation.mutateAsync({ countryCode: data.countryCode });
-
-      // 2. Save company info
+      // Save country + company info in ONE call (optimized)
       await setCompanyInfoMutation.mutateAsync({
+        countryCode: data.countryCode,
         legalName: data.legalName,
         industry: data.industry,
         sector: data.sector,

@@ -469,9 +469,11 @@ export const onboardingRouter = createTRPCRouter({
 
   /**
    * Set company information with sector (V2)
+   * ✅ OPTIMIZATION: Now includes countryCode to eliminate separate selectCountry call
    */
   setCompanyInfoV2: publicProcedure
     .input(z.object({
+      countryCode: z.string().length(2, 'Code pays invalide'),
       legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
       industry: z.string().min(2, 'Le secteur est requis'),
       sector: z.enum(['SERVICES', 'COMMERCE', 'TRANSPORT', 'INDUSTRIE', 'CONSTRUCTION']),

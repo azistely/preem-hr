@@ -18,6 +18,7 @@ import { autoInjectCalculatedComponents } from '@/lib/salary-components/componen
 
 export interface SetCompanyInfoV2Input {
   tenantId: string;
+  countryCode: string;
   legalName: string;
   industry: string;
   sector: 'SERVICES' | 'COMMERCE' | 'TRANSPORT' | 'INDUSTRIE' | 'CONSTRUCTION';
@@ -78,9 +79,14 @@ export async function setCompanyInfoV2(input: SetCompanyInfoV2Input) {
 
   const currentSettings = (tenant.settings as any) || {};
 
+  // ✅ OPTIMIZATION: Update country + company info in ONE query
+  // BEFORE: selectCountry + setCompanyInfoV2 = 2 queries
+  // AFTER: Single update with all fields = 1 query
   const [updated] = await db
     .update(tenants)
     .set({
+      countryCode: input.countryCode,
+      currency: input.countryCode === 'CI' ? 'XOF' : 'XOF', // Default to XOF for West Africa
       name: input.legalName,
       industry: input.industry,
       taxId: input.taxId || null,
