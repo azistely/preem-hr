@@ -7,9 +7,15 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
 }
 
-// Use connection string as-is per Supabase official docs
-// Transaction pooler (port 6543) works best without extra parameters
-const connectionString = process.env.DATABASE_URL;
+// ✅ FIX: Add Vercel workaround suffix for Transaction pooler (required for serverless)
+// See: https://supabase.com/docs/guides/database/connecting-to-postgres/serverless-drivers
+let connectionString = process.env.DATABASE_URL;
+if (!connectionString.includes('workaround=supabase-pooler.vercel')) {
+  connectionString += connectionString.includes('?')
+    ? '&workaround=supabase-pooler.vercel'
+    : '?workaround=supabase-pooler.vercel';
+}
+
 console.log('[DB] Initializing Supabase connection...');
 console.log('[DB] Connection string:', connectionString.replace(/:[^:@]+@/, ':****@')); // Mask password
 
@@ -45,16 +51,26 @@ const dateTypeConfig = {
   }
 };
 
-// Create postgres-js client with custom type configuration
-// IMPORTANT: prepare: false is REQUIRED for Supabase Transaction pooler (port 6543)
-// Transaction mode does not support prepared statements
-const client = postgres(connectionString, {
+// ✅ SERVERLESS FIX: Configuration optimized for Vercel serverless functions
+// Key settings:
+// - prepare: false (required for Transaction pooler mode on port 6543)
+// - max: 1 (one connection per serverless function instance)
+// - idle_timeout: 20 (close idle connections after 20 seconds)
+// - connect_timeout: 10 (fail fast if connection takes too long)
+const postgresConfig = {
   ...dateTypeConfig,
   prepare: false, // Required for Transaction mode pooler
+  max: 1, // Single connection for serverless
+  idle_timeout: 20, // Close idle connections after 20s
+  connect_timeout: 10, // Timeout after 10s
   onnotice: () => {}, // Suppress notices
-});
+};
+
+// Create postgres-js client with serverless-optimized configuration
+const client = postgres(connectionString, postgresConfig);
 
 console.log('[DB] Date parsers configured for Drizzle compatibility');
+console.log('[DB] Serverless mode: max=1, idle_timeout=20s');
 
 /**
  * Standard database client
@@ -79,17 +95,20 @@ let serviceRoleDb: any = null;
 export function getServiceRoleDb() {
   if (!serviceRoleDb) {
     // Use service role connection string or fall back to standard with a warning
-    const serviceConnectionString = process.env.SERVICE_ROLE_DATABASE_URL || connectionString;
+    let serviceConnectionString = process.env.SERVICE_ROLE_DATABASE_URL || connectionString;
 
     if (!process.env.SERVICE_ROLE_DATABASE_URL) {
       console.warn('[DB] SERVICE_ROLE_DATABASE_URL not set, using standard connection (RLS will apply)');
     }
 
-    serviceRoleClient = postgres(serviceConnectionString, {
-      ...dateTypeConfig,
-      prepare: false, // Required for Transaction mode pooler
-      onnotice: () => {},
-    });
+    // Add Vercel workaround suffix if not present (same as main connection)
+    if (!serviceConnectionString.includes('workaround=supabase-pooler.vercel')) {
+      serviceConnectionString += serviceConnectionString.includes('?')
+        ? '&workaround=supabase-pooler.vercel'
+        : '?workaround=supabase-pooler.vercel';
+    }
+
+    serviceRoleClient = postgres(serviceConnectionString, postgresConfig);
     serviceRoleDb = drizzle({ client: serviceRoleClient, schema });
     console.log('[DB] Service role client initialized');
   }
