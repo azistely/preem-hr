@@ -21,7 +21,7 @@ export interface SetCompanyInfoV2Input {
   countryCode: string;
   legalName: string;
   industry: string;
-  sector: 'SERVICES' | 'COMMERCE' | 'TRANSPORT' | 'INDUSTRIE' | 'CONSTRUCTION';
+  sector: 'SERVICES' | 'INDUSTRY' | 'TRANSPORT' | 'CONSTRUCTION' | 'AGRICULTURE' | 'MINING';
   taxId?: string;
 }
 

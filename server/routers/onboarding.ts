@@ -476,7 +476,7 @@ export const onboardingRouter = createTRPCRouter({
       countryCode: z.string().length(2, 'Code pays invalide'),
       legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
       industry: z.string().min(2, 'Le secteur est requis'),
-      sector: z.enum(['SERVICES', 'COMMERCE', 'TRANSPORT', 'INDUSTRIE', 'CONSTRUCTION']),
+      sector: z.enum(['SERVICES', 'INDUSTRY', 'TRANSPORT', 'CONSTRUCTION', 'AGRICULTURE', 'MINING']),
       taxId: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {

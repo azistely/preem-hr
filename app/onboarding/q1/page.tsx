@@ -21,7 +21,7 @@ const companySetupSchema = z.object({
   countryCode: z.string().min(2, 'Sélectionnez un pays'),
   legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
   industry: z.string().min(2, 'Le secteur est requis'),
-  sector: z.enum(['SERVICES', 'COMMERCE', 'TRANSPORT', 'INDUSTRIE', 'CONSTRUCTION']),
+  sector: z.enum(['SERVICES', 'INDUSTRY', 'TRANSPORT', 'CONSTRUCTION', 'AGRICULTURE', 'MINING']),
   taxId: z.string().optional(),
 });
 
@@ -107,11 +107,12 @@ export default function OnboardingQ1Page() {
           required
           helperText="Détermine le taux de cotisation accident du travail (2-5%)"
         >
-          <option value="SERVICES">Services (2% cotisation AT)</option>
-          <option value="COMMERCE">Commerce (2% cotisation AT)</option>
-          <option value="TRANSPORT">Transport (3% cotisation AT)</option>
-          <option value="INDUSTRIE">Industrie (4% cotisation AT)</option>
-          <option value="CONSTRUCTION">Construction (5% cotisation AT)</option>
+          <option value="SERVICES">Services/Commerce (2% cotisation AT)</option>
+          <option value="AGRICULTURE">Agriculture (2.5% cotisation AT)</option>
+          <option value="INDUSTRY">Industrie/Fabrication (3% cotisation AT)</option>
+          <option value="TRANSPORT">Transport/Logistique (3.5% cotisation AT)</option>
+          <option value="CONSTRUCTION">BTP/Construction (5% cotisation AT)</option>
+          <option value="MINING">Mines/Extraction (5% cotisation AT)</option>
         </FormField>
 
         {/* Industry Detail */}
