@@ -45,12 +45,12 @@ export default function VerifyEmailPage() {
               </p>
             </div>
 
-            <div className="border-t pt-6 text-center">
+            <div className="border-t pt-6 text-center space-y-3">
               <p className="text-sm text-muted-foreground">
-                Vous n&apos;avez pas reçu l&apos;email ?{' '}
-                <Link href="/auth/resend-verification" className="text-preem-teal font-medium hover:underline">
-                  Renvoyer
-                </Link>
+                Vous n&apos;avez pas reçu l&apos;email ?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Vérifiez votre dossier spam ou réessayez de vous inscrire avec la même adresse email pour recevoir un nouvel email de confirmation.
               </p>
             </div>
           </CardContent>
