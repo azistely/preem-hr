@@ -660,10 +660,11 @@ export const onboardingRouter = createTRPCRouter({
             }))
           : [];
 
-        // Calculate payroll
-        const today = new Date();
-        const periodStart = new Date(today.getFullYear(), today.getMonth(), 1);
-        const periodEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        // Calculate payroll for the hire month (not current month)
+        // This ensures prorated salary is calculated correctly for the employee's first month
+        const hireDate = input.hireDate;
+        const periodStart = new Date(hireDate.getFullYear(), hireDate.getMonth(), 1);
+        const periodEnd = new Date(hireDate.getFullYear(), hireDate.getMonth() + 1, 0);
 
         const payrollResult = await calculatePayrollV2({
           employeeId: 'preview', // Dummy ID for preview
