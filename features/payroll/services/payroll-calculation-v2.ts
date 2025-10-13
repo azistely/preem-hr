@@ -93,6 +93,14 @@ export async function calculatePayrollV2(
     overtimeHours: input.overtimeHours,
   });
 
+  console.log('[calculatePayrollV2] Gross calculation result:', {
+    baseSalary: input.baseSalary,
+    proratedSalary: grossCalc.proratedSalary,
+    allowances: grossCalc.allowances,
+    totalGross: grossCalc.totalGross,
+    otherAllowances: input.otherAllowances,
+  });
+
   const grossSalary = grossCalc.totalGross;
 
   // ========================================
