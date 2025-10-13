@@ -177,6 +177,24 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
   const hasFamily = input.maritalStatus === 'married' || input.dependentChildren > 0;
 
   // ========================================
+  // PRE-CALCULATE COMPONENTS (BEFORE TRANSACTION)
+  // ========================================
+  // ✅ CRITICAL FIX: Calculate components BEFORE transaction to avoid deadlock
+  // This function makes DB queries to load formula metadata, which would deadlock
+  // if called inside the transaction (separate connection waiting for transaction locks)
+  console.time('[Employee Creation] Pre-calculate components');
+  const preCalcStart = Date.now();
+  const componentsWithCalculated = await autoInjectCalculatedComponents({
+    tenantId: input.tenantId,
+    countryCode: tenant.countryCode || 'CI',
+    baseSalary: input.baseSalary,
+    hireDate: hireDate,
+    numberOfDependents: input.dependentChildren,
+  });
+  console.timeEnd('[Employee Creation] Pre-calculate components');
+  console.log(`[Employee Creation] Components pre-calculated in ${Date.now() - preCalcStart}ms`);
+
+  // ========================================
   // CREATE RECORDS IN TRANSACTION
   // ========================================
   console.log('[Employee Creation] Starting transaction...');
@@ -265,18 +283,8 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     console.log(`[Employee Creation] Assignment created in ${Date.now() - assignmentStart}ms`);
 
     // Step 5: Create salary with components
-    // Auto-inject CNPS, ITS, CMU components
-    console.time('[Employee Creation] Auto-inject components');
-    const componentsStart = Date.now();
-    const componentsWithCalculated = await autoInjectCalculatedComponents({
-      tenantId: input.tenantId,
-      countryCode: tenant.countryCode || 'CI',
-      baseSalary: input.baseSalary,
-      hireDate: hireDate, // Required for seniority bonus calculation
-      numberOfDependents: input.dependentChildren,
-    });
-    console.timeEnd('[Employee Creation] Auto-inject components');
-    console.log(`[Employee Creation] Components auto-injected in ${Date.now() - componentsStart}ms`);
+    // (componentsWithCalculated already pre-calculated before transaction)
+    console.log('[Employee Creation] Using pre-calculated components');
 
     // Handle user-provided components (NEW approach)
     let userComponents: Array<{
