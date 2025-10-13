@@ -108,10 +108,16 @@ export async function signup(formData: FormData): Promise<SignupResult> {
     }
 
     // 2. Revalidate and redirect to email verification page
-    // Return success with redirect URL for client-side navigation (more Vercel-compatible)
     revalidatePath('/', 'layout');
     redirect('/auth/verify-email?email=' + encodeURIComponent(email));
   } catch (error: any) {
+    // ✅ FIX: Don't catch Next.js redirect errors - they're intentional
+    // Next.js throws a special error with digest 'NEXT_REDIRECT' to handle redirects
+    // We should let it propagate up instead of catching it
+    if (error?.digest?.startsWith('NEXT_REDIRECT')) {
+      throw error; // Re-throw to allow Next.js to handle the redirect
+    }
+
     console.error('[Signup] Error:', error);
 
     // Extract meaningful error message
