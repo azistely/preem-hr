@@ -21,7 +21,13 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000, // Consider fresh for 1 minute
+            // ✅ OPTIMIZATION: Aggressive caching to avoid redundant auth.me calls
+            // BEFORE: staleTime 60s meant auth.me called every minute
+            // AFTER: staleTime 5min for most queries, auth data changes rarely
+            staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes (auth data changes infrequently)
+            gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes (formerly cacheTime)
+            retry: 1, // Only retry failed requests once (avoid cascading failures)
+            refetchOnWindowFocus: false, // Don't refetch on every tab focus (too aggressive for slow 3G)
           },
         },
       })
