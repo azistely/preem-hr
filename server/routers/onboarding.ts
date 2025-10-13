@@ -660,11 +660,16 @@ export const onboardingRouter = createTRPCRouter({
             }))
           : [];
 
-        // Calculate payroll for the hire month (not current month)
-        // This ensures prorated salary is calculated correctly for the employee's first month
+        // Calculate payroll preview for a FULL MONTH (no proration)
+        // Use the hire month if it's current/future, otherwise use current month
+        // This gives users a realistic view of typical monthly payroll
         const hireDate = input.hireDate;
-        const periodStart = new Date(hireDate.getFullYear(), hireDate.getMonth(), 1);
-        const periodEnd = new Date(hireDate.getFullYear(), hireDate.getMonth() + 1, 0);
+        const today = new Date();
+        const isHireDateInFutureOrCurrent = hireDate >= new Date(today.getFullYear(), today.getMonth(), 1);
+
+        const previewDate = isHireDateInFutureOrCurrent ? hireDate : today;
+        const periodStart = new Date(previewDate.getFullYear(), previewDate.getMonth(), 1);
+        const periodEnd = new Date(previewDate.getFullYear(), previewDate.getMonth() + 1, 0);
 
         const payrollResult = await calculatePayrollV2({
           employeeId: 'preview', // Dummy ID for preview
@@ -672,7 +677,7 @@ export const onboardingRouter = createTRPCRouter({
           periodStart,
           periodEnd,
           baseSalary: input.baseSalary,
-          hireDate: input.hireDate,
+          hireDate: periodStart, // Set hire date to period start for full month preview
           fiscalParts: fiscalParts,
           hasFamily: hasFamily, // For CMU employer contribution
           // Pass template components properly as otherAllowances
