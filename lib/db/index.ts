@@ -45,8 +45,11 @@ const dateTypeConfig = {
 };
 
 // Create postgres-js client with custom type configuration
+// IMPORTANT: prepare: false is REQUIRED for Supabase Transaction pooler (port 6543)
+// Transaction mode does not support prepared statements
 const client = postgres(connectionString, {
   ...dateTypeConfig,
+  prepare: false, // Required for Transaction mode pooler
   onnotice: () => {}, // Suppress notices
 });
 
@@ -89,6 +92,7 @@ export function getServiceRoleDb() {
 
     serviceRoleClient = postgres(serviceConnectionString, {
       ...dateTypeConfig,
+      prepare: false, // Required for Transaction mode pooler
       onnotice: () => {},
     });
     serviceRoleDb = drizzle({ client: serviceRoleClient, schema });
