@@ -130,7 +130,7 @@ export default function OnboardingSuccessPage() {
           </CardContent>
         </Card>
 
-        {/* Primary Actions */}
+        {/* Primary Actions - Level 1: Essential Tasks */}
         <div className="flex flex-col sm:flex-row gap-4 mb-8">
           <Button
             size="lg"
@@ -154,40 +154,49 @@ export default function OnboardingSuccessPage() {
 
         <Separator className="my-8" />
 
-        {/* Progressive Feature Discovery */}
+        {/* Progressive Feature Discovery - Level 2: Optional Features */}
         <div className="mb-8">
           <h3 className="text-xl font-semibold mb-4">
-            Découvrez d'autres fonctionnalités (optionnel)
+            Prochaines étapes (optionnel)
           </h3>
           <p className="text-sm text-muted-foreground mb-6">
-            Configurez ces fonctionnalités maintenant ou plus tard depuis le tableau de bord
+            Ces fonctionnalités sont déjà activées. Configurez-les maintenant ou plus tard.
           </p>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Time Tracking */}
             <FeatureCard
               icon="⏰"
               title="Heures travaillées"
-              subtitle="Pour les heures sup"
-              href="/settings/time-tracking"
+              subtitle="Approuver les pointages et heures sup"
+              href={user?.role === 'manager' ? '/manager/time-tracking' : '/admin/time-tracking'}
             />
+
+            {/* Time-Off/Leave Management */}
             <FeatureCard
               icon="🌴"
-              title="Congés"
-              subtitle="Gérer les absences"
-              href="/settings/leave"
+              title="Congés et absences"
+              subtitle="Gérer les demandes de congé"
+              href={user?.role === 'manager' ? '/manager/time-off/approvals' : '/admin/time-off'}
             />
-            <FeatureCard
-              icon="💰"
-              title="Primes"
-              subtitle="Bonus et indemnités"
-              href="/settings/bonuses"
-            />
+
+            {/* Overtime Reports */}
             <FeatureCard
               icon="📊"
-              title="Rapports"
-              subtitle="Analytics de paie"
-              href="/reports"
+              title="Rapports heures sup"
+              subtitle="Analyser les coûts mensuels"
+              href={user?.role === 'manager' ? '/manager/reports/overtime' : '/manager/reports/overtime'}
             />
+
+            {/* Time-Off Policies (Admin only) */}
+            {(user?.role === 'tenant_admin' || user?.role === 'hr_manager') && (
+              <FeatureCard
+                icon="⚙️"
+                title="Politiques de congé"
+                subtitle="Configurer types et règles"
+                href="/admin/policies/time-off"
+              />
+            )}
           </div>
         </div>
 

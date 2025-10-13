@@ -177,9 +177,10 @@ export const hrManagerMobileSections: NavSection[] = [
   {
     title: "Temps & Congés",
     items: [
-      { icon: Clock, label: "Pointages", href: "/time-tracking" },
-      { icon: Umbrella, label: "Demandes congés", href: "/time-off" },
-      { icon: Settings, label: "Politiques congés", href: "/admin/policies/time-off" },
+      { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
+      { icon: Umbrella, label: "Demandes de congé", href: "/admin/time-off" },
+      { icon: BarChart, label: "Rapport heures sup", href: "/manager/reports/overtime" },
+      { icon: Settings, label: "Politiques de congé", href: "/admin/policies/time-off" },
     ],
   },
 ];
@@ -228,9 +229,10 @@ export const hrManagerDesktopSections: NavSection[] = [
   {
     title: "Temps & Congés",
     items: [
-      { icon: Clock, label: "Pointages", href: "/time-tracking" },
-      { icon: Umbrella, label: "Demandes congés", href: "/time-off" },
-      { icon: Settings, label: "Politiques congés", href: "/admin/policies/time-off" },
+      { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
+      { icon: Umbrella, label: "Demandes de congé", href: "/admin/time-off" },
+      { icon: BarChart, label: "Rapport heures sup", href: "/manager/reports/overtime" },
+      { icon: Settings, label: "Politiques de congé", href: "/admin/policies/time-off" },
     ],
   },
 ];
