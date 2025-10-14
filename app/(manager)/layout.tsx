@@ -31,8 +31,18 @@ export default function ManagerLayout({
     );
   }
 
+  // Determine correct role for navigation:
+  // - Admins keep their admin nav when accessing manager routes
+  // - HR managers keep their hr_manager nav when accessing manager routes
+  // - Regular managers see manager nav
+  const userRole = user.role === 'tenant_admin' || user.role === 'super_admin'
+    ? 'admin'
+    : user.role === 'hr_manager'
+    ? 'hr_manager'
+    : 'manager';
+
   return (
-    <DashboardLayout userRole="manager">
+    <DashboardLayout userRole={userRole}>
       {children}
     </DashboardLayout>
   );
