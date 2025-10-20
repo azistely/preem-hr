@@ -17,6 +17,10 @@ export interface TaxSystem {
   calculationMethod: 'progressive_monthly' | 'progressive_annual' | 'flat_rate';
   supportsFamilyDeductions: boolean;
   calculationBase: 'brut_imposable' | 'gross_salary' | 'net_salary';
+  taxCalculationBase: 'gross_before_ss' | 'gross_after_ss'; // NEW: Determines if tax is on gross before or after SS deductions
+  retirementContributionLabel: Record<string, string>; // NEW: Country-specific label (e.g., "CNPS Retraite" for CI, "IPRES" for SN)
+  healthContributionLabel: Record<string, string>; // NEW: Country-specific label (e.g., "CMU" for CI, "CSS" for SN)
+  incomeTaxLabel: Record<string, string>; // NEW: Country-specific label (e.g., "ITS" for CI, "IRPP" for SN)
   effectiveFrom: Date;
   effectiveTo: Date | null;
   metadata?: Record<string, unknown>;
@@ -49,6 +53,7 @@ export interface SocialSecurityScheme {
   countryCode: string;
   agencyCode: string; // 'CNPS', 'IPRES', etc.
   agencyName: Record<string, string>;
+  defaultSectorCode: string; // NEW: Default sector code when employee.sector is null (e.g., 'SERVICES')
   effectiveFrom: Date;
   effectiveTo: Date | null;
   metadata?: Record<string, unknown>;

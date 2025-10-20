@@ -46,51 +46,56 @@ export class ProgressiveMonthlyTaxStrategy {
   /**
    * Calculate tax using progressive monthly method
    *
-   * Process:
-   * 1. Calculate taxable income (gross - employee contributions)
-   * 2. Annualize taxable income (× 12)
-   * 3. Apply family deduction if applicable
-   * 4. Apply progressive brackets to annual income
-   * 5. Divide annual tax by 12 for monthly withholding
+   * IMPORTANT: As of 2025-10-18, tax brackets are stored as MONTHLY values in the database.
+   * The calculation now applies brackets directly to monthly income (no annualization).
+   *
+   * Process (Updated for Monthly Brackets):
+   * 1. Calculate monthly taxable income (gross - employee contributions)
+   * 2. Apply monthly family deduction if applicable
+   * 3. Apply progressive brackets to monthly taxable income
+   * 4. Return monthly tax (no division needed)
    */
   calculate(input: TaxCalculationInput): TaxCalculationResult {
-    // Step 1: Calculate monthly taxable income
+    // Step 1: Calculate monthly taxable income (Brut Imposable in CI)
+    // For CI: This is gross salary minus employee social security contributions
     const taxableIncome = Math.round(
       input.grossSalary - input.employeeContributions
     );
 
-    // Step 2: Annualize
-    const annualTaxableIncome = taxableIncome * 12;
-
-    // Step 3: Apply family deduction
+    // Step 2: Apply monthly family deduction
     const familyDeduction = this.getFamilyDeduction(input.fiscalParts || 1.0);
-    const annualTaxableAfterDeduction = Math.max(
+    const monthlyTaxableAfterDeduction = Math.max(
       0,
-      annualTaxableIncome - familyDeduction
+      taxableIncome - familyDeduction
     );
 
-    // Step 4: Calculate annual tax using progressive brackets
+    // Step 3: Calculate monthly tax using progressive brackets
     const { totalTax, bracketDetails } = this.calculateProgressiveTax(
-      annualTaxableAfterDeduction
+      monthlyTaxableAfterDeduction
     );
 
-    // Step 5: Monthly tax
-    const monthlyTax = Math.round(totalTax / 12);
+    // Step 4: Monthly tax is the total (no division)
+    const monthlyTax = Math.round(totalTax);
 
-    // Effective rate
+    // For backwards compatibility, calculate "annual" values (monthly × 12)
+    const annualTaxableIncome = taxableIncome * 12;
+    const annualTaxableAfterDeduction = monthlyTaxableAfterDeduction * 12;
+    const annualTax = monthlyTax * 12;
+
+    // Effective rate (on monthly taxable after deduction)
     const effectiveRate =
-      annualTaxableAfterDeduction > 0
-        ? (totalTax / annualTaxableAfterDeduction) * 100
+      monthlyTaxableAfterDeduction > 0
+        ? (monthlyTax / monthlyTaxableAfterDeduction) * 100
         : 0;
 
     return {
       grossSalary: input.grossSalary,
       employeeContributions: input.employeeContributions,
       taxableIncome,
-      annualTaxableIncome,
+      annualTaxableIncome, // For display/backwards compat
       familyDeduction,
-      annualTaxableAfterDeduction,
-      annualTax: totalTax,
+      annualTaxableAfterDeduction, // For display/backwards compat
+      annualTax, // For display/backwards compat
       monthlyTax,
       effectiveRate,
       bracketDetails,
@@ -98,15 +103,16 @@ export class ProgressiveMonthlyTaxStrategy {
   }
 
   /**
-   * Calculate progressive tax using brackets
+   * Calculate progressive tax using brackets (MONTHLY)
    *
    * Each bracket taxes only the income that falls within that bracket.
-   * Example: CI ITS 2024
-   * - 0-75k: 0% → 0 tax
-   * - 75k-240k: 16% → (240k-75k) × 0.16 if income > 240k
+   * Example: CI ITS 2025 (MONTHLY brackets)
+   * - 0-75,000: 0% → 0 tax
+   * - 75,001-240,000: 16% → (income - 75,000) × 0.16 for income in this range
+   * - 240,001-800,000: 21% → (income - 240,000) × 0.21 for income in this range
    * - etc.
    */
-  private calculateProgressiveTax(annualIncome: number): {
+  private calculateProgressiveTax(monthlyIncome: number): {
     totalTax: number;
     bracketDetails: TaxCalculationResult['bracketDetails'];
   } {
@@ -119,10 +125,10 @@ export class ProgressiveMonthlyTaxStrategy {
       const rate = Number(bracket.rate);
 
       // Check if income reaches this bracket
-      if (annualIncome <= minAmount) break;
+      if (monthlyIncome <= minAmount) break;
 
       // Calculate how much income falls in this bracket
-      const incomeInBracket = Math.min(annualIncome, maxAmount) - minAmount;
+      const incomeInBracket = Math.min(monthlyIncome, maxAmount) - minAmount;
 
       if (incomeInBracket <= 0) continue;
 
@@ -146,12 +152,13 @@ export class ProgressiveMonthlyTaxStrategy {
   }
 
   /**
-   * Get family deduction amount based on fiscal parts
+   * Get MONTHLY family deduction amount based on fiscal parts
    *
-   * Example for Côte d'Ivoire:
+   * Example for Côte d'Ivoire (MONTHLY deductions):
    * - 1.0 parts (single) → 0 FCFA
-   * - 1.5 parts (single + 1 child) → 5,500 FCFA
-   * - 2.0 parts (married) → 11,000 FCFA
+   * - 1.5 parts (single + 1 child) → 5,500 FCFA/month
+   * - 2.0 parts (married) → 11,000 FCFA/month
+   * - 2.5 parts (married + 1 child) → 16,500 FCFA/month
    * - etc.
    */
   private getFamilyDeduction(fiscalParts: number): number {

@@ -119,6 +119,10 @@ async function loadTaxSystem(
     calculationMethod: result.calculationMethod as TaxSystem['calculationMethod'],
     supportsFamilyDeductions: result.supportsFamilyDeductions,
     calculationBase: result.calculationBase as TaxSystem['calculationBase'],
+    taxCalculationBase: result.taxCalculationBase as TaxSystem['taxCalculationBase'],
+    retirementContributionLabel: result.retirementContributionLabel as Record<string, string>,
+    healthContributionLabel: result.healthContributionLabel as Record<string, string>,
+    incomeTaxLabel: result.incomeTaxLabel as Record<string, string>,
     effectiveFrom: new Date(result.effectiveFrom),
     effectiveTo: result.effectiveTo ? new Date(result.effectiveTo) : null,
     metadata: result.metadata as Record<string, unknown> | undefined,
@@ -200,6 +204,7 @@ async function loadSocialSecurityScheme(
     countryCode: result.countryCode,
     agencyCode: result.agencyCode,
     agencyName: result.agencyName as Record<string, string>,
+    defaultSectorCode: result.defaultSectorCode || 'SERVICES', // Provide fallback for null
     effectiveFrom: new Date(result.effectiveFrom),
     effectiveTo: result.effectiveTo ? new Date(result.effectiveTo) : null,
     metadata: result.metadata as Record<string, unknown> | undefined,

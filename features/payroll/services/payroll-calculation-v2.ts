@@ -26,6 +26,8 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   sectorCode?: string; // For sector-specific contributions
   seniorityBonus?: number; // Seniority bonus from components
   familyAllowance?: number; // Family allowance from components
+  salaireCategoriel?: number; // Code 11 - Base for CNPS Family/Accident (CI)
+  sursalaire?: number; // Code 12 - Additional fixed component (CI)
   otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }>; // Template components (TPT_*, PHONE, etc.)
   customComponents?: SalaryComponentInstance[]; // Custom components for future use
 }
@@ -104,8 +106,9 @@ export async function calculatePayrollV2(
       config.contributions,
       config.sectorOverrides,
       {
-        sectorCode: input.sectorCode || 'SERVICES', // Default to SERVICES (uppercase to match database)
+        sectorCode: input.sectorCode || config.socialSecurityScheme.defaultSectorCode, // Use database default
         hasFamily: input.hasFamily || false,
+        salaireCategoriel: input.salaireCategoriel, // Code 11 for CNPS calculations
       }
     );
 
@@ -117,9 +120,17 @@ export async function calculatePayrollV2(
     config.familyDeductions
   );
 
+  // Tax calculation base varies by country (database-driven)
+  // - 'gross_before_ss': Tax on gross BEFORE employee SS deductions (e.g., CI uses "Brut Imposable")
+  // - 'gross_after_ss': Tax on gross AFTER employee SS deductions (e.g., some other countries)
+  const employeeContributionsForTax =
+    config.taxSystem.taxCalculationBase === 'gross_before_ss'
+      ? 0
+      : (cnpsEmployee + cmuEmployee);
+
   const taxResult = taxStrategy.calculate({
     grossSalary,
-    employeeContributions: cnpsEmployee + cmuEmployee,
+    employeeContributions: employeeContributionsForTax,
     fiscalParts: input.fiscalParts || 1.0,
   });
 
@@ -150,7 +161,8 @@ export async function calculatePayrollV2(
   const deductionsDetails = buildDeductionsDetails(
     cnpsEmployee,
     cmuEmployee,
-    taxResult.monthlyTax
+    taxResult.monthlyTax,
+    config.taxSystem // Pass config for labels
   );
 
   // ========================================
@@ -274,7 +286,11 @@ function calculateSocialSecurityContributions(
   grossSalary: number,
   contributions: any[],
   sectorOverrides: any[],
-  options: { sectorCode: string; hasFamily: boolean }
+  options: {
+    sectorCode: string;
+    hasFamily: boolean;
+    salaireCategoriel?: number; // Code 11 - For CNPS calculations
+  }
 ) {
   let cnpsEmployee = 0;
   let cnpsEmployer = 0;
@@ -288,9 +304,23 @@ function calculateSocialSecurityContributions(
     let calculationBase = grossSalary;
 
     if (contrib.calculationBase === 'salaire_categoriel') {
-      // For salaire_categoriel: use ceiling amount as the base (not a cap)
-      // This is used for family benefits and work accident in Côte d'Ivoire (70,000 FCFA)
-      calculationBase = contrib.ceilingAmount ? Number(contrib.ceilingAmount) : grossSalary;
+      // For salaire_categoriel: use the specific component amount, capped at ceiling
+      // This is used for family benefits and work accident in Côte d'Ivoire
+      // If salaireCategoriel is provided, use it (capped at ceiling), otherwise use ceiling as default
+      if (options.salaireCategoriel) {
+        calculationBase = Math.min(
+          options.salaireCategoriel,
+          contrib.ceilingAmount ? Number(contrib.ceilingAmount) : Infinity
+        );
+      } else if (contrib.ceilingAmount) {
+        // Fallback: use ceiling amount as the base (country-specific, from database)
+        calculationBase = Number(contrib.ceilingAmount);
+      } else {
+        // No salaireCategoriel and no ceiling defined - this is a configuration error
+        throw new Error(
+          `Contribution ${contrib.code} requires salaireCategoriel but none provided and no ceiling defined in database`
+        );
+      }
     } else if (contrib.calculationBase === 'brut_imposable' || contrib.calculationBase === 'gross_salary') {
       // For brut_imposable/gross_salary: use gross salary, optionally capped by ceiling
       calculationBase = Math.min(
@@ -304,11 +334,20 @@ function calculateSocialSecurityContributions(
     if (contrib.fixedAmount) {
       const fixedAmount = Number(contrib.fixedAmount);
 
-      // Categorize by code pattern (health/medical → CMU bucket)
+      // Categorize by code pattern
       if (code.includes('cmu') || code.includes('health') || code.includes('medical')) {
-        cmuEmployee = fixedAmount;
-        // CMU employer: 500 for employee + 4,500 for family (CI-specific)
-        cmuEmployer = options.hasFamily ? 5000 : 500;
+        // CMU Employee (e.g., cmu_employee)
+        if (code === 'cmu_employee') {
+          cmuEmployee = fixedAmount;
+        }
+        // CMU Employer Base (no family)
+        else if (code === 'cmu_employer_base' && !options.hasFamily) {
+          cmuEmployer = fixedAmount;
+        }
+        // CMU Employer Family (with family)
+        else if (code === 'cmu_employer_family' && options.hasFamily) {
+          cmuEmployer = fixedAmount;
+        }
       } else {
         // Other fixed contributions go to CNPS employer bucket
         cnpsEmployer += fixedAmount;
@@ -437,27 +476,32 @@ function buildEarningsDetails(grossCalc: any, input: PayrollCalculationInputV2) 
 }
 
 /**
- * Build deductions details array
+ * Build deductions details array with country-specific labels
  */
 function buildDeductionsDetails(
   cnpsEmployee: number,
   cmuEmployee: number,
-  tax: number
+  tax: number,
+  taxSystem: {
+    retirementContributionLabel: Record<string, string>;
+    healthContributionLabel: Record<string, string>;
+    incomeTaxLabel: Record<string, string>;
+  }
 ) {
   return [
     {
       type: 'cnps_employee',
-      description: 'CNPS Retraite (6,3%)',
+      description: taxSystem.retirementContributionLabel.fr, // Use country-specific label
       amount: cnpsEmployee,
     },
     {
       type: 'cmu_employee',
-      description: 'CMU (Cotisation salariale)',
+      description: taxSystem.healthContributionLabel.fr, // Use country-specific label
       amount: cmuEmployee,
     },
     {
       type: 'its',
-      description: 'ITS (Impôt sur les traitements et salaires)',
+      description: taxSystem.incomeTaxLabel.fr, // Use country-specific label
       amount: tax,
     },
   ];
