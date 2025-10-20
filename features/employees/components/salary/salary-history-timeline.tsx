@@ -68,10 +68,22 @@ export function SalaryHistoryTimeline({
 
     // New components architecture (preferred)
     if (entry.components && entry.components.length > 0) {
-      return (
-        baseSalary +
-        entry.components.reduce((sum, component) => sum + (component.amount || 0), 0)
+      // Check if components include base salary codes (11, 12)
+      const hasBaseSalaryInComponents = entry.components.some(
+        c => c.code === '11' || c.code === '12'
       );
+
+      if (hasBaseSalaryInComponents) {
+        // Components array includes base salary - use ONLY components total
+        // (avoids double-counting)
+        return entry.components.reduce((sum, component) => sum + (component.amount || 0), 0);
+      } else {
+        // Legacy: components are only allowances, add to baseSalary
+        return (
+          baseSalary +
+          entry.components.reduce((sum, component) => sum + (component.amount || 0), 0)
+        );
+      }
     }
 
     // Fallback to legacy allowances architecture
@@ -201,15 +213,53 @@ export function SalaryHistoryTimeline({
                   <div className="bg-muted/50 p-4 rounded-lg space-y-2 text-sm">
                     {/* Breakdown - New components architecture */}
                     {entry.components && entry.components.length > 0 ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        {entry.components.map((component, idx) => (
-                          <div key={idx}>
-                            <span className="text-muted-foreground">{component.name}:</span>
-                            <span className="font-medium ml-2">
-                              {formatCurrency(component.amount)}
-                            </span>
+                      <div className="space-y-3">
+                        {/* Base Salary Components (Code 11, 12) */}
+                        {entry.components.some(c => c.code === '11' || c.code === '12') && (
+                          <div>
+                            <div className="text-xs font-semibold text-muted-foreground mb-2">
+                              Salaire de base
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {entry.components
+                                .filter(c => c.code === '11' || c.code === '12')
+                                .map((component, idx) => (
+                                  <div key={idx}>
+                                    <span className="text-muted-foreground">{component.name}:</span>
+                                    <span className="font-medium ml-2">
+                                      {formatCurrency(component.amount)}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
                           </div>
-                        ))}
+                        )}
+
+                        {/* Other Components (Allowances, Bonuses) */}
+                        {entry.components.some(c => c.code !== '11' && c.code !== '12') && (
+                          <div>
+                            {entry.components.some(c => c.code === '11' || c.code === '12') && (
+                              <Separator className="my-2" />
+                            )}
+                            {entry.components.some(c => c.code === '11' || c.code === '12') && (
+                              <div className="text-xs font-semibold text-muted-foreground mb-2">
+                                Indemnités et primes
+                              </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-2">
+                              {entry.components
+                                .filter(c => c.code !== '11' && c.code !== '12')
+                                .map((component, idx) => (
+                                  <div key={idx}>
+                                    <span className="text-muted-foreground">{component.name}:</span>
+                                    <span className="font-medium ml-2">
+                                      {formatCurrency(component.amount)}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       /* Fallback to legacy allowances display */
