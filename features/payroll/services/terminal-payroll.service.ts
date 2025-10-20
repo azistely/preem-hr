@@ -126,7 +126,14 @@ export async function calculateTerminalPayroll(
     throw new Error('Employee salary not found');
   }
 
-  // 5. Parse allowances from salary
+  // 5. Extract base salary components and parse other allowances (database-driven, multi-country)
+  const { extractBaseSalaryAmounts, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
+
+  const salaryComponents = salary.components as Array<{ code: string; amount: number }> || [];
+  const baseAmounts = await extractBaseSalaryAmounts(salaryComponents, tenant.countryCode);
+  const totalBaseSalary = await calculateBaseSalaryTotal(salaryComponents, tenant.countryCode);
+  const salaireCategoriel = await getSalaireCategoriel(salaryComponents, tenant.countryCode);
+
   const allowances = salary.allowances as any || {};
   const housingAllowance = parseFloat(allowances.housing || '0');
   const transportAllowance = parseFloat(allowances.transport || '0');
@@ -143,7 +150,9 @@ export async function calculateTerminalPayroll(
     countryCode: tenant.countryCode,
     periodStart,
     periodEnd,
-    baseSalary: parseFloat(salary.baseSalary),
+    baseSalary: totalBaseSalary, // Total of all base components
+    salaireCategoriel, // Code 11 (or equivalent)
+    sursalaire: baseAmounts['12'], // Code 12 for CI (if present)
     housingAllowance,
     transportAllowance,
     mealAllowance,

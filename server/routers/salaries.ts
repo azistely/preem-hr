@@ -163,12 +163,15 @@ export const salariesRouter = createTRPCRouter({
   /**
    * Preview payroll calculation for new salary components
    * Returns: gross, deductions, net salary for preview purposes
+   *
+   * ✅ MULTI-COUNTRY: Uses database-driven base salary component extraction
    */
   previewPayroll: publicProcedure
     .input(previewPayrollSchema)
     .query(async ({ input, ctx }) => {
       try {
         const { calculatePayrollV2 } = await import('@/features/payroll/services/payroll-calculation-v2');
+        const { extractBaseSalaryAmounts, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
         const { db } = await import('@/lib/db');
         const { employees } = await import('@/drizzle/schema');
         const { eq, and } = await import('drizzle-orm');
@@ -195,6 +198,11 @@ export const salariesRouter = createTRPCRouter({
         // Get country code
         const countryCode = input.countryCode || employee.countryCode || await getTenantCountryCode(ctx.user.tenantId);
 
+        // Extract base salary components (database-driven)
+        const baseAmounts = await extractBaseSalaryAmounts(input.components, countryCode);
+        const totalBaseSalary = await calculateBaseSalaryTotal(input.components, countryCode);
+        const salaireCategoriel = await getSalaireCategoriel(input.components, countryCode);
+
         // Fetch component metadata from database to understand component types
         const { salaryComponentDefinitions } = await import('@/drizzle/schema');
         const { inArray } = await import('drizzle-orm');
@@ -208,8 +216,7 @@ export const salariesRouter = createTRPCRouter({
         // Create a map of code -> metadata
         const metadataMap = new Map(definitions.map(d => [d.code, d]));
 
-        // Categorize components by their type using database metadata
-        let baseSalary = 0;
+        // Categorize non-base components by their type using database metadata
         let housingAllowance = 0;
         let transportAllowance = 0;
         let familyAllowance = 0;
@@ -225,13 +232,16 @@ export const salariesRouter = createTRPCRouter({
             continue;
           }
 
+          // Skip base components (already handled)
+          const metadataObj = metadata.metadata as any || {};
+          if (metadataObj.isBaseComponent) {
+            continue;
+          }
+
           const amount = component.amount || 0;
 
           // Map by component_type (from database metadata)
           switch (metadata.componentType) {
-            case 'base':
-              baseSalary += amount;
-              break;
             case 'housing':
               housingAllowance += amount;
               break;
@@ -270,7 +280,9 @@ export const salariesRouter = createTRPCRouter({
           employeeId: input.employeeId,
           periodStart,
           periodEnd,
-          baseSalary,
+          baseSalary: totalBaseSalary, // Total of all base components
+          salaireCategoriel, // Code 11 (or equivalent)
+          sursalaire: baseAmounts['12'], // Code 12 for CI (if present)
           housingAllowance,
           transportAllowance,
           mealAllowance,
@@ -287,7 +299,8 @@ export const salariesRouter = createTRPCRouter({
           tax: result.its,
           netSalary: result.netSalary,
           breakdown: {
-            baseSalary,
+            baseSalary: totalBaseSalary,
+            salaireCategoriel,
             housingAllowance,
             transportAllowance,
             taxableIncome: result.taxableIncome,

@@ -242,6 +242,14 @@ export async function calculatePayrollRun(
         const { getEmployeeSalaryComponents } = await import('@/lib/salary-components/component-reader');
         const breakdown = getEmployeeSalaryComponents(currentSalary as any);
 
+        // Extract base salary components (database-driven, multi-country)
+        const { extractBaseSalaryAmounts, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
+
+        const salaryComponents = currentSalary.components as Array<{ code: string; amount: number }> || [];
+        const baseAmounts = await extractBaseSalaryAmounts(salaryComponents, tenant.countryCode);
+        const totalBaseSalary = await calculateBaseSalaryTotal(salaryComponents, tenant.countryCode);
+        const salaireCategoriel = await getSalaireCategoriel(salaryComponents, tenant.countryCode);
+
         // Calculate payroll using V2 (database-driven, multi-country)
         const calculation = await calculatePayrollV2({
           employeeId: employee.id,
@@ -249,7 +257,9 @@ export async function calculatePayrollRun(
           sectorCode: tenant.sectorCode || 'SERVICES', // Fallback to SERVICES if not set
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
-          baseSalary: breakdown.baseSalary,
+          baseSalary: totalBaseSalary, // Total of all base components
+          salaireCategoriel, // Code 11 (or equivalent)
+          sursalaire: baseAmounts['12'], // Code 12 for CI (if present)
           housingAllowance: breakdown.housingAllowance,
           transportAllowance: breakdown.transportAllowance,
           mealAllowance: breakdown.mealAllowance,

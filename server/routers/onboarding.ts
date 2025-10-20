@@ -578,10 +578,15 @@ export const onboardingRouter = createTRPCRouter({
   /**
    * Calculate payslip preview WITHOUT creating employee (V2)
    * Used during onboarding to show preview before confirming
+   *
+   * ✅ MULTI-COUNTRY: Uses database-driven base salary component structure
    */
   calculatePayslipPreview: publicProcedure
     .input(z.object({
-      baseSalary: z.number().min(1, 'Le salaire de base est requis'),
+      // NEW: Base components as object (e.g., { "11": 75000, "12": 0 } for CI)
+      baseComponents: z.record(z.string(), z.number()).optional(),
+      // DEPRECATED: baseSalary - kept for backward compatibility
+      baseSalary: z.number().min(1, 'Le salaire de base est requis').optional(),
       hireDate: z.date(),
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
       dependentChildren: z.number().min(0).max(10),
@@ -595,6 +600,7 @@ export const onboardingRouter = createTRPCRouter({
     .mutation(async ({ input, ctx }) => {
       try {
         const { calculatePayrollV2 } = await import('@/features/payroll/services/payroll-calculation-v2');
+        const { buildBaseSalaryComponents, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
         const { db } = await import('@/lib/db');
         const { tenants } = await import('@/drizzle/schema');
         const { eq } = await import('drizzle-orm');
@@ -610,8 +616,34 @@ export const onboardingRouter = createTRPCRouter({
           throw new Error('Entreprise non trouvée');
         }
 
-        // SMIG validation: Check GROSS salary (base + all components) dynamically based on country
         const countryCode = tenant.countryCode || 'CI';
+
+        // Build base salary components from inputs (database-driven)
+        let baseSalaryComponentsList: Array<{ code: string; amount: number }> = [];
+        let totalBaseSalary = 0;
+
+        if (input.baseComponents) {
+          // NEW: Use base components structure
+          baseSalaryComponentsList = await buildBaseSalaryComponents(input.baseComponents, countryCode);
+          totalBaseSalary = await calculateBaseSalaryTotal(baseSalaryComponentsList, countryCode);
+        } else if (input.baseSalary) {
+          // FALLBACK: Use legacy baseSalary (create Code 11 component automatically)
+          baseSalaryComponentsList = await buildBaseSalaryComponents(
+            { '11': input.baseSalary }, // Map to Code 11 for CI
+            countryCode
+          );
+          totalBaseSalary = input.baseSalary;
+        } else {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Le salaire de base est requis',
+          });
+        }
+
+        // Get salaireCategoriel (Code 11 for CI, or equivalent for other countries)
+        const salaireCategoriel = await getSalaireCategoriel(baseSalaryComponentsList, countryCode);
+
+        // SMIG validation: Check GROSS salary (base + all components) dynamically based on country
         const minimumWages: Record<string, number> = {
           CI: 75000,  // Côte d'Ivoire
           SN: 52500,  // Sénégal
@@ -623,7 +655,7 @@ export const onboardingRouter = createTRPCRouter({
         const minimumWage = minimumWages[countryCode] || 75000;
 
         const componentsTotal = input.components?.reduce((sum, c) => sum + c.amount, 0) || 0;
-        const grossSalary = input.baseSalary + componentsTotal;
+        const grossSalary = totalBaseSalary + componentsTotal;
 
         if (grossSalary < minimumWage) {
           const countryNames: Record<string, string> = {
@@ -671,12 +703,20 @@ export const onboardingRouter = createTRPCRouter({
         const periodStart = new Date(previewDate.getFullYear(), previewDate.getMonth(), 1);
         const periodEnd = new Date(previewDate.getFullYear(), previewDate.getMonth() + 1, 0);
 
+        // Extract base component amounts for payroll calculation
+        const baseAmounts: Record<string, number> = {};
+        for (const comp of baseSalaryComponentsList) {
+          baseAmounts[comp.code] = comp.amount;
+        }
+
         const payrollResult = await calculatePayrollV2({
           employeeId: 'preview', // Dummy ID for preview
           countryCode: tenant.countryCode || 'CI',
           periodStart,
           periodEnd,
-          baseSalary: input.baseSalary,
+          baseSalary: totalBaseSalary, // Total of all base components
+          salaireCategoriel, // Code 11 (or equivalent)
+          sursalaire: baseAmounts['12'], // Code 12 for CI (if present)
           hireDate: periodStart, // Set hire date to period start for full month preview
           fiscalParts: fiscalParts,
           hasFamily: hasFamily, // For CMU employer contribution
@@ -691,6 +731,7 @@ export const onboardingRouter = createTRPCRouter({
           payslipPreview: {
             grossSalary: payrollResult.grossSalary,
             baseSalary: payrollResult.baseSalary,
+            baseComponents: baseSalaryComponentsList, // Include base component breakdown
             components: input.components || [],
             cnpsEmployee: payrollResult.cnpsEmployee,
             cmuEmployee: payrollResult.cmuEmployee || 0,
