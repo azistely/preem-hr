@@ -149,6 +149,13 @@ export function SalaryChangeWizard({
   const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
 
+  // Load base salary components for this country
+  const { data: baseSalaryDefinitions, isLoading: loadingBaseSalary } =
+    trpc.salaryComponents.getBaseSalaryComponents.useQuery(
+      { countryCode },
+      { enabled: !!countryCode }
+    );
+
   // Initialize components with current salary
   // IMPORTANT: Always ensure base salary component (code '11') exists
   const baseComponents: SalaryComponentInstance[] = currentSalary.components || [];
@@ -210,9 +217,13 @@ export function SalaryChangeWizard({
 
   const components = form.watch('components') || [];
 
-  // Extract base salary from components
-  const baseSalaryComponent = components.find(c => c.code === '11');
-  const baseSalary = baseSalaryComponent?.amount || 0;
+  // Extract base salary codes from definitions
+  const baseSalaryCodes = new Set(baseSalaryDefinitions?.map(c => c.code) || ['11']);
+
+  // Calculate base salary total from all base components
+  const baseSalary = components
+    .filter(c => baseSalaryCodes.has(c.code))
+    .reduce((sum, c) => sum + c.amount, 0);
 
   // Calculate totals
   const componentTotal = components.reduce((sum, c) => sum + c.amount, 0);
@@ -322,9 +333,9 @@ export function SalaryChangeWizard({
   const handleRemoveComponent = (index: number) => {
     const component = components[index];
 
-    // Prevent removing base salary
-    if (component?.code === '11') {
-      toast.error('Le salaire de base ne peut pas être supprimé');
+    // Prevent removing base salary components
+    if (component && baseSalaryCodes.has(component.code)) {
+      toast.error('Les composantes du salaire de base ne peuvent pas être supprimées');
       return;
     }
 
@@ -412,25 +423,101 @@ export function SalaryChangeWizard({
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Base Salary (always present) */}
-                  <div>
-                    <FormLabel className="text-lg">Salaire de base *</FormLabel>
-                    <div className="relative mt-2">
-                      <Input
-                        type="number"
-                        min="0"
-                        step="1000"
-                        placeholder="75000"
-                        value={baseSalaryInput}
-                        onChange={(e) => handleUpdateBaseSalary(e.target.value)}
-                        onBlur={() => setBaseSalaryTouched(true)}
-                        className="min-h-[56px] text-2xl font-bold pr-16"
-                      />
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-muted-foreground">
-                        FCFA
-                      </span>
+                  {/* Base Salary Components (Dynamic based on country) */}
+                  {loadingBaseSalary ? (
+                    <div className="text-sm text-muted-foreground">Chargement des composantes salariales...</div>
+                  ) : baseSalaryDefinitions && baseSalaryDefinitions.length > 0 ? (
+                    <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
+                      <div>
+                        <FormLabel className="text-lg">Salaire de base *</FormLabel>
+                        <p className="text-sm text-muted-foreground">
+                          Composé de {baseSalaryDefinitions.length} élément{baseSalaryDefinitions.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+
+                      {baseSalaryDefinitions.map((componentDef) => {
+                        const component = components.find(c => c.code === componentDef.code);
+                        const value = component?.amount || componentDef.defaultValue || 0;
+
+                        return (
+                          <div key={componentDef.code}>
+                            <FormLabel>{componentDef.label.fr}</FormLabel>
+                            <div className="relative mt-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1000"
+                                placeholder={componentDef.defaultValue?.toString() || '0'}
+                                value={value}
+                                onChange={(e) => {
+                                  const newAmount = parseFloat(e.target.value) || 0;
+                                  const currentComponents = form.getValues('components') || [];
+                                  const componentIndex = currentComponents.findIndex(c => c.code === componentDef.code);
+
+                                  if (componentIndex >= 0) {
+                                    // Update existing component
+                                    const updated = currentComponents.map((c, i) =>
+                                      i === componentIndex ? { ...c, amount: newAmount } : c
+                                    );
+                                    form.setValue('components', updated, { shouldValidate: true });
+                                  } else {
+                                    // Add new component
+                                    form.setValue('components', [
+                                      ...currentComponents,
+                                      {
+                                        code: componentDef.code,
+                                        name: componentDef.name.fr,
+                                        amount: newAmount,
+                                        sourceType: 'standard' as const,
+                                      }
+                                    ], { shouldValidate: true });
+                                  }
+                                }}
+                                className="min-h-[48px] text-lg font-semibold pr-16"
+                                required={!componentDef.isOptional}
+                              />
+                              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">
+                                FCFA
+                              </span>
+                            </div>
+                            <FormDescription className="mt-1">{componentDef.description.fr}</FormDescription>
+                          </div>
+                        );
+                      })}
+
+                      {/* Total Base Salary Display */}
+                      {baseSalary > 0 && (
+                        <div className="p-3 bg-white rounded border">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Total salaire de base</span>
+                            <span className="font-bold text-xl">
+                              {formatCurrency(baseSalary)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    // Fallback to single baseSalary field if no base components configured
+                    <div>
+                      <FormLabel className="text-lg">Salaire de base *</FormLabel>
+                      <div className="relative mt-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          placeholder="75000"
+                          value={baseSalaryInput}
+                          onChange={(e) => handleUpdateBaseSalary(e.target.value)}
+                          onBlur={() => setBaseSalaryTouched(true)}
+                          className="min-h-[56px] text-2xl font-bold pr-16"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-muted-foreground">
+                          FCFA
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   <Separator />
 
@@ -544,10 +631,10 @@ export function SalaryChangeWizard({
                     </div>
 
                     {/* Display added components (excluding base salary) */}
-                    {components.filter(c => c.code !== '11').length > 0 && (
+                    {components.filter(c => !baseSalaryCodes.has(c.code)).length > 0 && (
                       <div className="space-y-2">
                         {components
-                          .filter(c => c.code !== '11')
+                          .filter(c => !baseSalaryCodes.has(c.code))
                           .map((component, index) => {
                             const actualIndex = components.findIndex(c => c === component);
                             return (

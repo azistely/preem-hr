@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import type { SalaryComponentTemplate, CustomSalaryComponent, SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { MinimumWageAlert } from '@/components/employees/minimum-wage-alert';
 import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
+import { trpc } from '@/lib/trpc/client';
 
 interface SalaryInfoStepProps {
   form: UseFormReturn<any>;
@@ -45,6 +46,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const [editAmount, setEditAmount] = useState<number>(0);
 
   const baseSalary = form.watch('baseSalary') || 0;
+  const baseComponents = form.watch('baseComponents') || {};
   const components = form.watch('components') || [];
   const coefficient = form.watch('coefficient') || 100;
 
@@ -54,12 +56,25 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
 
+  // Load base salary components for this country
+  const { data: baseSalaryDefinitions, isLoading: loadingBaseSalary } =
+    trpc.salaryComponents.getBaseSalaryComponents.useQuery(
+      { countryCode },
+      { enabled: !!countryCode }
+    );
+
   // Calculate total gross salary (base + components)
   const componentTotal = components.reduce(
     (sum: number, component: SalaryComponentInstance) => sum + component.amount,
     0
   );
-  const totalGross = baseSalary + componentTotal;
+
+  // Calculate base salary total from base components or fall back to baseSalary field
+  const baseSalaryTotal = baseSalaryDefinitions && baseSalaryDefinitions.length > 0
+    ? (Object.values(baseComponents) as number[]).reduce((sum, amt) => sum + (amt || 0), 0)
+    : baseSalary;
+
+  const totalGross = baseSalaryTotal + componentTotal;
 
   /**
    * Add a component from template/custom
@@ -137,29 +152,77 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
 
   return (
     <div className="space-y-6">
-      {/* Base Salary (always present) */}
-      <div>
-        <FormLabel>Salaire de base *</FormLabel>
-        <FormControl>
-          <Input
-            type="number"
-            min={countryMinimumWage}
-            step={1000}
-            placeholder="300000"
-            value={baseSalary}
-            onChange={(e) => handleUpdateBaseSalary(parseFloat(e.target.value) || 0)}
-            className="min-h-[48px]"
-          />
-        </FormControl>
-        <FormDescription>
-          Minimum: {formatCurrency(countryMinimumWage)} (SMIG)
-        </FormDescription>
-        {form.formState.errors.components && (
-          <p className="text-sm text-destructive mt-1">
-            {form.formState.errors.components.message?.toString()}
-          </p>
-        )}
-      </div>
+      {/* Base Salary Components (Dynamic based on country) */}
+      {loadingBaseSalary ? (
+        <div className="text-sm text-muted-foreground">Chargement des composantes salariales...</div>
+      ) : baseSalaryDefinitions && baseSalaryDefinitions.length > 0 ? (
+        <div className="space-y-3 p-4 border rounded-lg bg-blue-50">
+          <div>
+            <FormLabel>Salaire de base *</FormLabel>
+            <FormDescription>
+              Composé de {baseSalaryDefinitions.length} élément{baseSalaryDefinitions.length > 1 ? 's' : ''}
+            </FormDescription>
+          </div>
+
+          {baseSalaryDefinitions.map((component) => (
+            <div key={component.code}>
+              <FormLabel>{component.label.fr}</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  placeholder={component.defaultValue?.toString() || '0'}
+                  value={baseComponents[component.code] || component.defaultValue || ''}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 0;
+                    form.setValue(`baseComponents.${component.code}`, value, { shouldValidate: true });
+                  }}
+                  className="min-h-[48px]"
+                  required={!component.isOptional}
+                />
+              </FormControl>
+              <FormDescription>{component.description.fr}</FormDescription>
+            </div>
+          ))}
+
+          {/* Total Base Salary Display */}
+          {baseSalaryTotal > 0 && (
+            <div className="p-3 bg-white rounded border">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Total salaire de base</span>
+                <span className="font-bold text-lg">
+                  {formatCurrency(baseSalaryTotal)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        // Fallback to single baseSalary field if no base components configured
+        <div>
+          <FormLabel>Salaire de base *</FormLabel>
+          <FormControl>
+            <Input
+              type="number"
+              min={countryMinimumWage}
+              step={1000}
+              placeholder="300000"
+              value={baseSalary}
+              onChange={(e) => handleUpdateBaseSalary(parseFloat(e.target.value) || 0)}
+              className="min-h-[48px]"
+            />
+          </FormControl>
+          <FormDescription>
+            Minimum: {formatCurrency(countryMinimumWage)} (SMIG)
+          </FormDescription>
+          {form.formState.errors.components && (
+            <p className="text-sm text-destructive mt-1">
+              {form.formState.errors.components.message?.toString()}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Components List (excluding base salary) */}
       <div className="space-y-4 pt-4 border-t">
@@ -358,7 +421,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
             </span>
           </div>
           <div className="text-xs text-muted-foreground mt-2">
-            Salaire de base: {formatCurrency(baseSalary)}
+            Salaire de base: {formatCurrency(baseSalaryTotal)}
             {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrency(componentTotal)}`}
           </div>
         </div>

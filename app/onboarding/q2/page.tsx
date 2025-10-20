@@ -35,7 +35,8 @@ export default function OnboardingQ2Page() {
     email?: string;
     phone: string;
     positionTitle: string;
-    baseSalary: number;
+    baseSalary?: number;
+    baseComponents?: Record<string, number>;
     hireDate: Date;
     maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
     dependentChildren: number;
@@ -59,6 +60,7 @@ export default function OnboardingQ2Page() {
       // PHASE 1: Calculate preview only (no DB write)
       const result = await calculatePreviewMutation.mutateAsync({
         baseSalary: submitData.baseSalary,
+        baseComponents: submitData.baseComponents,
         hireDate: submitData.hireDate,
         maritalStatus: submitData.maritalStatus,
         dependentChildren: submitData.dependentChildren,

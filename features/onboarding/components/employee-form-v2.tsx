@@ -21,7 +21,13 @@ const employeeSchemaV2 = z.object({
   email: z.union([z.string().email('Email invalide'), z.literal('')]).optional(),
   phone: z.string().min(1, 'Le téléphone est requis'),
   positionTitle: z.string().min(1, 'La fonction est requise'),
-  baseSalary: z.number().min(1, 'Le salaire de base est requis'),
+
+  // NEW: Base salary components (Code 11, Code 12 for CI)
+  baseComponents: z.record(z.string(), z.number()).optional(),
+
+  // DEPRECATED: Keep for backward compatibility
+  baseSalary: z.number().optional(),
+
   hireDate: z.date({ required_error: 'La date d\'embauche est requise', invalid_type_error: 'Date invalide' }),
 
   // CRITICAL: Family status
@@ -252,16 +258,32 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
   const minimumWage = minWageData?.minimumWage || 75000;
   const countryCode = minWageData?.countryCode || 'CI';
 
+  // Load base salary components for this country
+  const { data: baseComponents, isLoading: loadingBaseComponents } =
+    trpc.salaryComponents.getBaseSalaryComponents.useQuery(
+      { countryCode },
+      { enabled: !!countryCode }
+    );
+
   // Create dynamic schema with country-specific minimum wage
   const employeeSchemaWithCountry = employeeSchemaV2.refine((data) => {
     // SMIG validation: Check GROSS salary (base + all components) not just base
     const componentsTotal = data.components.reduce((sum, c) => sum + c.amount, 0);
-    const grossSalary = data.baseSalary + componentsTotal;
+
+    // Calculate base salary from baseComponents or fall back to baseSalary
+    let baseSalaryTotal = 0;
+    if (data.baseComponents) {
+      baseSalaryTotal = Object.values(data.baseComponents).reduce((sum, amt) => sum + amt, 0);
+    } else if (data.baseSalary) {
+      baseSalaryTotal = data.baseSalary;
+    }
+
+    const grossSalary = baseSalaryTotal + componentsTotal;
 
     return grossSalary >= minimumWage;
   }, {
     message: `Le salaire brut total (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${minWageData?.countryName || 'votre pays'} (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
-    path: ['baseSalary'],
+    path: ['baseComponents'],
   });
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<EmployeeFormData>({
@@ -270,6 +292,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
       maritalStatus: 'single',
       dependentChildren: 0,
       components: [],
+      baseComponents: {},
       ...defaultValues,
     },
   });
@@ -277,7 +300,11 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
   const maritalStatus = watch('maritalStatus');
   const dependentChildren = watch('dependentChildren') || 0;
   const components = watch('components') || [];
+  const baseComponentsData = watch('baseComponents') || {};
   const fiscalParts = calculateFiscalParts(maritalStatus, dependentChildren);
+
+  // Calculate total base salary from base components
+  const baseSalaryTotal = Object.values(baseComponentsData).reduce((sum, amt) => sum + (amt || 0), 0);
 
   // Component handlers
   const handleAddComponent = (template: any, amount: number) => {
@@ -431,18 +458,66 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Rémunération</h3>
 
-        {/* Base Salary (Always Visible) */}
-        <FormField
-          label="Salaire de base mensuel"
-          type="number"
-          {...register('baseSalary', {
-            setValueAs: (value) => value ? parseFloat(value) : undefined,
-          })}
-          error={errors.baseSalary?.message}
-          suffix="FCFA"
-          required
-          helperText={`Le salaire brut total (base + indemnités) doit atteindre ${minimumWage.toLocaleString('fr-FR')} FCFA minimum`}
-        />
+        {/* Base Salary Components (Dynamic based on country) */}
+        {loadingBaseComponents ? (
+          <div className="text-sm text-muted-foreground">Chargement des composantes salariales...</div>
+        ) : baseComponents && baseComponents.length > 0 ? (
+          <div className="space-y-3 p-4 border rounded-lg bg-blue-50">
+            <div>
+              <p className="font-medium">Salaire de base</p>
+              <p className="text-xs text-muted-foreground">
+                Composé de {baseComponents.length} élément{baseComponents.length > 1 ? 's' : ''}
+              </p>
+            </div>
+
+            {baseComponents.map((component) => (
+              <FormField
+                key={component.code}
+                label={component.label.fr}
+                type="number"
+                {...register(`baseComponents.${component.code}`, {
+                  setValueAs: (value) => value ? parseFloat(value) : (component.defaultValue || 0),
+                })}
+                error={errors.baseComponents?.[component.code]?.message}
+                suffix="FCFA"
+                required={!component.isOptional}
+                helperText={component.description.fr}
+              />
+            ))}
+
+            {/* Total Base Salary Display */}
+            {baseSalaryTotal > 0 && (
+              <div className="p-3 bg-white rounded border">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Total salaire de base</span>
+                  <span className="font-bold text-lg">
+                    {baseSalaryTotal.toLocaleString('fr-FR')} FCFA
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          // Fallback to single baseSalary field if no base components configured
+          <FormField
+            label="Salaire de base mensuel"
+            type="number"
+            {...register('baseSalary', {
+              setValueAs: (value) => value ? parseFloat(value) : undefined,
+            })}
+            error={errors.baseSalary?.message}
+            suffix="FCFA"
+            required
+            helperText={`Le salaire brut total (base + indemnités) doit atteindre ${minimumWage.toLocaleString('fr-FR')} FCFA minimum`}
+          />
+        )}
+
+        {/* Minimum Wage Warning */}
+        {(baseSalaryTotal > 0 || components.length > 0) && (
+          <p className="text-sm text-muted-foreground">
+            Le salaire brut total (base + indemnités) doit atteindre {minimumWage.toLocaleString('fr-FR')} FCFA minimum
+          </p>
+        )}
 
         {/* Component Picker Section */}
         <ComponentPickerSection
