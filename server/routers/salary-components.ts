@@ -31,6 +31,7 @@ import { createFormulaVersion, getVersionHistory } from '@/lib/salary-components
 import { complianceValidator } from '@/lib/compliance';
 import { mergeTemplatesWithActivations, mergeTemplateWithOverrides } from '@/lib/salary-components/template-merger';
 import type { TenantActivation, SalaryComponentTemplate as TemplateMergerTemplate } from '@/lib/salary-components/template-merger';
+import { getBaseSalaryComponents } from '@/lib/salary-components/base-salary-loader';
 
 // ============================================================================
 // Input Schemas
@@ -98,6 +99,10 @@ const validateCustomizationSchema = z.object({
       metadata: z.record(z.unknown()).optional(),
     })
     .optional(),
+});
+
+const getBaseSalaryComponentsSchema = z.object({
+  countryCode: z.string().length(2),
 });
 
 // ============================================================================
@@ -586,5 +591,21 @@ export const salaryComponentsRouter = createTRPCRouter({
       );
 
       return validationResult;
+    }),
+
+  /**
+   * Get base salary components for a country
+   *
+   * Returns components marked with metadata.isBaseComponent = true
+   * Used by forms to dynamically render base salary input fields
+   *
+   * For CI: Returns Code 11 (Salaire catégoriel) + Code 12 (Sursalaire)
+   * For other countries: Returns configured base components
+   */
+  getBaseSalaryComponents: publicProcedure
+    .input(getBaseSalaryComponentsSchema)
+    .query(async ({ input }) => {
+      const { countryCode } = input;
+      return await getBaseSalaryComponents(countryCode);
     }),
 });
