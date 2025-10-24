@@ -468,15 +468,16 @@ export const onboardingRouter = createTRPCRouter({
   // ========================================
 
   /**
-   * Set company information with sector (V2)
+   * Set company information with CGECI sector (V2)
    * ✅ OPTIMIZATION: Now includes countryCode to eliminate separate selectCountry call
+   * ✅ CGECI INTEGRATION: Accepts cgeciSectorCode and auto-derives genericSectorCode
    */
   setCompanyInfoV2: publicProcedure
     .input(z.object({
       countryCode: z.string().length(2, 'Code pays invalide'),
       legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
-      industry: z.string().min(2, 'Le secteur est requis'),
-      sector: z.enum(['SERVICES', 'INDUSTRY', 'TRANSPORT', 'CONSTRUCTION', 'AGRICULTURE', 'MINING']),
+      industry: z.string().min(2, 'Le type d\'activité est requis'),
+      cgeciSectorCode: z.string().min(1, 'Sélectionnez votre secteur d\'activité'),
       taxId: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -513,6 +514,14 @@ export const onboardingRouter = createTRPCRouter({
       // CRITICAL: Family status
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
       dependentChildren: z.number().min(0).max(10),
+      // NEW: Employment configuration
+      contractType: z.enum(['CDI', 'CDD', 'STAGE']),
+      contractEndDate: z.date().optional(),
+      category: z.enum(['A1', 'A2', 'B1', 'B2', 'C', 'D', 'E', 'F']),
+      departmentId: z.string().optional(),
+      rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+      dailyRate: z.number().optional(),
+      hourlyRate: z.number().optional(),
       // NEW: Components array (replaces individual allowance fields)
       components: z.array(z.object({
         code: z.string(),
@@ -587,6 +596,7 @@ export const onboardingRouter = createTRPCRouter({
       baseComponents: z.record(z.string(), z.number()).optional(),
       // DEPRECATED: baseSalary - kept for backward compatibility
       baseSalary: z.number().min(1, 'Le salaire de base est requis').optional(),
+      rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
       hireDate: z.date(),
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
       dependentChildren: z.number().min(0).max(10),
@@ -644,7 +654,7 @@ export const onboardingRouter = createTRPCRouter({
         const salaireCategoriel = await getSalaireCategoriel(baseSalaryComponentsList, countryCode);
 
         // SMIG validation: Check GROSS salary (base + all components) dynamically based on country
-        const minimumWages: Record<string, number> = {
+        const monthlyMinimumWages: Record<string, number> = {
           CI: 75000,  // Côte d'Ivoire
           SN: 52500,  // Sénégal
           BF: 34664,  // Burkina Faso
@@ -652,12 +662,25 @@ export const onboardingRouter = createTRPCRouter({
           BJ: 40000,  // Bénin
           TG: 35000,  // Togo
         };
-        const minimumWage = minimumWages[countryCode] || 75000;
+        const monthlyMinimumWage = monthlyMinimumWages[countryCode] || 75000;
+
+        // Convert minimum wage based on rate type
+        const rateType = input.rateType || 'MONTHLY';
+        let applicableMinimumWage = monthlyMinimumWage;
+        let rateLabel = 'mensuel';
+
+        if (rateType === 'DAILY') {
+          applicableMinimumWage = Math.round(monthlyMinimumWage / 30);
+          rateLabel = 'journalier';
+        } else if (rateType === 'HOURLY') {
+          applicableMinimumWage = Math.round(monthlyMinimumWage / (30 * 8));
+          rateLabel = 'horaire';
+        }
 
         const componentsTotal = input.components?.reduce((sum, c) => sum + c.amount, 0) || 0;
         const grossSalary = totalBaseSalary + componentsTotal;
 
-        if (grossSalary < minimumWage) {
+        if (grossSalary < applicableMinimumWage) {
           const countryNames: Record<string, string> = {
             CI: 'Côte d\'Ivoire',
             SN: 'Sénégal',
@@ -668,7 +691,7 @@ export const onboardingRouter = createTRPCRouter({
           };
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: `Le salaire brut total (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${countryNames[countryCode] || countryCode} (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
+            message: `Le salaire brut total ${rateLabel} (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${countryNames[countryCode] || countryCode} (${applicableMinimumWage.toLocaleString('fr-FR')} FCFA${rateType === 'MONTHLY' ? '' : rateType === 'DAILY' ? '/jour' : '/heure'})`,
           });
         }
 

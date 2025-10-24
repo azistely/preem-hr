@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/trpc/react';
 import { OnboardingQuestion } from '@/features/onboarding/components/onboarding-question';
-import { EmployeeFormV2 } from '@/features/onboarding/components/employee-form-v2';
+import { EmployeeWizard } from '@/features/onboarding/components/employee-wizard';
 import { PayslipPreviewCard } from '@/features/onboarding/components/payslip-preview-card';
 import { toast } from 'sonner';
 
@@ -40,6 +40,13 @@ export default function OnboardingQ2Page() {
     hireDate: Date;
     maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
     dependentChildren: number;
+    contractType: 'CDI' | 'CDD' | 'STAGE';
+    contractEndDate?: Date;
+    category: string; // Dynamic CGECI category code
+    departmentId?: string;
+    rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY';
+    dailyRate?: number;
+    hourlyRate?: number;
     components?: Array<{
       code: string;
       name: string;
@@ -61,6 +68,7 @@ export default function OnboardingQ2Page() {
       const result = await calculatePreviewMutation.mutateAsync({
         baseSalary: submitData.baseSalary,
         baseComponents: submitData.baseComponents,
+        rateType: submitData.rateType,
         hireDate: submitData.hireDate,
         maritalStatus: submitData.maritalStatus,
         dependentChildren: submitData.dependentChildren,
@@ -86,7 +94,7 @@ export default function OnboardingQ2Page() {
       await createEmployeeMutation.mutateAsync(formData);
 
       toast.success(`${formData.firstName} ${formData.lastName} créé avec succès! 🎉`);
-      router.push('/onboarding/q3');
+      router.push('/onboarding/success');
     } catch (error: any) {
       toast.error(error.message || 'Impossible de créer l\'employé');
     }
@@ -100,11 +108,12 @@ export default function OnboardingQ2Page() {
   return (
     <OnboardingQuestion
       title="Ajoutez votre premier employé"
-      subtitle="Pour générer votre première paie"
-      progress={{ current: 2, total: 3 }}
+      subtitle="Avec toutes les informations de contrat et de rémunération"
+      progress={{ current: 2, total: 2 }}
     >
       {!showSuccess ? (
-        <EmployeeFormV2
+        <EmployeeWizard
+          key={formData ? 'editing' : 'new'} // Force remount to apply saved values
           defaultValues={
             formData || {
               firstName: user?.firstName || '',
@@ -116,6 +125,7 @@ export default function OnboardingQ2Page() {
               dependentChildren: 0,
             }
           }
+          initialStep={formData ? 4 : 0} // When editing, start at last step (Rémunération)
           onSubmit={handleEmployeeSubmit}
           isSubmitting={calculatePreviewMutation.isPending}
         />

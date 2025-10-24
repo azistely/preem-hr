@@ -163,8 +163,10 @@ export function calculateGrossSalary(
     input.otherAllowances
   );
 
-  // ✅ CRITICAL FIX: Validate SMIG on GROSS salary (base + allowances)
-  validateSMIG(input.baseSalary, allowances);
+  // ✅ SMIG validation moved to API level (onboarding.ts, employees.ts) to support rate types
+  // For DAILY/HOURLY workers, the baseSalary here is already rate-adjusted (e.g., daily rate × days)
+  // So validating against monthly SMIG would be incorrect
+  // validateSMIG(input.baseSalary, allowances);
 
   // Calculate days worked and proration
   const { daysWorked, daysInPeriod, prorationFactor } = calculateDaysWorked(
