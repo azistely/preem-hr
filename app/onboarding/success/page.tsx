@@ -117,11 +117,11 @@ export default function OnboardingSuccessPage() {
             />
             <ChecklistItem
               icon="👤"
-              text="Premier employé créé avec calcul de paie complet"
+              text="Employé créé avec configuration complète (contrat, catégorie, rémunération)"
             />
             <ChecklistItem
-              icon="📅"
-              text="Fréquence de paie configurée"
+              icon="💰"
+              text="Calcul de paie configuré avec toutes les cotisations sociales"
             />
             <ChecklistItem
               icon="✅"
@@ -135,20 +135,20 @@ export default function OnboardingSuccessPage() {
           <Button
             size="lg"
             className="flex-1 min-h-[56px]"
-            onClick={() => router.push('/employees')}
+            onClick={() => router.push('/payroll/runs/new')}
           >
             <FileText className="w-5 h-5 mr-2" />
-            Voir mes employés
+            Lancer votre première paie
           </Button>
 
           <Button
             size="lg"
             variant="outline"
             className="flex-1 min-h-[56px]"
-            onClick={() => router.push(getDashboardPath())}
+            onClick={() => router.push('/employees')}
           >
             <LayoutDashboard className="w-5 h-5 mr-2" />
-            Aller au tableau de bord
+            Gérer mes employés
           </Button>
         </div>
 

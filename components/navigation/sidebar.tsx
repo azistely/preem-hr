@@ -3,11 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LucideIcon, ChevronLeft, Search, LogOut } from "lucide-react";
+import { LucideIcon, ChevronLeft, ChevronDown, Search, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 
@@ -21,6 +22,7 @@ export interface NavItem {
   label: string;
   href: string;
   badge?: string | number;
+  variant?: 'default' | 'warning' | 'destructive';
 }
 
 export interface SidebarProps {
@@ -173,26 +175,27 @@ export function Sidebar({
           {/* Advanced Features (Collapsible) */}
           {advancedSections.length > 0 && !isCollapsed && (
             <div className="space-y-2 border-t-2 border-border pt-4 mt-4">
-              <button
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors min-h-[44px]"
-              >
-                <ChevronLeft
-                  className={cn(
-                    "h-4 w-4 transition-transform",
-                    showAdvanced && "-rotate-90"
-                  )}
-                />
-                <span className="flex-1 text-left">Plus d'options</span>
-                {advancedSections.length > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    {advancedSections.reduce((acc, section) => acc + section.items.length, 0)}
-                  </span>
-                )}
-              </button>
+              <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors min-h-[44px]"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 transition-transform",
+                        showAdvanced && "rotate-180"
+                      )}
+                    />
+                    <span className="flex-1 text-left">Plus d'options</span>
+                    {advancedSections.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {advancedSections.reduce((acc, section) => acc + section.items.length, 0)}
+                      </span>
+                    )}
+                  </button>
+                </CollapsibleTrigger>
 
-              {showAdvanced && (
-                <div className="space-y-4">
+                <CollapsibleContent className="space-y-4 pt-2">
                   {advancedSections.map((section, index) => (
                     <div key={index} className="space-y-2">
                       {section.title && (
@@ -220,14 +223,26 @@ export function Sidebar({
                             >
                               <Icon className="h-4 w-4 shrink-0" />
                               <span className="flex-1">{item.label}</span>
+                              {item.badge && (
+                                <Badge
+                                  variant={
+                                    item.variant === 'warning'
+                                      ? "default"
+                                      : (item.variant === 'destructive' ? "destructive" : "default")
+                                  }
+                                  className="h-5 min-w-5 px-1.5"
+                                >
+                                  {item.badge}
+                                </Badge>
+                              )}
                             </Link>
                           );
                         })}
                       </nav>
                     </div>
                   ))}
-                </div>
-              )}
+                </CollapsibleContent>
+              </Collapsible>
             </div>
           )}
         </div>

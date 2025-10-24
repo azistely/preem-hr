@@ -21,6 +21,7 @@ import {
 } from '@/features/employees/services/employee.service';
 import { eventBus } from '@/lib/event-bus';
 import { TRPCError } from '@trpc/server';
+import { getMinimumWageHelper } from '@/lib/compliance/coefficient-validation.service';
 
 // Zod Schemas
 const genderEnum = z.enum(['male', 'female', 'other', 'prefer_not_to_say']);
@@ -73,6 +74,9 @@ const createEmployeeSchema = z.object({
   baseSalary: z.number().min(75000, 'Le salaire de base doit être >= 75000 FCFA (SMIG)'),
   components: z.array(componentSchema).default([]),
 
+  // GAP-JOUR-003: Rate type support
+  rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).default('MONTHLY'),
+
   // Custom fields
   customFields: z.record(z.any()).optional(),
 });
@@ -98,6 +102,7 @@ const updateEmployeeSchema = z.object({
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
   coefficient: z.number().int().min(90).max(1000).optional(),
+  rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
   customFields: z.record(z.any()).optional(),
 });
 
@@ -309,6 +314,27 @@ export const employeesRouter = createTRPCRouter({
           code: 'BAD_REQUEST',
           message: error.message || 'Erreur lors de la réactivation de l\'employé',
         });
+      }
+    }),
+
+  /**
+   * Get minimum wage helper text for coefficient (GAP-COEF-001)
+   * Returns friendly message showing minimum wage for a given coefficient
+   * Used in salary input fields to guide users
+   */
+  getMinimumWageHelper: publicProcedure
+    .input(
+      z.object({
+        coefficient: z.number().int().min(90).max(1000),
+        countryCode: z.string().length(2).default('CI'),
+      })
+    )
+    .query(async ({ input }) => {
+      try {
+        const helper = await getMinimumWageHelper(input.coefficient, input.countryCode);
+        return { helper };
+      } catch (error: any) {
+        return { helper: null };
       }
     }),
 

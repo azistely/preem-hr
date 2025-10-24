@@ -102,18 +102,20 @@ export default function TenantAdminDashboardPage() {
           <div className="space-y-3">
             <QuickActionCard
               icon={Users}
-              label="Utilisateurs"
+              title="Utilisateurs"
               description={`${users.total} utilisateurs`}
               onClick={() => {/* TODO */}}
             />
             <QuickActionCard
               icon={Shield}
-              label="Rôles & Permissions"
+              title="Rôles & Permissions"
+              description="Gérer les accès"
               onClick={() => {/* TODO */}}
             />
             <QuickActionCard
               icon={SettingsIcon}
-              label="Paramètres société"
+              title="Paramètres société"
+              description="Configuration générale"
               onClick={() => {/* TODO */}}
             />
           </div>
@@ -229,13 +231,13 @@ export default function TenantAdminDashboardPage() {
             <div className="space-y-3">
               <QuickActionCard
                 icon={Users}
-                label="Utilisateurs"
+                title="Utilisateurs"
                 description={`Gérer ${users.total} utilisateurs`}
                 onClick={() => {/* TODO */}}
               />
               <QuickActionCard
                 icon={Shield}
-                label="Sécurité"
+                title="Sécurité"
                 description="Paramètres de sécurité"
                 onClick={() => {/* TODO */}}
               />

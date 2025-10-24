@@ -46,11 +46,17 @@ export const employees = pgTable('employees', {
   // Coefficient (catégorie professionnelle)
   coefficient: integer('coefficient').notNull().default(100),
 
+  // Rate type (MONTHLY, DAILY, HOURLY)
+  rateType: text('rate_type').notNull().default('MONTHLY'),
+
   // Termination
   terminationId: uuid('termination_id'),
 
   // Reporting structure
   reportingManagerId: uuid('reporting_manager_id'),
+
+  // Primary work location (for transport allowance limit)
+  primaryLocationId: uuid('primary_location_id'), // References locations(id)
 
   // Family information (for family deductions)
   maritalStatus: varchar('marital_status'),
@@ -64,6 +70,15 @@ export const employees = pgTable('employees', {
   // Document expiry (for alerts)
   nationalIdExpiry: date('national_id_expiry'),
   workPermitExpiry: date('work_permit_expiry'),
+
+  // Convention Collective (GAP-CONV-BANK-001)
+  conventionCode: varchar('convention_code', { length: 50 }), // 'INTERPRO', 'BANKING', 'BTP'
+  professionalLevel: integer('professional_level'), // 1-9 for banking, varies by convention
+  sector: varchar('sector', { length: 50 }).default('services'), // 'services', 'industry', 'agriculture'
+
+  // CGECI Barème 2023 Support
+  categoryCode: varchar('category_code', { length: 10 }), // 'C', 'M1', '1A', '2B', etc.
+  sectorCodeCgeci: varchar('sector_code_cgeci', { length: 50 }), // 'BTP', 'BANQUES', 'COMMERCE', etc.
 
   // Lifecycle
   status: text('status').notNull().default('active'),

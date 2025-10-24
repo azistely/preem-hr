@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Plus, X, Edit2, CheckCircle } from 'lucide-react';
+import { RateTypeSelector, type RateType } from '@/components/employees/rate-type-selector';
+import { SalaryInput } from '@/components/employees/salary-input';
 
 // Base schema without country-specific validation
 // Country-specific SMIG validation will be added dynamically in the component
@@ -22,11 +24,20 @@ const employeeSchemaV2 = z.object({
   phone: z.string().min(1, 'Le téléphone est requis'),
   positionTitle: z.string().min(1, 'La fonction est requise'),
 
+  // NEW: Employment configuration
+  contractType: z.enum(['CDI', 'CDD', 'STAGE']),
+  contractEndDate: z.date().optional(),
+  category: z.string().min(1, 'La catégorie professionnelle est requise'), // Dynamic CGECI category
+  departmentId: z.string().optional(),
+
   // NEW: Base salary components (Code 11, Code 12 for CI)
   baseComponents: z.record(z.string(), z.number()).optional(),
 
   // DEPRECATED: Keep for backward compatibility
   baseSalary: z.number().optional(),
+
+  // GAP-JOUR-003: Rate type support
+  rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
 
   hireDate: z.date({ required_error: 'La date d\'embauche est requise', invalid_type_error: 'Date invalide' }),
 
@@ -41,6 +52,24 @@ const employeeSchemaV2 = z.object({
     amount: z.number(),
     sourceType: z.enum(['standard', 'template']),
   })),
+}).refine((data) => {
+  // If CDD selected, contractEndDate is required
+  if (data.contractType === 'CDD' && !data.contractEndDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'La date de fin de contrat est requise pour un CDD',
+  path: ['contractEndDate'],
+}).refine((data) => {
+  // Validate hire date is before contract end date for CDD
+  if (data.contractType === 'CDD' && data.contractEndDate && data.hireDate) {
+    return data.hireDate < data.contractEndDate;
+  }
+  return true;
+}, {
+  message: 'La date d\'embauche doit être avant la date de fin de contrat',
+  path: ['contractEndDate'],
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchemaV2>;
@@ -258,6 +287,20 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
   const minimumWage = minWageData?.minimumWage || 75000;
   const countryCode = minWageData?.countryCode || 'CI';
 
+  // Get tenant data to fetch CGECI sector
+  const { data: tenant } = trpc.tenant.getCurrent.useQuery();
+  const cgeciSectorCode = tenant?.cgeciSectorCode;
+
+  // Load CGECI categories for company's sector
+  const { data: cgeciCategories, isLoading: loadingCategories } =
+    trpc.cgeci.getCategoriesBySector.useQuery(
+      {
+        sectorCode: cgeciSectorCode || '',
+        countryCode,
+      },
+      { enabled: !!cgeciSectorCode }
+    );
+
   // Load base salary components for this country
   const { data: baseComponents, isLoading: loadingBaseComponents } =
     trpc.salaryComponents.getBaseSalaryComponents.useQuery(
@@ -267,24 +310,28 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
 
   // Create dynamic schema with country-specific minimum wage
   const employeeSchemaWithCountry = employeeSchemaV2.refine((data) => {
-    // SMIG validation: Check GROSS salary (base + all components) not just base
-    const componentsTotal = data.components.reduce((sum, c) => sum + c.amount, 0);
+      // SMIG validation: Check GROSS salary (base + all components) not just base
+      const componentsTotal = data.components.reduce((sum, c) => sum + c.amount, 0);
 
-    // Calculate base salary from baseComponents or fall back to baseSalary
-    let baseSalaryTotal = 0;
-    if (data.baseComponents) {
-      baseSalaryTotal = Object.values(data.baseComponents).reduce((sum, amt) => sum + amt, 0);
-    } else if (data.baseSalary) {
-      baseSalaryTotal = data.baseSalary;
-    }
+      // Calculate base salary from baseComponents or fall back to baseSalary
+      let baseSalaryTotal = 0;
+      if (data.baseComponents) {
+        baseSalaryTotal = Object.values(data.baseComponents).reduce((sum, amt) => sum + amt, 0);
+      } else if (data.baseSalary) {
+        baseSalaryTotal = data.baseSalary;
+      }
 
-    const grossSalary = baseSalaryTotal + componentsTotal;
+      const grossSalary = baseSalaryTotal + componentsTotal;
 
-    return grossSalary >= minimumWage;
+      return grossSalary >= minimumWage;
   }, {
     message: `Le salaire brut total (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${minWageData?.countryName || 'votre pays'} (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
     path: ['baseComponents'],
   });
+
+  // Fetch departments for selector (skip for now - will be implemented separately)
+  // TODO: Add departments list endpoint
+  const departments: Array<{ id: string; name: string }> = [];
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<EmployeeFormData>({
     resolver: zodResolver(employeeSchemaWithCountry),
@@ -293,6 +340,9 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
       dependentChildren: 0,
       components: [],
       baseComponents: {},
+      rateType: 'MONTHLY',
+      contractType: 'CDI',
+      category: '', // Will be selected from dynamic CGECI categories
       ...defaultValues,
     },
   });
@@ -301,6 +351,9 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
   const dependentChildren = watch('dependentChildren') || 0;
   const components = watch('components') || [];
   const baseComponentsData = watch('baseComponents') || {};
+  const rateType = (watch('rateType') || 'MONTHLY') as RateType;
+  const contractType = watch('contractType');
+  const category = watch('category');
   const fiscalParts = calculateFiscalParts(maritalStatus, dependentChildren);
 
   // Calculate total base salary from base components
@@ -386,6 +439,24 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           placeholder="Ex: Gérant, Vendeur, Caissier"
           required
         />
+      </div>
+
+      {/* NEW: Employment Configuration */}
+      <div className="space-y-4 p-4 border rounded-lg bg-slate-50">
+        <h3 className="text-lg font-semibold">Détails du contrat</h3>
+
+        <FormField
+          label="Type de contrat"
+          type="select"
+          {...register('contractType')}
+          error={errors.contractType?.message}
+          required
+          helperText="CDI = permanent, CDD = contrat à durée déterminée"
+        >
+          <option value="CDI">CDI (Contrat à Durée Indéterminée)</option>
+          <option value="CDD">CDD (Contrat à Durée Déterminée)</option>
+          <option value="STAGE">Stage / Apprentissage</option>
+        </FormField>
 
         <FormField
           label="Date d'embauche"
@@ -401,6 +472,73 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           error={errors.hireDate?.message}
           required
         />
+
+        {contractType === 'CDD' && (
+          <FormField
+            label="Date de fin de contrat"
+            type="date"
+            {...register('contractEndDate', {
+              setValueAs: (value) => {
+                if (!value || value === '') return undefined;
+                const date = new Date(value);
+                return isNaN(date.getTime()) ? undefined : date;
+              },
+            })}
+            error={errors.contractEndDate?.message}
+            required
+            helperText="Dernière date de travail prévue"
+          />
+        )}
+
+        <FormField
+          label="Catégorie professionnelle"
+          type="select"
+          {...register('category')}
+          error={errors.category?.message}
+          required
+          helperText="Détermine le salaire minimum légal selon votre secteur d'activité"
+        >
+          <option value="">-- Sélectionnez une catégorie --</option>
+          {loadingCategories ? (
+            <option disabled>Chargement des catégories...</option>
+          ) : cgeciCategories && cgeciCategories.length > 0 ? (
+            cgeciCategories.map((cat) => (
+              <option key={cat.category} value={cat.category}>
+                {cat.labelFr} (Coef. {cat.minCoefficient}
+                {cat.maxCoefficient && cat.maxCoefficient !== cat.minCoefficient
+                  ? `-${cat.maxCoefficient}`
+                  : ''}
+                {cat.actualMinimumWage
+                  ? ` - ${Number(cat.actualMinimumWage).toLocaleString('fr-FR')} FCFA min.`
+                  : ''})
+              </option>
+            ))
+          ) : (
+            <option disabled>
+              {cgeciSectorCode
+                ? 'Aucune catégorie disponible pour ce secteur'
+                : 'Veuillez d\'abord configurer le secteur de votre entreprise'}
+            </option>
+          )}
+        </FormField>
+
+        {/* Department selector - only show if departments exist */}
+        {departments && departments.length > 0 && (
+          <FormField
+            label="Département (optionnel)"
+            type="select"
+            {...register('departmentId')}
+            error={errors.departmentId?.message}
+            helperText="Vous pourrez l'ajouter plus tard"
+          >
+            <option value="">-- Aucun département --</option>
+            {departments.map((dept: { id: string; name: string }) => (
+              <option key={dept.id} value={dept.id}>
+                {dept.name}
+              </option>
+            ))}
+          </FormField>
+        )}
       </div>
 
       {/* CRITICAL: Family Status (for tax calculation) */}
@@ -458,13 +596,24 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Rémunération</h3>
 
+        {/* GAP-JOUR-003: Rate Type Selector */}
+        <input type="hidden" {...register('rateType')} value={rateType} />
+        <RateTypeSelector
+          value={rateType}
+          onChange={(newRateType) => setValue('rateType', newRateType as any, { shouldValidate: true })}
+        />
+
         {/* Base Salary Components (Dynamic based on country) */}
         {loadingBaseComponents ? (
           <div className="text-sm text-muted-foreground">Chargement des composantes salariales...</div>
         ) : baseComponents && baseComponents.length > 0 ? (
           <div className="space-y-3 p-4 border rounded-lg bg-blue-50">
             <div>
-              <p className="font-medium">Salaire de base</p>
+              <p className="font-medium">
+                {rateType === 'MONTHLY' && 'Salaire de base mensuel'}
+                {rateType === 'DAILY' && 'Tarif journalier de base'}
+                {rateType === 'HOURLY' && 'Tarif horaire de base'}
+              </p>
               <p className="text-xs text-muted-foreground">
                 Composé de {baseComponents.length} élément{baseComponents.length > 1 ? 's' : ''}
               </p>
@@ -479,7 +628,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
                   setValueAs: (value) => value ? parseFloat(value) : (component.defaultValue || 0),
                 })}
                 error={errors.baseComponents?.[component.code]?.message}
-                suffix="FCFA"
+                suffix={rateType === 'MONTHLY' ? 'FCFA/mois' : rateType === 'DAILY' ? 'FCFA/jour' : 'FCFA/heure'}
                 required={!component.isOptional}
                 helperText={component.description.fr}
               />
@@ -489,9 +638,9 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
             {baseSalaryTotal > 0 && (
               <div className="p-3 bg-white rounded border">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Total salaire de base</span>
+                  <span className="text-sm font-medium">Total tarif de base</span>
                   <span className="font-bold text-lg">
-                    {baseSalaryTotal.toLocaleString('fr-FR')} FCFA
+                    {baseSalaryTotal.toLocaleString('fr-FR')} {rateType === 'MONTHLY' ? 'FCFA/mois' : rateType === 'DAILY' ? 'FCFA/jour' : 'FCFA/heure'}
                   </span>
                 </div>
               </div>
@@ -499,16 +648,12 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           </div>
         ) : (
           // Fallback to single baseSalary field if no base components configured
-          <FormField
-            label="Salaire de base mensuel"
-            type="number"
-            {...register('baseSalary', {
-              setValueAs: (value) => value ? parseFloat(value) : undefined,
-            })}
+          <SalaryInput
+            rateType={rateType}
+            value={watch('baseSalary')}
+            onChange={(val) => setValue('baseSalary', val, { shouldValidate: true })}
             error={errors.baseSalary?.message}
-            suffix="FCFA"
-            required
-            helperText={`Le salaire brut total (base + indemnités) doit atteindre ${minimumWage.toLocaleString('fr-FR')} FCFA minimum`}
+            minimumWage={minimumWage}
           />
         )}
 

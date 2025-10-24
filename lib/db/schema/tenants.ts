@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, varchar } from 'drizzle-orm/pg-core';
 import { countries } from './countries';
 
 export const tenants = pgTable('tenants', {
@@ -15,6 +15,12 @@ export const tenants = pgTable('tenants', {
   industry: text('industry'),
   email: text('email'),
   hrEmail: text('hr_email'),
+
+  // CGECI Sector (company-level, determines employee categories and minimum wages)
+  cgeciSectorCode: varchar('cgeci_sector_code', { length: 50 }), // 'BANQUES', 'BTP', 'COMMERCE', etc.
+
+  // Generic sector (auto-derived from CGECI sector, used for work accident rates)
+  genericSectorCode: varchar('generic_sector_code', { length: 50 }), // 'SERVICES', 'CONSTRUCTION', 'INDUSTRY', etc.
 
   // Subscription & features
   plan: text('plan').notNull().default('trial'),

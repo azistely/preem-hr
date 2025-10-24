@@ -9,10 +9,11 @@
  */
 
 import { db } from '@/db';
-import { timeEntries, employees } from '@/drizzle/schema';
+import { timeEntries, employees, tenants } from '@/drizzle/schema';
 import { and, eq, isNull, desc, sql } from 'drizzle-orm';
 import { validateGeofence, type GeoLocation } from './geofence.service';
 import { classifyOvertimeHours } from './overtime.service';
+import { validateShiftLength } from '@/lib/compliance/shift-validation.service';
 
 export interface ClockInInput {
   employeeId: string;
@@ -142,19 +143,41 @@ export async function clockOut(input: ClockOutInput) {
   const clockInTime = new Date(openEntry.clockIn);
   const totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
-  // Get employee to determine country
+  // Get employee and tenant to determine country and sector
   const employee = await db.query.employees.findFirst({
     where: eq(employees.id, employeeId),
-    with: {
-      tenant: true,
-    },
   });
 
   if (!employee) {
     throw new TimeEntryError('Employé non trouvé', 'EMPLOYEE_NOT_FOUND', { employeeId });
   }
 
-  const countryCode = employee.tenant?.countryCode || 'CI';
+  const [tenant] = await db
+    .select({
+      countryCode: tenants.countryCode,
+      sectorCode: tenants.sectorCode,
+    })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+
+  const countryCode = tenant?.countryCode || 'CI';
+  const sectorCode = tenant?.sectorCode || 'SERVICES';
+
+  // Validate shift length for restricted sectors (GAP-SEC-003)
+  const shiftValidation = validateShiftLength(clockInTime, clockOutTime, sectorCode);
+
+  if (!shiftValidation.isValid) {
+    throw new TimeEntryError(
+      shiftValidation.errorMessage || 'Durée de quart invalide',
+      'SHIFT_LENGTH_VIOLATION',
+      {
+        shiftLength: shiftValidation.shiftLength,
+        maxAllowed: shiftValidation.maxAllowed,
+        sectorCode: shiftValidation.sectorCode,
+      }
+    );
+  }
 
   // Classify overtime
   const overtimeBreakdown = await classifyOvertimeHours(

@@ -40,6 +40,8 @@ export const tenantRouter = createTRPCRouter({
         countryCode: tenant.countryCode,
         currency: tenant.currency,
         timezone: tenant.timezone,
+        cgeciSectorCode: tenant.cgeciSectorCode,
+        genericSectorCode: tenant.genericSectorCode,
       };
     }),
 });

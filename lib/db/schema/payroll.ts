@@ -76,6 +76,7 @@ export const payrollLineItems = pgTable('payroll_line_items', {
   // Time tracking
   daysWorked: numeric('days_worked', { precision: 5, scale: 2 }).notNull(),
   daysAbsent: numeric('days_absent', { precision: 5, scale: 2 }).notNull().default('0'),
+  hoursWorked: numeric('hours_worked', { precision: 6, scale: 2 }).default('0'),
   overtimeHours: jsonb('overtime_hours').notNull().default({}),
 
   // Earnings

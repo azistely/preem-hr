@@ -61,12 +61,12 @@ export interface SocialSecurityScheme {
 
 export interface ContributionType {
   id: string;
-  schemeId: string;
+  schemeId: string | null; // null for V2 which uses country_code directly
   code: string; // 'pension', 'family_benefits', 'work_accident', 'cmu'
   name: Record<string, string>;
   employeeRate: number | null; // null if not applicable
   employerRate: number | null; // null if variable by sector
-  calculationBase: 'gross_salary' | 'brut_imposable' | 'capped_gross';
+  calculationBase: 'gross_salary' | 'brut_imposable' | 'capped_gross' | 'salaire_categoriel' | 'fixed';
   ceilingAmount: number | null;
   ceilingPeriod: 'monthly' | 'annual' | null;
   fixedAmount: number | null; // For fixed contributions like CMU

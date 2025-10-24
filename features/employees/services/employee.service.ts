@@ -20,6 +20,7 @@ import { getMinimumWage, getTenantCountryCode } from './salary.service';
 import { autoInjectCalculatedComponents } from '@/lib/salary-components/component-calculator';
 import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
 import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
+import { validateCoefficientBasedSalary } from '@/lib/compliance/coefficient-validation.service';
 
 export interface CreateEmployeeInput {
   tenantId: string;
@@ -122,14 +123,24 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
   // Get tenant's country code
   const countryCode = await getTenantCountryCode(input.tenantId);
 
-  // Get country-specific minimum wage
-  const minimumWage = await getMinimumWage(countryCode);
+  // Validate coefficient-based minimum wage (GAP-COEF-001)
+  const coefficient = input.coefficient || 100;
+  const validationResult = await validateCoefficientBasedSalary(
+    input.baseSalary,
+    coefficient,
+    countryCode
+  );
 
-  // Validate base salary >= country SMIG
-  if (input.baseSalary < minimumWage) {
+  if (!validationResult.isValid) {
     throw new ValidationError(
-      `Le salaire doit être supérieur ou égal au SMIG (${minimumWage.toLocaleString('fr-FR')} FCFA)`,
-      { baseSalary: input.baseSalary, minimumWage, countryCode }
+      validationResult.errorMessage || 'Salaire invalide',
+      {
+        baseSalary: input.baseSalary,
+        coefficient,
+        minimumWage: validationResult.minimumWage,
+        category: validationResult.category,
+        countryCode,
+      }
     );
   }
 

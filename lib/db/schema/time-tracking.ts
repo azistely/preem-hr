@@ -17,6 +17,9 @@ export const timeEntries = pgTable('time_entries', {
   clockOut: timestamp('clock_out'),
   totalHours: numeric('total_hours', { precision: 5, scale: 2 }),
 
+  // Location tracking (for multi-site support)
+  locationId: uuid('location_id'), // References locations(id) - added for GAP-LOC-001
+
   // Geofencing
   clockInLocation: text('clock_in_location'), // GEOGRAPHY(POINT) stored as text
   clockOutLocation: text('clock_out_location'), // GEOGRAPHY(POINT) stored as text

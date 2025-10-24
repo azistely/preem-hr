@@ -15,6 +15,7 @@ import * as geofenceService from '@/features/time-tracking/services/geofence.ser
 import * as overtimeService from '@/features/time-tracking/services/overtime.service';
 import { TRPCError } from '@trpc/server';
 import type { TimeEntryWithEmployee } from '@/lib/types/extended-models';
+import { getShiftLengthHelper } from '@/lib/compliance/shift-validation.service';
 
 const geoLocationSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -202,6 +203,22 @@ export const timeTrackingRouter = createTRPCRouter({
       // Get country from tenant if not provided
       const countryCode = input.countryCode || 'CI'; // Default to Côte d'Ivoire
       return await overtimeService.getOvertimeRules(countryCode);
+    }),
+
+  /**
+   * Get shift length helper text for sector (GAP-SEC-003)
+   * Returns warning message if sector has shift length restrictions
+   * Used in time tracking UI to guide users
+   */
+  getShiftLengthHelper: publicProcedure
+    .input(
+      z.object({
+        sectorCode: z.string().min(1),
+      })
+    )
+    .query(async ({ input }) => {
+      const helper = getShiftLengthHelper(input.sectorCode);
+      return { helper };
     }),
 
   /**

@@ -52,6 +52,8 @@ export const tenants = pgTable("tenants", {
 	taxId: text("tax_id"),
 	businessRegistration: text("business_registration"),
 	industry: text(),
+	cgeciSectorCode: varchar("cgeci_sector_code", { length: 50 }),
+	genericSectorCode: varchar("generic_sector_code", { length: 50 }),
 	plan: text().default('trial').notNull(),
 	features: jsonb().default([]).notNull(),
 	settings: jsonb().default({}).notNull(),
@@ -619,6 +621,28 @@ export const contributionTypes = pgTable("contribution_types", {
 			name: "contribution_types_scheme_id_fkey"
 		}).onDelete("cascade"),
 	unique("contribution_types_scheme_id_code_key").on(table.schemeId, table.code),
+]);
+
+export const contributionTypesV2 = pgTable("contribution_types_v2", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	code: varchar({ length: 50 }).notNull(),
+	name: jsonb().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	employeeRate: numeric("employee_rate", { precision: 6, scale:  4 }),
+	employerRate: numeric("employer_rate", { precision: 6, scale:  4 }),
+	calculationBase: text("calculation_base").notNull(),
+	ceilingAmount: numeric("ceiling_amount", { precision: 15, scale:  2 }),
+	ceilingPeriod: text("ceiling_period"),
+	fixedAmount: numeric("fixed_amount", { precision: 15, scale:  2 }),
+	isVariableBySector: boolean("is_variable_by_sector").default(false).notNull(),
+	displayOrder: integer("display_order").default(0).notNull(),
+	effectiveFrom: timestamp("effective_from", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	effectiveTo: timestamp("effective_to", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_contribution_types_v2_country").using("btree", table.countryCode.asc().nullsLast()),
+	unique("contribution_types_v2_country_code_key").on(table.countryCode, table.code),
 ]);
 
 export const employeeSalaries = pgTable("employee_salaries", {
@@ -1744,6 +1768,231 @@ export const geofenceConfigurationsRelations = relations(geofenceConfigurations,
 		references: [tenants.id],
 	}),
 	employeeAssignments: many(geofenceEmployeeAssignments),
+}));
+
+// ============================================================================
+// CDD Compliance Tracking Schema
+// ============================================================================
+
+export const employmentContracts = pgTable("employment_contracts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+
+	// Contract basics
+	contractType: varchar("contract_type", { length: 50 }).notNull(),
+	contractNumber: varchar("contract_number", { length: 50 }),
+	startDate: date("start_date").notNull(),
+	endDate: date("end_date"),
+
+	// Renewal tracking
+	renewalCount: integer("renewal_count").default(0).notNull(),
+	isActive: boolean("is_active").default(true).notNull(),
+	terminationDate: date("termination_date"),
+	terminationReason: varchar("termination_reason", { length: 255 }),
+
+	// Contract lineage
+	originalContractId: uuid("original_contract_id"),
+	replacesContractId: uuid("replaces_contract_id"),
+
+	// CDD specific
+	cddReason: varchar("cdd_reason", { length: 255 }),
+	cddTotalDurationMonths: integer("cdd_total_duration_months"),
+
+	// Document management
+	signedDate: date("signed_date"),
+	contractFileUrl: text("contract_file_url"),
+	notes: text(),
+
+	// Audit
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+}, (table) => [
+	index("idx_contracts_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops"), table.isActive.asc().nullsLast().op("bool_ops")),
+	index("idx_contracts_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_contracts_end_date").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.endDate.asc().nullsLast().op("date_ops")).where(sql`contract_type = 'CDD' AND is_active = true`),
+	index("idx_contracts_original").using("btree", table.originalContractId.asc().nullsLast().op("uuid_ops")).where(sql`original_contract_id IS NOT NULL`),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "employment_contracts_tenant_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.employeeId],
+		foreignColumns: [employees.id],
+		name: "employment_contracts_employee_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.originalContractId],
+		foreignColumns: [table.id],
+		name: "employment_contracts_original_contract_id_fkey"
+	}),
+	foreignKey({
+		columns: [table.replacesContractId],
+		foreignColumns: [table.id],
+		name: "employment_contracts_replaces_contract_id_fkey"
+	}),
+	foreignKey({
+		columns: [table.createdBy],
+		foreignColumns: [users.id],
+		name: "employment_contracts_created_by_fkey"
+	}),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
+	check("valid_contract_type", sql`contract_type IN ('CDI', 'CDD', 'INTERIM', 'STAGE')`),
+	check("valid_cdd_end_date", sql`(contract_type = 'CDI' AND end_date IS NULL) OR (contract_type IN ('CDD', 'INTERIM', 'STAGE') AND end_date IS NOT NULL)`),
+	check("valid_dates", sql`end_date IS NULL OR end_date > start_date`),
+	check("valid_renewal_count", sql`renewal_count >= 0 AND renewal_count <= 2`),
+]);
+
+export const contractComplianceAlerts = pgTable("contract_compliance_alerts", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	contractId: uuid("contract_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+
+	// Alert details
+	alertType: varchar("alert_type", { length: 50 }).notNull(),
+	alertSeverity: varchar("alert_severity", { length: 20 }).default('warning').notNull(),
+	alertDate: date("alert_date").notNull(),
+	alertMessage: text("alert_message").notNull(),
+
+	// Alert lifecycle
+	isDismissed: boolean("is_dismissed").default(false).notNull(),
+	dismissedAt: timestamp("dismissed_at", { withTimezone: true, mode: 'string' }),
+	dismissedBy: uuid("dismissed_by"),
+	actionTaken: varchar("action_taken", { length: 50 }),
+
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_alerts_active").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.alertDate.asc().nullsLast().op("date_ops"), table.isDismissed.asc().nullsLast().op("bool_ops")).where(sql`is_dismissed = false`),
+	index("idx_alerts_contract").using("btree", table.contractId.asc().nullsLast().op("uuid_ops")),
+	index("idx_alerts_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "contract_compliance_alerts_tenant_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.contractId],
+		foreignColumns: [employmentContracts.id],
+		name: "contract_compliance_alerts_contract_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.employeeId],
+		foreignColumns: [employees.id],
+		name: "contract_compliance_alerts_employee_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.dismissedBy],
+		foreignColumns: [users.id],
+		name: "contract_compliance_alerts_dismissed_by_fkey"
+	}),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
+	check("valid_alert_type", sql`alert_type IN ('90_day_warning', '60_day_warning', '30_day_warning', '2_year_limit', '2_renewal_limit', 'renewal_warning')`),
+	check("valid_alert_severity", sql`alert_severity IN ('info', 'warning', 'critical')`),
+	check("valid_action_taken", sql`action_taken IS NULL OR action_taken IN ('converted_to_cdi', 'renewed', 'terminated', 'ignored')`),
+]);
+
+export const contractRenewalHistory = pgTable("contract_renewal_history", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	originalContractId: uuid("original_contract_id").notNull(),
+	renewalNumber: integer("renewal_number").notNull(),
+	renewalContractId: uuid("renewal_contract_id"),
+
+	// Renewal details
+	previousEndDate: date("previous_end_date").notNull(),
+	newEndDate: date("new_end_date").notNull(),
+	renewalDurationMonths: integer("renewal_duration_months").notNull(),
+	cumulativeDurationMonths: integer("cumulative_duration_months").notNull(),
+	renewalReason: text("renewal_reason"),
+
+	// Audit
+	renewedBy: uuid("renewed_by"),
+	renewedAt: timestamp("renewed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_renewal_history_original").using("btree", table.originalContractId.asc().nullsLast().op("uuid_ops"), table.renewalNumber.asc().nullsLast().op("int4_ops")),
+	foreignKey({
+		columns: [table.originalContractId],
+		foreignColumns: [employmentContracts.id],
+		name: "contract_renewal_history_original_contract_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.renewalContractId],
+		foreignColumns: [employmentContracts.id],
+		name: "contract_renewal_history_renewal_contract_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.renewedBy],
+		foreignColumns: [users.id],
+		name: "contract_renewal_history_renewed_by_fkey"
+	}),
+	check("valid_renewal_dates", sql`new_end_date > previous_end_date`),
+	check("valid_renewal_number", sql`renewal_number > 0`),
+	check("valid_duration", sql`renewal_duration_months > 0 AND cumulative_duration_months > 0`),
+]);
+
+export const employmentContractsRelations = relations(employmentContracts, ({ one, many }) => ({
+	tenant: one(tenants, {
+		fields: [employmentContracts.tenantId],
+		references: [tenants.id],
+	}),
+	employee: one(employees, {
+		fields: [employmentContracts.employeeId],
+		references: [employees.id],
+	}),
+	originalContract: one(employmentContracts, {
+		fields: [employmentContracts.originalContractId],
+		references: [employmentContracts.id],
+		relationName: "contractRenewals",
+	}),
+	replacesContract: one(employmentContracts, {
+		fields: [employmentContracts.replacesContractId],
+		references: [employmentContracts.id],
+	}),
+	renewals: many(employmentContracts, {
+		relationName: "contractRenewals",
+	}),
+	alerts: many(contractComplianceAlerts),
+	renewalHistory: many(contractRenewalHistory),
+	createdByUser: one(users, {
+		fields: [employmentContracts.createdBy],
+		references: [users.id],
+	}),
+}));
+
+export const contractComplianceAlertsRelations = relations(contractComplianceAlerts, ({ one }) => ({
+	tenant: one(tenants, {
+		fields: [contractComplianceAlerts.tenantId],
+		references: [tenants.id],
+	}),
+	contract: one(employmentContracts, {
+		fields: [contractComplianceAlerts.contractId],
+		references: [employmentContracts.id],
+	}),
+	employee: one(employees, {
+		fields: [contractComplianceAlerts.employeeId],
+		references: [employees.id],
+	}),
+	dismissedByUser: one(users, {
+		fields: [contractComplianceAlerts.dismissedBy],
+		references: [users.id],
+	}),
+}));
+
+export const contractRenewalHistoryRelations = relations(contractRenewalHistory, ({ one }) => ({
+	originalContract: one(employmentContracts, {
+		fields: [contractRenewalHistory.originalContractId],
+		references: [employmentContracts.id],
+	}),
+	renewalContract: one(employmentContracts, {
+		fields: [contractRenewalHistory.renewalContractId],
+		references: [employmentContracts.id],
+	}),
+	renewedByUser: one(users, {
+		fields: [contractRenewalHistory.renewedBy],
+		references: [users.id],
+	}),
 }));
 
 // ============================================================================

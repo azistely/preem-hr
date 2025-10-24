@@ -509,7 +509,10 @@ export const onboardingRouter = createTRPCRouter({
       email: z.union([z.string().email(), z.literal('')]).optional(),
       phone: z.string().min(1, 'Le numéro de téléphone est requis'),
       positionTitle: z.string().min(1, 'Le poste est requis'),
-      baseSalary: z.number().min(1, 'Le salaire de base est requis'),
+      // Base salary components (NEW - replaces baseSalary)
+      baseComponents: z.record(z.string(), z.number()).optional(),
+      // DEPRECATED: baseSalary - kept for backward compatibility
+      baseSalary: z.number().min(1, 'Le salaire de base est requis').optional(),
       hireDate: z.date({ required_error: 'La date d\'embauche est requise' }),
       // CRITICAL: Family status
       maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']),
@@ -517,8 +520,10 @@ export const onboardingRouter = createTRPCRouter({
       // NEW: Employment configuration
       contractType: z.enum(['CDI', 'CDD', 'STAGE']),
       contractEndDate: z.date().optional(),
-      category: z.enum(['A1', 'A2', 'B1', 'B2', 'C', 'D', 'E', 'F']),
+      // Dynamic category (CGECI: "1B", "2B", etc. or Banking: "A1", "A2", etc.)
+      category: z.string().min(1, 'La catégorie professionnelle est requise'),
       departmentId: z.string().optional(),
+      primaryLocationId: z.string().optional(),
       rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
       dailyRate: z.number().optional(),
       hourlyRate: z.number().optional(),

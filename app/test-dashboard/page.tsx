@@ -69,16 +69,15 @@ export default function TestDashboardPage() {
           <div className="grid grid-cols-2 gap-3">
             <QuickActionCard
               icon={FileText}
-              label="Bulletins"
+              title="Bulletins"
               description="Voir mes fiches"
               onClick={() => console.log("View payslips")}
             />
             <QuickActionCard
               icon={Calendar}
-              label="Congés"
-              description="Faire une demande"
+              title="Congés"
+              description={`Faire une demande • ${mockEmployeeData.leaveBalance.remaining}j disponibles`}
               onClick={() => console.log("Request leave")}
-              badge={`${mockEmployeeData.leaveBalance.remaining}j`}
             />
           </div>
 
@@ -188,13 +187,13 @@ export default function TestDashboardPage() {
               />
               <QuickActionCard
                 icon={FileText}
-                label="Bulletins de Paie"
+                title="Bulletins de Paie"
                 description="Consulter l'historique"
                 onClick={() => console.log("View payslips")}
               />
               <QuickActionCard
                 icon={Calendar}
-                label="Demande de Congés"
+                title="Demande de Congés"
                 description={`${mockEmployeeData.leaveBalance.remaining} jours disponibles`}
                 onClick={() => console.log("Request leave")}
               />

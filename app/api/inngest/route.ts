@@ -29,6 +29,10 @@ import { employeeStatusChangedFunction } from '@/lib/inngest/functions/employee-
 import { leaveStatusChangedFunction } from '@/lib/inngest/functions/leave-status-changed';
 import { payrollRunCompletedFunction } from '@/lib/inngest/functions/payroll-run-completed';
 
+// Week 16: Digital Registre du Personnel
+import { registreEmployeeHiredFunction } from '@/lib/inngest/functions/registre-employee-hired';
+import { registreEmployeeTerminatedFunction } from '@/lib/inngest/functions/registre-employee-terminated';
+
 /**
  * Register all Inngest functions with the API route
  * The serve() function automatically handles:
@@ -56,6 +60,10 @@ const handler = serve({
     employeeStatusChangedFunction,
     leaveStatusChangedFunction,
     payrollRunCompletedFunction,
+
+    // Week 16: Digital Registre du Personnel
+    registreEmployeeHiredFunction,
+    registreEmployeeTerminatedFunction,
 
     // Event-driven functions (system)
     alertEscalationFunction,

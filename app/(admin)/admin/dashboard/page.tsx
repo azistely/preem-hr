@@ -1,15 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { UserPlus, Play, FileText } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { UserPlus, Play, FileText, CheckCircle, BookOpen } from "lucide-react";
 import { api } from "@/server/api/client";
-import { QuickActionCard } from "@/components/dashboard/quick-action-card";
+import { QuickActionCard, QuickActionsGrid } from "@/components/dashboard/quick-action-card";
 import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { CriticalActions } from "@/components/dashboard/hr/critical-actions";
 import { KeyMetrics } from "@/components/dashboard/hr/key-metrics";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function HRDashboardPage() {
+  const router = useRouter();
   const { data: dashboardData, isLoading } = api.dashboard.getHRDashboard.useQuery();
 
   if (isLoading) {
@@ -65,24 +67,43 @@ export default function HRDashboardPage() {
         </CollapsibleSection>
 
         {/* Quick Actions */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           <h2 className="text-lg font-semibold">Actions Rapides</h2>
-          <QuickActionCard
-            icon={UserPlus}
-            label="Nouvel employé"
-            onClick={() => {/* TODO: Navigate */}}
-          />
-          <QuickActionCard
-            icon={Play}
-            label="Lancer la paie"
-            badge={criticalActions.payrollDue ? "Urgent" : undefined}
-            onClick={() => {/* TODO: Navigate */}}
-          />
-          <QuickActionCard
-            icon={FileText}
-            label="Rapports"
-            onClick={() => {/* TODO: Navigate */}}
-          />
+          <QuickActionsGrid columns={2}>
+            <QuickActionCard
+              icon={Play}
+              title="Lancer la Paie"
+              description="Octobre 2025"
+              href="/payroll/runs/new"
+              action="Démarrer"
+              variant={criticalActions.payrollDue ? "warning" : "primary"}
+              badge={criticalActions.payrollDue ? 1 : undefined}
+              size="large"
+            />
+            <QuickActionCard
+              icon={CheckCircle}
+              title="Validations"
+              description={`${criticalActions.pendingLeave || 0} en attente`}
+              href="/admin/time-off"
+              action="Voir tout"
+              variant={criticalActions.pendingLeave > 0 ? "warning" : "default"}
+              badge={criticalActions.pendingLeave}
+            />
+            <QuickActionCard
+              icon={UserPlus}
+              title="Ajouter Employé"
+              description="Nouveau recrutement"
+              href="/employees/new"
+              action="Commencer"
+            />
+            <QuickActionCard
+              icon={BookOpen}
+              title="Registre du Personnel"
+              description="Conformité légale"
+              href="/compliance/registre"
+              action="Ouvrir"
+            />
+          </QuickActionsGrid>
         </div>
       </div>
 
@@ -112,18 +133,21 @@ export default function HRDashboardPage() {
               <div className="grid grid-cols-2 gap-3">
                 <QuickActionCard
                   icon={UserPlus}
-                  label="Nouvel employé"
-                  onClick={() => {/* TODO */}}
+                  title="Nouvel employé"
+                  description="Ajouter"
+                  href="/employees/new"
                 />
                 <QuickActionCard
                   icon={Play}
-                  label="Lancer paie"
-                  onClick={() => {/* TODO */}}
+                  title="Lancer paie"
+                  description="Octobre 2025"
+                  href="/payroll/runs/new"
                 />
                 <QuickActionCard
                   icon={FileText}
-                  label="Rapports"
-                  onClick={() => {/* TODO */}}
+                  title="Rapports"
+                  description="Analytics"
+                  href="/reports"
                 />
               </div>
             </div>
@@ -156,22 +180,22 @@ export default function HRDashboardPage() {
               <div className="space-y-3">
                 <QuickActionCard
                   icon={UserPlus}
-                  label="Nouvel employé"
+                  title="Nouvel employé"
                   description="Ajouter un membre"
-                  onClick={() => {/* TODO */}}
+                  href="/employees/new"
                 />
                 <QuickActionCard
                   icon={Play}
-                  label="Lancer la paie"
+                  title="Lancer la paie"
                   description="Paie du mois"
-                  badge={criticalActions.payrollDue ? "!" : undefined}
-                  onClick={() => {/* TODO */}}
+                  badge={criticalActions.payrollDue ? 1 : undefined}
+                  href="/payroll/runs/new"
                 />
                 <QuickActionCard
                   icon={FileText}
-                  label="Rapports"
+                  title="Rapports"
                   description="Analytics RH"
-                  onClick={() => {/* TODO */}}
+                  href="/reports"
                 />
               </div>
             </div>

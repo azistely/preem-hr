@@ -65,13 +65,13 @@ export default function EmployeeDashboardPage() {
           <h2 className="text-lg font-semibold">Actions Rapides</h2>
           <QuickActionCard
             icon={Clock}
-            label="Pointer"
+            title="Pointer"
             description="Entrée 08:15"
             onClick={() => {/* TODO: Navigate to time tracking */}}
           />
           <QuickActionCard
             icon={Calendar}
-            label="Demander Congé"
+            title="Demander Congé"
             description={`Solde: ${leaveBalance.remaining} jours`}
             onClick={() => {/* TODO: Navigate to leave request */}}
           />
@@ -122,13 +122,13 @@ export default function EmployeeDashboardPage() {
           <div className="grid grid-cols-2 gap-4">
             <QuickActionCard
               icon={Clock}
-              label="Pointer"
+              title="Pointer"
               description="Enregistrer votre présence"
               onClick={() => {/* TODO: Navigate to time tracking */}}
             />
             <QuickActionCard
               icon={Calendar}
-              label="Demander Congé"
+              title="Demander Congé"
               description={`${leaveBalance.remaining} jours disponibles`}
               onClick={() => {/* TODO: Navigate to leave request */}}
             />

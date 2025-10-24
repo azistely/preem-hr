@@ -167,3 +167,61 @@ export const salaryComponentDefinitions = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   }
 );
+
+// ========================================
+// Employee Categories & Coefficients
+// ========================================
+
+export const employeeCategoryCoefficients = pgTable(
+  'employee_category_coefficients',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    countryCode: varchar('country_code', { length: 2 })
+      .notNull()
+      .references(() => countries.code, { onDelete: 'cascade' }),
+
+    // Category information
+    category: varchar('category', { length: 10 }).notNull(),
+    labelFr: varchar('label_fr', { length: 255 }).notNull(),
+
+    // CGECI sector support (NULL for generic Convention Collective categories)
+    sectorCode: varchar('sector_code', { length: 50 }),
+
+    // Coefficient range (for generic categories)
+    minCoefficient: integer('min_coefficient').notNull(),
+    maxCoefficient: integer('max_coefficient').notNull(),
+
+    // Actual minimum wage (for CGECI sector-specific categories)
+    actualMinimumWage: numeric('actual_minimum_wage', {
+      precision: 15,
+      scale: 2,
+    }),
+
+    // Legacy: minimum wage base type (SMIG, SMAG, etc.)
+    minimumWageBase: varchar('minimum_wage_base', { length: 20 })
+      .notNull()
+      .default('SMIG'),
+
+    // Notice periods
+    noticePeriodDays: integer('notice_period_days').notNull(),
+    noticeReductionPercent: integer('notice_reduction_percent')
+      .notNull()
+      .default(0),
+
+    // Metadata
+    legalReference: varchar('legal_reference', { length: 500 }),
+    notes: varchar('notes', { length: 1000 }),
+
+    // Audit
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    pgPolicy('employee_categories_read_all', {
+      as: 'permissive',
+      for: 'select',
+      to: tenantUser,
+      using: sql`true`,
+    }),
+  ]
+);

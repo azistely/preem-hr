@@ -230,6 +230,8 @@ async function loadContributions(
     ],
   });
 
+  console.log('[DEBUG] Loaded contributions:', results.map(r => ({ code: r.code, fixedAmount: r.fixedAmount })));
+
   return results.map(row => ({
     id: row.id,
     schemeId: row.schemeId,

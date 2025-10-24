@@ -11,6 +11,7 @@ import { eq, desc, and } from 'drizzle-orm';
 import { ValidationError, NotFoundError } from '@/lib/errors';
 import { generateEmployeeNumber } from '@/features/employees/services/employee-number';
 import { autoInjectCalculatedComponents } from '@/lib/salary-components/component-calculator';
+import { getGenericSector, type CGECISector } from '@/lib/cgeci/sector-mapping';
 
 // ========================================
 // TYPES
@@ -21,7 +22,7 @@ export interface SetCompanyInfoV2Input {
   countryCode: string;
   legalName: string;
   industry: string;
-  sector: 'SERVICES' | 'INDUSTRY' | 'TRANSPORT' | 'CONSTRUCTION' | 'AGRICULTURE' | 'MINING';
+  cgeciSectorCode: string; // CGECI sector code (e.g., 'BANQUES', 'BTP', 'COMMERCE')
   taxId?: string;
 }
 
@@ -33,11 +34,24 @@ export interface CreateFirstEmployeeV2Input {
   email?: string;
   phone: string;
   positionTitle: string;
-  baseSalary: number;
+  // Base salary components (NEW - replaces baseSalary)
+  baseComponents?: Record<string, number>;
+  // DEPRECATED: baseSalary - kept for backward compatibility
+  baseSalary?: number;
   hireDate: Date;
   // CRITICAL: Family status (payroll correctness)
   maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
   dependentChildren: number; // 0-10
+  // NEW: Employment configuration
+  contractType: 'CDI' | 'CDD' | 'STAGE';
+  contractEndDate?: Date;
+  // Dynamic category (CGECI: "1B", "2B", etc. or Banking: "A1", "A2", etc.)
+  category: string;
+  departmentId?: string;
+  primaryLocationId?: string; // For transport validation
+  rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY';
+  dailyRate?: number;
+  hourlyRate?: number;
   // NEW: Component-based salary structure
   components?: Array<{
     code: string;
@@ -62,9 +76,11 @@ export interface CreateFirstPayrollRunInput {
 // ========================================
 
 /**
- * Set company information with sector (V2)
+ * Set company information with CGECI sector (V2)
  *
- * Adds sector field which is critical for work accident rate calculation.
+ * CGECI INTEGRATION:
+ * - Saves cgeciSectorCode (company-level, determines employee categories and min wages)
+ * - Auto-derives genericSectorCode (used for work accident rate calculation)
  */
 export async function setCompanyInfoV2(input: SetCompanyInfoV2Input) {
   const [tenant] = await db
@@ -79,9 +95,13 @@ export async function setCompanyInfoV2(input: SetCompanyInfoV2Input) {
 
   const currentSettings = (tenant.settings as any) || {};
 
+  // Auto-derive generic sector from CGECI sector
+  const genericSectorCode = getGenericSector(input.cgeciSectorCode as CGECISector);
+
   // ✅ OPTIMIZATION: Update country + company info in ONE query
   // BEFORE: selectCountry + setCompanyInfoV2 = 2 queries
   // AFTER: Single update with all fields = 1 query
+  // ✅ CGECI INTEGRATION: Save CGECI sector + auto-derive generic sector
   const [updated] = await db
     .update(tenants)
     .set({
@@ -90,10 +110,11 @@ export async function setCompanyInfoV2(input: SetCompanyInfoV2Input) {
       name: input.legalName,
       industry: input.industry,
       taxId: input.taxId || null,
-      sectorCode: input.sector, // CRITICAL: For work accident rate
+      cgeciSectorCode: input.cgeciSectorCode, // CGECI sector (e.g., 'BANQUES', 'BTP')
+      genericSectorCode: genericSectorCode, // Auto-derived (e.g., 'SERVICES', 'CONSTRUCTION')
       settings: {
         ...currentSettings,
-        sector: input.sector, // Also store in settings for backward compatibility
+        cgeciSectorCode: input.cgeciSectorCode, // Store in settings for easy access
       },
       updatedAt: new Date().toISOString(),
     })
@@ -123,7 +144,23 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     throw new NotFoundError('Entreprise', input.tenantId);
   }
 
+  // ========================================
+  // CALCULATE BASE SALARY (from baseComponents or baseSalary)
+  // ========================================
+  // Calculate base salary from baseComponents (NEW) or use legacy baseSalary field
+  let effectiveBaseSalary: number;
+  if (input.baseComponents && Object.keys(input.baseComponents).length > 0) {
+    // NEW: Sum all base components
+    effectiveBaseSalary = Object.values(input.baseComponents).reduce((sum, amount) => sum + amount, 0);
+  } else if (input.baseSalary !== undefined && input.baseSalary > 0) {
+    // LEGACY: Use baseSalary field
+    effectiveBaseSalary = input.baseSalary;
+  } else {
+    throw new ValidationError('Le salaire de base ou les composants de base sont requis');
+  }
+
   // Validate minimum salary (country-specific) - Check GROSS salary (base + components)
+  // NOTE: This validation is rate-type-aware (handled at API level in onboarding.ts)
   const countryCode = tenant.countryCode || 'CI';
   const minimumWages: Record<string, number> = {
     CI: 75000,  // Côte d'Ivoire
@@ -133,13 +170,26 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     BJ: 40000,  // Bénin
     TG: 35000,  // Togo
   };
-  const minimumWage = minimumWages[countryCode] || 75000;
+  const monthlyMinimumWage = minimumWages[countryCode] || 75000;
+
+  // Convert minimum wage based on rate type
+  const rateType = input.rateType || 'MONTHLY';
+  let applicableMinimumWage = monthlyMinimumWage;
+  let rateLabel = 'mensuel';
+
+  if (rateType === 'DAILY') {
+    applicableMinimumWage = Math.round(monthlyMinimumWage / 30);
+    rateLabel = 'journalier';
+  } else if (rateType === 'HOURLY') {
+    applicableMinimumWage = Math.round(monthlyMinimumWage / (30 * 8));
+    rateLabel = 'horaire';
+  }
 
   // Calculate gross salary (base + all components)
   const componentsTotal = input.components?.reduce((sum, c) => sum + c.amount, 0) || 0;
-  const grossSalary = input.baseSalary + componentsTotal;
+  const grossSalary = effectiveBaseSalary + componentsTotal;
 
-  if (grossSalary < minimumWage) {
+  if (grossSalary < applicableMinimumWage) {
     const countryNames: Record<string, string> = {
       CI: 'Côte d\'Ivoire',
       SN: 'Sénégal',
@@ -148,8 +198,9 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       BJ: 'Bénin',
       TG: 'Togo',
     };
+    const rateSuffix = rateType === 'MONTHLY' ? '' : rateType === 'DAILY' ? '/jour' : '/heure';
     throw new ValidationError(
-      `Le salaire brut total (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${countryNames[countryCode] || countryCode} (${minimumWage.toLocaleString('fr-FR')} FCFA)`
+      `Le salaire brut total ${rateLabel} (salaire de base + indemnités) doit être supérieur ou égal au SMIG de ${countryNames[countryCode] || countryCode} (${applicableMinimumWage.toLocaleString('fr-FR')} FCFA${rateSuffix})`
     );
   }
 
@@ -193,7 +244,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
   const componentsWithCalculated = await autoInjectCalculatedComponents({
     tenantId: input.tenantId,
     countryCode: tenant.countryCode || 'CI',
-    baseSalary: input.baseSalary,
+    baseSalary: effectiveBaseSalary, // Use calculated base salary
     hireDate: hireDate,
     numberOfDependents: input.dependentChildren,
   });
@@ -207,7 +258,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
   const startTime = Date.now();
 
   return await db.transaction(async (tx) => {
-    // Step 1: Create position
+    // Step 1: Create position (with department if provided)
     console.time('[Employee Creation] Position insert');
     const positionStart = Date.now();
     const [position] = await tx
@@ -220,8 +271,9 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         headcount: 1,
         currency: tenant.currency || 'XOF',
         weeklyHours: '40',
-        minSalary: String(input.baseSalary),
-        maxSalary: String(input.baseSalary),
+        minSalary: String(effectiveBaseSalary),
+        maxSalary: String(effectiveBaseSalary),
+        departmentId: input.departmentId || null,
         createdBy: input.userId,
         updatedBy: input.userId,
       })
@@ -239,9 +291,26 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     console.timeEnd('[Employee Creation] Employee number generation');
     console.log(`[Employee Creation] Employee number generated in ${Date.now() - empNumStart}ms`);
 
-    // Step 3: Create employee with fiscal parts
+    // Step 3: Create employee with fiscal parts and employment details
     console.time('[Employee Creation] Employee insert');
     const employeeStart = Date.now();
+
+    // Map category to coefficient (approximate ranges)
+    // NOTE: For CGECI categories, coefficient is stored in the database (cgeci_bareme_2023 table)
+    // For backward compatibility, we provide default mapping for legacy banking categories
+    const categoryCoefficients: Record<string, number> = {
+      'A1': 100,
+      'A2': 115,
+      'B1': 135,
+      'B2': 155,
+      'C': 175,
+      'D': 200,
+      'E': 250,
+      'F': 300,
+    };
+    // Use 100 as default for unknown categories (CGECI categories will be handled via database)
+    const coefficient = categoryCoefficients[input.category] || 100;
+
     const [employee] = await tx
       .insert(employees)
       .values({
@@ -253,8 +322,18 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         phone: input.phone,
         hireDate: hireDate.toISOString().split('T')[0],
         countryCode: tenant.countryCode || 'CI',
-        coefficient: 100,
+        coefficient: coefficient,
         status: 'active',
+
+        // NEW: Employment configuration
+        rateType: input.rateType || 'MONTHLY',
+        categoryCode: input.category, // Dynamic category (CGECI or Banking)
+        primaryLocationId: input.primaryLocationId || null, // For transport validation
+
+        // Contract end date for CDD
+        terminationDate: input.contractType === 'CDD' && input.contractEndDate
+          ? input.contractEndDate.toISOString().split('T')[0]
+          : null,
 
         // CRITICAL: Store family status for payroll
         maritalStatus: input.maritalStatus,
@@ -262,7 +341,9 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         fiscalParts: String(fiscalParts), // Pre-calculated for tax
         hasFamily: hasFamily, // For CMU employer contribution
 
-        customFields: {},
+        customFields: {
+          contractType: input.contractType,
+        },
         createdBy: input.userId,
         updatedBy: input.userId,
       })
@@ -271,6 +352,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     console.log(`[Employee Creation] Employee created in ${Date.now() - employeeStart}ms`);
 
     // Step 4: Create assignment
+    // NOTE: Department is linked through position, not directly through assignment
     console.time('[Employee Creation] Assignment insert');
     const assignmentStart = Date.now();
     const [assignment] = await tx
@@ -346,7 +428,7 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       .values({
         tenantId: input.tenantId,
         employeeId: employee.id,
-        baseSalary: String(input.baseSalary),
+        baseSalary: String(effectiveBaseSalary), // Use calculated base salary (sum of baseComponents or legacy baseSalary)
         components: allComponents,
         currency: tenant.currency || 'XOF',
         effectiveFrom: hireDate.toISOString().split('T')[0],

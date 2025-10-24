@@ -23,6 +23,7 @@ import { documentsRouter } from './documents';
 import { jobSearchDaysRouter } from './job-search-days';
 import { timeTrackingRouter } from './time-tracking';
 import { timeOffRouter } from './time-off';
+import { workSchedulesRouter } from './work-schedules';
 import { policiesRouter } from './policies';
 import { publicHolidaysRouter } from './public-holidays';
 import { geofencingRouter } from './geofencing';
@@ -31,6 +32,15 @@ import { dashboardRouter } from './dashboard';
 import { alertsRouter } from './alerts';
 import { batchOperationsRouter } from './batch-operations';
 import { workflowsRouter } from './workflows';
+import { complianceRouter } from './compliance';
+import { registreRouter } from './registre';
+import { dataMigrationRouter } from './data-migration';
+import { accountingRouter } from './accounting';
+import { templatesRouter } from './templates';
+import { bankingRouter } from './banking';
+import { locationsRouter } from './locations';
+import { bonusesRouter } from './bonuses';
+import { cgeciRouter } from './cgeci';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -38,6 +48,15 @@ export const appRouter = createTRPCRouter({
   alerts: alertsRouter,
   batchOperations: batchOperationsRouter,
   workflows: workflowsRouter,
+  compliance: complianceRouter,
+  registre: registreRouter,
+  dataMigration: dataMigrationRouter,
+  accounting: accountingRouter,
+  templates: templatesRouter,
+  banking: bankingRouter,
+  locations: locationsRouter,
+  bonuses: bonusesRouter,
+  cgeci: cgeciRouter,
   payroll: payrollRouter,
   tenant: tenantRouter,
   employees: employeesRouter,
@@ -55,6 +74,7 @@ export const appRouter = createTRPCRouter({
   jobSearchDays: jobSearchDaysRouter,
   timeTracking: timeTrackingRouter,
   timeOff: timeOffRouter,
+  workSchedules: workSchedulesRouter,
   policies: policiesRouter,
   publicHolidays: publicHolidaysRouter,
   geofencing: geofencingRouter,
