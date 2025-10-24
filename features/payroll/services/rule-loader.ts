@@ -17,7 +17,8 @@ import {
   contributionTypes,
   sectorContributionOverrides,
   otherTaxes,
-} from '@/drizzle/schema';
+  cityTransportMinimums,
+} from '@/lib/db/schema';
 import { and, eq, lte, gte, or, isNull, asc } from 'drizzle-orm';
 
 // ========================================
@@ -92,6 +93,16 @@ export interface OtherTax {
   taxRate: number;
   calculationBase: string;
   paidBy: string;
+}
+
+export interface CityTransportMinimum {
+  id: string;
+  cityName: string;
+  displayName: any; // JSONB: { fr: string, en?: string }
+  monthlyMinimum: number;
+  dailyRate: number;
+  taxExemptionCap: number | null;
+  legalReference: any; // JSONB
 }
 
 // ========================================
@@ -355,6 +366,86 @@ export class RuleLoader {
 
     // Fall back to scheme-wide ceiling
     return schemeCeiling;
+  }
+
+  /**
+   * Get city transport minimums for a country
+   */
+  async getCityTransportMinimums(
+    countryCode: string,
+    effectiveDate: Date = new Date()
+  ): Promise<CityTransportMinimum[]> {
+    const dateStr = effectiveDate.toISOString().split('T')[0];
+
+    const minimums = await db
+      .select()
+      .from(cityTransportMinimums)
+      .where(
+        and(
+          eq(cityTransportMinimums.countryCode, countryCode),
+          lte(cityTransportMinimums.effectiveFrom, dateStr),
+          or(
+            isNull(cityTransportMinimums.effectiveTo),
+            gte(cityTransportMinimums.effectiveTo, dateStr)
+          )
+        )
+      );
+
+    return minimums.map((m) => ({
+      id: m.id,
+      cityName: m.cityName,
+      displayName: m.displayName,
+      monthlyMinimum: Number(m.monthlyMinimum),
+      dailyRate: Number(m.dailyRate),
+      taxExemptionCap: m.taxExemptionCap ? Number(m.taxExemptionCap) : null,
+      legalReference: m.legalReference,
+    }));
+  }
+
+  /**
+   * Get transport minimum for a specific city
+   */
+  async getCityTransportMinimum(
+    countryCode: string,
+    cityName: string | null | undefined,
+    effectiveDate: Date = new Date()
+  ): Promise<CityTransportMinimum> {
+    const minimums = await this.getCityTransportMinimums(countryCode, effectiveDate);
+
+    if (!minimums || minimums.length === 0) {
+      throw new Error(
+        `No transport minimums configured for country ${countryCode}`
+      );
+    }
+
+    // If no city provided, return default (OTHER)
+    if (!cityName) {
+      const defaultMinimum = minimums.find(
+        (m) => m.cityName.toUpperCase() === 'OTHER'
+      );
+      if (defaultMinimum) return defaultMinimum;
+      // Fall back to first minimum if OTHER doesn't exist
+      return minimums[0];
+    }
+
+    // Normalize city name for matching
+    const normalized = cityName.toLowerCase().trim();
+
+    // Try exact match
+    const match = minimums.find(
+      (m) => m.cityName.toLowerCase() === normalized
+    );
+
+    if (match) return match;
+
+    // Return default (OTHER) as fallback
+    const defaultMinimum = minimums.find(
+      (m) => m.cityName.toUpperCase() === 'OTHER'
+    );
+    if (defaultMinimum) return defaultMinimum;
+
+    // If still no match, return first minimum
+    return minimums[0];
   }
 }
 

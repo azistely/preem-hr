@@ -178,6 +178,36 @@ export const payrollRouter = createTRPCRouter({
     }),
 
   /**
+   * Get city transport minimum for a location
+   *
+   * Returns the legal minimum transport allowance based on city.
+   * Used for employee transport allowance validation.
+   *
+   * @example
+   * ```typescript
+   * const minimum = await trpc.payroll.getCityTransportMinimum.query({
+   *   countryCode: 'CI',
+   *   city: 'Abidjan',
+   * });
+   * // minimum.monthlyMinimum = 30000
+   * // minimum.dailyRate = 1000
+   * ```
+   */
+  getCityTransportMinimum: publicProcedure
+    .input(z.object({
+      countryCode: z.string().length(2),
+      city: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const minimum = await ruleLoader.getCityTransportMinimum(
+        input.countryCode,
+        input.city,
+        new Date()
+      );
+      return minimum;
+    }),
+
+  /**
    * Create a new payroll run
    *
    * Initializes a payroll run for a specific period.
@@ -236,9 +266,11 @@ export const payrollRouter = createTRPCRouter({
   getRun: publicProcedure
     .input(getPayrollRunInputSchema)
     .query(async ({ input }) => {
-      const run = await db.query.payrollRuns.findFirst({
-        where: eq(payrollRuns.id, input.runId),
-      });
+      const [run] = await db
+        .select()
+        .from(payrollRuns)
+        .where(eq(payrollRuns.id, input.runId))
+        .limit(1);
 
       if (!run) {
         throw new Error('Payroll run not found');
