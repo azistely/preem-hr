@@ -19,6 +19,11 @@ import type {
 import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { calculateGrossSalary } from './gross-calculation';
 import { loadPayrollConfig, ProgressiveMonthlyTaxStrategy } from '@/features/payroll-config';
+import { calculateBankingSeniorityBonus } from '@/features/conventions/services/banking-convention.service';
+import { ruleLoader } from './rule-loader';
+import { db } from '@/lib/db';
+import { employeeSiteAssignments, locations, employees } from '@/lib/db/schema';
+import { and, eq, gte, lte } from 'drizzle-orm';
 
 export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   countryCode: string; // Required for loading config
@@ -30,6 +35,164 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   sursalaire?: number; // Code 12 - Additional fixed component (CI)
   otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }>; // Template components (TPT_*, PHONE, etc.)
   customComponents?: SalaryComponentInstance[]; // Custom components for future use
+
+  // Rate type support (GAP-JOUR-003)
+  rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY'; // Payment frequency
+  daysWorkedThisMonth?: number; // For DAILY workers
+  hoursWorkedThisMonth?: number; // For HOURLY workers
+
+  // Banking convention support (GAP-CONV-BANK-001)
+  conventionCode?: string; // 'INTERPRO', 'BANKING', 'BTP'
+  professionalLevel?: number; // 1-9 for banking sector
+}
+
+/**
+ * Calculate location-based allowances for an employee for a payroll period (GAP-LOC-001)
+ *
+ * Aggregates transport, meal, and site premium allowances from all locations
+ * where the employee worked during the payroll period.
+ *
+ * @param employeeId - Employee UUID
+ * @param periodStart - Start date of payroll period
+ * @param periodEnd - End date of payroll period
+ * @returns Aggregated location-based allowances
+ */
+async function calculateLocationBasedAllowances(
+  employeeId: string,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<{
+  allowances: Array<{
+    locationName: string;
+    locationCode: string;
+    days: number;
+    transportAllowance: number;
+    mealAllowance: number;
+    sitePremium: number;
+    hazardPay: number;
+  }>;
+  totalTransport: number;
+  totalMeal: number;
+  totalSitePremium: number;
+  totalHazardPay: number;
+}> {
+  try {
+    // Format dates for database query
+    const startDateStr = periodStart.toISOString().split('T')[0];
+    const endDateStr = periodEnd.toISOString().split('T')[0];
+
+    // Get all site assignments for the period
+    const assignments = await db
+      .select({
+        assignmentDate: employeeSiteAssignments.assignmentDate,
+        locationId: employeeSiteAssignments.locationId,
+        locationCode: locations.locationCode,
+        locationName: locations.locationName,
+        transportAllowance: locations.transportAllowance,
+        mealAllowance: locations.mealAllowance,
+        sitePremium: locations.sitePremium,
+        hazardPayRate: locations.hazardPayRate,
+      })
+      .from(employeeSiteAssignments)
+      .leftJoin(locations, eq(employeeSiteAssignments.locationId, locations.id))
+      .where(
+        and(
+          eq(employeeSiteAssignments.employeeId, employeeId),
+          gte(employeeSiteAssignments.assignmentDate, startDateStr),
+          lte(employeeSiteAssignments.assignmentDate, endDateStr)
+        )
+      );
+
+    if (assignments.length === 0) {
+      return {
+        allowances: [],
+        totalTransport: 0,
+        totalMeal: 0,
+        totalSitePremium: 0,
+        totalHazardPay: 0,
+      };
+    }
+
+    // Group by location and count days
+    const locationDays: Record<string, {
+      locationName: string;
+      locationCode: string;
+      days: number;
+      transportAllowance: string;
+      mealAllowance: string;
+      sitePremium: string;
+      hazardPayRate: string;
+    }> = {};
+
+    assignments.forEach((assignment) => {
+      if (!assignment.locationId) return;
+
+      const locationId = assignment.locationId;
+
+      if (!locationDays[locationId]) {
+        locationDays[locationId] = {
+          locationName: assignment.locationName || '',
+          locationCode: assignment.locationCode || '',
+          days: 0,
+          transportAllowance: assignment.transportAllowance || '0',
+          mealAllowance: assignment.mealAllowance || '0',
+          sitePremium: assignment.sitePremium || '0',
+          hazardPayRate: assignment.hazardPayRate || '0',
+        };
+      }
+      locationDays[locationId].days += 1;
+    });
+
+    // Calculate allowances per location
+    const allowances = Object.values(locationDays).map((loc) => {
+      const transportPerDay = Number(loc.transportAllowance || 0);
+      const mealPerDay = Number(loc.mealAllowance || 0);
+      const sitePremiumMonthly = Number(loc.sitePremium || 0);
+
+      // Transport and meal are daily, multiplied by days worked
+      const transportAllowance = Math.round(transportPerDay * loc.days);
+      const mealAllowance = Math.round(mealPerDay * loc.days);
+
+      // Site premium is monthly (not prorated by days)
+      const sitePremium = Math.round(sitePremiumMonthly);
+
+      // Hazard pay will be calculated in main function (percentage of base salary)
+      const hazardPay = 0;
+
+      return {
+        locationName: loc.locationName,
+        locationCode: loc.locationCode,
+        days: loc.days,
+        transportAllowance,
+        mealAllowance,
+        sitePremium,
+        hazardPay,
+      };
+    });
+
+    // Calculate totals
+    const totals = {
+      totalTransport: allowances.reduce((sum, a) => sum + a.transportAllowance, 0),
+      totalMeal: allowances.reduce((sum, a) => sum + a.mealAllowance, 0),
+      totalSitePremium: allowances.reduce((sum, a) => sum + a.sitePremium, 0),
+      totalHazardPay: 0, // Will be calculated in main function if needed
+    };
+
+    return {
+      allowances,
+      ...totals,
+    };
+  } catch (error) {
+    // If error (e.g., employee has no site assignments), return empty allowances
+    console.error('[calculateLocationBasedAllowances] Error:', error);
+    return {
+      allowances: [],
+      totalTransport: 0,
+      totalMeal: 0,
+      totalSitePremium: 0,
+      totalHazardPay: 0,
+    };
+  }
 }
 
 /**
@@ -76,21 +239,169 @@ export async function calculatePayrollV2(
   );
 
   // ========================================
-  // STEP 1: Calculate Gross Salary
+  // STEP 0.3: Validate Transport Allowance Against City Minimum
   // ========================================
+  // Skip validation in preview mode (Q2 onboarding)
+  if (input.employeeId !== 'preview') {
+    // Fetch employee's primary location to determine city
+    const [employee] = await db
+      .select({
+        primaryLocationId: employees.primaryLocationId,
+      })
+      .from(employees)
+      .where(eq(employees.id, input.employeeId))
+      .limit(1);
+
+    if (employee?.primaryLocationId) {
+      // Get location details
+      const [employeeLocation] = await db
+        .select({
+          city: locations.city,
+          locationName: locations.locationName,
+        })
+        .from(locations)
+        .where(eq(locations.id, employee.primaryLocationId))
+        .limit(1);
+
+      if (employeeLocation?.city) {
+        // Get city transport minimum
+        try {
+          const cityMinimum = await ruleLoader.getCityTransportMinimum(
+            input.countryCode,
+            employeeLocation.city,
+            input.periodStart
+          );
+
+          // Check transport allowance (both direct and location-based)
+          const totalTransport = (input.transportAllowance || 0);
+
+          // Validate transport meets minimum
+          if (totalTransport < cityMinimum.monthlyMinimum) {
+            const cityName = cityMinimum.displayName?.fr || cityMinimum.cityName;
+            throw new Error(
+              `L'indemnité de transport (${totalTransport.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
+            );
+          }
+        } catch (error) {
+          // If city minimum not configured, log warning but don't fail
+          if (error instanceof Error && error.message.includes('No transport minimums configured')) {
+            console.warn(`Transport minimum not configured for country ${input.countryCode}, skipping validation`);
+          } else {
+            // Re-throw validation errors
+            throw error;
+          }
+        }
+      }
+    }
+  }
+
+  // ========================================
+  // STEP 0.5: Calculate Banking Seniority Bonus (GAP-CONV-BANK-001)
+  // ========================================
+  let bankingSeniorityBonus = 0;
+  if (input.conventionCode === 'BANKING' && input.hireDate) {
+    const bonusResult = await calculateBankingSeniorityBonus(
+      input.baseSalary,
+      input.hireDate,
+      input.countryCode
+    );
+    bankingSeniorityBonus = bonusResult.bonusAmount;
+  }
+
+  // ========================================
+  // STEP 0.6: Calculate Location-Based Allowances (GAP-LOC-001)
+  // ========================================
+  const locationAllowances = await calculateLocationBasedAllowances(
+    input.employeeId,
+    input.periodStart,
+    input.periodEnd
+  );
+
+  // ========================================
+  // STEP 1: Calculate Gross Salary (Rate Type Aware)
+  // ========================================
+
+  // Determine effective base salary based on rate type
+  let effectiveBaseSalary = input.baseSalary;
+  let effectiveSalaireCategoriel = input.salaireCategoriel;
+  let effectiveTransportAllowance = input.transportAllowance;
+  const rateType = input.rateType || 'MONTHLY';
+
+  if (rateType === 'DAILY') {
+    // Daily workers: multiply daily rate × days worked
+    const daysWorked = input.daysWorkedThisMonth || 0;
+    effectiveBaseSalary = input.baseSalary * daysWorked;
+
+    // Also prorate salaireCategoriel and transport for the month
+    if (effectiveSalaireCategoriel) {
+      effectiveSalaireCategoriel = effectiveSalaireCategoriel * daysWorked;
+    }
+    if (effectiveTransportAllowance) {
+      effectiveTransportAllowance = effectiveTransportAllowance * daysWorked;
+    }
+  } else if (rateType === 'HOURLY') {
+    // Hourly workers: multiply hourly rate × hours worked
+    const hoursWorked = input.hoursWorkedThisMonth || 0;
+    effectiveBaseSalary = input.baseSalary * hoursWorked;
+
+    // Also prorate salaireCategoriel and transport for the month
+    if (effectiveSalaireCategoriel) {
+      effectiveSalaireCategoriel = effectiveSalaireCategoriel * hoursWorked;
+    }
+    if (effectiveTransportAllowance) {
+      effectiveTransportAllowance = effectiveTransportAllowance * hoursWorked;
+    }
+  }
+  // else: MONTHLY workers use values as-is
+
+  // Prepare location-based allowances for gross calculation
+  // Transport and meal allowances are typically non-taxable (up to legal limits)
+  // Site premium is taxable income
+  const locationOtherAllowances: Array<{ name: string; amount: number; taxable: boolean }> = [];
+
+  if (locationAllowances.totalTransport > 0) {
+    locationOtherAllowances.push({
+      name: 'Indemnité de transport (multi-sites)',
+      amount: locationAllowances.totalTransport,
+      taxable: false, // Non-taxable up to 30,000 FCFA/month in CI
+    });
+  }
+
+  if (locationAllowances.totalMeal > 0) {
+    locationOtherAllowances.push({
+      name: 'Indemnité de repas (multi-sites)',
+      amount: locationAllowances.totalMeal,
+      taxable: false, // Non-taxable up to 30,000 FCFA/month in CI
+    });
+  }
+
+  if (locationAllowances.totalSitePremium > 0) {
+    locationOtherAllowances.push({
+      name: 'Prime de site',
+      amount: locationAllowances.totalSitePremium,
+      taxable: true, // Site premium is taxable
+    });
+  }
+
+  // Merge with existing otherAllowances
+  const combinedOtherAllowances = [
+    ...(input.otherAllowances || []),
+    ...locationOtherAllowances,
+  ];
+
   const grossCalc = calculateGrossSalary({
     employeeId: input.employeeId,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
-    baseSalary: input.baseSalary,
+    baseSalary: effectiveBaseSalary, // Use rate-adjusted base salary
     hireDate: input.hireDate,
     terminationDate: input.terminationDate,
     housingAllowance: input.housingAllowance,
-    transportAllowance: input.transportAllowance,
+    transportAllowance: effectiveTransportAllowance, // Use rate-adjusted transport
     mealAllowance: input.mealAllowance,
-    seniorityBonus: input.seniorityBonus || 0,
+    seniorityBonus: (input.seniorityBonus || 0) + bankingSeniorityBonus, // Include banking bonus
     familyAllowance: input.familyAllowance || 0,
-    otherAllowances: input.otherAllowances, // Include template components
+    otherAllowances: combinedOtherAllowances, // Include template + location components
     bonuses: input.bonuses,
     overtimeHours: input.overtimeHours,
   });
@@ -108,9 +419,11 @@ export async function calculatePayrollV2(
       {
         sectorCode: input.sectorCode || config.socialSecurityScheme.defaultSectorCode, // Use database default
         hasFamily: input.hasFamily || false,
-        salaireCategoriel: input.salaireCategoriel, // Code 11 for CNPS calculations
+        salaireCategoriel: effectiveSalaireCategoriel, // Code 11 for CNPS calculations (rate-adjusted)
       }
     );
+
+  console.log('[DEBUG AFTER SS]', { cmuEmployee, cmuEmployer, cnpsEmployee, cnpsEmployer });
 
   // ========================================
   // STEP 3: Calculate Tax (Database-Driven)
@@ -292,6 +605,7 @@ function calculateSocialSecurityContributions(
     salaireCategoriel?: number; // Code 11 - For CNPS calculations
   }
 ) {
+  console.log('[DEBUG SS START]', { grossSalary, hasFamily: options.hasFamily, numContributions: contributions.length });
   let cnpsEmployee = 0;
   let cnpsEmployer = 0;
   let cmuEmployee = 0;
@@ -299,6 +613,8 @@ function calculateSocialSecurityContributions(
 
   for (const contrib of contributions) {
     const code = contrib.code.toLowerCase();
+
+    console.log(`[DEBUG CONTRIB] ${contrib.code}: fixedAmount=${contrib.fixedAmount}, employeeRate=${contrib.employeeRate}, employerRate=${contrib.employerRate}`);
 
     // Determine calculation base based on contribution type
     let calculationBase = grossSalary;
@@ -334,18 +650,23 @@ function calculateSocialSecurityContributions(
     if (contrib.fixedAmount) {
       const fixedAmount = Number(contrib.fixedAmount);
 
+      console.log(`[DEBUG CMU] Processing ${code}, fixedAmount: ${fixedAmount}, hasFamily: ${options.hasFamily}`);
+
       // Categorize by code pattern
       if (code.includes('cmu') || code.includes('health') || code.includes('medical')) {
         // CMU Employee (e.g., cmu_employee)
         if (code === 'cmu_employee') {
+          console.log(`[DEBUG CMU] Setting cmuEmployee to ${fixedAmount}`);
           cmuEmployee = fixedAmount;
         }
         // CMU Employer Base (no family)
         else if (code === 'cmu_employer_base' && !options.hasFamily) {
+          console.log(`[DEBUG CMU] Setting cmuEmployer (base) to ${fixedAmount}`);
           cmuEmployer = fixedAmount;
         }
         // CMU Employer Family (with family)
         else if (code === 'cmu_employer_family' && options.hasFamily) {
+          console.log(`[DEBUG CMU] Setting cmuEmployer (family) to ${fixedAmount}`);
           cmuEmployer = fixedAmount;
         }
       } else {
@@ -400,6 +721,7 @@ function calculateSocialSecurityContributions(
     }
   }
 
+  console.log('[DEBUG FINAL] Contribution totals:', { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer });
   return { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer };
 }
 
