@@ -16,6 +16,9 @@ import * as overtimeService from '@/features/time-tracking/services/overtime.ser
 import { TRPCError } from '@trpc/server';
 import type { TimeEntryWithEmployee } from '@/lib/types/extended-models';
 import { getShiftLengthHelper } from '@/lib/compliance/shift-validation.service';
+import { db } from '@/db';
+import { timeEntries, employees, assignments, positions } from '@/drizzle/schema';
+import { and, eq, desc, sql, isNull, gte, lt, lte, inArray } from 'drizzle-orm';
 
 const geoLocationSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -256,9 +259,11 @@ export const timeTrackingRouter = createTRPCRouter({
       })
     )
     .query(async ({ input, ctx }) => {
-      const { db } = await import('@/db');
-      const { timeEntries } = await import('@/drizzle/schema');
-      const { and, eq, gte, lte, desc } = await import('drizzle-orm');
+      console.log('[getPendingEntries] Query with filters:', {
+        tenantId: ctx.user.tenantId,
+        startDate: input.startDate?.toISOString(),
+        endDate: input.endDate?.toISOString(),
+      });
 
       const conditions = [
         eq(timeEntries.tenantId, ctx.user.tenantId),
@@ -272,10 +277,59 @@ export const timeTrackingRouter = createTRPCRouter({
         conditions.push(lte(timeEntries.clockIn, input.endDate.toISOString()));
       }
 
-      return await db.query.timeEntries.findMany({
-        where: and(...conditions),
-        orderBy: [desc(timeEntries.clockIn)],
-      }) as TimeEntryWithEmployee[];
+      // Use manual join (TypeScript best practice)
+      const result = await db
+        .select({
+          // Time entry fields
+          id: timeEntries.id,
+          clockIn: timeEntries.clockIn,
+          clockOut: timeEntries.clockOut,
+          totalHours: timeEntries.totalHours,
+          status: timeEntries.status,
+          geofenceVerified: timeEntries.geofenceVerified,
+          clockInPhotoUrl: timeEntries.clockInPhotoUrl,
+          clockOutPhotoUrl: timeEntries.clockOutPhotoUrl,
+          overtimeBreakdown: timeEntries.overtimeBreakdown,
+          notes: timeEntries.notes,
+          // Employee fields (flattened)
+          employeeId: employees.id,
+          employeeFirstName: employees.firstName,
+          employeeLastName: employees.lastName,
+        })
+        .from(timeEntries)
+        .innerJoin(employees, eq(timeEntries.employeeId, employees.id))
+        .where(and(...conditions))
+        .orderBy(desc(timeEntries.clockIn));
+
+      // Reshape to match expected format
+      const entries = result.map(entry => ({
+        id: entry.id,
+        clockIn: entry.clockIn,
+        clockOut: entry.clockOut,
+        totalHours: entry.totalHours,
+        status: entry.status,
+        geofenceVerified: entry.geofenceVerified,
+        clockInPhotoUrl: entry.clockInPhotoUrl,
+        clockOutPhotoUrl: entry.clockOutPhotoUrl,
+        overtimeBreakdown: entry.overtimeBreakdown,
+        notes: entry.notes,
+        employee: {
+          id: entry.employeeId,
+          firstName: entry.employeeFirstName,
+          lastName: entry.employeeLastName,
+        },
+      }));
+
+      console.log('[getPendingEntries] Found entries:', {
+        count: entries.length,
+        entries: entries.map(e => ({
+          id: e.id,
+          employee: e.employee,
+          clockIn: e.clockIn,
+        })),
+      });
+
+      return entries;
     }),
 
   /**
@@ -292,6 +346,113 @@ export const timeTrackingRouter = createTRPCRouter({
       return await Promise.all(
         input.entryIds.map((id) => timeEntryService.approveTimeEntry(id, ctx.user.id))
       );
+    }),
+
+  /**
+   * Get all time entries with optional status filter
+   * Requires: Manager role
+   */
+  getAllEntries: managerProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'all']).optional().default('all'),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const conditions = [eq(timeEntries.tenantId, ctx.user.tenantId)];
+
+      // Filter by status
+      if (input.status !== 'all') {
+        conditions.push(eq(timeEntries.status, input.status));
+      }
+
+      // Filter by date range
+      if (input.startDate) {
+        conditions.push(sql`${timeEntries.clockIn} >= ${input.startDate.toISOString()}`);
+      }
+      if (input.endDate) {
+        conditions.push(sql`${timeEntries.clockIn} < ${input.endDate.toISOString()}`);
+      }
+
+      // Use manual join (TypeScript best practice)
+      // Note: overtimeBreakdown is excluded from select to avoid Drizzle JSONB conversion error
+      const result = await db
+        .select({
+          // Time entry fields
+          id: timeEntries.id,
+          clockIn: timeEntries.clockIn,
+          clockOut: timeEntries.clockOut,
+          totalHours: timeEntries.totalHours,
+          status: timeEntries.status,
+          entrySource: timeEntries.entrySource,
+          entryType: timeEntries.entryType,
+          geofenceVerified: timeEntries.geofenceVerified,
+          clockInPhotoUrl: timeEntries.clockInPhotoUrl,
+          clockOutPhotoUrl: timeEntries.clockOutPhotoUrl,
+          notes: timeEntries.notes,
+          approvedBy: timeEntries.approvedBy,
+          approvedAt: timeEntries.approvedAt,
+          rejectionReason: timeEntries.rejectionReason,
+          createdAt: timeEntries.createdAt,
+          // Employee fields (flattened)
+          employeeId: employees.id,
+          employeeFirstName: employees.firstName,
+          employeeLastName: employees.lastName,
+          employeeNumber: employees.employeeNumber,
+        })
+        .from(timeEntries)
+        .innerJoin(employees, eq(timeEntries.employeeId, employees.id))
+        .where(and(...conditions))
+        .orderBy(desc(timeEntries.clockIn));
+
+      // Fetch overtime breakdown separately to avoid JSONB conversion issues
+      const entryIds = result.map((r) => r.id);
+      let overtimeData: Record<string, any> = {};
+
+      if (entryIds.length > 0) {
+        const overtimeResult = await db
+          .select({
+            id: timeEntries.id,
+            overtimeBreakdown: timeEntries.overtimeBreakdown,
+          })
+          .from(timeEntries)
+          .where(inArray(timeEntries.id, entryIds));
+
+        overtimeData = overtimeResult.reduce((acc, row) => {
+          acc[row.id] = row.overtimeBreakdown;
+          return acc;
+        }, {} as Record<string, any>);
+      }
+
+      // Reshape to match expected format
+      const entries = result.map((entry) => ({
+        id: entry.id,
+        clockIn: entry.clockIn,
+        clockOut: entry.clockOut,
+        totalHours: entry.totalHours,
+        status: entry.status,
+        entrySource: entry.entrySource,
+        entryType: entry.entryType,
+        geofenceVerified: entry.geofenceVerified,
+        clockInPhotoUrl: entry.clockInPhotoUrl,
+        clockOutPhotoUrl: entry.clockOutPhotoUrl,
+        overtimeBreakdown: overtimeData[entry.id] || null,
+        notes: entry.notes,
+        approvedBy: entry.approvedBy,
+        approvedAt: entry.approvedAt,
+        rejectionReason: entry.rejectionReason,
+        createdAt: entry.createdAt,
+        employee: {
+          id: entry.employeeId,
+          firstName: entry.employeeFirstName,
+          lastName: entry.employeeLastName,
+          employeeNumber: entry.employeeNumber,
+        },
+      }));
+
+      return entries;
     }),
 
   /**
@@ -317,10 +478,6 @@ export const timeTrackingRouter = createTRPCRouter({
    * Get all pending entries summary
    */
   getPendingSummary: publicProcedure.query(async ({ ctx }) => {
-    const { db } = await import('@/db');
-    const { timeEntries } = await import('@/drizzle/schema');
-    const { and, eq, sql } = await import('drizzle-orm');
-
     const result = await db
       .select({
         count: sql<number>`count(*)`,
@@ -387,5 +544,328 @@ export const timeTrackingRouter = createTRPCRouter({
         totals,
         totalEmployees: activeEmployees.length,
       };
+    }),
+
+  /**
+   * Manual Time Entry Endpoints
+   * These allow managers/HR to manually enter hours for employees
+   */
+
+  /**
+   * Create manual time entry
+   * Requires: Manager role (managers/HR can manually enter hours)
+   */
+  createManualEntry: managerProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid(),
+        workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        clockIn: z.string().datetime(),
+        clockOut: z.string().datetime(),
+        totalHours: z.number().min(0).max(24),
+        locationId: z.string().uuid().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const entry = await timeEntryService.createManualTimeEntry({
+          employeeId: input.employeeId,
+          tenantId: ctx.user.tenantId,
+          workDate: input.workDate,
+          clockIn: input.clockIn,
+          clockOut: input.clockOut,
+          totalHours: input.totalHours,
+          locationId: input.locationId,
+          notes: input.notes,
+        });
+
+        return entry;
+      } catch (error) {
+        if (error instanceof timeEntryService.TimeEntryError) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * Update manual time entry
+   * Requires: Manager role (managers/HR can update manual entries)
+   */
+  updateManualEntry: managerProcedure
+    .input(
+      z.object({
+        entryId: z.string().uuid(),
+        clockIn: z.string().datetime().optional(),
+        clockOut: z.string().datetime().optional(),
+        totalHours: z.number().min(0).max(24).optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const entry = await timeEntryService.updateManualTimeEntry(
+          input.entryId,
+          ctx.user.tenantId,
+          {
+            clockIn: input.clockIn,
+            clockOut: input.clockOut,
+            totalHours: input.totalHours,
+            notes: input.notes,
+          }
+        );
+
+        return entry;
+      } catch (error) {
+        if (error instanceof timeEntryService.TimeEntryError) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * Delete manual time entry
+   * Requires: Manager role (managers/HR can delete manual entries)
+   */
+  deleteManualEntry: managerProcedure
+    .input(
+      z.object({
+        entryId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const entry = await timeEntryService.deleteManualTimeEntry(
+          input.entryId,
+          ctx.user.tenantId
+        );
+
+        return entry;
+      } catch (error) {
+        if (error instanceof timeEntryService.TimeEntryError) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * Get manual time entries for period
+   * Requires: Manager role (managers/HR view manual entries)
+   */
+  getManualEntries: managerProcedure
+    .input(
+      z.object({
+        startDate: z.date(),
+        endDate: z.date(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      console.log('[getManualEntries] Query params:', {
+        tenantId: ctx.user.tenantId,
+        startDate: input.startDate,
+        endDate: input.endDate,
+      });
+
+      const result = await timeEntryService.getManualTimeEntriesForPeriod(
+        ctx.user.tenantId,
+        input.startDate,
+        input.endDate
+      );
+
+      console.log('[getManualEntries] Result from service:', {
+        count: result.length,
+        entries: result,
+      });
+
+      return result;
+    }),
+
+  /**
+   * Bulk create/update manual time entries
+   * Requires: Manager role (managers/HR can bulk enter hours)
+   * Useful for monthly hour entry workflows
+   */
+  bulkUpsertManualEntries: managerProcedure
+    .input(
+      z.object({
+        entries: z.array(
+          z.object({
+            entryId: z.string().uuid().optional(), // If provided, updates existing entry
+            employeeId: z.string().uuid(),
+            workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            clockIn: z.string().datetime(),
+            clockOut: z.string().datetime(),
+            totalHours: z.number().min(0).max(24),
+            locationId: z.string().uuid().optional(),
+            notes: z.string().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      console.log('[bulkUpsertManualEntries] Mutation called with:', {
+        tenantId: ctx.user.tenantId,
+        entriesCount: input.entries.length,
+        entries: input.entries,
+      });
+
+      const results = [];
+      const errors = [];
+
+      for (const entry of input.entries) {
+        try {
+          if (entry.entryId) {
+            console.log('[bulkUpsertManualEntries] Updating entry:', entry.entryId);
+            // Update existing entry
+            const updated = await timeEntryService.updateManualTimeEntry(
+              entry.entryId,
+              ctx.user.tenantId,
+              {
+                clockIn: entry.clockIn,
+                clockOut: entry.clockOut,
+                totalHours: entry.totalHours,
+                notes: entry.notes,
+              }
+            );
+            results.push(updated);
+          } else {
+            console.log('[bulkUpsertManualEntries] Creating new entry for employee:', entry.employeeId);
+
+            // HR managers and tenant admins auto-approve entries they create
+            const shouldAutoApprove = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+
+            // Create new entry
+            const created = await timeEntryService.createManualTimeEntry({
+              employeeId: entry.employeeId,
+              tenantId: ctx.user.tenantId,
+              workDate: entry.workDate,
+              clockIn: entry.clockIn,
+              clockOut: entry.clockOut,
+              totalHours: entry.totalHours,
+              locationId: entry.locationId,
+              notes: entry.notes,
+              approvedBy: shouldAutoApprove ? ctx.user.id : undefined,
+            });
+            console.log('[bulkUpsertManualEntries] Created entry:', {
+              ...created,
+              autoApproved: shouldAutoApprove,
+            });
+            results.push(created);
+          }
+        } catch (error) {
+          console.error('[bulkUpsertManualEntries] Error creating entry:', error);
+          if (error instanceof timeEntryService.TimeEntryError) {
+            errors.push({
+              employeeId: entry.employeeId,
+              workDate: entry.workDate,
+              error: error.message,
+            });
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      console.log('[bulkUpsertManualEntries] Mutation complete:', {
+        success: results.length,
+        errors: errors.length,
+        results,
+        errorDetails: errors,
+      });
+
+      return {
+        success: results.length,
+        errors: errors.length,
+        results,
+        errorDetails: errors,
+      };
+    }),
+
+  /**
+   * Get employees who need time entries for a specific date
+   * Useful for daily worker fast entry flow
+   * Requires: Manager role
+   */
+  getEmployeesNeedingHours: managerProcedure
+    .input(
+      z.object({
+        date: z.date(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      // Calculate date range for the given date (start of day to end of day)
+      const startOfDay = new Date(input.date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(input.date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Get all active employees
+      const activeEmployees = await db
+        .select({
+          employeeId: employees.id,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+          positionTitle: positions.title,
+          positionId: positions.id,
+        })
+        .from(employees)
+        .leftJoin(
+          assignments,
+          and(
+            eq(assignments.employeeId, employees.id),
+            isNull(assignments.effectiveTo) // Current assignment
+          )
+        )
+        .leftJoin(positions, eq(positions.id, assignments.positionId))
+        .where(
+          and(
+            eq(employees.tenantId, ctx.user.tenantId),
+            eq(employees.status, 'active')
+          )
+        );
+
+      // Get existing time entries for this date
+      const existingEntries = await db
+        .select({
+          employeeId: timeEntries.employeeId,
+        })
+        .from(timeEntries)
+        .where(
+          and(
+            eq(timeEntries.tenantId, ctx.user.tenantId),
+            gte(timeEntries.clockIn, startOfDay.toISOString()),
+            lt(timeEntries.clockIn, endOfDay.toISOString())
+          )
+        );
+
+      // Create a set of employee IDs who already have entries
+      const employeeIdsWithEntries = new Set(existingEntries.map((e) => e.employeeId));
+
+      // Filter out employees who already have entries
+      const employeesNeedingHours = activeEmployees
+        .filter((emp) => !employeeIdsWithEntries.has(emp.employeeId))
+        .map((emp) => ({
+          id: emp.employeeId,
+          firstName: emp.firstName,
+          lastName: emp.lastName,
+          position: emp.positionTitle || 'Sans poste',
+        }));
+
+      return employeesNeedingHours;
     }),
 });
