@@ -136,6 +136,7 @@ export default function OnboardingQ2Page() {
             lastName: formData.lastName,
           }}
           payslip={payslipPreview}
+          rateType={formData.rateType}
           onContinue={handleContinue}
           onEdit={handleEdit}
           isCreating={createEmployeeMutation.isPending}

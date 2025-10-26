@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Check, ChevronDown } from 'lucide-react';
+import { formatCurrencyWithRate, convertMonthlyAmountToRateType } from '@/features/employees/utils/rate-type-labels';
+import type { RateType } from '@/features/employees/utils/rate-type-labels';
 
 interface PayslipPreviewCardProps {
   employee: {
@@ -32,6 +34,7 @@ interface PayslipPreviewCardProps {
     cmuEmployer?: number;
     totalEmployerCost: number;
   };
+  rateType?: RateType | null;
   onContinue: () => void;
   onEdit: () => void;
   isCreating?: boolean;
@@ -40,13 +43,32 @@ interface PayslipPreviewCardProps {
 export function PayslipPreviewCard({
   employee,
   payslip,
+  rateType = 'MONTHLY',
   onContinue,
   onEdit,
   isCreating = false,
 }: PayslipPreviewCardProps) {
-  // Helper to safely format numbers
+  // Helper to safely format numbers with rate awareness
   const formatCurrency = (value: number | undefined): string => {
     return (value ?? 0).toLocaleString('fr-FR');
+  };
+
+  // Helper to format with rate suffix
+  const formatWithRate = (value: number | undefined): string => {
+    return formatCurrencyWithRate(value ?? 0, rateType as RateType);
+  };
+
+  // Helper to convert component amounts from monthly to rate type
+  const convertComponent = (amount: number | undefined): number => {
+    return convertMonthlyAmountToRateType(amount ?? 0, rateType as RateType);
+  };
+
+  // IMPORTANT: calculatePayrollV2 returns MONTHLY totals even for DAILY/HOURLY workers
+  // (it multiplies daily rate × 30 days for preview)
+  // We need to convert these monthly totals back to per-day/per-hour rates for display
+  const convertMonthlyToRate = (monthlyAmount: number | undefined): number => {
+    if (!monthlyAmount) return 0;
+    return convertMonthlyAmountToRateType(monthlyAmount, rateType as RateType);
   };
 
   return (
@@ -75,7 +97,7 @@ export function PayslipPreviewCard({
           <div className="space-y-2">
             <div className="flex justify-between">
               <span>Salaire brut:</span>
-              <strong className="text-lg">{formatCurrency(payslip.grossSalary)} FCFA</strong>
+              <strong className="text-lg">{formatWithRate(convertMonthlyToRate(payslip.grossSalary))}</strong>
             </div>
 
             <Separator />
@@ -102,7 +124,7 @@ export function PayslipPreviewCard({
             <div className="flex justify-between items-center p-3 bg-green-100 rounded-lg">
               <span className="font-semibold">Salaire net:</span>
               <strong className="text-2xl text-green-700">
-                {formatCurrency(payslip.netSalary)} FCFA
+                {formatWithRate(convertMonthlyToRate(payslip.netSalary))}
               </strong>
             </div>
           </div>
@@ -123,14 +145,14 @@ export function PayslipPreviewCard({
                 <div className="space-y-1 pl-3">
                   <div className="flex justify-between">
                     <span>Salaire de base:</span>
-                    <span>{formatCurrency(payslip.baseSalary)} FCFA</span>
+                    <span>{formatWithRate(convertMonthlyToRate(payslip.baseSalary))}</span>
                   </div>
                   {/* Display modern components array */}
                   {payslip.components && payslip.components.length > 0 && (
                     payslip.components.map((component, index) => (
                       <div key={index} className="flex justify-between">
                         <span>{component.name}:</span>
-                        <span>{formatCurrency(component.amount)} FCFA</span>
+                        <span>{formatWithRate(convertComponent(component.amount))}</span>
                       </div>
                     ))
                   )}
@@ -140,19 +162,19 @@ export function PayslipPreviewCard({
                       {payslip.transportAllowance && payslip.transportAllowance > 0 && (
                         <div className="flex justify-between">
                           <span>Indemnité transport:</span>
-                          <span>{formatCurrency(payslip.transportAllowance)} FCFA</span>
+                          <span>{formatWithRate(convertComponent(payslip.transportAllowance))}</span>
                         </div>
                       )}
                       {payslip.housingAllowance && payslip.housingAllowance > 0 && (
                         <div className="flex justify-between">
                           <span>Indemnité logement:</span>
-                          <span>{formatCurrency(payslip.housingAllowance)} FCFA</span>
+                          <span>{formatWithRate(convertComponent(payslip.housingAllowance))}</span>
                         </div>
                       )}
                       {payslip.mealAllowance && payslip.mealAllowance > 0 && (
                         <div className="flex justify-between">
                           <span>Indemnité repas:</span>
-                          <span>{formatCurrency(payslip.mealAllowance)} FCFA</span>
+                          <span>{formatWithRate(convertComponent(payslip.mealAllowance))}</span>
                         </div>
                       )}
                     </>
