@@ -9,6 +9,7 @@ import type {
   SalaryComponentInstance,
   CIComponentMetadata,
 } from '@/features/employees/types/salary-components';
+import { getVariablePayInputsForEmployee } from '@/features/payroll/services/variable-pay-inputs.service';
 
 export interface EmployeeSalaryData {
   components: SalaryComponentInstance[];
@@ -64,11 +65,36 @@ export function getEmployeeSalaryComponents(
   return breakdown;
 }
 
+// ============================================================================
+// LEGACY: Component Reader (Backward Compatibility Only)
+// ============================================================================
+//
+// ⚠️ WARNING: This section contains legacy code for backward compatibility.
+//
+// **DO NOT USE THIS FOR NEW CODE**
+//
+// For metadata-driven component processing, use:
+//   - ComponentProcessor.processComponents() in lib/salary-components/
+//
+// This legacy code exists only to support:
+//   1. Old code that directly calls getEmployeeSalaryComponents()
+//   2. Simple breakdown conversion (components → structured breakdown)
+//
+// Migration path:
+//   - Old: getEmployeeSalaryComponents(salary) → ComponentsBreakdown
+//   - New: ComponentProcessor.processComponents(components, context) → ProcessedComponent[]
+//
+// ============================================================================
+
 /**
- * Read from new component-based system
+ * Read from new component-based system (LEGACY)
+ *
+ * ⚠️ This function uses hardcoded logic for backward compatibility.
+ * For metadata-driven processing, use ComponentProcessor instead.
  *
  * @param components Salary component instances
  * @returns Breakdown for calculation
+ * @deprecated Use ComponentProcessor for new code
  */
 function readFromComponents(
   components: SalaryComponentInstance[]
@@ -84,6 +110,8 @@ function readFromComponents(
     customComponents: [],
   };
 
+  // LEGACY SWITCH: Maps component codes to breakdown fields
+  // For metadata-driven processing, see ComponentProcessor.processComponent()
   for (const component of components) {
     switch (component.code) {
       case '11': // Base salary
@@ -110,6 +138,22 @@ function readFromComponents(
         breakdown.familyAllowance = component.amount;
         break;
 
+      // Non-taxable allowances (codes 33-38)
+      case '33': // Prime de salissure (Dirtiness allowance)
+      case '34': // Prime de représentation (Representation allowance)
+      case '35': // Prime de déplacement (Travel allowance)
+      case '36': // Prime de tenue (Uniform allowance)
+      case '37': // Prime de caisse (Cashier allowance)
+      case '38': // Prime de panier (Meal basket allowance)
+      case 'responsibility': // Indemnité de responsabilité (Responsibility allowance)
+        // These are non-taxable allowances - add to otherAllowances
+        breakdown.otherAllowances.push({
+          name: component.name,
+          amount: component.amount,
+          taxable: false, // Explicitly non-taxable
+        });
+        break;
+
       default:
         // Custom component (CUSTOM_XXX codes)
         if (component.code.startsWith('CUSTOM_')) {
@@ -130,10 +174,14 @@ function readFromComponents(
 
 
 /**
- * Check if component is taxable based on metadata
+ * Check if component is taxable based on metadata (LEGACY)
+ *
+ * ⚠️ DEPRECATED: This is a legacy helper for backward compatibility.
+ * New code should use ComponentProcessor for metadata-driven processing.
  *
  * @param component Salary component instance
  * @returns true if taxable
+ * @deprecated Use ComponentProcessor.processComponent() for tax treatment
  */
 function isComponentTaxable(component: SalaryComponentInstance): boolean {
   if (!component.metadata) return true; // Default: taxable
@@ -148,6 +196,20 @@ function isComponentTaxable(component: SalaryComponentInstance): boolean {
   // Generic fallback
   return true;
 }
+
+// ============================================================================
+// END OF LEGACY SECTION
+// ============================================================================
+//
+// Everything above this line is legacy code. For new features:
+//   1. Use ComponentProcessor.processComponents() for metadata-driven processing
+//   2. Use the helpers below for tax treatment queries (already metadata-aware)
+//
+// Migration path documented in:
+//   - docs/DATABASE-DRIVEN-COMPONENT-ARCHITECTURE.md
+//   - lib/salary-components/component-processor.ts
+//
+// ============================================================================
 
 // ============================================================================
 // Tax Treatment Helpers (for Payroll Calculation)
@@ -214,4 +276,79 @@ export function getTotalGrossFromComponents(
   components: SalaryComponentInstance[]
 ): number {
   return components.reduce((sum, c) => sum + c.amount, 0);
+}
+
+// ============================================================================
+// Variable Pay Integration (Async)
+// ============================================================================
+
+/**
+ * Get employee salary components for a specific period (async version)
+ *
+ * Merges fixed components from employee_salaries.components with
+ * variable pay inputs for the period.
+ *
+ * Architecture:
+ * - Fixed components (housing, transport) → employee_salaries.components
+ * - Variable components (commissions, bonuses) → variable_pay_inputs table
+ * - Payroll calculation → uses this merged result
+ *
+ * @param salaryData Employee salary record with fixed components
+ * @param employeeId Employee ID
+ * @param period Period in YYYY-MM-01 format
+ * @param tenantId Tenant ID for security
+ * @returns Components breakdown with variable inputs merged
+ */
+export async function getEmployeeSalaryComponentsForPeriod(
+  salaryData: EmployeeSalaryData,
+  employeeId: string,
+  period: string, // YYYY-MM-01
+  tenantId: string
+): Promise<ComponentsBreakdown> {
+  // Start with fixed components
+  const fixedComponents = salaryData.components as SalaryComponentInstance[];
+
+  // Fetch variable inputs for this period
+  const variableInputs = await getVariablePayInputsForEmployee(
+    tenantId,
+    employeeId,
+    period
+  );
+
+  // Merge: If a component has a variable input, use that amount instead
+  const mergedComponents = fixedComponents.map((component) => {
+    const variableInput = variableInputs.find(
+      (v) => v.componentCode === component.code
+    );
+
+    if (variableInput) {
+      // Use variable amount instead of fixed amount
+      return {
+        ...component,
+        amount: Number(variableInput.amount),
+      };
+    }
+
+    return component;
+  });
+
+  // Add variable-only components (not in fixed components)
+  for (const variableInput of variableInputs) {
+    const existsInFixed = fixedComponents.some(
+      (c) => c.code === variableInput.componentCode
+    );
+
+    if (!existsInFixed) {
+      // This is a variable-only component, add it to the merged list
+      mergedComponents.push({
+        code: variableInput.componentCode,
+        name: variableInput.componentCode, // Will be enriched by component definition lookup
+        amount: Number(variableInput.amount),
+        sourceType: 'custom', // Variable inputs are treated as custom components
+      });
+    }
+  }
+
+  // Convert to breakdown format
+  return readFromComponents(mergedComponents);
 }
