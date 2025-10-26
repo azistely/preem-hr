@@ -33,6 +33,23 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
     ? Object.values(baseComponents).reduce((sum: number, amt: any) => sum + (amt || 0), 0)
     : (values.baseSalary || 0);
 
+  const rateType = values.rateType || 'MONTHLY';
+
+  // For preview calculation, convert daily/hourly rates to estimated monthly
+  // This is ONLY for preview purposes - actual payroll uses real days/hours worked
+  // IMPORTANT: Use 30 days (not 22) to match backend validation logic in onboarding.ts
+  const getEstimatedMonthlySalary = () => {
+    if (rateType === 'DAILY') {
+      // Use 30 days to match backend SMIG validation (75,000 / 30 = 2,500/day)
+      return Math.round(baseSalaryTotal * 30);
+    } else if (rateType === 'HOURLY') {
+      // Standard month = 240 hours (30 days × 8 hours)
+      return Math.round(baseSalaryTotal * 240);
+    }
+    return baseSalaryTotal; // MONTHLY
+  };
+
+  const estimatedMonthlySalary = getEstimatedMonthlySalary();
   const totalGross = baseSalaryTotal + componentTotal;
 
   // Calculate preview when component mounts or when relevant values change
@@ -44,10 +61,34 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
           return;
         }
 
+        // For preview, we need to pass monthly amounts to get accurate deductions
+        // Convert base salary to monthly equivalent for daily/hourly workers
+        const previewBaseSalary = Object.keys(baseComponents).length === 0
+          ? estimatedMonthlySalary
+          : undefined;
+
+        // For base components, convert to monthly if needed
+        // IMPORTANT: Use 30 days (not 22) to match backend validation
+        const previewBaseComponents: Record<string, number> | undefined = Object.keys(baseComponents).length > 0
+          ? Object.fromEntries(
+              Object.entries(baseComponents).map(([code, amount]) => {
+                const numAmount = typeof amount === 'number' ? amount : 0;
+                return [
+                  code,
+                  rateType === 'DAILY'
+                    ? Math.round(numAmount * 30)
+                    : rateType === 'HOURLY'
+                    ? Math.round(numAmount * 240)
+                    : numAmount
+                ];
+              })
+            ) as Record<string, number>
+          : undefined;
+
         const result = await calculatePreviewMutation.mutateAsync({
-          baseSalary: Object.keys(baseComponents).length === 0 ? baseSalaryTotal : undefined,
-          baseComponents: Object.keys(baseComponents).length > 0 ? baseComponents : undefined,
-          rateType: values.rateType || 'MONTHLY',
+          baseSalary: previewBaseSalary,
+          baseComponents: previewBaseComponents,
+          rateType: 'MONTHLY', // Always pass MONTHLY for preview calculation
           hireDate: values.hireDate instanceof Date ? values.hireDate : new Date(values.hireDate),
           maritalStatus: values.maritalStatus || 'single',
           dependentChildren: values.dependentChildren || 0,
@@ -61,7 +102,7 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
     };
 
     calculatePreview();
-  }, [values.hireDate, baseSalaryTotal, componentTotal, values.rateType, components.length]);
+  }, [values.hireDate, baseSalaryTotal, componentTotal, rateType, components.length]);
 
   return (
     <div className="space-y-6">
@@ -126,8 +167,12 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
         <h3 className="font-semibold mb-3">Rémunération</h3>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Salaire de base</span>
-            <span className="font-medium">{formatCurrency(values.baseSalary)}</span>
+            <span className="text-muted-foreground">
+              Salaire de base{rateType !== 'MONTHLY' ? ` (${rateType === 'DAILY' ? 'journalier' : 'horaire'})` : ''}
+            </span>
+            <span className="font-medium">
+              {formatCurrency(baseSalaryTotal)}{rateType !== 'MONTHLY' ? `/${rateType === 'DAILY' ? 'jour' : 'heure'}` : ''}
+            </span>
           </div>
           {values.housingAllowance > 0 && (
             <div className="flex justify-between">
@@ -185,7 +230,22 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
 
       {/* Payslip Preview */}
       <div>
-        <h3 className="font-semibold mb-3">Aperçu de la paie mensuelle</h3>
+        <h3 className="font-semibold mb-3">
+          {rateType === 'MONTHLY'
+            ? 'Aperçu de la paie mensuelle'
+            : 'Aperçu de la paie (mois type)'}
+        </h3>
+
+        {rateType !== 'MONTHLY' && (
+          <Alert className="mb-3">
+            <AlertDescription>
+              <strong>Travailleur {rateType === 'DAILY' ? 'journalier' : 'horaire'}:</strong>{' '}
+              Cet aperçu est basé sur un mois type de{' '}
+              {rateType === 'DAILY' ? '30 jours' : '240 heures (30 jours × 8h)'}.{' '}
+              Le salaire réel variera selon les jours/heures effectivement travaillés.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {calculatePreviewMutation.isPending ? (
           <div className="flex items-center justify-center p-8 bg-muted/50 rounded-lg">
@@ -201,8 +261,30 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
         ) : payslipPreview ? (
           <div className="p-4 bg-white rounded-lg border">
             <div className="space-y-2">
+              {rateType !== 'MONTHLY' && (
+                <>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>
+                      Taux {rateType === 'DAILY' ? 'journalier' : 'horaire'}:
+                    </span>
+                    <span className="font-medium">
+                      {formatCurrency(baseSalaryTotal)}/{rateType === 'DAILY' ? 'jour' : 'heure'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>
+                      × {rateType === 'DAILY' ? '30 jours' : '240 heures'} (mois type):
+                    </span>
+                    <span className="font-medium">
+                      {formatCurrency(estimatedMonthlySalary)}
+                    </span>
+                  </div>
+                  <Separator />
+                </>
+              )}
+
               <div className="flex justify-between">
-                <span>Salaire brut:</span>
+                <span>Salaire brut {rateType !== 'MONTHLY' ? 'estimé' : ''}:</span>
                 <strong className="text-lg">{formatCurrency(payslipPreview.grossSalary)}</strong>
               </div>
 
@@ -228,9 +310,9 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
               <Separator />
 
               <div className="flex justify-between items-center p-3 bg-green-100 rounded-lg">
-                <span className="font-semibold">Salaire net:</span>
+                <span className="font-semibold">Salaire net {rateType !== 'MONTHLY' ? 'estimé' : ''}:</span>
                 <strong className="text-2xl text-green-700">
-                  {formatCurrency(payslipPreview.netSalary)} FCFA
+                  {formatCurrency(payslipPreview.netSalary)}
                 </strong>
               </div>
 
