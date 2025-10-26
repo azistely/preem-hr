@@ -24,9 +24,11 @@ import { ruleLoader } from './rule-loader';
 import { db } from '@/lib/db';
 import { employeeSiteAssignments, locations, employees } from '@/lib/db/schema';
 import { and, eq, gte, lte } from 'drizzle-orm';
+import { ComponentProcessor, componentDefinitionCache } from '@/lib/salary-components';
 
 export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   countryCode: string; // Required for loading config
+  tenantId?: string; // Required for tenant-specific component overrides
   fiscalParts?: number; // For tax deductions (1.0, 1.5, 2.0, etc.)
   sectorCode?: string; // For sector-specific contributions
   seniorityBonus?: number; // Seniority bonus from components
@@ -44,6 +46,106 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   // Banking convention support (GAP-CONV-BANK-001)
   conventionCode?: string; // 'INTERPRO', 'BANKING', 'BTP'
   professionalLevel?: number; // 1-9 for banking sector
+
+  // Seniority calculation (for component processing)
+  yearsOfService?: number; // Pre-calculated years of service
+
+  // Preview mode (for hiring flow before component activation)
+  isPreview?: boolean; // If true, use safe defaults for unknown components
+}
+
+/**
+ * Convert individual allowance fields to component instances
+ *
+ * For backward compatibility with code that uses individual fields
+ * (baseSalary, transportAllowance, etc.) instead of components array.
+ *
+ * @param input - Payroll calculation input
+ * @returns Array of component instances
+ */
+function convertAllowancesToComponents(
+  input: PayrollCalculationInputV2
+): SalaryComponentInstance[] {
+  const components: SalaryComponentInstance[] = [];
+
+  // Base salary (Code 11)
+  if (input.baseSalary > 0) {
+    components.push({
+      code: '11',
+      name: 'Salaire de base',
+      amount: input.baseSalary,
+      sourceType: 'standard',
+    });
+  }
+
+  // Seniority bonus (Code 21) - if provided
+  if (input.seniorityBonus && input.seniorityBonus > 0) {
+    components.push({
+      code: '21',
+      name: "Prime d'ancienneté",
+      amount: input.seniorityBonus,
+      sourceType: 'standard',
+    });
+  }
+
+  // Transport allowance (Code 22)
+  if (input.transportAllowance && input.transportAllowance > 0) {
+    components.push({
+      code: '22',
+      name: 'Prime de transport',
+      amount: input.transportAllowance,
+      sourceType: 'standard',
+    });
+  }
+
+  // Housing allowance (Code 23)
+  if (input.housingAllowance && input.housingAllowance > 0) {
+    components.push({
+      code: '23',
+      name: 'Indemnité de logement',
+      amount: input.housingAllowance,
+      sourceType: 'standard',
+    });
+  }
+
+  // Meal allowance (Code 24)
+  if (input.mealAllowance && input.mealAllowance > 0) {
+    components.push({
+      code: '24',
+      name: 'Indemnité de repas',
+      amount: input.mealAllowance,
+      sourceType: 'standard',
+    });
+  }
+
+  // Family allowance (Code 41)
+  if (input.familyAllowance && input.familyAllowance > 0) {
+    components.push({
+      code: '41',
+      name: 'Allocations familiales',
+      amount: input.familyAllowance,
+      sourceType: 'standard',
+    });
+  }
+
+  // Other allowances (from template components)
+  if (input.otherAllowances && input.otherAllowances.length > 0) {
+    for (const allowance of input.otherAllowances) {
+      components.push({
+        code: 'CUSTOM_ALLOWANCE',
+        name: allowance.name,
+        amount: allowance.amount,
+        sourceType: 'custom',
+      });
+    }
+  }
+
+  // Custom components (if provided)
+  if (input.customComponents && input.customComponents.length > 0) {
+    components.push(...input.customComponents);
+  }
+
+  return components;
 }
 
 /**
@@ -239,6 +341,23 @@ export async function calculatePayrollV2(
   );
 
   // ========================================
+  // STEP 0.1: Initialize Component Processor (Database-Driven)
+  // ========================================
+  const componentProcessor = new ComponentProcessor(componentDefinitionCache);
+
+  // ========================================
+  // STEP 0.2: Gather All Salary Components
+  // ========================================
+  // Convert individual allowance fields to component instances (backward compatibility)
+  const allComponents = convertAllowancesToComponents(input);
+
+  // Calculate total remuneration for percentage-based caps
+  // (needed before processing components)
+  const totalRemuneration = allComponents.reduce((sum, c) => sum + c.amount, 0);
+
+  console.log(`[COMPONENT PROCESSING] Total components: ${allComponents.length}, Total remuneration: ${totalRemuneration.toLocaleString('fr-FR')} FCFA`);
+
+  // ========================================
   // STEP 0.3: Validate Transport Allowance Against City Minimum
   // ========================================
   // Skip validation in preview mode (Q2 onboarding)
@@ -316,6 +435,103 @@ export async function calculatePayrollV2(
     input.periodStart,
     input.periodEnd
   );
+
+  // ========================================
+  // STEP 0.7: Process Components with Metadata-Driven Rules
+  // ========================================
+
+  // Get employee's city for city-based caps (e.g., transport exemption)
+  let employeeCity: string | undefined;
+  if (input.employeeId !== 'preview') {
+    try {
+      const [employee] = await db
+        .select({
+          primaryLocationId: employees.primaryLocationId,
+        })
+        .from(employees)
+        .where(eq(employees.id, input.employeeId))
+        .limit(1);
+
+      if (employee?.primaryLocationId) {
+        const [employeeLocation] = await db
+          .select({
+            city: locations.city,
+          })
+          .from(locations)
+          .where(eq(locations.id, employee.primaryLocationId))
+          .limit(1);
+
+        employeeCity = employeeLocation?.city ?? undefined;
+      }
+    } catch (error) {
+      console.warn('[COMPONENT PROCESSING] Could not fetch employee city:', error);
+    }
+  }
+
+  // Process all components through metadata-driven processor
+  // This will apply tenant overrides if tenantId is provided
+  const processedComponents = await componentProcessor.processComponents(
+    allComponents,
+    {
+      totalRemuneration,
+      baseSalary: input.baseSalary,
+      countryCode: input.countryCode,
+      city: employeeCity,
+      effectiveDate: input.periodStart,
+      tenantId: input.tenantId, // Enables tenant-specific overrides
+      hireDate: input.hireDate,
+      yearsOfService: input.yearsOfService,
+      isPreview: input.isPreview, // Use safe defaults for unknown components in preview mode
+    }
+  );
+
+  // Check for validation errors
+  const componentErrors = processedComponents.flatMap((c) => c.errors ?? []);
+  if (componentErrors.length > 0) {
+    throw new Error(`Component validation failed: ${componentErrors.join('; ')}`);
+  }
+
+  // Log component processing results
+  console.log('[COMPONENT PROCESSING] Results:');
+  for (const pc of processedComponents) {
+    if (pc.capApplied) {
+      console.log(`  ${pc.name}: ${pc.originalAmount.toLocaleString('fr-FR')} → Exempt: ${pc.exemptPortion.toLocaleString('fr-FR')}, Taxable: ${pc.taxablePortion.toLocaleString('fr-FR')}`);
+      console.log(`    Cap: ${pc.capApplied.reason}`);
+    } else {
+      console.log(`  ${pc.name}: ${pc.originalAmount.toLocaleString('fr-FR')} (${pc.taxablePortion > 0 ? 'taxable' : 'exempt'})`);
+    }
+  }
+
+  // ========================================
+  // STEP 0.8: Calculate Metadata-Driven Bases
+  // ========================================
+
+  // Total Gross = Sum of all component amounts
+  const totalGrossFromComponents = processedComponents.reduce(
+    (sum, c) => sum + c.originalAmount,
+    0
+  );
+
+  // Brut Imposable = Sum of taxable portions of components marked as includeInBrutImposable
+  const brutImposableFromComponents = processedComponents
+    .filter((c) => c.includeInBrutImposable)
+    .reduce((sum, c) => sum + c.taxablePortion, 0);
+
+  // Salaire Catégoriel = Sum of components marked as includeInSalaireCategoriel (CI only)
+  const salaireCategorielFromComponents = processedComponents
+    .filter((c) => c.includeInSalaireCategoriel)
+    .reduce((sum, c) => sum + c.originalAmount, 0);
+
+  // CNPS Base = Sum of components marked as includeInCnpsBase
+  const cnpsBaseFromComponents = processedComponents
+    .filter((c) => c.includeInCnpsBase)
+    .reduce((sum, c) => sum + c.originalAmount, 0);
+
+  console.log('[COMPONENT PROCESSING] Calculated bases:');
+  console.log(`  Total Gross: ${totalGrossFromComponents.toLocaleString('fr-FR')} FCFA`);
+  console.log(`  Brut Imposable: ${brutImposableFromComponents.toLocaleString('fr-FR')} FCFA`);
+  console.log(`  Salaire Catégoriel: ${salaireCategorielFromComponents.toLocaleString('fr-FR')} FCFA`);
+  console.log(`  CNPS Base: ${cnpsBaseFromComponents.toLocaleString('fr-FR')} FCFA`);
 
   // ========================================
   // STEP 1: Calculate Gross Salary (Rate Type Aware)
@@ -475,24 +691,29 @@ export async function calculatePayrollV2(
   const grossSalary = grossCalc.totalGross;
 
   // ========================================
-  // STEP 2: Calculate Social Security Contributions
+  // STEP 2: Calculate Social Security Contributions (Metadata-Driven Bases)
   // ========================================
+
+  // Use CNPS base from metadata-driven processing
+  // This ensures only components marked as includeInCnpsBase are included
   const { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer } =
     calculateSocialSecurityContributions(
-      grossSalary,
+      cnpsBaseFromComponents, // ← Use metadata-driven base instead of gross
       config.contributions,
       config.sectorOverrides,
       {
         sectorCode: input.sectorCode || config.socialSecurityScheme.defaultSectorCode, // Use database default
         hasFamily: input.hasFamily || false,
-        salaireCategoriel: effectiveSalaireCategoriel, // Code 11 for CNPS calculations (rate-adjusted)
+        salaireCategoriel: salaireCategorielFromComponents, // ← Use metadata-driven salaire catégoriel
       }
     );
+
+  console.log('[SOCIAL SECURITY] Contributions calculated on CNPS base:', cnpsBaseFromComponents.toLocaleString('fr-FR'), 'FCFA');
 
   console.log('[DEBUG AFTER SS]', { cmuEmployee, cmuEmployer, cnpsEmployee, cnpsEmployer });
 
   // ========================================
-  // STEP 3: Calculate Tax (Database-Driven with Annualization for Daily/Hourly)
+  // STEP 3: Calculate Tax (Metadata-Driven Brut Imposable)
   // ========================================
   const taxStrategy = new ProgressiveMonthlyTaxStrategy(
     config.taxBrackets,
@@ -507,6 +728,8 @@ export async function calculatePayrollV2(
       ? 0
       : (cnpsEmployee + cmuEmployee);
 
+  console.log('[TAX CALCULATION] Base for tax:', brutImposableFromComponents.toLocaleString('fr-FR'), 'FCFA (Brut Imposable from metadata)');
+
   // For DAILY/HOURLY workers, we need to annualize the tax calculation
   // Otherwise, prorated earnings would result in zero or minimal tax
   let taxResult: any;
@@ -516,17 +739,17 @@ export async function calculatePayrollV2(
     const daysWorked = input.daysWorkedThisMonth;
     const standardMonthDays = 30;
 
-    // Calculate full-month gross by annualizing prorated gross
-    const annualizedGross = Math.round((grossSalary / daysWorked) * standardMonthDays);
+    // Calculate full-month brut imposable by annualizing prorated amount
+    const annualizedBrutImposable = Math.round((brutImposableFromComponents / daysWorked) * standardMonthDays);
     const annualizedEmployeeContributions = Math.round((employeeContributionsForTax / daysWorked) * standardMonthDays);
 
     console.log(`[DAILY WORKER TAX ANNUALIZATION] Days worked: ${daysWorked}`);
-    console.log(`[DAILY WORKER TAX ANNUALIZATION] Prorated gross: ${grossSalary} FCFA`);
-    console.log(`[DAILY WORKER TAX ANNUALIZATION] Annualized gross (full month): ${annualizedGross} FCFA`);
+    console.log(`[DAILY WORKER TAX ANNUALIZATION] Prorated Brut Imposable: ${brutImposableFromComponents} FCFA`);
+    console.log(`[DAILY WORKER TAX ANNUALIZATION] Annualized Brut Imposable (full month): ${annualizedBrutImposable} FCFA`);
 
-    // Calculate tax on full-month gross
+    // Calculate tax on full-month brut imposable
     const annualizedTaxResult = taxStrategy.calculate({
-      grossSalary: annualizedGross,
+      grossSalary: annualizedBrutImposable, // Use brut imposable, not total gross
       employeeContributions: annualizedEmployeeContributions,
       fiscalParts: input.fiscalParts || 1.0,
     });
@@ -543,24 +766,24 @@ export async function calculatePayrollV2(
     taxResult = {
       ...annualizedTaxResult,
       monthlyTax: proratedTax,
-      grossSalary: grossSalary, // Keep actual prorated gross for display
+      grossSalary: brutImposableFromComponents, // Keep actual prorated brut imposable for display
       employeeContributions: employeeContributionsForTax, // Keep actual prorated contributions
     };
   } else if (rateType === 'HOURLY' && input.hoursWorkedThisMonth) {
     const hoursWorked = input.hoursWorkedThisMonth;
     const standardMonthlyHours = 173.33;
 
-    // Calculate full-month gross by annualizing prorated gross
-    const annualizedGross = Math.round((grossSalary / hoursWorked) * standardMonthlyHours);
+    // Calculate full-month brut imposable by annualizing prorated amount
+    const annualizedBrutImposable = Math.round((brutImposableFromComponents / hoursWorked) * standardMonthlyHours);
     const annualizedEmployeeContributions = Math.round((employeeContributionsForTax / hoursWorked) * standardMonthlyHours);
 
     console.log(`[HOURLY WORKER TAX ANNUALIZATION] Hours worked: ${hoursWorked}`);
-    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Prorated gross: ${grossSalary} FCFA`);
-    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Annualized gross (full month): ${annualizedGross} FCFA`);
+    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Prorated Brut Imposable: ${brutImposableFromComponents} FCFA`);
+    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Annualized Brut Imposable (full month): ${annualizedBrutImposable} FCFA`);
 
-    // Calculate tax on full-month gross
+    // Calculate tax on full-month brut imposable
     const annualizedTaxResult = taxStrategy.calculate({
-      grossSalary: annualizedGross,
+      grossSalary: annualizedBrutImposable, // Use brut imposable, not total gross
       employeeContributions: annualizedEmployeeContributions,
       fiscalParts: input.fiscalParts || 1.0,
     });
@@ -577,13 +800,13 @@ export async function calculatePayrollV2(
     taxResult = {
       ...annualizedTaxResult,
       monthlyTax: proratedTax,
-      grossSalary: grossSalary, // Keep actual prorated gross for display
+      grossSalary: brutImposableFromComponents, // Keep actual prorated brut imposable for display
       employeeContributions: employeeContributionsForTax, // Keep actual prorated contributions
     };
   } else {
     // MONTHLY workers: calculate tax normally (no annualization needed)
     taxResult = taxStrategy.calculate({
-      grossSalary,
+      grossSalary: brutImposableFromComponents, // Use brut imposable from metadata
       employeeContributions: employeeContributionsForTax,
       fiscalParts: input.fiscalParts || 1.0,
     });

@@ -751,6 +751,11 @@ export const onboardingRouter = createTRPCRouter({
           // Pass template components properly as otherAllowances
           otherAllowances: otherAllowances,
           sectorCode: tenant.sectorCode || 'SERVICES',
+          isPreview: true, // Use safe defaults for components not yet activated
+          // Rate type support (GAP-JOUR-003)
+          rateType: input.rateType || 'MONTHLY',
+          daysWorkedThisMonth: input.rateType === 'DAILY' ? 30 : undefined, // Full month for preview
+          hoursWorkedThisMonth: input.rateType === 'HOURLY' ? 30 * 8 : undefined, // Full month for preview
         });
 
         // Return preview in expected format
