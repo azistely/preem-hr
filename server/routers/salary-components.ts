@@ -608,4 +608,135 @@ export const salaryComponentsRouter = createTRPCRouter({
       const { countryCode } = input;
       return await getBaseSalaryComponents(countryCode);
     }),
+
+  // ========================================================================
+  // Tenant Override Endpoints (for database-driven architecture)
+  // ========================================================================
+
+  /**
+   * Get a standard component definition by code
+   */
+  getStandardComponent: publicProcedure
+    .input(z.object({
+      code: z.string(),
+      countryCode: z.string().length(2),
+    }))
+    .query(async ({ input }) => {
+      const { code, countryCode } = input;
+
+      const results = await db
+        .select()
+        .from(salaryComponentDefinitions)
+        .where(
+          and(
+            eq(salaryComponentDefinitions.code, code),
+            eq(salaryComponentDefinitions.countryCode, countryCode)
+          )
+        )
+        .limit(1);
+
+      if (results.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Component ${code} not found for country ${countryCode}`,
+        });
+      }
+
+      return results[0];
+    }),
+
+  /**
+   * Get tenant override for a component (if exists)
+   */
+  getTenantOverride: publicProcedure
+    .input(z.object({
+      code: z.string(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const { code } = input;
+      const tenantId = ctx.user?.tenantId;
+
+      if (!tenantId) {
+        return null;
+      }
+
+      const results = await db
+        .select()
+        .from(tenantSalaryComponentActivations)
+        .where(
+          and(
+            eq(tenantSalaryComponentActivations.tenantId, tenantId),
+            eq(tenantSalaryComponentActivations.templateCode, code),
+            eq(tenantSalaryComponentActivations.isActive, true)
+          )
+        )
+        .limit(1);
+
+      return results.length > 0 ? results[0] : null;
+    }),
+
+  /**
+   * Update or create tenant override for a standard component
+   */
+  updateTenantOverride: publicProcedure
+    .input(z.object({
+      code: z.string(),
+      customName: z.string().optional(),
+      overrides: z.any().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { code, customName, overrides } = input;
+      const tenantId = ctx.user?.tenantId;
+      const userId = ctx.user?.id;
+
+      if (!tenantId) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Tenant ID required',
+        });
+      }
+
+      // Check if override already exists
+      const existing = await db
+        .select()
+        .from(tenantSalaryComponentActivations)
+        .where(
+          and(
+            eq(tenantSalaryComponentActivations.tenantId, tenantId),
+            eq(tenantSalaryComponentActivations.templateCode, code)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        // Update existing
+        await db
+          .update(tenantSalaryComponentActivations)
+          .set({
+            customName: customName || null,
+            overrides: overrides || {},
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(tenantSalaryComponentActivations.id, existing[0].id));
+
+        return { success: true, id: existing[0].id };
+      } else {
+        // Create new
+        const [result] = await db
+          .insert(tenantSalaryComponentActivations)
+          .values({
+            tenantId,
+            countryCode: 'CI', // TODO: Get from tenant
+            templateCode: code,
+            customName: customName || null,
+            overrides: overrides || {},
+            isActive: true,
+            displayOrder: 0,
+            createdBy: userId || null,
+          })
+          .returning({ id: tenantSalaryComponentActivations.id });
+
+        return { success: true, id: result.id };
+      }
+    }),
 });

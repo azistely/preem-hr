@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Sparkles, Settings2, Trash2, Pencil, Lock, Settings as SettingsIcon, Palette } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -157,8 +158,14 @@ export default function SalaryComponentsPage() {
           )}
         </TabsContent>
 
-        {/* Standard Components (Read-Only) */}
+        {/* Standard Components */}
         <TabsContent value="standard" className="space-y-4">
+          <Alert className="mb-4">
+            <SettingsIcon className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Composants standards</strong> - Ces composants sont définis par la loi. Vous pouvez personnaliser certains paramètres pour votre entreprise (par exemple, réduire les plafonds d'exonération).
+            </AlertDescription>
+          </Alert>
           {loadingStandard ? (
             <Card>
               <CardContent className="py-8">
@@ -168,16 +175,25 @@ export default function SalaryComponentsPage() {
           ) : standardComponents && standardComponents.length > 0 ? (
             standardComponents.map((component) => (
               <Card key={component.id}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    {(component.name as Record<string, string>).fr}
-                    <Badge variant="outline">{component.code}</Badge>
-                    <Badge variant="secondary">Standard</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    Catégorie: {component.category}
-                    {component.isCommon && ' • Commun à tous les employés'}
-                  </CardDescription>
+                <CardHeader className="flex flex-row items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="flex items-center gap-2">
+                      {(component.name as Record<string, string>).fr}
+                      <Badge variant="outline">{component.code}</Badge>
+                      <Badge variant="secondary">Standard</Badge>
+                    </CardTitle>
+                    <CardDescription className="mt-2">
+                      Catégorie: {component.category}
+                      {component.isCommon && ' • Commun à tous les employés'}
+                    </CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Link href={`/settings/salary-components/standard/${component.code}`}>
+                      <Button variant="ghost" size="icon" title="Personnaliser pour votre entreprise">
+                        <Palette className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  </div>
                 </CardHeader>
               </Card>
             ))
