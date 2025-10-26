@@ -30,6 +30,8 @@ import { useToast } from '@/hooks/use-toast';
 import { EmployeeAvatar } from '@/features/employees/components/employee-avatar';
 import { EmployeeStatusBadge } from '@/features/employees/components/employee-status-badge';
 import { formatCurrency } from '@/features/employees/hooks/use-salary-validation';
+import { formatCurrencyWithRate, convertMonthlyAmountToRateType, getGrossSalaryLabel } from '@/features/employees/utils/rate-type-labels';
+import type { RateType } from '@/features/employees/utils/rate-type-labels';
 import { TerminateEmployeeModal } from '@/features/employees/components/lifecycle/terminate-employee-modal';
 import { SuspendEmployeeModal } from '@/features/employees/components/lifecycle/suspend-employee-modal';
 import { TransferWizard } from '@/features/employees/components/transfer-wizard';
@@ -252,19 +254,54 @@ export default function EmployeeDetailPage() {
             </div>
             {(employee as any).currentSalary && (
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Salaire brut</p>
+                <p className="text-sm text-muted-foreground mb-1">
+                  {getGrossSalaryLabel((employee as any).rateType as RateType)}
+                </p>
                 <p className="font-medium text-lg">
-                  {formatCurrency(
-                    // New components architecture (preferred)
-                    (employee as any).currentSalary.components && (employee as any).currentSalary.components.length > 0
-                      ? parseFloat((employee as any).currentSalary.baseSalary) +
-                        (employee as any).currentSalary.components.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
-                      : // Fallback to legacy allowances
-                        parseFloat((employee as any).currentSalary.baseSalary) +
-                        ((employee as any).currentSalary.housingAllowance || 0) +
-                        ((employee as any).currentSalary.transportAllowance || 0) +
-                        ((employee as any).currentSalary.mealAllowance || 0)
-                  )}
+                  {(() => {
+                    const rateType = (employee as any).rateType as RateType;
+                    const baseSalary = parseFloat((employee as any).currentSalary.baseSalary);
+
+                    // Calculate gross salary with rate conversion
+                    let grossSalary = 0;
+                    if ((employee as any).currentSalary.components && (employee as any).currentSalary.components.length > 0) {
+                      // New components architecture
+                      // Check if components include base salary (code '11')
+                      const hasBaseSalaryInComponents = (employee as any).currentSalary.components.some(
+                        (c: any) => c.code === '11' || c.code === '01'
+                      );
+
+                      if (hasBaseSalaryInComponents) {
+                        // Components include base salary - use ONLY components total
+                        grossSalary = (employee as any).currentSalary.components.reduce((sum: number, c: any) => {
+                          // Base salary (code '11') is already in correct rate type
+                          if (c.code === '11' || c.code === '01') {
+                            return sum + (c.amount || 0);
+                          }
+                          // Convert other components from monthly to employee's rate type
+                          return sum + convertMonthlyAmountToRateType(c.amount || 0, rateType);
+                        }, 0);
+                      } else {
+                        // Legacy: components are only allowances, add to baseSalary
+                        const componentTotal = (employee as any).currentSalary.components.reduce((sum: number, c: any) => {
+                          return sum + convertMonthlyAmountToRateType(c.amount || 0, rateType);
+                        }, 0);
+                        grossSalary = baseSalary + componentTotal;
+                      }
+                    } else {
+                      // Legacy allowances - these are stored as monthly, need conversion
+                      const housingMonthly = (employee as any).currentSalary.housingAllowance || 0;
+                      const transportMonthly = (employee as any).currentSalary.transportAllowance || 0;
+                      const mealMonthly = (employee as any).currentSalary.mealAllowance || 0;
+
+                      grossSalary = baseSalary +
+                        convertMonthlyAmountToRateType(housingMonthly, rateType) +
+                        convertMonthlyAmountToRateType(transportMonthly, rateType) +
+                        convertMonthlyAmountToRateType(mealMonthly, rateType);
+                    }
+
+                    return formatCurrencyWithRate(grossSalary, rateType);
+                  })()}
                 </p>
               </div>
             )}
@@ -449,35 +486,60 @@ export default function EmployeeDetailPage() {
                     <>
                       {/* Base Salary - Always Show First */}
                       <div className="bg-primary/5 p-4 rounded-lg border">
-                        <Label className="text-sm text-muted-foreground">Salaire de base</Label>
+                        <Label className="text-sm text-muted-foreground">
+                          {getGrossSalaryLabel((employee as any).rateType as RateType)}
+                        </Label>
                         <p className="text-2xl font-bold">
-                          {formatCurrency(parseFloat((employee as any).currentSalary.baseSalary))}
+                          {formatCurrencyWithRate(
+                            parseFloat((employee as any).currentSalary.baseSalary),
+                            (employee as any).rateType as RateType
+                          )}
                         </p>
                       </div>
 
                       {/* Components Grid */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {(employee as any).currentSalary.components.map((component: any, idx: number) => (
-                          <div key={idx}>
-                            <Label className="text-sm text-muted-foreground">{component.name}</Label>
-                            <p className="text-lg font-semibold">
-                              {formatCurrency(component.amount)}
-                            </p>
-                          </div>
-                        ))}
+                        {(employee as any).currentSalary.components.map((component: any, idx: number) => {
+                          const rateType = (employee as any).rateType as RateType;
+                          // Base salary (code '11', '01') is already in correct rate type, others are monthly
+                          const isBaseSalary = component.code === '11' || component.code === '01';
+                          const displayAmount = isBaseSalary
+                            ? component.amount
+                            : convertMonthlyAmountToRateType(component.amount, rateType);
+
+                          return (
+                            <div key={idx}>
+                              <Label className="text-sm text-muted-foreground">{component.name}</Label>
+                              <p className="text-lg font-semibold">
+                                {formatCurrencyWithRate(displayAmount, rateType)}
+                              </p>
+                            </div>
+                          );
+                        })}
                       </div>
 
                       {/* Total Gross Salary */}
                       <div className="bg-muted/50 p-4 rounded-lg border-t">
-                        <Label className="text-sm text-muted-foreground">Salaire brut total</Label>
+                        <Label className="text-sm text-muted-foreground">
+                          {getGrossSalaryLabel((employee as any).rateType as RateType)}
+                        </Label>
                         <p className="text-2xl font-bold text-primary">
-                          {formatCurrency(
-                            parseFloat((employee as any).currentSalary.baseSalary) +
-                            (employee as any).currentSalary.components.reduce(
-                              (sum: number, c: any) => sum + (c.amount || 0),
+                          {(() => {
+                            const rateType = (employee as any).rateType as RateType;
+                            const baseSalary = parseFloat((employee as any).currentSalary.baseSalary);
+                            const componentTotal = (employee as any).currentSalary.components.reduce(
+                              (sum: number, c: any) => {
+                                // Base salary (code '11', '01') is already in correct rate type
+                                if (c.code === '11' || c.code === '01') {
+                                  return sum + (c.amount || 0);
+                                }
+                                // Convert other components from monthly to employee's rate type
+                                return sum + convertMonthlyAmountToRateType(c.amount || 0, rateType);
+                              },
                               0
-                            )
-                          )}
+                            );
+                            return formatCurrencyWithRate(baseSalary + componentTotal, rateType);
+                          })()}
                         </p>
                       </div>
                     </>
@@ -553,7 +615,10 @@ export default function EmployeeDetailPage() {
                   </CardContent>
                 </Card>
               ) : salaryHistory && salaryHistory.length > 0 ? (
-                <SalaryHistoryTimeline history={salaryHistory as any} />
+                <SalaryHistoryTimeline
+                  history={salaryHistory as any}
+                  rateType={(employee as any).rateType as RateType}
+                />
               ) : null}
             </>
           ) : (

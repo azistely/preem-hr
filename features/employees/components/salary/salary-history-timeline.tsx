@@ -17,6 +17,8 @@ import { TrendingUp, TrendingDown, Circle, DollarSign } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { formatCurrency, calculatePercentageChange } from '../../hooks/use-salary-validation';
+import { formatCurrencyWithRate, convertMonthlyAmountToRateType } from '../../utils/rate-type-labels';
+import type { RateType } from '../../utils/rate-type-labels';
 
 interface SalaryComponent {
   code: string;
@@ -43,11 +45,13 @@ interface SalaryHistoryEntry {
 
 interface SalaryHistoryTimelineProps {
   history: SalaryHistoryEntry[];
+  rateType?: RateType | null;
   showAllInitially?: boolean;
 }
 
 export function SalaryHistoryTimeline({
   history,
+  rateType,
   showAllInitially = false,
 }: SalaryHistoryTimelineProps) {
   if (!history || history.length === 0) {
@@ -74,24 +78,33 @@ export function SalaryHistoryTimeline({
       );
 
       if (hasBaseSalaryInComponents) {
-        // Components array includes base salary - use ONLY components total
-        // (avoids double-counting)
-        return entry.components.reduce((sum, component) => sum + (component.amount || 0), 0);
+        // Components array includes base salary - use ONLY components total with rate conversion
+        return entry.components.reduce((sum, component) => {
+          // Base salary (code '11', '12') is already in correct rate type
+          if (component.code === '11' || component.code === '12' || component.code === '01') {
+            return sum + (component.amount || 0);
+          }
+          // Convert other components from monthly to employee's rate type
+          return sum + convertMonthlyAmountToRateType(component.amount || 0, rateType);
+        }, 0);
       } else {
-        // Legacy: components are only allowances, add to baseSalary
+        // Legacy: components are only allowances, add to baseSalary with conversion
         return (
           baseSalary +
-          entry.components.reduce((sum, component) => sum + (component.amount || 0), 0)
+          entry.components.reduce((sum, component) => {
+            // Convert components from monthly to employee's rate type
+            return sum + convertMonthlyAmountToRateType(component.amount || 0, rateType);
+          }, 0)
         );
       }
     }
 
-    // Fallback to legacy allowances architecture
+    // Fallback to legacy allowances architecture with rate conversion
     return (
       baseSalary +
-      (entry.housingAllowance || 0) +
-      (entry.transportAllowance || 0) +
-      (entry.mealAllowance || 0)
+      convertMonthlyAmountToRateType(entry.housingAllowance || 0, rateType) +
+      convertMonthlyAmountToRateType(entry.transportAllowance || 0, rateType) +
+      convertMonthlyAmountToRateType(entry.mealAllowance || 0, rateType)
     );
   };
 
@@ -168,7 +181,7 @@ export function SalaryHistoryTimeline({
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-xl font-bold">
-                          {formatCurrency(totalSalary)}
+                          {formatCurrencyWithRate(totalSalary, rateType)}
                         </h3>
                         {isCurrentSalary && (
                           <Badge variant="default" className="text-xs">
@@ -227,7 +240,7 @@ export function SalaryHistoryTimeline({
                                   <div key={idx}>
                                     <span className="text-muted-foreground">{component.name}:</span>
                                     <span className="font-medium ml-2">
-                                      {formatCurrency(component.amount)}
+                                      {formatCurrencyWithRate(component.amount, rateType)}
                                     </span>
                                   </div>
                                 ))}
@@ -249,14 +262,21 @@ export function SalaryHistoryTimeline({
                             <div className="grid grid-cols-2 gap-2">
                               {entry.components
                                 .filter(c => c.code !== '11' && c.code !== '12')
-                                .map((component, idx) => (
-                                  <div key={idx}>
-                                    <span className="text-muted-foreground">{component.name}:</span>
-                                    <span className="font-medium ml-2">
-                                      {formatCurrency(component.amount)}
-                                    </span>
-                                  </div>
-                                ))}
+                                .map((component, idx) => {
+                                  // Convert non-base components from monthly to employee's rate type
+                                  const displayAmount = convertMonthlyAmountToRateType(
+                                    component.amount,
+                                    rateType
+                                  );
+                                  return (
+                                    <div key={idx}>
+                                      <span className="text-muted-foreground">{component.name}:</span>
+                                      <span className="font-medium ml-2">
+                                        {formatCurrencyWithRate(displayAmount, rateType)}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                             </div>
                           </div>
                         )}
@@ -267,7 +287,7 @@ export function SalaryHistoryTimeline({
                         <div>
                           <span className="text-muted-foreground">Base:</span>
                           <span className="font-medium ml-2">
-                            {formatCurrency(entry.baseSalary)}
+                            {formatCurrencyWithRate(entry.baseSalary, rateType)}
                           </span>
                         </div>
 
@@ -275,7 +295,10 @@ export function SalaryHistoryTimeline({
                           <div>
                             <span className="text-muted-foreground">Logement:</span>
                             <span className="font-medium ml-2">
-                              {formatCurrency(entry.housingAllowance)}
+                              {formatCurrencyWithRate(
+                                convertMonthlyAmountToRateType(entry.housingAllowance, rateType),
+                                rateType
+                              )}
                             </span>
                           </div>
                         )}
@@ -284,7 +307,10 @@ export function SalaryHistoryTimeline({
                           <div>
                             <span className="text-muted-foreground">Transport:</span>
                             <span className="font-medium ml-2">
-                              {formatCurrency(entry.transportAllowance)}
+                              {formatCurrencyWithRate(
+                                convertMonthlyAmountToRateType(entry.transportAllowance, rateType),
+                                rateType
+                              )}
                             </span>
                           </div>
                         )}
@@ -293,7 +319,10 @@ export function SalaryHistoryTimeline({
                           <div>
                             <span className="text-muted-foreground">Repas:</span>
                             <span className="font-medium ml-2">
-                              {formatCurrency(entry.mealAllowance)}
+                              {formatCurrencyWithRate(
+                                convertMonthlyAmountToRateType(entry.mealAllowance, rateType),
+                                rateType
+                              )}
                             </span>
                           </div>
                         )}

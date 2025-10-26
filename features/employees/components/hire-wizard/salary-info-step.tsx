@@ -18,6 +18,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/features/employees/hooks/use-salary-validation';
+import { formatCurrencyWithRate, convertMonthlyAmountToRateType } from '@/features/employees/utils/rate-type-labels';
+import type { RateType } from '@/features/employees/utils/rate-type-labels';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, CheckCircle, Plus, Sparkles, Info, Settings2, X, Edit2 } from 'lucide-react';
 import { usePopularTemplates, useCustomComponents } from '@/features/employees/hooks/use-salary-components';
@@ -76,9 +78,12 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       { enabled: !!countryCode }
     );
 
-  // Calculate total gross salary (base + components)
+  // Calculate total gross salary (base + components with rate conversion)
   const componentTotal = components.reduce(
-    (sum: number, component: SalaryComponentInstance) => sum + component.amount,
+    (sum: number, component: SalaryComponentInstance) => {
+      // Convert monthly components to employee's rate type
+      return sum + convertMonthlyAmountToRateType(component.amount, rateType as RateType);
+    },
     0
   );
 
@@ -396,7 +401,10 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                       </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        {formatCurrency(component.amount)}
+                        {formatCurrencyWithRate(
+                          convertMonthlyAmountToRateType(component.amount, rateType as RateType),
+                          rateType as RateType
+                        )}
                       </p>
                     )}
                   </div>
@@ -441,12 +449,12 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
           <div className="flex items-center justify-between">
             <span className="font-medium">Salaire brut total</span>
             <span className="text-2xl font-bold text-primary">
-              {formatCurrency(totalGross)}
+              {formatCurrencyWithRate(totalGross, rateType as RateType)}
             </span>
           </div>
           <div className="text-xs text-muted-foreground mt-2">
-            Salaire de base: {formatCurrency(baseSalaryTotal)}
-            {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrency(componentTotal)}`}
+            Salaire de base: {formatCurrencyWithRate(baseSalaryTotal, rateType as RateType)}
+            {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrencyWithRate(componentTotal, rateType as RateType)}`}
           </div>
         </div>
       )}
