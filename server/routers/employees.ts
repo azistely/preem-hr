@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { sql } from 'drizzle-orm';
 import { createTRPCRouter, publicProcedure, employeeProcedure, managerProcedure, hrManagerProcedure } from '../api/trpc';
 import {
   createEmployee,
@@ -71,7 +72,7 @@ const createEmployeeSchema = z.object({
   // Position & Salary (base salary + components)
   positionId: z.string().uuid('Position invalide'),
   coefficient: z.number().int().min(90).max(1000).default(100),
-  baseSalary: z.number().min(75000, 'Le salaire de base doit être >= 75000 FCFA (SMIG)'),
+  baseSalary: z.number().min(0, 'Le salaire de base doit être positif'),
   components: z.array(componentSchema).default([]),
 
   // GAP-JOUR-003: Rate type support
@@ -79,6 +80,29 @@ const createEmployeeSchema = z.object({
 
   // Custom fields
   customFields: z.record(z.any()).optional(),
+}).refine((data) => {
+  // Rate-type aware SMIG validation
+  const monthlyMinimumWage = 75000; // CI SMIG
+  const rateType = data.rateType || 'MONTHLY';
+
+  if (rateType === 'MONTHLY') {
+    // For monthly workers, validate against monthly SMIG
+    const totalGross = data.baseSalary + data.components.reduce((sum, c) => sum + c.amount, 0);
+    return totalGross >= monthlyMinimumWage;
+  } else if (rateType === 'DAILY') {
+    // For daily workers, validate against daily minimum (75,000 / 30)
+    const dailyMinimum = Math.round(monthlyMinimumWage / 30);
+    return data.baseSalary >= dailyMinimum;
+  } else if (rateType === 'HOURLY') {
+    // For hourly workers, validate against hourly minimum (75,000 / 240)
+    const hourlyMinimum = Math.round(monthlyMinimumWage / 240);
+    return data.baseSalary >= hourlyMinimum;
+  }
+
+  return true;
+}, {
+  message: 'Le salaire de base ne respecte pas le SMIG minimum',
+  path: ['baseSalary'],
 });
 
 const updateEmployeeSchema = z.object({
@@ -624,7 +648,7 @@ export const employeesRouter = createTRPCRouter({
             postalCode: input.postalCode,
             bankName: input.bankName,
             bankAccount: input.bankAccount,
-            updatedAt: new Date(),
+            updatedAt: sql`now()`, // Use SQL now() for proper timestamp
             updatedBy: ctx.user.id,
           })
           .where(

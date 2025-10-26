@@ -21,6 +21,7 @@ import { autoInjectCalculatedComponents } from '@/lib/salary-components/componen
 import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
 import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { validateCoefficientBasedSalary } from '@/lib/compliance/coefficient-validation.service';
+import { ensureComponentsActivated } from '@/lib/salary-components/component-activation';
 
 export interface CreateEmployeeInput {
   tenantId: string;
@@ -211,6 +212,23 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
     // Use components array directly from input (single source of truth)
     // Components are already built in the UI with proper metadata
     const components = input.components || [];
+
+    // ========================================
+    // AUTO-ACTIVATE COMPONENTS AT TENANT LEVEL
+    // ========================================
+    // CRITICAL: Ensure all components are activated at tenant level
+    // This allows components to be used without manual activation in Settings
+    if (components.length > 0) {
+      const activationInputs = components.map(comp => ({
+        code: comp.code,
+        sourceType: (comp as any).sourceType || 'standard',
+        tenantId: input.tenantId,
+        countryCode: countryCode,
+        userId: input.createdBy,
+      }));
+
+      await ensureComponentsActivated(activationInputs, tx);
+    }
 
     // Create initial salary record
     await tx.insert(employeeSalaries).values({

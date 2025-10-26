@@ -59,6 +59,7 @@ const editEmployeeSchema = z.object({
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
   coefficient: z.number().int().min(90).max(1000).optional(),
+  rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
 });
 
 type EditEmployeeFormData = z.infer<typeof editEmployeeSchema>;
@@ -77,23 +78,24 @@ export function EditEmployeeModal({ employee, open, onClose }: EditEmployeeModal
     resolver: zodResolver(editEmployeeSchema),
     defaultValues: {
       id: employee.id,
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      preferredName: employee.preferredName || '',
-      email: employee.email,
-      phone: employee.phone || '',
-      nationalId: employee.nationalId || '',
-      gender: employee.gender,
-      addressLine1: employee.addressLine1 || '',
-      addressLine2: employee.addressLine2 || '',
-      city: employee.city || '',
-      postalCode: employee.postalCode || '',
-      bankName: employee.bankName || '',
-      bankAccount: employee.bankAccount || '',
-      cnpsNumber: employee.cnpsNumber || '',
-      taxNumber: employee.taxNumber || '',
-      taxDependents: employee.taxDependents || 0,
-      coefficient: employee.coefficient || 100,
+      firstName: employee.firstName ?? '',
+      lastName: employee.lastName ?? '',
+      preferredName: employee.preferredName ?? '',
+      email: employee.email ?? '',
+      phone: employee.phone ?? '',
+      nationalId: employee.nationalId ?? '',
+      gender: employee.gender ?? undefined,
+      addressLine1: employee.addressLine1 ?? '',
+      addressLine2: employee.addressLine2 ?? '',
+      city: employee.city ?? '',
+      postalCode: employee.postalCode ?? '',
+      bankName: employee.bankName ?? '',
+      bankAccount: employee.bankAccount ?? '',
+      cnpsNumber: employee.cnpsNumber ?? '',
+      taxNumber: employee.taxNumber ?? '',
+      taxDependents: employee.taxDependents ?? 0,
+      coefficient: employee.coefficient ?? 100,
+      rateType: employee.rateType ?? 'MONTHLY',
     },
   });
 
@@ -201,21 +203,54 @@ export function EditEmployeeModal({ employee, open, onClose }: EditEmployeeModal
             {/* Employment Information */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Emploi</h3>
-              <FormField
-                control={form.control}
-                name="coefficient"
-                render={({ field }) => (
-                  <FormItem>
-                    <CoefficientSelector
-                      countryCode="CI"
-                      value={field.value || 100}
-                      onChange={field.onChange}
-                      showExamples={true}
-                    />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Rate Type */}
+                <FormField
+                  control={form.control}
+                  name="rateType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Type de paiement</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || 'MONTHLY'}>
+                        <FormControl>
+                          <SelectTrigger className="min-h-[48px]">
+                            <SelectValue placeholder="Sélectionner" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="MONTHLY">Mensuel</SelectItem>
+                          <SelectItem value="DAILY">Journalier</SelectItem>
+                          <SelectItem value="HOURLY">Horaire</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {field.value === 'MONTHLY' && 'Employé payé au mois (salaire fixe)'}
+                        {field.value === 'DAILY' && 'Employé payé selon les jours travaillés'}
+                        {field.value === 'HOURLY' && 'Employé payé selon les heures travaillées'}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Coefficient - Full width on second row */}
+                <FormField
+                  control={form.control}
+                  name="coefficient"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <CoefficientSelector
+                        countryCode="CI"
+                        value={field.value || 100}
+                        onChange={field.onChange}
+                        showExamples={true}
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
             {/* Contact Information */}
