@@ -169,12 +169,23 @@ export function calculateGrossSalary(
   // validateSMIG(input.baseSalary, allowances);
 
   // Calculate days worked and proration
-  const { daysWorked, daysInPeriod, prorationFactor } = calculateDaysWorked(
-    input.periodStart,
-    input.periodEnd,
-    input.hireDate,
-    input.terminationDate
-  );
+  // For DAILY/HOURLY workers (skipProration = true), amounts are already final, so use factor = 1.0
+  const shouldSkipProration = input.skipProration === true;
+
+  const daysWorkedResult = shouldSkipProration
+    ? {
+        daysWorked: 1, // Placeholder - actual days tracked in payroll-calculation-v2
+        daysInPeriod: getDaysInMonth(input.periodStart),
+        prorationFactor: 1.0, // No proration - amounts already correct
+      }
+    : calculateDaysWorked(
+        input.periodStart,
+        input.periodEnd,
+        input.hireDate,
+        input.terminationDate
+      );
+
+  const { daysWorked, daysInPeriod, prorationFactor } = daysWorkedResult;
 
   // Calculate prorated base salary
   const proratedSalary = calculateBasePay(input.baseSalary, prorationFactor);

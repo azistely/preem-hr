@@ -321,35 +321,75 @@ export async function calculatePayrollV2(
   // STEP 1: Calculate Gross Salary (Rate Type Aware)
   // ========================================
 
-  // Determine effective base salary based on rate type
+  // Determine effective base salary and allowances based on rate type
   let effectiveBaseSalary = input.baseSalary;
   let effectiveSalaireCategoriel = input.salaireCategoriel;
   let effectiveTransportAllowance = input.transportAllowance;
+  let effectiveHousingAllowance = input.housingAllowance;
+  let effectiveMealAllowance = input.mealAllowance;
+  let effectiveSeniorityBonus = input.seniorityBonus;
+  let effectiveFamilyAllowance = input.familyAllowance;
   const rateType = input.rateType || 'MONTHLY';
 
   if (rateType === 'DAILY') {
     // Daily workers: multiply daily rate × days worked
     const daysWorked = input.daysWorkedThisMonth || 0;
-    effectiveBaseSalary = input.baseSalary * daysWorked;
 
-    // Also prorate salaireCategoriel and transport for the month
+    console.log(`[DAILY WORKER PRORATION] Days worked: ${daysWorked}`);
+    console.log(`[DAILY WORKER PRORATION] Base salary (daily rate): ${input.baseSalary} → ${input.baseSalary * daysWorked}`);
+
+    // Base salary and salaireCategoriel are stored as DAILY rates
+    effectiveBaseSalary = input.baseSalary * daysWorked;
     if (effectiveSalaireCategoriel) {
       effectiveSalaireCategoriel = effectiveSalaireCategoriel * daysWorked;
     }
+
+    // Allowances are stored as MONTHLY amounts
+    // Convert to daily rate (÷30) then multiply by days worked
     if (effectiveTransportAllowance) {
-      effectiveTransportAllowance = effectiveTransportAllowance * daysWorked;
+      const originalTransport = effectiveTransportAllowance;
+      effectiveTransportAllowance = (effectiveTransportAllowance / 30) * daysWorked;
+      console.log(`[DAILY WORKER PRORATION] Transport: ${originalTransport} (monthly) → ${effectiveTransportAllowance} (${daysWorked} days)`);
+    }
+    if (effectiveHousingAllowance) {
+      effectiveHousingAllowance = (effectiveHousingAllowance / 30) * daysWorked;
+    }
+    if (effectiveMealAllowance) {
+      effectiveMealAllowance = (effectiveMealAllowance / 30) * daysWorked;
+    }
+    if (effectiveSeniorityBonus) {
+      effectiveSeniorityBonus = (effectiveSeniorityBonus / 30) * daysWorked;
+    }
+    if (effectiveFamilyAllowance) {
+      effectiveFamilyAllowance = (effectiveFamilyAllowance / 30) * daysWorked;
     }
   } else if (rateType === 'HOURLY') {
     // Hourly workers: multiply hourly rate × hours worked
     const hoursWorked = input.hoursWorkedThisMonth || 0;
-    effectiveBaseSalary = input.baseSalary * hoursWorked;
+    const standardMonthlyHours = 173.33; // 40h/week × 52 weeks ÷ 12 months
 
-    // Also prorate salaireCategoriel and transport for the month
+    // Base salary and salaireCategoriel are stored as HOURLY rates
+    effectiveBaseSalary = input.baseSalary * hoursWorked;
     if (effectiveSalaireCategoriel) {
       effectiveSalaireCategoriel = effectiveSalaireCategoriel * hoursWorked;
     }
+
+    // Allowances are stored as MONTHLY amounts
+    // Convert to hourly rate then multiply by hours worked
     if (effectiveTransportAllowance) {
-      effectiveTransportAllowance = effectiveTransportAllowance * hoursWorked;
+      effectiveTransportAllowance = (effectiveTransportAllowance / standardMonthlyHours) * hoursWorked;
+    }
+    if (effectiveHousingAllowance) {
+      effectiveHousingAllowance = (effectiveHousingAllowance / standardMonthlyHours) * hoursWorked;
+    }
+    if (effectiveMealAllowance) {
+      effectiveMealAllowance = (effectiveMealAllowance / standardMonthlyHours) * hoursWorked;
+    }
+    if (effectiveSeniorityBonus) {
+      effectiveSeniorityBonus = (effectiveSeniorityBonus / standardMonthlyHours) * hoursWorked;
+    }
+    if (effectiveFamilyAllowance) {
+      effectiveFamilyAllowance = (effectiveFamilyAllowance / standardMonthlyHours) * hoursWorked;
     }
   }
   // else: MONTHLY workers use values as-is
@@ -383,27 +423,53 @@ export async function calculatePayrollV2(
     });
   }
 
-  // Merge with existing otherAllowances
+  // Prorate otherAllowances for daily/hourly workers
+  // Template components (TPT_TRANSPORT_CI, etc.) are stored as monthly amounts
+  let proratedOtherAllowances = input.otherAllowances || [];
+  if (rateType === 'DAILY' && input.daysWorkedThisMonth) {
+    console.log(`[DAILY WORKER PRORATION] Prorating ${proratedOtherAllowances.length} other allowances for ${input.daysWorkedThisMonth} days`);
+    proratedOtherAllowances = proratedOtherAllowances.map(allowance => {
+      const proratedAmount = (allowance.amount / 30) * input.daysWorkedThisMonth!;
+      console.log(`[DAILY WORKER PRORATION] ${allowance.name}: ${allowance.amount} (monthly) → ${proratedAmount} (${input.daysWorkedThisMonth} days)`);
+      return {
+        ...allowance,
+        amount: proratedAmount,
+      };
+    });
+  } else if (rateType === 'HOURLY' && input.hoursWorkedThisMonth) {
+    const standardMonthlyHours = 173.33; // 40h/week × 52 weeks ÷ 12 months
+    proratedOtherAllowances = proratedOtherAllowances.map(allowance => ({
+      ...allowance,
+      amount: (allowance.amount / standardMonthlyHours) * input.hoursWorkedThisMonth!,
+    }));
+  }
+
+  // Merge with location-based allowances
   const combinedOtherAllowances = [
-    ...(input.otherAllowances || []),
+    ...proratedOtherAllowances,
     ...locationOtherAllowances,
   ];
+
+  // For DAILY/HOURLY workers: Don't apply hire/termination proration
+  // since we're already using actual days/hours worked from time entries
+  const shouldApplyProration = rateType === 'MONTHLY';
 
   const grossCalc = calculateGrossSalary({
     employeeId: input.employeeId,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
     baseSalary: effectiveBaseSalary, // Use rate-adjusted base salary
-    hireDate: input.hireDate,
-    terminationDate: input.terminationDate,
-    housingAllowance: input.housingAllowance,
+    hireDate: shouldApplyProration ? input.hireDate : undefined, // Only prorate for monthly workers
+    terminationDate: shouldApplyProration ? input.terminationDate : undefined, // Only prorate for monthly workers
+    housingAllowance: effectiveHousingAllowance, // Use rate-adjusted housing
     transportAllowance: effectiveTransportAllowance, // Use rate-adjusted transport
-    mealAllowance: input.mealAllowance,
-    seniorityBonus: (input.seniorityBonus || 0) + bankingSeniorityBonus, // Include banking bonus
-    familyAllowance: input.familyAllowance || 0,
+    mealAllowance: effectiveMealAllowance, // Use rate-adjusted meal
+    seniorityBonus: (effectiveSeniorityBonus || 0) + bankingSeniorityBonus, // Use rate-adjusted seniority + banking bonus
+    familyAllowance: effectiveFamilyAllowance || 0, // Use rate-adjusted family allowance
     otherAllowances: combinedOtherAllowances, // Include template + location components
     bonuses: input.bonuses,
     overtimeHours: input.overtimeHours,
+    skipProration: !shouldApplyProration, // Skip period-based proration for daily/hourly workers (amounts already final)
   });
 
   const grossSalary = grossCalc.totalGross;
@@ -426,7 +492,7 @@ export async function calculatePayrollV2(
   console.log('[DEBUG AFTER SS]', { cmuEmployee, cmuEmployer, cnpsEmployee, cnpsEmployer });
 
   // ========================================
-  // STEP 3: Calculate Tax (Database-Driven)
+  // STEP 3: Calculate Tax (Database-Driven with Annualization for Daily/Hourly)
   // ========================================
   const taxStrategy = new ProgressiveMonthlyTaxStrategy(
     config.taxBrackets,
@@ -441,11 +507,87 @@ export async function calculatePayrollV2(
       ? 0
       : (cnpsEmployee + cmuEmployee);
 
-  const taxResult = taxStrategy.calculate({
-    grossSalary,
-    employeeContributions: employeeContributionsForTax,
-    fiscalParts: input.fiscalParts || 1.0,
-  });
+  // For DAILY/HOURLY workers, we need to annualize the tax calculation
+  // Otherwise, prorated earnings would result in zero or minimal tax
+  let taxResult: any;
+  let taxProrationFactor = 1.0;
+
+  if (rateType === 'DAILY' && input.daysWorkedThisMonth) {
+    const daysWorked = input.daysWorkedThisMonth;
+    const standardMonthDays = 30;
+
+    // Calculate full-month gross by annualizing prorated gross
+    const annualizedGross = Math.round((grossSalary / daysWorked) * standardMonthDays);
+    const annualizedEmployeeContributions = Math.round((employeeContributionsForTax / daysWorked) * standardMonthDays);
+
+    console.log(`[DAILY WORKER TAX ANNUALIZATION] Days worked: ${daysWorked}`);
+    console.log(`[DAILY WORKER TAX ANNUALIZATION] Prorated gross: ${grossSalary} FCFA`);
+    console.log(`[DAILY WORKER TAX ANNUALIZATION] Annualized gross (full month): ${annualizedGross} FCFA`);
+
+    // Calculate tax on full-month gross
+    const annualizedTaxResult = taxStrategy.calculate({
+      grossSalary: annualizedGross,
+      employeeContributions: annualizedEmployeeContributions,
+      fiscalParts: input.fiscalParts || 1.0,
+    });
+
+    console.log(`[DAILY WORKER TAX ANNUALIZATION] Full-month tax: ${annualizedTaxResult.monthlyTax} FCFA`);
+
+    // Prorate tax back to days worked
+    taxProrationFactor = daysWorked / standardMonthDays;
+    const proratedTax = Math.round(annualizedTaxResult.monthlyTax * taxProrationFactor);
+
+    console.log(`[DAILY WORKER TAX ANNUALIZATION] Prorated tax (${daysWorked} days): ${proratedTax} FCFA`);
+
+    // Use prorated tax but keep other values from annualized calculation
+    taxResult = {
+      ...annualizedTaxResult,
+      monthlyTax: proratedTax,
+      grossSalary: grossSalary, // Keep actual prorated gross for display
+      employeeContributions: employeeContributionsForTax, // Keep actual prorated contributions
+    };
+  } else if (rateType === 'HOURLY' && input.hoursWorkedThisMonth) {
+    const hoursWorked = input.hoursWorkedThisMonth;
+    const standardMonthlyHours = 173.33;
+
+    // Calculate full-month gross by annualizing prorated gross
+    const annualizedGross = Math.round((grossSalary / hoursWorked) * standardMonthlyHours);
+    const annualizedEmployeeContributions = Math.round((employeeContributionsForTax / hoursWorked) * standardMonthlyHours);
+
+    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Hours worked: ${hoursWorked}`);
+    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Prorated gross: ${grossSalary} FCFA`);
+    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Annualized gross (full month): ${annualizedGross} FCFA`);
+
+    // Calculate tax on full-month gross
+    const annualizedTaxResult = taxStrategy.calculate({
+      grossSalary: annualizedGross,
+      employeeContributions: annualizedEmployeeContributions,
+      fiscalParts: input.fiscalParts || 1.0,
+    });
+
+    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Full-month tax: ${annualizedTaxResult.monthlyTax} FCFA`);
+
+    // Prorate tax back to hours worked
+    taxProrationFactor = hoursWorked / standardMonthlyHours;
+    const proratedTax = Math.round(annualizedTaxResult.monthlyTax * taxProrationFactor);
+
+    console.log(`[HOURLY WORKER TAX ANNUALIZATION] Prorated tax (${hoursWorked} hours): ${proratedTax} FCFA`);
+
+    // Use prorated tax but keep other values from annualized calculation
+    taxResult = {
+      ...annualizedTaxResult,
+      monthlyTax: proratedTax,
+      grossSalary: grossSalary, // Keep actual prorated gross for display
+      employeeContributions: employeeContributionsForTax, // Keep actual prorated contributions
+    };
+  } else {
+    // MONTHLY workers: calculate tax normally (no annualization needed)
+    taxResult = taxStrategy.calculate({
+      grossSalary,
+      employeeContributions: employeeContributionsForTax,
+      fiscalParts: input.fiscalParts || 1.0,
+    });
+  }
 
   // ========================================
   // STEP 4: Calculate Deductions & Net
@@ -531,7 +673,13 @@ export async function calculatePayrollV2(
       annualTax: taxResult.annualTax,
       monthlyTax: taxResult.monthlyTax,
       effectiveRate: taxResult.effectiveRate,
-      bracketDetails: taxResult.bracketDetails.map(b => ({
+      bracketDetails: taxResult.bracketDetails.map((b: {
+        min: number;
+        max: number | null;
+        rate: number;
+        taxableInBracket: number;
+        taxForBracket: number;
+      }) => ({
         min: b.min,
         max: b.max || Infinity,
         rate: b.rate,

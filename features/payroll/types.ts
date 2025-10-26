@@ -136,6 +136,11 @@ export interface GrossCalculationInput {
   }>;
   bonuses?: number;
   overtimeHours?: OvertimeHours[];
+  /**
+   * Skip proration calculation (for daily/hourly workers where amounts are already final)
+   * When true, uses prorationFactor = 1.0 regardless of period dates
+   */
+  skipProration?: boolean;
 }
 
 export interface GrossCalculationResult {
