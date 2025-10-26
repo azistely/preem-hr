@@ -7,11 +7,13 @@
 
 import { db } from '@/lib/db';
 import { tenants, employees, positions, assignments, employeeSalaries } from '@/drizzle/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 import { ValidationError, NotFoundError } from '@/lib/errors';
 import { generateEmployeeNumber } from '@/features/employees/services/employee-number';
 import { autoInjectCalculatedComponents } from '@/lib/salary-components/component-calculator';
+import { buildBaseSalaryComponents } from '@/lib/salary-components/base-salary-loader';
 import { getGenericSector, type CGECISector } from '@/lib/cgeci/sector-mapping';
+import { ensureComponentsActivated } from '@/lib/salary-components/component-activation';
 
 // ========================================
 // TYPES
@@ -374,6 +376,33 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     // (componentsWithCalculated already pre-calculated before transaction)
     console.log('[Employee Creation] Using pre-calculated components');
 
+    // ========================================
+    // BUILD BASE SALARY COMPONENTS (Code 11, Code 12, etc.)
+    // ========================================
+    // CRITICAL FIX: Build base salary components from input.baseComponents
+    let baseComponentsArray: Array<{
+      code: string;
+      name: string;
+      amount: number;
+      sourceType: string;
+      metadata?: Record<string, any>;
+    }> = [];
+
+    if (input.baseComponents && Object.keys(input.baseComponents).length > 0) {
+      // Build base components using database-driven loader
+      baseComponentsArray = await buildBaseSalaryComponents(
+        input.baseComponents,
+        tenant.countryCode || 'CI'
+      );
+    } else if (effectiveBaseSalary > 0) {
+      // LEGACY: If no baseComponents provided, create Code 11 with the baseSalary amount
+      // This ensures backward compatibility and prevents missing Code 11
+      baseComponentsArray = await buildBaseSalaryComponents(
+        { '11': effectiveBaseSalary },
+        tenant.countryCode || 'CI'
+      );
+    }
+
     // Handle user-provided components (NEW approach)
     let userComponents: Array<{
       code: string;
@@ -415,10 +444,40 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       }
     }
 
-    // Combine all components (auto-calculated + user-provided)
+    // ========================================
+    // AUTO-ACTIVATE COMPONENTS AT TENANT LEVEL
+    // ========================================
+    // CRITICAL: Ensure all user-provided components are activated at tenant level
+    // This allows components to be used without manual activation in Settings
+    console.log('[Employee Creation] Auto-activating components at tenant level...');
+    const activationStart = Date.now();
+
+    if (userComponents.length > 0) {
+      const activationInputs = userComponents.map(comp => ({
+        code: comp.code,
+        sourceType: comp.sourceType,
+        tenantId: input.tenantId,
+        countryCode: tenant.countryCode || 'CI',
+        userId: input.userId,
+      }));
+
+      const activationResults = await ensureComponentsActivated(activationInputs, tx);
+
+      const newActivations = activationResults.filter(r => r.isNewActivation);
+      if (newActivations.length > 0) {
+        console.log(`[Employee Creation] Auto-activated ${newActivations.length} new components at tenant level`);
+      } else {
+        console.log('[Employee Creation] All components already activated at tenant level');
+      }
+    }
+
+    console.log(`[Employee Creation] Component activation completed in ${Date.now() - activationStart}ms`);
+
+    // Combine all components: base components + auto-calculated + user-provided
     const allComponents = [
-      ...componentsWithCalculated,
-      ...userComponents,
+      ...baseComponentsArray, // Code 11, Code 12, etc.
+      ...componentsWithCalculated, // Family allowance, etc.
+      ...userComponents, // Transport, housing, etc.
     ];
 
     console.time('[Employee Creation] Salary insert');

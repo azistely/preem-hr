@@ -336,7 +336,7 @@ export const hrManagerNavigation: NavigationSection[] = [
       {
         id: 'registre-personnel',
         label: 'Registre du Personnel',
-        href: '/compliance/registre',
+        href: '/compliance/registre-personnel',
         icon: BookOpen,
         description: 'Registre obligatoire des employés',
       },
@@ -767,7 +767,7 @@ export function getDashboardQuickActions(role: UserRole): {
           icon: BookOpen,
           title: 'Registre du Personnel',
           description: 'Conformité légale',
-          href: '/compliance/registre',
+          href: '/compliance/registre-personnel',
         },
       ];
 

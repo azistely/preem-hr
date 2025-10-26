@@ -166,12 +166,12 @@ export default function SignupPage() {
               {/* Email */}
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-base">
-                  Email professionnel
+                  Email
                 </Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="Ex: jean@monentreprise.com"
+                  placeholder="Ex: votre@email.com"
                   className="min-h-[48px] text-base"
                   {...register('email')}
                   disabled={isPending}

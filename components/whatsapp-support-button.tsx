@@ -4,9 +4,8 @@
  * HCI Principles Applied:
  * - Always visible (zero learning curve - users know it's there)
  * - Context-aware messages (immediate relevance)
- * - Touch-friendly (60×60px desktop, 56×56px mobile)
- * - Pulse animation (draws attention without being annoying)
- * - Personal touch (messages mention Tidiane)
+ * - Touch-friendly (56×56px mobile, 64×64px desktop)
+ * - Simple, clean design without distracting animations
  * - One tap away (minimal friction)
  */
 
@@ -108,49 +107,18 @@ export function WhatsAppSupportButton() {
       rel="noopener noreferrer"
       className="
         fixed bottom-6 right-6 z-50
-        flex items-center gap-3
+        flex items-center justify-center
         bg-[#25D366] hover:bg-[#1fb855]
-        text-white font-medium
+        text-white
         rounded-full shadow-lg hover:shadow-xl
-        transition-all duration-300 ease-in-out
-        group
-        min-w-[56px] min-h-[56px]
-        md:min-w-[60px] md:min-h-[60px]
-        px-4 md:px-5
-        animate-pulse-soft
+        transition-all duration-200
+        w-14 h-14
+        md:w-16 md:h-16
       "
       aria-label="Contacter le support WhatsApp"
     >
       {/* Icon */}
-      <MessageCircle className="h-6 w-6 md:h-7 md:w-7 flex-shrink-0" />
-
-      {/* Text (hidden on small mobile, visible on larger screens) */}
-      <span className="
-        hidden sm:inline-block
-        text-sm md:text-base
-        whitespace-nowrap
-        opacity-0 max-w-0
-        group-hover:opacity-100 group-hover:max-w-[200px]
-        transition-all duration-300 ease-in-out
-        overflow-hidden
-      ">
-        Aide {SUPPORT_NAME}
-      </span>
-
-      {/* Ping animation indicator (shows there's a human available) */}
-      <span className="
-        absolute top-0 right-0
-        flex h-3 w-3
-      ">
-        <span className="
-          animate-ping absolute inline-flex h-full w-full
-          rounded-full bg-white opacity-75
-        "></span>
-        <span className="
-          relative inline-flex rounded-full h-3 w-3
-          bg-white
-        "></span>
-      </span>
+      <MessageCircle className="h-6 w-6 md:h-7 md:w-7" />
     </a>
   );
 }

@@ -15,6 +15,7 @@ import { employees, employeeCategoryCoefficients } from '@/drizzle/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
 
 export interface EmployeeCategory {
+  id: string; // UUID from database
   category: string; // A1, A2, B1, B2, C, D, E, F
   labelFr: string; // "Ouvrier non qualifié", "Cadre", etc.
   minCoefficient: number;
@@ -75,6 +76,7 @@ export async function getEmployeeCategory(
     employeeId: employee.id,
     coefficient: employee.coefficient,
     category: {
+      id: category.id,
       category: category.category,
       labelFr: category.labelFr,
       minCoefficient: category.minCoefficient,
@@ -175,6 +177,7 @@ export async function getCategoriesByCountry(
   });
 
   return categories.map((cat) => ({
+    id: cat.id,
     category: cat.category,
     labelFr: cat.labelFr,
     minCoefficient: cat.minCoefficient,

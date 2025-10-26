@@ -37,7 +37,7 @@ export default function ScheduleApprovalsPage() {
 
   // Fetch employees (for name lookup)
   // TODO: Optimize with a single query that includes employee data
-  const { data: employees } = trpc.employees.list.useQuery({ limit: 1000 });
+  const { data: employees } = trpc.employees.list.useQuery({ limit: 100 }); // Max allowed by tRPC
 
   // Mutations
   const approveMutation = trpc.workSchedules.approve.useMutation({

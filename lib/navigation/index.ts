@@ -30,6 +30,18 @@ import {
   Activity,
   BarChart3,
   Sparkles,
+  BookOpen,
+  AlertCircle,
+  Zap,
+  List,
+  CalendarClock,
+  Award,
+  Package,
+  ShieldCheck,
+  Database,
+  Globe,
+  FileBarChart,
+  Edit3,
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
@@ -103,6 +115,7 @@ export const managerMobileSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste équipe", href: "/manager/team" },
       { icon: Clock, label: "Pointages", href: "/manager/time-tracking" },
+      { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
     ],
   },
   {
@@ -131,6 +144,7 @@ export const managerDesktopSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste équipe", href: "/manager/team" },
       { icon: Clock, label: "Pointages", href: "/manager/time-tracking" },
+      { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
     ],
   },
   {
@@ -154,7 +168,6 @@ export const hrManagerMobileSections: NavSection[] = [
     title: "",
     items: [
       { icon: Home, label: "Accueil", href: "/admin/dashboard" },
-      { icon: Sparkles, label: "Automatisations", href: "/automation" },
     ],
   },
   {
@@ -162,6 +175,7 @@ export const hrManagerMobileSections: NavSection[] = [
     items: [
       { icon: Play, label: "Lancer la paie", href: "/payroll/runs/new" },
       { icon: History, label: "Historique paies", href: "/payroll/runs" },
+      { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice", href: "/payroll/calculator" },
     ],
   },
@@ -170,7 +184,6 @@ export const hrManagerMobileSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste employés", href: "/employees" },
       { icon: UserPlus, label: "Nouvel employé", href: "/employees/new" },
-      { icon: Upload, label: "Import/Export", href: "/admin/employees/import-export" },
       { icon: Briefcase, label: "Postes", href: "/positions" },
     ],
   },
@@ -178,25 +191,62 @@ export const hrManagerMobileSections: NavSection[] = [
     title: "Temps & Congés",
     items: [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
-      { icon: Umbrella, label: "Demandes de congé", href: "/admin/time-off" },
-      { icon: BarChart, label: "Rapport heures sup", href: "/manager/reports/overtime" },
-      { icon: Settings, label: "Politiques de congé", href: "/admin/policies/time-off" },
+      { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
+      { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
+      { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },
+    ],
+  },
+  {
+    title: "Conformité",
+    items: [
+      { icon: BookOpen, label: "Registre du personnel", href: "/compliance/registre-personnel" },
+      { icon: AlertCircle, label: "Suivi des CDD", href: "/compliance/cdd" },
+    ],
+  },
+  {
+    title: "Automatisation",
+    items: [
+      { icon: Zap, label: "Rappels automatiques", href: "/automation" },
+      { icon: Workflow, label: "Flux de travail", href: "/workflows" },
+      { icon: List, label: "Opérations en lot", href: "/batch-operations" },
     ],
   },
 ];
 
-// Advanced features (collapsible)
+// Advanced features (collapsible) - HCI COMPLIANT
 export const hrManagerAdvancedSections: NavSection[] = [
   {
-    title: "Gestion avancée",
+    title: "Gérer les Salaires",
+    items: [
+      { icon: DollarSign, label: "Historique Salaires", href: "/salaries" },
+      { icon: Receipt, label: "Fourchettes par Poste", href: "/salaries/bands" },
+      { icon: Upload, label: "Ajuster Plusieurs Salaires", href: "/salaries/bulk-adjustment" },
+      { icon: Package, label: "Éléments de Paie", href: "/settings/salary-components" },
+    ],
+  },
+  {
+    title: "Sites et Équipes",
     items: [
       { icon: TrendingUp, label: "Organigramme", href: "/positions/org-chart" },
-      { icon: DollarSign, label: "Salaires", href: "/salaries" },
-      { icon: Receipt, label: "Bandes salariales", href: "/salaries/bands" },
-      { icon: MapPin, label: "Géolocalisation", href: "/admin/geofencing" },
-      { icon: Calendar, label: "Jours fériés", href: "/admin/public-holidays" },
-      { icon: Settings, label: "Composants salaire", href: "/settings/salary-components" },
-      { icon: Building, label: "Secteurs", href: "/settings/sectors" },
+      { icon: MapPin, label: "Sites et Établissements", href: "/settings/locations" },
+      { icon: MapPin, label: "Zones de Pointage", href: "/admin/geofencing" },
+    ],
+  },
+  {
+    title: "Calendrier et Congés",
+    items: [
+      { icon: Calendar, label: "Jours Fériés", href: "/admin/public-holidays" },
+      { icon: Umbrella, label: "Règles de Congés", href: "/admin/policies/time-off" },
+      { icon: CalendarClock, label: "Accumulation de Congés", href: "/admin/policies/accrual" },
+    ],
+  },
+  {
+    title: "Paramètres de Paie",
+    items: [
+      { icon: Clock, label: "Heures Supplémentaires", href: "/admin/policies/overtime" },
+      { icon: Building, label: "Secteurs d'Activité", href: "/settings/sectors" },
+      { icon: FileText, label: "Modèles de Bulletins", href: "/settings/payslip-templates" },
+      { icon: BarChart3, label: "Suivi des Automatisations", href: "/workflows/analytics" },
     ],
   },
 ];
@@ -206,7 +256,6 @@ export const hrManagerDesktopSections: NavSection[] = [
     title: "",
     items: [
       { icon: Home, label: "Tableau de bord", href: "/admin/dashboard" },
-      { icon: Sparkles, label: "Automatisations", href: "/automation" },
     ],
   },
   {
@@ -214,6 +263,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: Play, label: "Lancer la paie", href: "/payroll/runs/new" },
       { icon: History, label: "Historique paies", href: "/payroll/runs" },
+      { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice paie", href: "/payroll/calculator" },
     ],
   },
@@ -222,7 +272,6 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste employés", href: "/employees" },
       { icon: UserPlus, label: "Nouvel employé", href: "/employees/new" },
-      { icon: Upload, label: "Import/Export", href: "/admin/employees/import-export" },
       { icon: Briefcase, label: "Postes", href: "/positions" },
     ],
   },
@@ -230,61 +279,67 @@ export const hrManagerDesktopSections: NavSection[] = [
     title: "Temps & Congés",
     items: [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
-      { icon: Umbrella, label: "Demandes de congé", href: "/admin/time-off" },
-      { icon: BarChart, label: "Rapport heures sup", href: "/manager/reports/overtime" },
-      { icon: Settings, label: "Politiques de congé", href: "/admin/policies/time-off" },
+      { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
+      { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
+      { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },
+    ],
+  },
+  {
+    title: "Conformité",
+    items: [
+      { icon: BookOpen, label: "Registre du personnel", href: "/compliance/registre-personnel" },
+      { icon: AlertCircle, label: "Suivi des CDD", href: "/compliance/cdd" },
+    ],
+  },
+  {
+    title: "Automatisation",
+    items: [
+      { icon: Zap, label: "Rappels automatiques", href: "/automation" },
+      { icon: Workflow, label: "Flux de travail", href: "/workflows" },
+      { icon: List, label: "Opérations en lot", href: "/batch-operations" },
     ],
   },
 ];
 
-// Tenant Admin Navigation (DRASTICALLY SIMPLIFIED)
-// Strategy: Same as HR Manager + Admin-specific sections
-export const adminMobileSections: NavSection[] = [
-  ...hrManagerMobileSections,
-  {
-    title: "Administration",
-    items: [
-      { icon: Users, label: "Utilisateurs", href: "/admin/settings/users" },
-      { icon: Building, label: "Paramètres société", href: "/admin/settings/company" },
-    ],
-  },
-];
+// Tenant Admin Navigation (STREAMLINED - HCI COMPLIANT)
+// Strategy: HR Manager sections as PRIMARY (admin features in "Plus d'Options")
+export const adminMobileSections: NavSection[] = hrManagerMobileSections;
 
-// Admin-only desktop sections (to be added to HR Manager sections)
-export const adminOnlySections: NavSection[] = [
-  {
-    title: "Administration",
-    items: [
-      { icon: Users, label: "Utilisateurs", href: "/admin/settings/users" },
-      { icon: Shield, label: "Rôles & Permissions", href: "/admin/settings/roles" },
-      { icon: Building, label: "Paramètres société", href: "/admin/settings/company" },
-    ],
-  },
-  {
-    title: "Sécurité & Audit",
-    items: [
-      { icon: Shield, label: "Sécurité", href: "/admin/settings/security" },
-      { icon: History, label: "Journal d'audit", href: "/admin/audit-log" },
-    ],
-  },
-];
-
-// Admin advanced features (collapsible)
+// Admin advanced features (collapsible) - HCI COMPLIANT
+// Only include pages that actually exist
 export const adminAdvancedSections: NavSection[] = [
   {
-    title: "Facturation & Intégrations",
+    title: "Données et Gestion",
     items: [
-      { icon: DollarSign, label: "Facturation", href: "/admin/settings/billing" },
-      { icon: BarChart, label: "Analyse coûts", href: "/admin/settings/costs" },
-      { icon: Settings, label: "Intégrations", href: "/admin/settings/integrations" },
+      { icon: Calculator, label: "Export Comptable", href: "/settings/accounting" },
+      { icon: Database, label: "Importer depuis Sage", href: "/settings/data-migration" },
+      { icon: Upload, label: "Import/Export Excel", href: "/admin/employees/import-export" },
     ],
   },
 ];
 
-export const adminDesktopSections: NavSection[] = [
-  ...hrManagerDesktopSections,
-  ...adminOnlySections,
+// Super Admin only sections (multi-country configuration)
+export const superAdminOnlySections: NavSection[] = [
+  {
+    title: "Configuration Multi-Pays",
+    items: [
+      { icon: Globe, label: "Pays", href: "/super-admin/countries" },
+      { icon: FileBarChart, label: "Systèmes fiscaux", href: "/super-admin/tax-systems" },
+      { icon: Shield, label: "Sécurité sociale", href: "/super-admin/social-security" },
+      { icon: Package, label: "Types de cotisations", href: "/super-admin/contribution-types" },
+    ],
+  },
+  {
+    title: "Configuration Globale",
+    items: [
+      { icon: Building, label: "Organisations", href: "/super-admin/tenants" },
+      { icon: Activity, label: "Santé du système", href: "/super-admin/system-health" },
+    ],
+  },
 ];
+
+// Admin Desktop: HR Manager sections only (admin features are in "Plus d'Options")
+export const adminDesktopSections: NavSection[] = hrManagerDesktopSections;
 
 // Helper function to get navigation based on role
 export function getNavigationByRole(role: string) {
@@ -309,10 +364,15 @@ export function getNavigationByRole(role: string) {
       };
     case "admin": // Used by admin layout
     case "tenant_admin":
-    case "super_admin":
       return {
         mobile: adminMobileSections,
         desktop: adminDesktopSections,
+        advanced: [...hrManagerAdvancedSections, ...adminAdvancedSections],
+      };
+    case "super_admin":
+      return {
+        mobile: [...adminMobileSections, ...superAdminOnlySections],
+        desktop: [...adminDesktopSections, ...superAdminOnlySections],
         advanced: [...hrManagerAdvancedSections, ...adminAdvancedSections],
       };
     default:

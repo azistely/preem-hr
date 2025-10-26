@@ -17,6 +17,7 @@ import {
   payrollRuns,
   payrollLineItems,
   tenants,
+  timeEntries,
 } from '@/lib/db/schema';
 import { and, eq, lte, gte, or, isNotNull, isNull, sql, desc } from 'drizzle-orm';
 import { calculatePayrollV2 } from './payroll-calculation-v2';
@@ -238,9 +239,18 @@ export async function calculatePayrollRun(
         const hasFamily = (employee.customFields as any)?.hasFamily || false;
         const fiscalParts = (employee.customFields as any)?.fiscalParts || 1.0;
 
-        // Read components from employee_salaries.components (with fallback to legacy columns)
-        const { getEmployeeSalaryComponents } = await import('@/lib/salary-components/component-reader');
-        const breakdown = getEmployeeSalaryComponents(currentSalary as any);
+        // Convert period to YYYY-MM-01 format
+        const periodDate = new Date(run.periodStart);
+        const periodKey = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}-01`;
+
+        // Get components with variable inputs merged
+        const { getEmployeeSalaryComponentsForPeriod } = await import('@/lib/salary-components/component-reader');
+        const breakdown = await getEmployeeSalaryComponentsForPeriod(
+          currentSalary as any,
+          employee.id,
+          periodKey,
+          run.tenantId
+        );
 
         // Extract base salary components (database-driven, multi-country)
         const { extractBaseSalaryAmounts, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
@@ -249,6 +259,38 @@ export async function calculatePayrollRun(
         const baseAmounts = await extractBaseSalaryAmounts(salaryComponents, tenant.countryCode);
         const totalBaseSalary = await calculateBaseSalaryTotal(salaryComponents, tenant.countryCode);
         const salaireCategoriel = await getSalaireCategoriel(salaryComponents, tenant.countryCode);
+
+        // Get employee rate type and calculate days worked for daily workers
+        const rateType = (employee.rateType || 'MONTHLY') as 'MONTHLY' | 'DAILY' | 'HOURLY';
+        let daysWorkedThisMonth: number | undefined = undefined;
+
+        if (rateType === 'DAILY') {
+          // Query approved time entries for this employee in the payroll period
+          const entries = await db
+            .select()
+            .from(timeEntries)
+            .where(
+              and(
+                eq(timeEntries.employeeId, employee.id),
+                eq(timeEntries.tenantId, run.tenantId),
+                eq(timeEntries.status, 'approved'), // Only count approved entries
+                sql`${timeEntries.clockIn} >= ${run.periodStart}`,
+                sql`${timeEntries.clockIn} < ${run.periodEnd}`
+              )
+            );
+
+          // Count unique work days (not total hours)
+          // A worker might have multiple entries in one day, but should only be counted once
+          const uniqueDays = new Set(
+            entries.map(entry => {
+              const date = new Date(entry.clockIn);
+              return date.toISOString().split('T')[0]; // Get YYYY-MM-DD
+            })
+          );
+          daysWorkedThisMonth = uniqueDays.size;
+
+          console.log(`[PAYROLL DEBUG] Daily worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${daysWorkedThisMonth} days worked, ${entries.length} time entries`);
+        }
 
         // Calculate payroll using V2 (database-driven, multi-country)
         const calculation = await calculatePayrollV2({
@@ -271,6 +313,8 @@ export async function calculatePayrollRun(
           hasFamily,
           hireDate: new Date(employee.hireDate),
           terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
+          rateType, // CRITICAL: Pass rate type to calculation engine
+          daysWorkedThisMonth, // CRITICAL: Pass actual days worked for daily workers
         });
 
         // Prepare line item data (using new schema structure)

@@ -96,7 +96,7 @@ export function BonusForm({ onSuccess, initialValues }: BonusFormProps) {
   // Fetch employees for selection
   const { data: employeesData } = trpc.employees.list.useQuery({
     status: 'active',
-    limit: 1000,
+    limit: 100, // Max allowed by tRPC validation
   });
 
   const employees = employeesData?.employees || [];

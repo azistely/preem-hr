@@ -46,11 +46,31 @@ export function CoefficientSelector({
   className,
 }: CoefficientSelectorProps) {
   const [selectedCoefficient, setSelectedCoefficient] = useState(value);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
   // Fetch all categories for country
   const { data: categories, isLoading } = trpc.employeeCategories.getCategoriesByCountry.useQuery({
     countryCode,
   });
+
+  // Find current category by ID or by coefficient
+  const currentCategory = categories?.find((cat) =>
+    selectedCategoryId
+      ? cat.id === selectedCategoryId
+      : selectedCoefficient >= cat.minCoefficient && selectedCoefficient <= cat.maxCoefficient
+  );
+
+  // Set initial category ID when categories load
+  useEffect(() => {
+    if (categories && !selectedCategoryId) {
+      const initialCategory = categories.find(
+        (cat) => selectedCoefficient >= cat.minCoefficient && selectedCoefficient <= cat.maxCoefficient
+      );
+      if (initialCategory) {
+        setSelectedCategoryId(initialCategory.id);
+      }
+    }
+  }, [categories, selectedCoefficient, selectedCategoryId]);
 
   // Validate selected coefficient
   const { data: validation } = trpc.employeeCategories.validateCoefficient.useQuery(
@@ -63,17 +83,10 @@ export function CoefficientSelector({
     }
   );
 
-  // Update parent when value changes
+  // Update parent when coefficient changes
   useEffect(() => {
     onChange(selectedCoefficient);
   }, [selectedCoefficient, onChange]);
-
-  // Find current category
-  const currentCategory = categories?.find(
-    (cat) =>
-      selectedCoefficient >= cat.minCoefficient &&
-      selectedCoefficient <= cat.maxCoefficient
-  );
 
   if (isLoading) {
     return (
@@ -101,8 +114,14 @@ export function CoefficientSelector({
 
       {/* Category Selector */}
       <Select
-        value={selectedCoefficient.toString()}
-        onValueChange={(val) => setSelectedCoefficient(parseInt(val, 10))}
+        value={selectedCategoryId || undefined}
+        onValueChange={(categoryId) => {
+          setSelectedCategoryId(categoryId);
+          const category = categories?.find((cat) => cat.id === categoryId);
+          if (category) {
+            setSelectedCoefficient(category.minCoefficient);
+          }
+        }}
       >
         <SelectTrigger id="coefficient" className="min-h-[48px]">
           <SelectValue placeholder="Sélectionnez une catégorie" />
@@ -110,8 +129,8 @@ export function CoefficientSelector({
         <SelectContent>
           {categories?.map((category) => (
             <SelectItem
-              key={category.category}
-              value={category.minCoefficient.toString()}
+              key={category.id}
+              value={category.id}
               className="py-2"
             >
               {/* Simplified: Only show category label and code */}

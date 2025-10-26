@@ -130,13 +130,13 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                 size="lg"
                 className="min-h-[56px] text-lg px-8 w-full sm:w-auto bg-preem-teal hover:bg-preem-teal-600 text-white shadow-preem-teal transition-all"
               >
-                Essayez gratuitement - Sans carte bancaire
+                Créer votre compte gratuitement
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            Essai gratuit 30 jours • Assistance en français par WhatsApp
+            Assistance en français par WhatsApp
           </p>
         </div>
 
@@ -476,12 +476,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
           </Link>
 
           {/* Trust Signals Below CTA */}
-          <div className="mt-8 grid gap-4 md:grid-cols-3 text-sm">
-            <div className="flex flex-col items-center gap-2">
-              <CheckCircle className="h-6 w-6 text-preem-teal" />
-              <p className="font-medium">Essai gratuit 30 jours</p>
-              <p className="text-muted-foreground">Aucun engagement</p>
-            </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-2 text-sm max-w-2xl mx-auto">
             <div className="flex flex-col items-center gap-2">
               <CheckCircle className="h-6 w-6 text-preem-teal" />
               <p className="font-medium">Assistance en français</p>

@@ -51,7 +51,7 @@ export function DashboardLayout({
         <Sidebar
           sections={navigation.desktop}
           advancedSections={navigation.advanced}
-          showSearch={userRole === "hr_manager" || userRole === "admin"}
+          showSearch={userRole === "hr_manager" || userRole === "admin" || userRole === "tenant_admin" || userRole === "super_admin"}
           collapsible={true}
         />
 

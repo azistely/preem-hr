@@ -19,7 +19,7 @@ import {
   calculatePayrollRun,
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
-import { payrollRuns, payrollLineItems, employees } from '@/lib/db/schema';
+import { payrollRuns, payrollLineItems, employees, timeEntries } from '@/lib/db/schema';
 import { eq, and, lte, gte, or, isNull, asc, sql } from 'drizzle-orm';
 import { ruleLoader } from '@/features/payroll/services/rule-loader';
 
@@ -205,6 +205,100 @@ export const payrollRouter = createTRPCRouter({
         new Date()
       );
       return minimum;
+    }),
+
+  /**
+   * Get employee payroll preview for a period
+   *
+   * Shows monthly vs daily workers and validates time entries.
+   * Used during payroll run creation to prevent errors.
+   * Requires: HR Manager role
+   *
+   * @example
+   * ```typescript
+   * const preview = await trpc.payroll.getEmployeePayrollPreview.query({
+   *   periodStart: new Date('2025-01-01'),
+   *   periodEnd: new Date('2025-01-31'),
+   * });
+   * // preview.monthlyWorkers.count = 30
+   * // preview.dailyWorkers.count = 12
+   * // preview.dailyWorkers.missingTimeEntries = [...]
+   * ```
+   */
+  getEmployeePayrollPreview: hrManagerProcedure
+    .input(
+      z.object({
+        periodStart: z.date(),
+        periodEnd: z.date(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      // Get all active employees for this tenant
+      const allEmployees = await db
+        .select({
+          id: employees.id,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+          employeeNumber: employees.employeeNumber,
+          rateType: employees.rateType,
+          status: employees.status,
+        })
+        .from(employees)
+        .where(
+          and(
+            eq(employees.tenantId, ctx.user.tenantId),
+            eq(employees.status, 'active')
+          )
+        );
+
+      // Separate monthly and daily workers
+      const monthlyWorkers = allEmployees.filter(e => e.rateType !== 'DAILY');
+      const dailyWorkers = allEmployees.filter(e => e.rateType === 'DAILY');
+
+      // Check time entries for daily workers
+      const missingTimeEntries: Array<{
+        id: string;
+        firstName: string;
+        lastName: string;
+        employeeNumber: string;
+      }> = [];
+
+      for (const worker of dailyWorkers) {
+        const entries = await db
+          .select({ id: timeEntries.id })
+          .from(timeEntries)
+          .where(
+            and(
+              eq(timeEntries.employeeId, worker.id),
+              eq(timeEntries.status, 'approved'),
+              sql`${timeEntries.clockIn} >= ${input.periodStart.toISOString()}`,
+              sql`${timeEntries.clockIn} < ${input.periodEnd.toISOString()}`
+            )
+          )
+          .limit(1); // We only need to know if at least one exists
+
+        if (entries.length === 0) {
+          missingTimeEntries.push({
+            id: worker.id,
+            firstName: worker.firstName,
+            lastName: worker.lastName,
+            employeeNumber: worker.employeeNumber,
+          });
+        }
+      }
+
+      return {
+        monthlyWorkers: {
+          count: monthlyWorkers.length,
+          employees: monthlyWorkers,
+        },
+        dailyWorkers: {
+          count: dailyWorkers.length,
+          employees: dailyWorkers,
+          missingTimeEntries,
+        },
+        totalEmployees: allEmployees.length,
+      };
     }),
 
   /**

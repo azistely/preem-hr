@@ -15,6 +15,8 @@ import { createAuthClient } from "@/lib/supabase/auth-client";
 export interface NavSection {
   title: string;
   items: NavItem[];
+  children?: NavSection[]; // Support nested sections (for organized admin)
+  defaultOpen?: boolean; // Whether section should be open by default
 }
 
 export interface NavItem {
@@ -32,6 +34,85 @@ export interface SidebarProps {
   showUserProfile?: boolean;
   collapsible?: boolean;
   className?: string;
+}
+
+// Component to render nested sections (e.g., Administration with subsections)
+function NestedSection({
+  section,
+  pathname,
+}: {
+  section: NavSection;
+  pathname: string;
+}) {
+  const [isOpen, setIsOpen] = React.useState(section.defaultOpen ?? false);
+
+  return (
+    <div className="space-y-2">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger asChild>
+          <button
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold uppercase text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <ChevronDown
+              className={cn(
+                "h-3 w-3 transition-transform",
+                isOpen && "rotate-180"
+              )}
+            />
+            <span className="flex-1 text-left">{section.title}</span>
+          </button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent className="space-y-3 pt-2 pl-3">
+          {section.children?.map((childSection, index) => (
+            <div key={index} className="space-y-2">
+              {childSection.title && (
+                <h4 className="px-2 text-xs font-medium text-muted-foreground">
+                  {childSection.title}
+                </h4>
+              )}
+              <nav className="space-y-1">
+                {childSection.items.map((item) => {
+                  const isActive =
+                    pathname === item.href ||
+                    pathname?.startsWith(item.href + "/");
+                  const Icon = item.icon;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors min-h-[44px]",
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="flex-1">{item.label}</span>
+                      {item.badge && (
+                        <Badge
+                          variant={
+                            item.variant === 'warning'
+                              ? "default"
+                              : (item.variant === 'destructive' ? "destructive" : "default")
+                          }
+                          className="h-5 min-w-5 px-1.5"
+                        >
+                          {item.badge}
+                        </Badge>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+          ))}
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
 }
 
 export function Sidebar({
@@ -196,51 +277,65 @@ export function Sidebar({
                 </CollapsibleTrigger>
 
                 <CollapsibleContent className="space-y-4 pt-2">
-                  {advancedSections.map((section, index) => (
-                    <div key={index} className="space-y-2">
-                      {section.title && (
-                        <h3 className="px-2 text-xs font-semibold uppercase text-muted-foreground">
-                          {section.title}
-                        </h3>
-                      )}
-                      <nav className="space-y-1">
-                        {section.items.map((item) => {
-                          const isActive =
-                            pathname === item.href ||
-                            pathname?.startsWith(item.href + "/");
-                          const Icon = item.icon;
+                  {advancedSections.map((section, sectionIndex) => {
+                    // Check if this section has nested children (like Administration)
+                    if (section.children && section.children.length > 0) {
+                      return (
+                        <NestedSection
+                          key={sectionIndex}
+                          section={section}
+                          pathname={pathname}
+                        />
+                      );
+                    }
 
-                          return (
-                            <Link
-                              key={item.href}
-                              href={item.href}
-                              className={cn(
-                                "group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors min-h-[44px]",
-                                isActive
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                              )}
-                            >
-                              <Icon className="h-4 w-4 shrink-0" />
-                              <span className="flex-1">{item.label}</span>
-                              {item.badge && (
-                                <Badge
-                                  variant={
-                                    item.variant === 'warning'
-                                      ? "default"
-                                      : (item.variant === 'destructive' ? "destructive" : "default")
-                                  }
-                                  className="h-5 min-w-5 px-1.5"
-                                >
-                                  {item.badge}
-                                </Badge>
-                              )}
-                            </Link>
-                          );
-                        })}
-                      </nav>
-                    </div>
-                  ))}
+                    // Regular section rendering
+                    return (
+                      <div key={sectionIndex} className="space-y-2">
+                        {section.title && (
+                          <h3 className="px-2 text-xs font-semibold uppercase text-muted-foreground">
+                            {section.title}
+                          </h3>
+                        )}
+                        <nav className="space-y-1">
+                          {section.items.map((item) => {
+                            const isActive =
+                              pathname === item.href ||
+                              pathname?.startsWith(item.href + "/");
+                            const Icon = item.icon;
+
+                            return (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                className={cn(
+                                  "group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors min-h-[44px]",
+                                  isActive
+                                    ? "bg-primary text-primary-foreground"
+                                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                              >
+                                <Icon className="h-4 w-4 shrink-0" />
+                                <span className="flex-1">{item.label}</span>
+                                {item.badge && (
+                                  <Badge
+                                    variant={
+                                      item.variant === 'warning'
+                                        ? "default"
+                                        : (item.variant === 'destructive' ? "destructive" : "default")
+                                    }
+                                    className="h-5 min-w-5 px-1.5"
+                                  >
+                                    {item.badge}
+                                  </Badge>
+                                )}
+                              </Link>
+                            );
+                          })}
+                        </nav>
+                      </div>
+                    );
+                  })}
                 </CollapsibleContent>
               </Collapsible>
             </div>

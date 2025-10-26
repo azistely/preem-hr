@@ -1,4 +1,4 @@
-import { pgTable, index, unique, uuid, varchar, jsonb, integer, boolean, timestamp, pgPolicy, check, text, type AnyPgColumn, foreignKey, inet, date, numeric, pgView, customType, type PgTableWithColumns } from "drizzle-orm/pg-core"
+import { pgTable, index, unique, uuid, varchar, jsonb, integer, boolean, timestamp, pgPolicy, check, text, type AnyPgColumn, foreignKey, inet, date, numeric, pgView, customType, type PgTableWithColumns, pgEnum } from "drizzle-orm/pg-core"
 import { sql, relations } from "drizzle-orm"
 
 // Custom type for PostGIS/Postgres name type
@@ -8,6 +8,8 @@ const unknown = customType<{ data: string }>({
   },
 });
 
+// Rate type enum
+export const rateTypeEnum = pgEnum('rate_type_enum', ['MONTHLY', 'DAILY', 'HOURLY']);
 
 
 export const countries = pgTable("countries", {
@@ -310,6 +312,7 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	postalCode: text("postal_code"),
 	countryCode: text("country_code").default('CI').notNull(),
 	coefficient: integer().default(100).notNull(),
+	rateType: rateTypeEnum("rate_type").default('MONTHLY').notNull(),
 	hireDate: date("hire_date").notNull(),
 	terminationDate: date("termination_date"),
 	terminationReason: text("termination_reason"),
@@ -1315,6 +1318,8 @@ export const timeEntries = pgTable("time_entries", {
 	clockIn: timestamp("clock_in", { withTimezone: true, mode: 'string' }).notNull(),
 	clockOut: timestamp("clock_out", { withTimezone: true, mode: 'string' }),
 	totalHours: numeric("total_hours", { precision: 5, scale:  2 }),
+	entrySource: text("entry_source").default('clock_in_out').notNull(),
+	locationId: uuid("location_id"),
 	// TODO: failed to parse database type 'geography' - using text as workaround
 	clockInLocation: text("clock_in_location"),
 	// TODO: failed to parse database type 'geography' - using text as workaround
@@ -1334,6 +1339,7 @@ export const timeEntries = pgTable("time_entries", {
 }, (table) => [
 	index("idx_time_entries_employee").using("btree", table.employeeId.asc().nullsLast().op("timestamptz_ops"), table.clockIn.desc().nullsFirst().op("timestamptz_ops")),
 	index("idx_time_entries_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("uuid_ops")),
+	index("idx_time_entries_entry_source").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.entrySource.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.approvedBy],
 			foreignColumns: [users.id],
@@ -1353,6 +1359,7 @@ export const timeEntries = pgTable("time_entries", {
 	check("valid_entry_type", sql`entry_type = ANY (ARRAY['regular'::text, 'overtime'::text, 'on_call'::text])`),
 	check("valid_status_time_entry", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])`),
 	check("valid_time", sql`(clock_out IS NULL) OR (clock_out > clock_in)`),
+	check("check_entry_source", sql`entry_source IN ('clock_in_out', 'manual')`),
 ]);
 
 // Time Entries Relations

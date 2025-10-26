@@ -102,11 +102,24 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/time-tracking': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'], // Employee time tracking
   '/time-off': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'], // Employee time-off requests
   '/terminations': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/contracts': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/horaires': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/horaires/approvals': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/leave/balances': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/reports': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll/bonuses': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll/variable-inputs': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // Settings (accessible based on role)
   '/settings': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/settings/salary-components': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/settings/sectors': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Compliance (HR Manager+)
+  '/compliance/registre-personnel': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/compliance/cdd': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/compliance/declarations': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/compliance/inspection': ['hr_manager', 'tenant_admin', 'super_admin'],
 };
 
 /**

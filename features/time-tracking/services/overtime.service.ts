@@ -182,18 +182,33 @@ export async function classifyOvertimeHours(
   const weekStart = startOfWeek(clockIn, { weekStartsOn: 1 }); // Monday
   const weekEnd = endOfWeek(clockIn, { weekStartsOn: 1 });
 
+  // Include both pending and approved entries for accurate overtime calculation
+  // (pending entries need to count towards weekly totals)
   const weeklyEntries = await db.query.timeEntries.findMany({
     where: and(
       eq(timeEntries.employeeId, employeeId),
       gte(timeEntries.clockIn, format(weekStart, "yyyy-MM-dd'T'HH:mm:ssXXX")),
       lte(timeEntries.clockIn, format(weekEnd, "yyyy-MM-dd'T'HH:mm:ssXXX")),
-      eq(timeEntries.status, 'approved')
+      // Don't filter by status - include pending and approved
+      // (only exclude rejected entries)
+      sql`${timeEntries.status} != 'rejected'`
     ),
   });
 
   const hoursThisWeek = weeklyEntries.reduce((sum, entry) => {
     return sum + (entry.totalHours ? parseFloat(entry.totalHours as string) : 0);
   }, 0);
+
+  console.log('[classifyOvertimeHours] Calculating overtime:', {
+    employeeId,
+    clockIn: clockIn.toISOString(),
+    totalHours,
+    weekStart: weekStart.toISOString(),
+    weekEnd: weekEnd.toISOString(),
+    weeklyEntriesCount: weeklyEntries.length,
+    hoursThisWeek,
+    cumulativeHours: hoursThisWeek + totalHours,
+  });
 
   // Get overtime rules for country
   const rules = await getOvertimeRules(countryCode);

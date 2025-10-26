@@ -1,11 +1,15 @@
-import { pgTable, uuid, timestamp, numeric, text, boolean, pgPolicy, date, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, numeric, text, boolean, pgPolicy, date, integer, jsonb } from 'drizzle-orm/pg-core';
 import { sql, relations } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { employees } from './employees';
 import { tenantUser } from './roles';
 
 /**
- * Time Entries - Clock in/out records with geofencing
+ * Time Entries - Clock in/out records with geofencing AND manual entry
+ *
+ * Supports two workflows:
+ * 1. Clock in/out - Automatic tracking via mobile (entrySource: 'clock_in_out')
+ * 2. Manual entry - Manager/HR enters hours for date (entrySource: 'manual')
  */
 export const timeEntries = pgTable('time_entries', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -17,25 +21,31 @@ export const timeEntries = pgTable('time_entries', {
   clockOut: timestamp('clock_out'),
   totalHours: numeric('total_hours', { precision: 5, scale: 2 }),
 
+  // Entry source - distinguishes manual entries from automatic clock in/out
+  entrySource: text('entry_source').notNull().default('clock_in_out'), // 'clock_in_out' | 'manual'
+
   // Location tracking (for multi-site support)
   locationId: uuid('location_id'), // References locations(id) - added for GAP-LOC-001
 
-  // Geofencing
+  // Geofencing (only for clock_in_out entries)
   clockInLocation: text('clock_in_location'), // GEOGRAPHY(POINT) stored as text
   clockOutLocation: text('clock_out_location'), // GEOGRAPHY(POINT) stored as text
   geofenceVerified: boolean('geofence_verified').default(false),
 
-  // Photo verification
+  // Photo verification (only for clock_in_out entries)
   clockInPhotoUrl: text('clock_in_photo_url'),
   clockOutPhotoUrl: text('clock_out_photo_url'),
 
   // Entry metadata
-  entryType: text('entry_type').notNull().default('regular'), // regular, overtime, on_call
+  entryType: text('entry_type').notNull().default('regular'), // regular, overtime, on_call, night, weekend
   status: text('status').notNull().default('pending'), // pending, approved, rejected
   approvedBy: uuid('approved_by'), // References users(id)
   approvedAt: timestamp('approved_at'),
   rejectionReason: text('rejection_reason'),
   notes: text('notes'),
+
+  // Overtime breakdown (from overtime.service.ts classifyOvertimeHours)
+  overtimeBreakdown: jsonb('overtime_breakdown'), // {hours_41_to_46, hours_above_46, night_work, weekend_work}
 
   // Audit
   createdAt: timestamp('created_at').notNull().defaultNow(),

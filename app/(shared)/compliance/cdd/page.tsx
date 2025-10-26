@@ -26,7 +26,7 @@ import {
   RefreshCw,
   FileText,
 } from 'lucide-react';
-import { trpc } from '@/lib/trpc/client';
+import { api } from '@/trpc/react';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -46,7 +46,7 @@ export default function CDDCompliancePage() {
     data: alertsData,
     isLoading: alertsLoading,
     refetch: refetchAlerts,
-  } = trpc.compliance.getActiveAlerts.useQuery({
+  } = api.compliance.getActiveAlerts.useQuery({
     limit: 50,
     offset: 0,
   });
@@ -55,10 +55,10 @@ export default function CDDCompliancePage() {
   const {
     data: cddContracts,
     isLoading: contractsLoading,
-  } = trpc.compliance.getActiveCDDContracts.useQuery();
+  } = api.compliance.getActiveCDDContracts.useQuery();
 
   // Mutation: Convert to CDI
-  const convertToCDI = trpc.compliance.convertToCDI.useMutation({
+  const convertToCDI = api.compliance.convertToCDI.useMutation({
     onSuccess: () => {
       toast({
         title: 'Conversion réussie',
@@ -76,7 +76,7 @@ export default function CDDCompliancePage() {
   });
 
   // Mutation: Dismiss alert
-  const dismissAlert = trpc.compliance.dismissAlert.useMutation({
+  const dismissAlert = api.compliance.dismissAlert.useMutation({
     onSuccess: () => {
       toast({
         title: 'Alerte fermée',

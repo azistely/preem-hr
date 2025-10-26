@@ -1,13 +1,17 @@
 'use client';
 
 /**
- * New Payroll Run Creation Page
+ * New Payroll Run Creation Page (Wizard)
  *
- * Allows payroll managers to create a new payroll run by:
- * - Selecting period start and end dates
- * - Selecting payment date
- * - Optionally providing a custom name
- * - Validating that no run exists for the selected period
+ * Multi-step wizard for creating payroll runs:
+ * 1. Period Selection - Choose dates and payment date
+ * 2. Employee Preview - Validate time entries for daily workers
+ * 3. Confirmation - Review and create the run
+ *
+ * HCI Improvements:
+ * - Error prevention: Validates time entries before calculation
+ * - Immediate feedback: Shows which employees are ready
+ * - Task-oriented: Guides user through the process
  */
 
 import { useState } from 'react';
@@ -15,9 +19,9 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { format, addMonths, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { format, addMonths, startOfMonth, endOfMonth, parseISO, startOfWeek, endOfWeek, subWeeks, addDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Calendar, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { Calendar, ArrowLeft, Loader2, AlertCircle, Check } from 'lucide-react';
 import { api } from '@/trpc/react';
 
 import { Button } from '@/components/ui/button';
@@ -25,6 +29,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Wizard, WizardStep } from '@/components/wizard/wizard';
+import { EmployeePreviewStep } from './components/employee-preview-step';
 
 // Form validation schema
 const formSchema = z.object({
@@ -48,8 +54,10 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function NewPayrollRunPage() {
   const router = useRouter();
+  const [currentStep, setCurrentStep] = useState(0); // Start at 0 (employee preview)
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPeriodEdit, setShowPeriodEdit] = useState(false);
 
   // Get authenticated user from auth context
   const { data: user } = api.auth.me.useQuery();
@@ -60,7 +68,7 @@ export default function NewPayrollRunPage() {
   const { data: availableCountries, isLoading: countriesLoading } = api.payroll.getAvailableCountries.useQuery();
   const { data: tenant } = api.tenant.getCurrent.useQuery();
 
-  // Initialize form with current month defaults
+  // Auto-calculate smart default period (monthly)
   const currentMonthStart = startOfMonth(new Date());
   const currentMonthEnd = endOfMonth(new Date());
   const nextMonthStart = addMonths(currentMonthStart, 1);
@@ -72,7 +80,7 @@ export default function NewPayrollRunPage() {
       periodStart: format(currentMonthStart, 'yyyy-MM-dd'),
       periodEnd: format(currentMonthEnd, 'yyyy-MM-dd'),
       paymentDate: format(addMonths(nextMonthStart, 0).setDate(5), 'yyyy-MM-dd'),
-      name: '',
+      name: `Paie ${format(currentMonthStart, 'MMMM yyyy', { locale: fr })}`,
     },
   });
 
@@ -87,31 +95,6 @@ export default function NewPayrollRunPage() {
       setIsSubmitting(false);
     },
   });
-
-  const onSubmit = async (values: FormValues) => {
-    if (!tenantId || !userId) {
-      setError('Utilisateur non authentifié');
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setError(null);
-
-      await createRun.mutateAsync({
-        tenantId,
-        countryCode: values.countryCode,
-        periodStart: parseISO(values.periodStart), // Use parseISO to avoid timezone issues
-        periodEnd: parseISO(values.periodEnd),
-        paymentDate: parseISO(values.paymentDate),
-        name: values.name || undefined,
-        createdBy: userId,
-      });
-    } catch (err) {
-      // Error handled by onError callback
-      console.error('Failed to create payroll run:', err);
-    }
-  };
 
   const handleCancel = () => {
     router.back();
@@ -136,6 +119,242 @@ export default function NewPayrollRunPage() {
     form.setValue('name', `Paie ${format(start, 'MMMM yyyy', { locale: fr })}`);
   };
 
+  const fillCurrentWeek = () => {
+    const start = startOfWeek(new Date(), { weekStartsOn: 1 }); // Monday
+    const end = endOfWeek(new Date(), { weekStartsOn: 1 }); // Sunday
+    form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
+    form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
+    form.setValue('paymentDate', format(addDays(end, 2), 'yyyy-MM-dd')); // Payment 2 days after period end
+    form.setValue('name', `Paie semaine du ${format(start, 'd MMM', { locale: fr })}`);
+  };
+
+  const fillLastWeek = () => {
+    const lastWeekDate = subWeeks(new Date(), 1);
+    const start = startOfWeek(lastWeekDate, { weekStartsOn: 1 });
+    const end = endOfWeek(lastWeekDate, { weekStartsOn: 1 });
+    form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
+    form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
+    form.setValue('paymentDate', format(addDays(end, 2), 'yyyy-MM-dd'));
+    form.setValue('name', `Paie semaine du ${format(start, 'd MMM', { locale: fr })}`);
+  };
+
+  const fillLast2Weeks = () => {
+    const twoWeeksAgo = subWeeks(new Date(), 2);
+    const start = startOfWeek(twoWeeksAgo, { weekStartsOn: 1 });
+    const end = endOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
+    form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
+    form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
+    form.setValue('paymentDate', format(addDays(end, 2), 'yyyy-MM-dd'));
+    form.setValue('name', `Paie 2 semaines du ${format(start, 'd MMM', { locale: fr })}`);
+  };
+
+  // Handle final submission (Step 3)
+  const handleComplete = async () => {
+    if (!tenantId || !userId) {
+      setError('Utilisateur non authentifié');
+      return;
+    }
+
+    const values = form.getValues();
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      await createRun.mutateAsync({
+        tenantId,
+        countryCode: values.countryCode,
+        periodStart: parseISO(values.periodStart),
+        periodEnd: parseISO(values.periodEnd),
+        paymentDate: parseISO(values.paymentDate),
+        name: values.name || undefined,
+        createdBy: userId,
+      });
+    } catch (err) {
+      console.error('Failed to create payroll run:', err);
+      setIsSubmitting(false);
+    }
+  };
+
+  // Get form values for preview and confirmation steps
+  const formValues = form.watch();
+  const periodStart = formValues.periodStart ? parseISO(formValues.periodStart) : currentMonthStart;
+  const periodEnd = formValues.periodEnd ? parseISO(formValues.periodEnd) : currentMonthEnd;
+  const paymentDate = formValues.paymentDate ? parseISO(formValues.paymentDate) : new Date();
+
+  // Wizard steps (removed period selection - it's auto-calculated)
+  const wizardSteps: WizardStep[] = [
+    // Step 1: Employee Preview & Validation (with period editor)
+    {
+      title: 'Vérifiez les employés',
+      description: 'Assurez-vous que tous les employés journaliers ont leurs heures saisies',
+      content: (
+        <div className="space-y-6">
+          {/* Period Display/Editor */}
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-muted-foreground mb-1">Période de paie</div>
+                  <div className="text-2xl font-bold">
+                    {format(periodStart, 'd MMM', { locale: fr })} - {format(periodEnd, 'd MMM yyyy', { locale: fr })}
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Paiement le {format(paymentDate, 'd MMMM yyyy', { locale: fr })}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPeriodEdit(!showPeriodEdit)}
+                  className="min-h-[44px]"
+                >
+                  <Calendar className="h-4 w-4 mr-2" />
+                  {showPeriodEdit ? 'Fermer' : 'Modifier'}
+                </Button>
+              </div>
+
+              {/* Collapsible Period Editor */}
+              {showPeriodEdit && (
+                <div className="mt-6 pt-6 border-t space-y-4">
+                  {/* Quick Fill Buttons */}
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium">Périodes courantes</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={fillCurrentMonth}
+                        size="sm"
+                      >
+                        Mois Actuel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={fillLastMonth}
+                        size="sm"
+                      >
+                        Mois Dernier
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={fillLastWeek}
+                        size="sm"
+                      >
+                        Semaine Dernière
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={fillLast2Weeks}
+                        size="sm"
+                      >
+                        2 Dernières Semaines
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Manual Date Selection */}
+                  <Form {...form}>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="periodStart"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Date de début</FormLabel>
+                            <FormControl>
+                              <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="periodEnd"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Date de fin</FormLabel>
+                            <FormControl>
+                              <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </Form>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Employee Preview Component */}
+          <EmployeePreviewStep
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+          />
+        </div>
+      ),
+    },
+
+    // Step 2: Confirmation
+    {
+      title: 'Confirmation',
+      description: 'Vérifiez les informations avant de créer la paie',
+      content: (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Résumé de la paie</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="space-y-3">
+                <div className="flex justify-between items-center py-2 border-b">
+                  <dt className="text-muted-foreground">Pays</dt>
+                  <dd className="font-semibold">
+                    {availableCountries?.find(c => c.code === formValues.countryCode)?.name || formValues.countryCode}
+                  </dd>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b">
+                  <dt className="text-muted-foreground">Période</dt>
+                  <dd className="font-semibold">
+                    {format(periodStart, 'd MMM', { locale: fr })} - {format(periodEnd, 'd MMM yyyy', { locale: fr })}
+                  </dd>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b">
+                  <dt className="text-muted-foreground">Date de paiement</dt>
+                  <dd className="font-semibold">{format(paymentDate, 'd MMMM yyyy', { locale: fr })}</dd>
+                </div>
+                {formValues.name && (
+                  <div className="flex justify-between items-center py-2">
+                    <dt className="text-muted-foreground">Nom</dt>
+                    <dd className="font-semibold">{formValues.name}</dd>
+                  </div>
+                )}
+              </dl>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-muted/50">
+            <CardContent className="pt-6">
+              <h3 className="font-semibold mb-2">À savoir</h3>
+              <ul className="text-sm space-y-1 text-muted-foreground">
+                <li>• La paie sera créée en brouillon</li>
+                <li>• Vous pourrez lancer le calcul sur la page suivante</li>
+                <li>• Tous les employés actifs seront inclus automatiquement</li>
+                <li>• Les employés journaliers seront payés selon leurs heures saisies</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="container mx-auto py-8 px-4 max-w-3xl">
       {/* Header */}
@@ -143,7 +362,7 @@ export default function NewPayrollRunPage() {
         <Button
           variant="ghost"
           onClick={handleCancel}
-          className="mb-4"
+          className="mb-4 min-h-[44px]"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Retour
@@ -153,28 +372,8 @@ export default function NewPayrollRunPage() {
           Nouvelle Paie
         </h1>
         <p className="text-muted-foreground text-lg mt-2">
-          Créez un nouveau cycle de paie mensuel
+          Vérifiez vos employés et créez la paie
         </p>
-      </div>
-
-      {/* Quick Fill Buttons */}
-      <div className="flex gap-2 mb-6">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={fillCurrentMonth}
-          className="flex-1"
-        >
-          Mois Actuel
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={fillLastMonth}
-          className="flex-1"
-        >
-          Mois Dernier
-        </Button>
       </div>
 
       {/* Error Alert */}
@@ -192,176 +391,16 @@ export default function NewPayrollRunPage() {
         </Card>
       )}
 
-      {/* Form */}
+      {/* Wizard */}
       <Card>
-        <CardHeader>
-          <CardTitle>Informations de la Paie</CardTitle>
-          <CardDescription>
-            Définissez la période de paie et la date de paiement
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Country Selector */}
-              <FormField
-                control={form.control}
-                name="countryCode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-base">Pays</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value} disabled={countriesLoading}>
-                      <FormControl>
-                        <SelectTrigger className="min-h-[48px] text-lg">
-                          <SelectValue placeholder="Sélectionnez le pays" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {availableCountries?.map((country) => (
-                          <SelectItem key={country.code} value={country.code} className="text-base py-3">
-                            {country.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Pays pour le calcul de la paie (détermine les règles fiscales et sociales)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Period Start */}
-              <FormField
-                control={form.control}
-                name="periodStart"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-base">Date de début</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="date"
-                        {...field}
-                        className="text-lg"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Premier jour de la période de paie
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Period End */}
-              <FormField
-                control={form.control}
-                name="periodEnd"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-base">Date de fin</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="date"
-                        {...field}
-                        className="text-lg"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Dernier jour de la période de paie
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Payment Date */}
-              <FormField
-                control={form.control}
-                name="paymentDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-base">Date de paiement</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="date"
-                        {...field}
-                        className="text-lg"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Date prévue pour le versement des salaires
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Optional Name */}
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-base">Nom (optionnel)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="text"
-                        placeholder="Ex: Paie Janvier 2025"
-                        {...field}
-                        className="text-lg"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Nom personnalisé pour identifier cette paie
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Actions */}
-              <div className="flex gap-4 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCancel}
-                  className="flex-1"
-                  disabled={isSubmitting}
-                >
-                  Annuler
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Création...
-                    </>
-                  ) : (
-                    'Créer la Paie'
-                  )}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-
-      {/* Information Card */}
-      <Card className="mt-6 bg-muted/50">
         <CardContent className="pt-6">
-          <h3 className="font-semibold mb-2">À savoir</h3>
-          <ul className="text-sm space-y-1 text-muted-foreground">
-            <li>• La paie sera créée en brouillon</li>
-            <li>• Vous pourrez lancer le calcul sur la page suivante</li>
-            <li>• Tous les employés actifs seront inclus automatiquement</li>
-            <li>• Les paies en brouillon peuvent être supprimées</li>
-          </ul>
+          <Wizard
+            steps={wizardSteps}
+            onComplete={handleComplete}
+            isSubmitting={isSubmitting}
+            currentStep={currentStep}
+            onStepChange={setCurrentStep}
+          />
         </CardContent>
       </Card>
     </div>

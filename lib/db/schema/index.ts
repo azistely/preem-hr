@@ -23,3 +23,4 @@ export * from './accounting';
 export * from './data-migration';
 export * from './conventions';
 export * from './locations';
+export * from './variable-pay-inputs';

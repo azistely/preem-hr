@@ -77,8 +77,8 @@ export interface TimeEntry {
 
 interface TimeEntryApprovalCardProps {
   entry: TimeEntry;
-  onApprove: (entryId: string) => Promise<void>;
-  onReject: (entryId: string, reason: string) => Promise<void>;
+  onApprove?: (entryId: string) => Promise<void>;
+  onReject?: (entryId: string, reason: string) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -107,6 +107,7 @@ export function TimeEntryApprovalCard({
     (entry.overtimeBreakdown?.holiday || 0);
 
   const handleApprove = async () => {
+    if (!onApprove) return;
     setIsSubmitting(true);
     try {
       await onApprove(entry.id);
@@ -116,7 +117,7 @@ export function TimeEntryApprovalCard({
   };
 
   const handleReject = async () => {
-    if (!rejectionReason.trim()) return;
+    if (!onReject || !rejectionReason.trim()) return;
 
     setIsSubmitting(true);
     try {
@@ -284,26 +285,33 @@ export function TimeEntryApprovalCard({
           )}
         </CardContent>
 
-        <CardFooter className="gap-2">
-          <Button
-            className="min-h-[44px] flex-1"
-            variant="default"
-            onClick={handleApprove}
-            disabled={isLoading || isSubmitting || entry.status !== 'pending'}
-          >
-            <Check className="mr-2 h-5 w-5" />
-            Approuver
-          </Button>
-          <Button
-            className="min-h-[44px] flex-1"
-            variant="outline"
-            onClick={() => setRejectDialogOpen(true)}
-            disabled={isLoading || isSubmitting || entry.status !== 'pending'}
-          >
-            <X className="mr-2 h-5 w-5" />
-            Rejeter
-          </Button>
-        </CardFooter>
+        {/* Only show action buttons if handlers are provided */}
+        {(onApprove || onReject) && (
+          <CardFooter className="gap-2">
+            {onApprove && (
+              <Button
+                className="min-h-[44px] flex-1"
+                variant="default"
+                onClick={handleApprove}
+                disabled={isLoading || isSubmitting || entry.status !== 'pending'}
+              >
+                <Check className="mr-2 h-5 w-5" />
+                Approuver
+              </Button>
+            )}
+            {onReject && (
+              <Button
+                className="min-h-[44px] flex-1"
+                variant="outline"
+                onClick={() => setRejectDialogOpen(true)}
+                disabled={isLoading || isSubmitting || entry.status !== 'pending'}
+              >
+                <X className="mr-2 h-5 w-5" />
+                Rejeter
+              </Button>
+            )}
+          </CardFooter>
+        )}
       </Card>
 
       {/* Rejection dialog */}

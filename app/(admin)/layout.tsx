@@ -31,9 +31,14 @@ export default function AdminLayout({
     );
   }
 
-  // Use hr_manager for HR managers and admin for tenant admins
-  const userRole = user.role === 'tenant_admin' || user.role === 'super_admin'
-    ? 'admin'
+  // Map user role appropriately for navigation
+  // - hr_manager: HR Manager navigation
+  // - tenant_admin: Admin navigation (HR + tenant admin features)
+  // - super_admin: Super Admin navigation (everything + multi-country config)
+  const userRole = user.role === 'super_admin'
+    ? 'super_admin'
+    : user.role === 'tenant_admin'
+    ? 'tenant_admin'
     : 'hr_manager';
 
   return (
