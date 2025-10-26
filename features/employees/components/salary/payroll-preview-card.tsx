@@ -20,6 +20,8 @@ import { formatCurrency, calculatePercentageChange } from '../../hooks/use-salar
 import { trpc } from '@/lib/trpc/client';
 import type { SalaryComponentInstance } from '../../types/salary-components';
 import { Separator } from '@/components/ui/separator';
+import { getGrossSalaryLabel, getNetSalaryLabel, formatCurrencyWithRate } from '../../utils/rate-type-labels';
+import type { RateType } from '../../utils/rate-type-labels';
 
 interface PayrollPreviewCardProps {
   employeeId: string;
@@ -28,6 +30,7 @@ interface PayrollPreviewCardProps {
   currentComponents?: SalaryComponentInstance[]; // Pass current components to calculate old net
   onCalculate?: () => void;
   isCalculating?: boolean;
+  rateType?: RateType; // Add rate type for rate-aware labels
 }
 
 export function PayrollPreviewCard({
@@ -37,6 +40,7 @@ export function PayrollPreviewCard({
   currentComponents,
   onCalculate,
   isCalculating,
+  rateType = 'MONTHLY',
 }: PayrollPreviewCardProps) {
   // Use tRPC query for NEW salary payroll calculation
   const { data: newBreakdown, isLoading: loadingNew, error: errorNew } = trpc.salaries.previewPayroll.useQuery(
@@ -133,9 +137,9 @@ export function PayrollPreviewCard({
       <CardContent className="space-y-4">
         {/* Gross Salary */}
         <div>
-          <p className="text-sm text-muted-foreground mb-1">Salaire brut</p>
+          <p className="text-sm text-muted-foreground mb-1">{getGrossSalaryLabel(rateType)}</p>
           <p className="text-2xl font-bold">
-            {formatCurrency(breakdown.grossSalary)}
+            {formatCurrencyWithRate(breakdown.grossSalary, rateType)}
           </p>
         </div>
 
@@ -164,9 +168,9 @@ export function PayrollPreviewCard({
 
         {/* Net Salary */}
         <div className="bg-muted/50 p-4 rounded-lg">
-          <p className="text-sm text-muted-foreground mb-1">Salaire net</p>
+          <p className="text-sm text-muted-foreground mb-1">{getNetSalaryLabel(rateType)}</p>
           <p className="text-3xl font-bold text-primary">
-            {formatCurrency(breakdown.netSalary)}
+            {formatCurrencyWithRate(breakdown.netSalary, rateType)}
           </p>
         </div>
 

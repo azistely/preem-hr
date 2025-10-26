@@ -9,6 +9,8 @@ import { db } from '@/lib/db';
 import { employeeSalaries, employees, countries, tenants, auditLogs } from '@/drizzle/schema';
 import { eq, and, or, isNull, lte, gt, desc } from 'drizzle-orm';
 import { ValidationError, NotFoundError } from '@/lib/errors';
+import { ensureComponentsActivated } from '@/lib/salary-components/component-activation';
+import { getBaseSalaryComponents } from '@/lib/salary-components/base-salary-loader';
 
 // Country configuration cache
 const countryConfigCache = new Map<string, { minimumWage: number }>();
@@ -84,32 +86,7 @@ export async function changeSalary(input: ChangeSalaryInput) {
   // Get tenant's country code
   const countryCode = await getTenantCountryCode(input.tenantId);
 
-  // Get country-specific minimum wage
-  const minimumWage = await getMinimumWage(countryCode);
-
-  // Extract base salary from components
-  const baseComponent = input.components.find(c =>
-    c.code === '01' || c.name.toLowerCase().includes('base') || c.name.toLowerCase().includes('salaire de base')
-  );
-  const baseSalary = baseComponent?.amount || 0;
-
-  // Validate against country SMIG
-  if (baseSalary < minimumWage) {
-    const [country] = await db
-      .select({ name: countries.name })
-      .from(countries)
-      .where(eq(countries.code, countryCode))
-      .limit(1);
-
-    const countryName = (country?.name as any)?.fr || countryCode;
-
-    throw new ValidationError(
-      `Le salaire doit être >= SMIG du ${countryName} (${minimumWage} FCFA)`,
-      { baseSalary, minimumWage, countryCode }
-    );
-  }
-
-  // Verify employee exists
+  // Verify employee exists first (need rateType for validation)
   const [employee] = await db
     .select()
     .from(employees)
@@ -125,8 +102,87 @@ export async function changeSalary(input: ChangeSalaryInput) {
     throw new NotFoundError('Employé', input.employeeId);
   }
 
+  // Extract base salary from components
+  const baseComponent = input.components.find(c =>
+    c.code === '01' || c.name.toLowerCase().includes('base') || c.name.toLowerCase().includes('salaire de base')
+  );
+  const baseSalary = baseComponent?.amount || 0;
+
+  // Validate against country SMIG (rate-type aware)
+  const rateType = (employee.rateType || 'MONTHLY') as string;
+
+  // Get country-specific monthly minimum wage
+  const monthlyMinimumWage = await getMinimumWage(countryCode);
+
+  // Calculate minimum wage based on rate type
+  let minimumWageForRateType: number;
+  let minimumWageLabel: string;
+
+  if (rateType === 'DAILY') {
+    // Daily SMIG = Monthly SMIG / 30 days
+    minimumWageForRateType = Math.round(monthlyMinimumWage / 30);
+    minimumWageLabel = `${minimumWageForRateType} FCFA/jour`;
+  } else if (rateType === 'HOURLY') {
+    // Hourly SMIG = Monthly SMIG / 30 days / 8 hours
+    minimumWageForRateType = Math.round(monthlyMinimumWage / 30 / 8);
+    minimumWageLabel = `${minimumWageForRateType} FCFA/heure`;
+  } else {
+    // Monthly SMIG (default for 'MONTHLY' or null)
+    minimumWageForRateType = monthlyMinimumWage;
+    minimumWageLabel = `${minimumWageForRateType} FCFA/mois`;
+  }
+
+  if (baseSalary < minimumWageForRateType) {
+    const [country] = await db
+      .select({ name: countries.name })
+      .from(countries)
+      .where(eq(countries.code, countryCode))
+      .limit(1);
+
+    const countryName = (country?.name as any)?.fr || countryCode;
+
+    throw new ValidationError(
+      `Le salaire doit être >= SMIG du ${countryName} (${minimumWageLabel})`,
+      { baseSalary, minimumWage: minimumWageForRateType, countryCode, rateType }
+    );
+  }
+
+  // ========================================
+  // PRE-TRANSACTION: Get base components (should NOT be in transaction)
+  // ========================================
+  // CRITICAL: getBaseSalaryComponents() hits the database and should NOT be called inside transaction
+  // This prevents deadlocks and ensures we don't hold locks while loading metadata
+  console.log('[changeSalary] Loading base components for country:', countryCode);
+  const baseComponents = await getBaseSalaryComponents(countryCode);
+  const baseCodes = new Set(baseComponents.map(c => c.code));
+  console.log('[changeSalary] Base component codes:', Array.from(baseCodes));
+
+  // Filter components before entering transaction
+  const nonBaseComponents = input.components.filter(comp => !baseCodes.has(comp.code));
+  console.log('[changeSalary] Non-base components to activate:', nonBaseComponents.length);
+
   return await db.transaction(async (tx) => {
+    console.log('[changeSalary] Transaction started');
+
+    // ========================================
+    // AUTO-ACTIVATE COMPONENTS AT TENANT LEVEL
+    // ========================================
+    if (nonBaseComponents.length > 0) {
+      console.log('[changeSalary] Activating components...');
+      const activationInputs = nonBaseComponents.map(comp => ({
+        code: comp.code,
+        sourceType: comp.sourceType === 'custom' ? 'template' : comp.sourceType,
+        tenantId: input.tenantId,
+        countryCode: countryCode,
+        userId: input.createdBy,
+      }));
+
+      await ensureComponentsActivated(activationInputs, tx);
+      console.log('[changeSalary] Components activated');
+    }
+
     // Get current salary record
+    console.log('[changeSalary] Querying current salary...');
     const [currentSalary] = await tx
       .select()
       .from(employeeSalaries)
@@ -137,10 +193,11 @@ export async function changeSalary(input: ChangeSalaryInput) {
         )
       )
       .limit(1);
+    console.log('[changeSalary] Current salary found:', !!currentSalary);
 
     if (currentSalary) {
       // Close current salary record
-      // Convert Date to string format that matches PostgreSQL date type
+      console.log('[changeSalary] Closing current salary record...');
       const effectiveToDate = input.effectiveFrom.toISOString().split('T')[0];
       await tx
         .update(employeeSalaries)
@@ -148,9 +205,11 @@ export async function changeSalary(input: ChangeSalaryInput) {
           effectiveTo: effectiveToDate as any,
         })
         .where(eq(employeeSalaries.id, currentSalary.id));
+      console.log('[changeSalary] Current salary closed');
     }
 
     // Create new salary record
+    console.log('[changeSalary] Creating new salary record...');
     const valuesToInsert = {
       tenantId: input.tenantId,
       employeeId: input.employeeId,
@@ -169,8 +228,10 @@ export async function changeSalary(input: ChangeSalaryInput) {
       .insert(employeeSalaries)
       .values(valuesToInsert)
       .returning();
+    console.log('[changeSalary] New salary created:', newSalary?.id);
 
     // Create audit log entry
+    console.log('[changeSalary] Creating audit log...');
     await tx.insert(auditLogs).values({
       tenantId: input.tenantId,
       userId: input.createdBy,
@@ -189,7 +250,9 @@ export async function changeSalary(input: ChangeSalaryInput) {
         reason: input.changeReason,
       },
     });
+    console.log('[changeSalary] Audit log created');
 
+    console.log('[changeSalary] Transaction completed successfully');
     return newSalary!;
   });
 }

@@ -216,6 +216,21 @@ export const salariesRouter = createTRPCRouter({
         // Create a map of code -> metadata
         const metadataMap = new Map(definitions.map(d => [d.code, d]));
 
+        // Helper function to convert monthly component amounts to employee's rate type
+        // Components are stored in monthly amounts by convention
+        const convertComponentAmount = (monthlyAmount: number): number => {
+          const rateType = employee.rateType || 'MONTHLY';
+          switch (rateType) {
+            case 'DAILY':
+              return Math.round(monthlyAmount / 30);
+            case 'HOURLY':
+              return Math.round(monthlyAmount / 30 / 8);
+            case 'MONTHLY':
+            default:
+              return monthlyAmount;
+          }
+        };
+
         // Categorize non-base components by their type using database metadata
         let housingAllowance = 0;
         let transportAllowance = 0;
@@ -228,7 +243,8 @@ export const salariesRouter = createTRPCRouter({
           const metadata = metadataMap.get(component.code);
           if (!metadata) {
             // No metadata found - treat as other bonus
-            otherBonuses += component.amount || 0;
+            // Convert from monthly to employee's rate type
+            otherBonuses += convertComponentAmount(component.amount || 0);
             continue;
           }
 
@@ -238,7 +254,8 @@ export const salariesRouter = createTRPCRouter({
             continue;
           }
 
-          const amount = component.amount || 0;
+          // Convert component amount from monthly to employee's rate type
+          const amount = convertComponentAmount(component.amount || 0);
 
           // Map by component_type (from database metadata)
           switch (metadata.componentType) {

@@ -79,6 +79,8 @@ import { PayrollPreviewCard } from './payroll-preview-card';
 import { toast } from 'sonner';
 import type { SalaryComponentInstance, SalaryComponentTemplate, CustomSalaryComponent } from '../../types/salary-components';
 import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
+import { getBaseSalaryLabel, getCurrencySuffix, formatCurrencyWithRate, convertMonthlyAmountToRateType } from '../../utils/rate-type-labels';
+import type { RateType } from '../../utils/rate-type-labels';
 
 // Validation schema (simplified for components array)
 const salaryChangeSchema = z.object({
@@ -218,16 +220,29 @@ export function SalaryChangeWizard({
 
   const components = form.watch('components') || [];
 
+  // Extract rate type early - needed for component calculations
+  const rateType = (currentSalary.rateType || 'MONTHLY') as RateType;
+
   // Extract base salary codes from definitions
   const baseSalaryCodes = new Set(baseSalaryDefinitions?.map(c => c.code) || ['11']);
 
   // Calculate base salary total from all base components
+  // Note: Base salary components (code '11') are already in the correct rate type
   const baseSalary = components
     .filter(c => baseSalaryCodes.has(c.code))
     .reduce((sum, c) => sum + c.amount, 0);
 
-  // Calculate totals
-  const componentTotal = components.reduce((sum, c) => sum + c.amount, 0);
+  // Calculate totals with rate conversion
+  // Component amounts are stored in monthly terms by convention
+  // Convert them to the employee's rate type for display
+  const componentTotal = components.reduce((sum, c) => {
+    // Base salary (code '11') is already in the correct rate type
+    if (baseSalaryCodes.has(c.code)) {
+      return sum + c.amount;
+    }
+    // Other components (allowances, bonuses) are monthly - convert them
+    return sum + convertMonthlyAmountToRateType(c.amount, rateType);
+  }, 0);
 
   // Calculate current salary total (components-first with legacy fallback)
   const totalCurrentSalary = currentSalary.components && currentSalary.components.length > 0
@@ -238,7 +253,6 @@ export function SalaryChangeWizard({
       (currentSalary.mealAllowance || 0);
 
   // Real-time SMIG validation on TOTAL gross salary (not just base)
-  const rateType = currentSalary.rateType || 'MONTHLY';
   const { validationResult, isLoading: validatingSmig } = useSalaryValidation(componentTotal, rateType);
 
   // Mutation - will be updated to accept components
@@ -431,7 +445,7 @@ export function SalaryChangeWizard({
                   ) : baseSalaryDefinitions && baseSalaryDefinitions.length > 0 ? (
                     <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
                       <div>
-                        <FormLabel className="text-lg">Salaire de base *</FormLabel>
+                        <FormLabel className="text-lg">{getBaseSalaryLabel(rateType)} *</FormLabel>
                         <p className="text-sm text-muted-foreground">
                           Composé de {baseSalaryDefinitions.length} élément{baseSalaryDefinitions.length > 1 ? 's' : ''}
                         </p>
@@ -475,11 +489,11 @@ export function SalaryChangeWizard({
                                     ], { shouldValidate: true });
                                   }
                                 }}
-                                className="min-h-[48px] text-lg font-semibold pr-16"
+                                className="min-h-[48px] text-lg font-semibold pr-24"
                                 required={!componentDef.isOptional}
                               />
-                              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">
-                                FCFA
+                              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                                FCFA{getCurrencySuffix(rateType)}
                               </span>
                             </div>
                             <FormDescription className="mt-1">{componentDef.description.fr}</FormDescription>
@@ -491,9 +505,9 @@ export function SalaryChangeWizard({
                       {baseSalary > 0 && (
                         <div className="p-3 bg-white rounded border">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Total salaire de base</span>
+                            <span className="text-sm font-medium">Total {getBaseSalaryLabel(rateType).toLowerCase()}</span>
                             <span className="font-bold text-xl">
-                              {formatCurrency(baseSalary)}
+                              {formatCurrencyWithRate(baseSalary, rateType)}
                             </span>
                           </div>
                         </div>
@@ -502,20 +516,20 @@ export function SalaryChangeWizard({
                   ) : (
                     // Fallback to single baseSalary field if no base components configured
                     <div>
-                      <FormLabel className="text-lg">Salaire de base *</FormLabel>
+                      <FormLabel className="text-lg">{getBaseSalaryLabel(rateType)} *</FormLabel>
                       <div className="relative mt-2">
                         <Input
                           type="number"
                           min="0"
-                          step="1000"
-                          placeholder="75000"
+                          step={rateType === 'DAILY' ? '100' : rateType === 'HOURLY' ? '50' : '1000'}
+                          placeholder={rateType === 'DAILY' ? '2500' : rateType === 'HOURLY' ? '313' : '75000'}
                           value={baseSalaryInput}
                           onChange={(e) => handleUpdateBaseSalary(e.target.value)}
                           onBlur={() => setBaseSalaryTouched(true)}
-                          className="min-h-[56px] text-2xl font-bold pr-16"
+                          className="min-h-[56px] text-2xl font-bold pr-28"
                         />
                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-muted-foreground">
-                          FCFA
+                          FCFA{getCurrencySuffix(rateType)}
                         </span>
                       </div>
                     </div>
@@ -675,7 +689,10 @@ export function SalaryChangeWizard({
                                     </div>
                                   ) : (
                                     <p className="text-xs text-muted-foreground">
-                                      {formatCurrency(component.amount)}
+                                      {formatCurrencyWithRate(
+                                        convertMonthlyAmountToRateType(component.amount, rateType),
+                                        rateType
+                                      )}
                                     </p>
                                   )}
                                 </div>
@@ -719,14 +736,16 @@ export function SalaryChangeWizard({
                   <div className="space-y-3">
                     <div className="bg-muted/50 p-4 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">Salaire brut total</span>
+                        <span className="text-sm font-medium">
+                          {rateType === 'DAILY' ? 'Salaire brut journalier' : rateType === 'HOURLY' ? 'Salaire brut horaire' : 'Salaire brut total'}
+                        </span>
                         <span className="text-2xl font-bold text-primary">
-                          {formatCurrency(componentTotal)}
+                          {formatCurrencyWithRate(componentTotal, rateType)}
                         </span>
                       </div>
                       {validationResult?.minimumWage && (
                         <p className="text-xs text-muted-foreground">
-                          SMIG minimum: {formatCurrency(validationResult.minimumWage)}
+                          SMIG minimum: {formatCurrencyWithRate(validationResult.minimumWage, rateType)}
                         </p>
                       )}
                     </div>
@@ -776,6 +795,7 @@ export function SalaryChangeWizard({
                   countryCode={countryCode}
                   newComponents={components}
                   currentComponents={currentSalary.components}
+                  rateType={rateType}
                 />
               )}
             </div>
