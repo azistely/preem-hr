@@ -49,9 +49,22 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const baseComponents = form.watch('baseComponents') || {};
   const components = form.watch('components') || [];
   const coefficient = form.watch('coefficient') || 100;
+  const rateType = form.watch('rateType') || 'MONTHLY';
 
   const countryCode = 'CI'; // TODO: Get from tenant context
-  const countryMinimumWage = 75000; // TODO: Get from countries table
+  const monthlyMinimumWage = 75000; // TODO: Get from countries table
+
+  // Convert minimum wage based on rate type
+  let countryMinimumWage = monthlyMinimumWage;
+  let rateLabel = 'mensuel';
+
+  if (rateType === 'DAILY') {
+    countryMinimumWage = Math.round(monthlyMinimumWage / 30);
+    rateLabel = 'journalier';
+  } else if (rateType === 'HOURLY') {
+    countryMinimumWage = Math.round(monthlyMinimumWage / (30 * 8));
+    rateLabel = 'horaire';
+  }
 
   const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
@@ -152,6 +165,17 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
 
   return (
     <div className="space-y-6">
+      {/* Rate Type Information */}
+      {rateType !== 'MONTHLY' && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Travailleur {rateType === 'DAILY' ? 'journalier' : 'horaire'}:</strong> Le salaire de base est le taux {rateLabel}.
+            Les indemnités (transport, logement, etc.) sont des montants mensuels qui seront automatiquement proratés selon les jours/heures travaillés lors du calcul de la paie.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Base Salary Components (Dynamic based on country) */}
       {loadingBaseSalary ? (
         <div className="text-sm text-muted-foreground">Chargement des composantes salariales...</div>
@@ -201,20 +225,20 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       ) : (
         // Fallback to single baseSalary field if no base components configured
         <div>
-          <FormLabel>Salaire de base *</FormLabel>
+          <FormLabel>Salaire de base ({rateType === 'MONTHLY' ? 'mensuel' : rateType === 'DAILY' ? 'journalier' : 'horaire'}) *</FormLabel>
           <FormControl>
             <Input
               type="number"
               min={countryMinimumWage}
-              step={1000}
-              placeholder="300000"
+              step={rateType === 'HOURLY' ? 100 : 1000}
+              placeholder={countryMinimumWage.toString()}
               value={baseSalary}
               onChange={(e) => handleUpdateBaseSalary(parseFloat(e.target.value) || 0)}
               className="min-h-[48px]"
             />
           </FormControl>
           <FormDescription>
-            Minimum: {formatCurrency(countryMinimumWage)} (SMIG)
+            Minimum {rateLabel}: {formatCurrency(countryMinimumWage)} (SMIG {rateType === 'DAILY' ? '÷ 30' : rateType === 'HOURLY' ? '÷ 240' : ''})
           </FormDescription>
           {form.formState.errors.components && (
             <p className="text-sm text-destructive mt-1">

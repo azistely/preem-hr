@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { CoefficientSelector } from '@/components/employees/coefficient-selector';
+import { RateTypeSelector } from '@/components/employees/rate-type-selector';
 import { toast } from 'sonner';
 
 // Schema for creating a new position
@@ -58,6 +59,7 @@ interface EmploymentInfoStepProps {
 
 export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
   const { data: positions, isLoading, refetch } = usePositions('active');
+  const { data: locations, isLoading: loadingLocations } = trpc.locations.list.useQuery();
   const utils = trpc.useUtils();
   const createPositionMutation = trpc.positions.create.useMutation();
   const countryCode = 'CI'; // TODO: Get from tenant context
@@ -266,6 +268,66 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
               onChange={field.onChange}
               showExamples={true}
             />
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="rateType"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Type de rémunération *</FormLabel>
+            <FormControl>
+              <RateTypeSelector
+                value={field.value || 'MONTHLY'}
+                onChange={field.onChange}
+              />
+            </FormControl>
+            <FormDescription>
+              Sélectionnez comment l'employé est payé
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="primaryLocationId"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Site principal *</FormLabel>
+            <Select
+              onValueChange={field.onChange}
+              defaultValue={field.value}
+              value={field.value}
+              disabled={loadingLocations}
+            >
+              <FormControl>
+                <SelectTrigger className="min-h-[48px]">
+                  <SelectValue placeholder={
+                    loadingLocations
+                      ? "Chargement..."
+                      : !locations || locations.length === 0
+                      ? "Aucun site disponible"
+                      : "Sélectionner un site"
+                  } />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {locations?.map((location: any) => (
+                  <SelectItem key={location.id} value={location.id}>
+                    {location.name}
+                    {location.city && ` - ${location.city}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              Le site où l'employé travaillera principalement
+            </FormDescription>
             <FormMessage />
           </FormItem>
         )}

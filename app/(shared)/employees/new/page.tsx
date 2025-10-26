@@ -54,9 +54,12 @@ const createEmployeeSchema = z.object({
   hireDate: z.date(),
   positionId: z.string().min(1, 'Le poste est requis'),
   coefficient: z.number().int().min(90).max(1000).optional().default(100),
+  rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional().default('MONTHLY'),
+  primaryLocationId: z.string().min(1, 'Le site principal est requis'),
 
   // Salary info (base salary + components)
-  baseSalary: z.number().min(75000, 'Le salaire de base doit être >= 75000 FCFA (SMIG)'),
+  baseSalary: z.number().min(0, 'Le salaire de base doit être positif').optional(),
+  baseComponents: z.record(z.string(), z.number()).optional(),
   components: z.array(componentSchema).optional().default([]),
 
   // Banking info
@@ -121,7 +124,10 @@ export default function NewEmployeePage() {
       hireDate: new Date(),
       positionId: '',
       coefficient: 100,
+      rateType: 'MONTHLY',
+      primaryLocationId: '',
       baseSalary: 75000,
+      baseComponents: {},
       components: [],
       bankName: '',
       bankAccount: '',
@@ -136,13 +142,22 @@ export default function NewEmployeePage() {
       ? data.email
       : `${data.firstName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}.${data.lastName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}@example.com`;
 
+    // Calculate baseSalary from baseComponents or use baseSalary field
+    const baseComponents = data.baseComponents || {};
+    const baseSalary = Object.keys(baseComponents).length > 0
+      ? Object.values(baseComponents).reduce((sum: number, amt: any) => sum + (amt || 0), 0)
+      : (data.baseSalary ?? 0);
+
     // Transform to API format (all defaults are applied by Zod)
     await createEmployee.mutateAsync({
       ...data,
       email,
+      baseSalary,
       coefficient: data.coefficient ?? 100,
       taxDependents: data.taxDependents ?? 0,
       components: data.components ?? [],
+      rateType: data.rateType ?? 'MONTHLY',
+      // Note: primaryLocationId will be added to employee in a future update
     });
   };
 
@@ -155,10 +170,10 @@ export default function NewEmployeePage() {
         isValid = await form.trigger(['firstName', 'lastName', 'phone']);
         break;
       case 2:
-        isValid = await form.trigger(['hireDate', 'positionId', 'coefficient']);
+        isValid = await form.trigger(['hireDate', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
         break;
       case 3:
-        isValid = await form.trigger(['baseSalary', 'components']);
+        isValid = await form.trigger(['baseSalary', 'baseComponents', 'components']);
         break;
       case 4:
         isValid = true; // Banking info is optional
