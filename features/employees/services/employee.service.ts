@@ -200,6 +200,7 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
         taxNumber: input.taxNumber,
         taxDependents: input.taxDependents || 0,
         coefficient: input.coefficient || 100,
+        rateType: input.rateType || 'MONTHLY',
         customFields: input.customFields || {},
         status: 'active',
         createdBy: input.createdBy,
