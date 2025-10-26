@@ -61,6 +61,7 @@ export interface CreateEmployeeInput {
   // Position & Salary (required for hire)
   positionId: string;
   coefficient?: number;
+  rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY'; // Rate type for salary calculation
   baseSalary: number; // Base salary in separate column
   components?: SalaryComponentInstance[]; // Optional allowances/bonuses
 
@@ -94,6 +95,7 @@ export interface UpdateEmployeeInput {
   taxNumber?: string;
   taxDependents?: number;
   coefficient?: number;
+  rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY';
   customFields?: Record<string, any>;
 }
 
@@ -128,7 +130,8 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
   const validationResult = await validateCoefficientBasedSalary(
     input.baseSalary,
     coefficient,
-    countryCode
+    countryCode,
+    input.rateType || 'MONTHLY'
   );
 
   if (!validationResult.isValid) {
@@ -397,7 +400,7 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   // Build update values
   const updateValues: Record<string, any> = {
     updatedBy: input.updatedBy,
-    updatedAt: new Date(),
+    updatedAt: sql`now()`, // Use SQL now() for proper timestamp
   };
 
   // Only include provided fields
@@ -420,6 +423,7 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.taxNumber !== undefined) updateValues.taxNumber = input.taxNumber;
   if (input.taxDependents !== undefined) updateValues.taxDependents = input.taxDependents;
   if (input.coefficient !== undefined) updateValues.coefficient = input.coefficient;
+  if (input.rateType !== undefined) updateValues.rateType = input.rateType;
   if (input.customFields !== undefined) updateValues.customFields = input.customFields;
 
   // Update employee
@@ -487,7 +491,7 @@ export async function terminateEmployee(input: TerminateEmployeeInput) {
         terminationDate: input.terminationDate.toISOString().split('T')[0],
         terminationReason: input.terminationReason,
         updatedBy: input.updatedBy,
-        updatedAt: new Date(),
+        updatedAt: sql`now()`, // Use SQL now() for proper timestamp
       })
       .where(
         and(
@@ -527,7 +531,7 @@ export async function suspendEmployee(
     .set({
       status: 'suspended',
       updatedBy,
-      updatedAt: new Date(),
+      updatedAt: sql`now()`, // Use SQL now() for proper timestamp
     })
     .where(
       and(
@@ -557,7 +561,7 @@ export async function reactivateEmployee(
     .set({
       status: 'active',
       updatedBy,
-      updatedAt: new Date(),
+      updatedAt: sql`now()`, // Use SQL now() for proper timestamp
     })
     .where(
       and(

@@ -91,14 +91,18 @@ export async function getCategoryForCoefficient(
 /**
  * Validate employee salary against coefficient-based minimum wage
  *
- * @param baseSalary - Employee's base salary
+ * @param baseSalary - Employee's base salary (or daily/hourly rate)
  * @param coefficient - Employee's coefficient
  * @param countryCode - Country code (e.g., 'CI')
+ * @param rateType - Rate type (MONTHLY, DAILY, or HOURLY). Defaults to MONTHLY.
  * @returns Validation result with error message if invalid
  *
  * @example
  * ```typescript
- * const result = await validateCoefficientBasedSalary(67500, 90, 'CI');
+ * // Monthly worker
+ * const result = await validateCoefficientBasedSalary(67500, 90, 'CI', 'MONTHLY');
+ * // Daily worker
+ * const result = await validateCoefficientBasedSalary(3000, 90, 'CI', 'DAILY');
  * if (!result.isValid) {
  *   throw new Error(result.errorMessage);
  * }
@@ -107,7 +111,8 @@ export async function getCategoryForCoefficient(
 export async function validateCoefficientBasedSalary(
   baseSalary: number,
   coefficient: number,
-  countryCode: string
+  countryCode: string,
+  rateType: 'MONTHLY' | 'DAILY' | 'HOURLY' = 'MONTHLY'
 ): Promise<ValidationResult> {
   // Get category info
   const categoryInfo = await getCategoryForCoefficient(coefficient, countryCode);
@@ -124,18 +129,31 @@ export async function validateCoefficientBasedSalary(
     };
   }
 
-  // Check if salary meets minimum
-  const isValid = baseSalary >= categoryInfo.minimumWage;
+  // Convert baseSalary to monthly equivalent for comparison
+  // This ensures we compare apples to apples (monthly minimum vs monthly salary)
+  let monthlyEquivalentSalary = baseSalary;
+  if (rateType === 'DAILY') {
+    // Convert daily rate to monthly equivalent (rate × 30 days)
+    monthlyEquivalentSalary = Math.round(baseSalary * 30);
+  } else if (rateType === 'HOURLY') {
+    // Convert hourly rate to monthly equivalent (rate × 240 hours)
+    monthlyEquivalentSalary = Math.round(baseSalary * 240);
+  }
+
+  // Check if monthly equivalent salary meets minimum
+  const isValid = monthlyEquivalentSalary >= categoryInfo.minimumWage;
 
   return {
     isValid,
     minimumWage: categoryInfo.minimumWage,
-    currentSalary: baseSalary,
+    currentSalary: monthlyEquivalentSalary,
     category: categoryInfo.category,
     categoryLabel: categoryInfo.labelFr,
     errorMessage: isValid
       ? null
-      : `Salaire inférieur au minimum pour catégorie ${categoryInfo.labelFr} (${categoryInfo.minimumWage.toLocaleString('fr-FR')} FCFA). Salaire actuel: ${baseSalary.toLocaleString('fr-FR')} FCFA.`,
+      : rateType === 'MONTHLY'
+        ? `Salaire inférieur au minimum pour catégorie ${categoryInfo.labelFr} (${categoryInfo.minimumWage.toLocaleString('fr-FR')} FCFA). Salaire actuel: ${baseSalary.toLocaleString('fr-FR')} FCFA.`
+        : `Salaire ${rateType === 'DAILY' ? 'journalier' : 'horaire'} inférieur au minimum pour catégorie ${categoryInfo.labelFr}. Taux: ${baseSalary.toLocaleString('fr-FR')} FCFA/${rateType === 'DAILY' ? 'jour' : 'heure'}, équivalent mensuel: ${monthlyEquivalentSalary.toLocaleString('fr-FR')} FCFA (minimum: ${categoryInfo.minimumWage.toLocaleString('fr-FR')} FCFA).`,
   };
 }
 
