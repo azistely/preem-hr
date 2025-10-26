@@ -17,8 +17,14 @@ export interface SalaryValidationResult {
 
 /**
  * Validate salary against country-specific SMIG in real-time
+ *
+ * @param salary - The salary amount to validate
+ * @param rateType - Optional rate type (MONTHLY, DAILY, HOURLY). Defaults to MONTHLY.
  */
-export function useSalaryValidation(salary: number | null | undefined) {
+export function useSalaryValidation(
+  salary: number | null | undefined,
+  rateType: 'MONTHLY' | 'DAILY' | 'HOURLY' = 'MONTHLY'
+) {
   const [validationResult, setValidationResult] = useState<SalaryValidationResult | null>(null);
 
   // Get minimum wage from backend
@@ -30,17 +36,35 @@ export function useSalaryValidation(salary: number | null | undefined) {
       return;
     }
 
-    const isValid = salary >= minWageData.minimumWage;
+    // Convert salary to monthly equivalent for validation
+    // For daily/hourly workers, we need to annualize to compare against monthly SMIG
+    let monthlySalary = salary;
+    let minimumWage = minWageData.minimumWage;
+    let rateLabel = '';
+
+    if (rateType === 'DAILY') {
+      monthlySalary = Math.round(salary * 30);
+      minimumWage = Math.round(minWageData.minimumWage / 30);
+      rateLabel = '/jour';
+    } else if (rateType === 'HOURLY') {
+      monthlySalary = Math.round(salary * 240);
+      minimumWage = Math.round(minWageData.minimumWage / 240);
+      rateLabel = '/heure';
+    }
+
+    const isValid = monthlySalary >= minWageData.minimumWage;
 
     setValidationResult({
       isValid,
-      minimumWage: minWageData.minimumWage,
+      minimumWage: rateType === 'MONTHLY' ? minWageData.minimumWage : minimumWage,
       countryCode: minWageData.countryCode,
       errorMessage: isValid
         ? undefined
-        : `Le salaire doit être >= SMIG du ${minWageData.countryName} (${minWageData.minimumWage.toLocaleString('fr-FR')} FCFA)`,
+        : rateType === 'MONTHLY'
+        ? `Le salaire doit être >= SMIG du ${minWageData.countryName} (${minWageData.minimumWage.toLocaleString('fr-FR')} FCFA)`
+        : `Le taux ${rateType === 'DAILY' ? 'journalier' : 'horaire'} doit être >= SMIG ${rateLabel} (${minimumWage.toLocaleString('fr-FR')} FCFA${rateLabel}). Équivalent mensuel: ${monthlySalary.toLocaleString('fr-FR')} FCFA (minimum: ${minWageData.minimumWage.toLocaleString('fr-FR')} FCFA).`,
     });
-  }, [salary, minWageData]);
+  }, [salary, minWageData, rateType]);
 
   return {
     validationResult,

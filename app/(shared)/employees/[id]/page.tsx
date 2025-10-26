@@ -678,11 +678,14 @@ export default function EmployeeDetailPage() {
           </VisuallyHidden>
           <SalaryChangeWizard
             employeeId={employeeId}
-            currentSalary={(employee as any)?.currentSalary || {
-              baseSalary: 0,
-              housingAllowance: 0,
-              transportAllowance: 0,
-              mealAllowance: 0,
+            currentSalary={{
+              ...(employee as any)?.currentSalary || {
+                baseSalary: 0,
+                housingAllowance: 0,
+                transportAllowance: 0,
+                mealAllowance: 0,
+              },
+              rateType: (employee as any)?.rateType || 'MONTHLY',
             }}
             employeeName={`${(employee as any)?.firstName} ${(employee as any)?.lastName}`}
             onSuccess={() => {

@@ -105,6 +105,7 @@ interface SalaryChangeWizardProps {
     transportAllowance?: number;
     mealAllowance?: number;
     components?: SalaryComponentInstance[];
+    rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY';
   };
   employeeName: string;
   onSuccess?: () => void;
@@ -237,7 +238,8 @@ export function SalaryChangeWizard({
       (currentSalary.mealAllowance || 0);
 
   // Real-time SMIG validation on TOTAL gross salary (not just base)
-  const { validationResult, isLoading: validatingSmig } = useSalaryValidation(componentTotal);
+  const rateType = currentSalary.rateType || 'MONTHLY';
+  const { validationResult, isLoading: validatingSmig } = useSalaryValidation(componentTotal, rateType);
 
   // Mutation - will be updated to accept components
   const changeSalaryMutation = trpc.salaries.change.useMutation({
