@@ -534,18 +534,32 @@ export default function EmployeeDetailPage() {
                         <p className="text-2xl font-bold text-primary">
                           {(() => {
                             const rateType = (employee as any).rateType as RateType;
-                            // Calculate total from components only (they already include base salary)
-                            const totalGross = (employee as any).currentSalary.components.reduce(
+                            const components = (employee as any).currentSalary.components;
+
+                            // Check if base salary (Code 11/01) is in components
+                            const hasBaseSalaryInComponents = components.some(
+                              (c: any) => c.code === '11' || c.code === '01'
+                            );
+
+                            // Calculate total from components
+                            const componentsTotal = components.reduce(
                               (sum: number, c: any) => {
                                 // Base salary (code '11', '01') is already in correct rate type
-                                if (c.code === '11' || c.code === '01') {
-                                  return sum + (c.amount || 0);
-                                }
-                                // Convert other components from monthly to employee's rate type
-                                return sum + convertMonthlyAmountToRateType(c.amount || 0, rateType);
+                                const isBaseSalary = c.code === '11' || c.code === '01';
+                                const componentAmount = isBaseSalary
+                                  ? c.amount
+                                  : convertMonthlyAmountToRateType(c.amount || 0, rateType);
+
+                                return sum + (componentAmount || 0);
                               },
                               0
                             );
+
+                            // If base salary is NOT in components, add the baseSalary field
+                            const totalGross = hasBaseSalaryInComponents
+                              ? componentsTotal
+                              : componentsTotal + parseFloat((employee as any).currentSalary.baseSalary);
+
                             return formatCurrencyWithRate(totalGross, rateType);
                           })()}
                         </p>
