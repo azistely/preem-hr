@@ -10,8 +10,9 @@
  */
 
 import { db } from '@/lib/db';
-import { employees, employeeSalaries, assignments, positions } from '@/drizzle/schema';
+import { employees, employeeSalaries, assignments, positions, employmentContracts } from '@/drizzle/schema';
 import { eq, and, or, like, desc, isNull, sql } from 'drizzle-orm';
+import { differenceInMonths } from 'date-fns';
 import { encrypt, decrypt } from '@/lib/crypto';
 import { eventBus, type EmployeeHiredEvent, type EmployeeUpdatedEvent, type EmployeeTerminatedEvent } from '@/lib/event-bus';
 import { ValidationError, NotFoundError, ConflictError } from '@/lib/errors';
@@ -49,6 +50,9 @@ export interface CreateEmployeeInput {
 
   // Employment
   hireDate: Date;
+  contractType?: 'CDI' | 'CDD' | 'STAGE';
+  contractEndDate?: Date;
+  cddReason?: 'REMPLACEMENT' | 'SURCROIT_ACTIVITE' | 'SAISONNIER' | 'PROJET' | 'AUTRE';
 
   // Banking
   bankName?: string;
@@ -208,6 +212,41 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
         updatedBy: input.createdBy,
       })
       .returning();
+
+    // Create employment contract (CDD compliance tracking)
+    const contractType = input.contractType || 'CDI';
+    const [contract] = await tx
+      .insert(employmentContracts)
+      .values({
+        tenantId: input.tenantId,
+        employeeId: employee.id,
+        contractType: contractType,
+        contractNumber: `${contractType}-${employeeNumber}`,
+        startDate: input.hireDate.toISOString().split('T')[0],
+        endDate: contractType === 'CDD' && input.contractEndDate
+          ? input.contractEndDate.toISOString().split('T')[0]
+          : null,
+        renewalCount: 0,
+        isActive: true,
+        cddReason: contractType === 'CDD' ? (input.cddReason || null) : null,
+        cddTotalDurationMonths: contractType === 'CDD' && input.contractEndDate
+          ? differenceInMonths(input.contractEndDate, input.hireDate)
+          : null,
+        createdBy: input.createdBy,
+      })
+      .returning();
+
+    // Link contract ID to employee customFields (backward compatibility)
+    await tx
+      .update(employees)
+      .set({
+        customFields: {
+          ...(input.customFields || {}),
+          contractType: contractType,
+          contractId: contract.id,
+        },
+      })
+      .where(eq(employees.id, employee.id));
 
     // Use components array directly from input (single source of truth)
     // Components are already built in the UI with proper metadata

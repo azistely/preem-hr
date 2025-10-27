@@ -59,6 +59,9 @@ const createEmployeeSchema = z.object({
 
   // Employment
   hireDate: z.date(),
+  contractType: z.enum(['CDI', 'CDD', 'STAGE']).default('CDI'),
+  contractEndDate: z.date().optional(),
+  cddReason: z.enum(['REMPLACEMENT', 'SURCROIT_ACTIVITE', 'SAISONNIER', 'PROJET', 'AUTRE']).optional(),
 
   // Banking
   bankName: z.string().optional(),
@@ -103,6 +106,30 @@ const createEmployeeSchema = z.object({
 }, {
   message: 'Le salaire de base ne respecte pas le SMIG minimum',
   path: ['baseSalary'],
+}).refine((data) => {
+  if (data.contractType === 'CDD' && !data.contractEndDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'La date de fin de contrat est requise pour un CDD',
+  path: ['contractEndDate'],
+}).refine((data) => {
+  if (data.contractType === 'CDD' && !data.cddReason) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Le motif du CDD est requis par la loi',
+  path: ['cddReason'],
+}).refine((data) => {
+  if (data.contractType === 'CDD' && data.contractEndDate && data.hireDate) {
+    return data.hireDate < data.contractEndDate;
+  }
+  return true;
+}, {
+  message: 'La date d\'embauche doit être avant la date de fin de contrat',
+  path: ['contractEndDate'],
 });
 
 const updateEmployeeSchema = z.object({
