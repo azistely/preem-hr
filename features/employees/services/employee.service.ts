@@ -218,16 +218,28 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
     // ========================================
     // CRITICAL: Ensure all components are activated at tenant level
     // This allows components to be used without manual activation in Settings
+    //
+    // IMPORTANT: Base salary components (Code 11, 12, etc.) should NOT be activated
+    // because they are fundamental components that are always available.
+    // Only activate allowances and bonuses (transport, housing, etc.)
     if (components.length > 0) {
-      const activationInputs = components.map(comp => ({
-        code: comp.code,
-        sourceType: (comp as any).sourceType || 'standard',
-        tenantId: input.tenantId,
-        countryCode: countryCode,
-        userId: input.createdBy,
-      }));
+      // Filter out base salary components (they have isBaseComponent: true in metadata)
+      const nonBaseComponents = components.filter(comp => {
+        const metadata = (comp as any).metadata || {};
+        return !metadata.isBaseComponent;
+      });
 
-      await ensureComponentsActivated(activationInputs, tx);
+      if (nonBaseComponents.length > 0) {
+        const activationInputs = nonBaseComponents.map(comp => ({
+          code: comp.code,
+          sourceType: (comp as any).sourceType || 'standard',
+          tenantId: input.tenantId,
+          countryCode: countryCode,
+          userId: input.createdBy,
+        }));
+
+        await ensureComponentsActivated(activationInputs, tx);
+      }
     }
 
     // Create initial salary record

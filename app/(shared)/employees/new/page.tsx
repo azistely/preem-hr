@@ -27,6 +27,7 @@ import { EmploymentInfoStep } from '@/features/employees/components/hire-wizard/
 import { SalaryInfoStep } from '@/features/employees/components/hire-wizard/salary-info-step';
 import { BankingInfoStep } from '@/features/employees/components/hire-wizard/banking-info-step';
 import { ConfirmationStep } from '@/features/employees/components/hire-wizard/confirmation-step';
+import { buildEmployeeComponents } from '@/features/employees/actions/create-employee.action';
 import Link from 'next/link';
 
 // Component schema
@@ -142,11 +143,27 @@ export default function NewEmployeePage() {
       ? data.email
       : `${data.firstName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}.${data.lastName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}@example.com`;
 
+    // ========================================
+    // BUILD BASE SALARY COMPONENTS (Code 11, 12, etc.)
+    // ========================================
     // Calculate baseSalary from baseComponents or use baseSalary field
     const baseComponents = data.baseComponents || {};
     const baseSalary = Object.keys(baseComponents).length > 0
       ? Object.values(baseComponents).reduce((sum: number, amt: any) => sum + (amt || 0), 0)
       : (data.baseSalary ?? 0);
+
+    // Use server action to build components (includes Code 11)
+    const countryCode = 'CI'; // TODO: Get from tenant context
+    const allowanceComponents = (data.components || []).map(c => ({
+      ...c,
+      sourceType: c.sourceType || 'standard' as const,
+    }));
+    const allComponents = await buildEmployeeComponents(
+      baseSalary,
+      baseComponents,
+      allowanceComponents,
+      countryCode
+    );
 
     // Transform to API format (all defaults are applied by Zod)
     await createEmployee.mutateAsync({
@@ -155,7 +172,7 @@ export default function NewEmployeePage() {
       baseSalary,
       coefficient: data.coefficient ?? 100,
       taxDependents: data.taxDependents ?? 0,
-      components: data.components ?? [],
+      components: allComponents, // ✅ Now includes Code 11!
       rateType: data.rateType ?? 'MONTHLY',
       // Note: primaryLocationId will be added to employee in a future update
     });
