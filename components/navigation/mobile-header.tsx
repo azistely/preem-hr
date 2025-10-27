@@ -6,6 +6,7 @@ import { Menu, Bell, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { PreemLogo } from "@/components/brand/preem-logo";
 
 export interface MobileHeaderProps {
   onMenuClick: () => void;
@@ -37,8 +38,8 @@ export function MobileHeader({
       </Button>
 
       {/* Logo */}
-      <Link href="/" className="text-lg font-semibold">
-        Preem HR
+      <Link href="/" className="flex items-center">
+        <PreemLogo size="sm" />
       </Link>
 
       {/* Right Actions */}

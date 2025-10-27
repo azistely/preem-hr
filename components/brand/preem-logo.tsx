@@ -14,10 +14,10 @@ interface PreemLogoProps {
 }
 
 const SIZES = {
-  sm: { width: 80, height: 27 },
-  default: { width: 120, height: 40 },
-  lg: { width: 160, height: 53 },
-  xl: { width: 200, height: 67 },
+  sm: { width: 80, height: 40 },
+  default: { width: 120, height: 60 },
+  lg: { width: 160, height: 80 },
+  xl: { width: 200, height: 100 },
 } as const;
 
 export function PreemLogo({ className, size = 'default' }: PreemLogoProps) {
