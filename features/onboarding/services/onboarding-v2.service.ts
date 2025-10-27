@@ -362,6 +362,8 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
         // NEW: Employment configuration
         rateType: input.rateType || 'MONTHLY',
         categoryCode: input.category, // Dynamic category (CGECI or Banking)
+        dailyRate: input.dailyRate ? String(input.dailyRate) : null,
+        hourlyRate: input.hourlyRate ? String(input.hourlyRate) : null,
         primaryLocationId: input.primaryLocationId || null, // For transport validation
 
         // Contract end date for CDD
