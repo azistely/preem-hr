@@ -104,19 +104,19 @@ export function PayslipPreviewCard({
 
             <div className="flex justify-between text-sm">
               <span>CNPS (6.3%):</span>
-              <span className="text-red-600">-{formatCurrency(payslip.cnpsEmployee)} FCFA</span>
+              <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.cnpsEmployee))}</span>
             </div>
 
             {payslip.cmuEmployee && payslip.cmuEmployee > 0 && (
               <div className="flex justify-between text-sm">
                 <span>CMU (1%):</span>
-                <span className="text-red-600">-{formatCurrency(payslip.cmuEmployee)} FCFA</span>
+                <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.cmuEmployee))}</span>
               </div>
             )}
 
             <div className="flex justify-between text-sm">
               <span>ITS ({payslip.fiscalParts ?? 1} parts):</span>
-              <span className="text-red-600">-{formatCurrency(payslip.incomeTax)} FCFA</span>
+              <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.incomeTax))}</span>
             </div>
 
             <Separator />
@@ -188,12 +188,12 @@ export function PayslipPreviewCard({
                 <div className="space-y-1 pl-3">
                   <div className="flex justify-between">
                     <span>CNPS employeur:</span>
-                    <span>{formatCurrency(payslip.cnpsEmployer)} FCFA</span>
+                    <span>{formatWithRate(convertMonthlyToRate(payslip.cnpsEmployer))}</span>
                   </div>
                   {payslip.cmuEmployer && payslip.cmuEmployer > 0 && (
                     <div className="flex justify-between">
                       <span>CMU employeur:</span>
-                      <span>{formatCurrency(payslip.cmuEmployer)} FCFA</span>
+                      <span>{formatWithRate(convertMonthlyToRate(payslip.cmuEmployer))}</span>
                     </div>
                   )}
                 </div>
@@ -202,7 +202,7 @@ export function PayslipPreviewCard({
               <div className="pt-2 border-t">
                 <div className="flex justify-between font-semibold">
                   <span>Coût total employeur:</span>
-                  <span>{formatCurrency(payslip.totalEmployerCost)} FCFA</span>
+                  <span>{formatWithRate(convertMonthlyToRate(payslip.totalEmployerCost))}</span>
                 </div>
               </div>
             </CollapsibleContent>
