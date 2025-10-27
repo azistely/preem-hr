@@ -63,12 +63,18 @@ export function PayslipPreviewCard({
     return convertMonthlyAmountToRateType(amount ?? 0, rateType as RateType);
   };
 
-  // IMPORTANT: calculatePayrollV2 returns MONTHLY totals even for DAILY/HOURLY workers
-  // (it multiplies daily rate × 30 days for preview)
-  // We need to convert these monthly totals back to per-day/per-hour rates for display
+  // IMPORTANT: calculatePayrollV2 returns MONTHLY totals for SOME fields but NOT ALL
+  // - grossSalary, netSalary, deductions: MONTHLY totals (need conversion)
+  // - baseSalary: ORIGINAL input rate (already daily/hourly, NO conversion needed!)
+  // We need to convert monthly totals back to per-day/per-hour rates for display
   const convertMonthlyToRate = (monthlyAmount: number | undefined): number => {
     if (!monthlyAmount) return 0;
     return convertMonthlyAmountToRateType(monthlyAmount, rateType as RateType);
+  };
+
+  // baseSalary is returned as-is from input, so format without conversion
+  const formatBaseSalary = (amount: number | undefined): string => {
+    return formatCurrencyWithRate(amount ?? 0, rateType as RateType);
   };
 
   return (
@@ -145,7 +151,7 @@ export function PayslipPreviewCard({
                 <div className="space-y-1 pl-3">
                   <div className="flex justify-between">
                     <span>Salaire de base:</span>
-                    <span>{formatWithRate(convertMonthlyToRate(payslip.baseSalary))}</span>
+                    <span>{formatBaseSalary(payslip.baseSalary)}</span>
                   </div>
                   {/* Display modern components array */}
                   {payslip.components && payslip.components.length > 0 && (
