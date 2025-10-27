@@ -54,7 +54,7 @@ describe('CI Payroll Integration - Complete Example from Joel Documentation', ()
 
       // Other allowances (Code 31-33 or other)
       otherAllowances: [
-        { name: 'Diverses primes', amount: 34000, taxable: true },
+        { code: 'VARIOUS_BONUS', name: 'Diverses primes', amount: 34000, taxable: true },
       ],
 
       // Employee details
