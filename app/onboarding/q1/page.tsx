@@ -20,7 +20,7 @@ import { Wizard, WizardStep } from '@/components/wizard/wizard';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Plus, X, MapPin, Building2, HardHat, Users } from 'lucide-react';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // Location schema
 const locationSchema = z.object({
@@ -73,6 +73,9 @@ export default function OnboardingQ1Page() {
   // Get user info for pre-filling
   const { data: user } = api.auth.me.useQuery();
 
+  // Load existing locations
+  const { data: existingLocations } = api.locations.list.useQuery();
+
   // Mutations
   const setCompanyInfoMutation = api.onboarding.setCompanyInfoV2.useMutation();
   const createLocationMutation = api.locations.create.useMutation();
@@ -87,6 +90,19 @@ export default function OnboardingQ1Page() {
     },
   });
 
+  // Populate form with existing locations when they load
+  useEffect(() => {
+    if (existingLocations && existingLocations.length > 0) {
+      const formattedLocations = existingLocations
+        .filter(loc => loc.city) // Filter out null cities
+        .map(loc => ({
+          locationType: loc.locationType as LocationFormData['locationType'],
+          city: loc.city as string, // Safe cast after filter
+        }));
+      setValue('locations', formattedLocations, { shouldValidate: false });
+    }
+  }, [existingLocations, setValue]);
+
   const locations = watch('locations') || [];
 
   const onSubmit = async (data: CompanySetupFormData) => {
@@ -100,7 +116,15 @@ export default function OnboardingQ1Page() {
         taxId: data.taxId,
       });
 
-      // Step 2: Create all locations (auto-generate code and name)
+      // Step 2: Create NEW locations only (skip existing ones)
+      // Build set of existing location codes for quick lookup
+      const existingLocationCodes = new Set(
+        (existingLocations || []).map(loc => loc.locationCode)
+      );
+
+      let createdCount = 0;
+      let skippedCount = 0;
+
       for (let i = 0; i < data.locations.length; i++) {
         const location = data.locations[i];
         const typeInfo = LOCATION_TYPE_LABELS[location.locationType];
@@ -112,6 +136,12 @@ export default function OnboardingQ1Page() {
                            location.locationType === 'construction_site' ? 'CH' : 'SC';
         const autoCode = `${typePrefix}_${cityCode}`;
 
+        // Skip if location already exists
+        if (existingLocationCodes.has(autoCode)) {
+          skippedCount++;
+          continue;
+        }
+
         // Auto-generate name: Type - City (e.g., "Siège social - Abidjan")
         const autoName = `${typeInfo.label} - ${location.city}`;
 
@@ -122,9 +152,17 @@ export default function OnboardingQ1Page() {
           city: location.city,
           countryCode: data.countryCode,
         });
+        createdCount++;
       }
 
-      toast.success(`Configuration enregistrée: ${data.locations.length} site(s) créé(s)`);
+      // Show appropriate message
+      if (createdCount > 0 && skippedCount > 0) {
+        toast.success(`Configuration enregistrée: ${createdCount} nouveau(x) site(s) créé(s), ${skippedCount} existant(s)`);
+      } else if (createdCount > 0) {
+        toast.success(`Configuration enregistrée: ${createdCount} site(s) créé(s)`);
+      } else {
+        toast.success('Configuration enregistrée (sites déjà existants)');
+      }
 
       // Navigate to Q2
       router.push('/onboarding/q2');
