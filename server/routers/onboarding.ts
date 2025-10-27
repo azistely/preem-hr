@@ -800,7 +800,9 @@ export const onboardingRouter = createTRPCRouter({
           tenantId: ctx.user.tenantId, // Required for template component lookup (TPT_*, etc.)
           periodStart,
           periodEnd,
-          baseSalary: totalBaseSalary, // Total of all base salary components
+          // DON'T pass baseSalary here - it's already in customComponents!
+          // Passing both causes double-counting (GAP-Q2-001)
+          baseSalary: 0, // Explicitly set to 0 to avoid double-counting
           // NEW APPROACH: Pass all components with metadata (not individual parameters)
           // This allows component processor to properly calculate bases using metadata
           customComponents: allComponentsWithMetadata,
