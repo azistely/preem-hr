@@ -247,8 +247,24 @@ But **NEVER add it to components total** - it's already included in Code 11!
 ## Files Changed
 
 - `app/(shared)/employees/[id]/page.tsx`
-  - Lines 527-543: Removed `baseSalary` variable and addition
-  - Now calculates total from components only (no double counting)
+  - Lines 487-503: Fixed first display to extract base from components (not baseSalary field)
+  - Lines 526-552: Fixed second display label and calculation
+    - Changed label from "Salaire brut journalier" to "Salaire brut total journalier"
+    - Added clarification "(Base + indemnités)"
+    - Removed `baseSalary` variable and addition
+    - Now calculates total from components only (no double counting)
+
+## Additional Fix: Label Clarification
+
+**Problem:** Both displays had the same label "Salaire brut journalier" but showed different values
+- First display: Base salary only (5,500)
+- Second display: Total gross (base + allowances = 6,500)
+
+**Solution:** Made labels distinct and clear
+- First display: "Salaire de base journalier" → Shows base only
+- Second display: "Salaire brut total journalier (Base + indemnités)" → Shows total
+
+This prevents confusion about why two displays with the same label show different values.
 
 ## Related Issues
 

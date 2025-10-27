@@ -484,16 +484,21 @@ export default function EmployeeDetailPage() {
                   {/* New Components Architecture */}
                   {(employee as any).currentSalary.components && (employee as any).currentSalary.components.length > 0 ? (
                     <>
-                      {/* Base Salary - Always Show First */}
+                      {/* Base Salary Only - Always Show First */}
                       <div className="bg-primary/5 p-4 rounded-lg border">
                         <Label className="text-sm text-muted-foreground">
-                          {getGrossSalaryLabel((employee as any).rateType as RateType)}
+                          Salaire de base {(employee as any).rateType === 'DAILY' ? 'journalier' : (employee as any).rateType === 'HOURLY' ? 'horaire' : 'mensuel'}
                         </Label>
                         <p className="text-2xl font-bold">
-                          {formatCurrencyWithRate(
-                            parseFloat((employee as any).currentSalary.baseSalary),
-                            (employee as any).rateType as RateType
-                          )}
+                          {(() => {
+                            const rateType = (employee as any).rateType as RateType;
+                            // Extract base salary from components (Code 11 or 01)
+                            const baseComponent = (employee as any).currentSalary.components.find(
+                              (c: any) => c.code === '11' || c.code === '01'
+                            );
+                            const baseAmount = baseComponent?.amount || parseFloat((employee as any).currentSalary.baseSalary);
+                            return formatCurrencyWithRate(baseAmount, rateType);
+                          })()}
                         </p>
                       </div>
 
@@ -518,11 +523,14 @@ export default function EmployeeDetailPage() {
                         })}
                       </div>
 
-                      {/* Total Gross Salary */}
+                      {/* Total Gross Salary (Base + Allowances) */}
                       <div className="bg-muted/50 p-4 rounded-lg border-t">
                         <Label className="text-sm text-muted-foreground">
-                          {getGrossSalaryLabel((employee as any).rateType as RateType)}
+                          Salaire brut total {(employee as any).rateType === 'DAILY' ? 'journalier' : (employee as any).rateType === 'HOURLY' ? 'horaire' : 'mensuel'}
                         </Label>
+                        <p className="text-sm text-muted-foreground">
+                          (Base + indemnités)
+                        </p>
                         <p className="text-2xl font-bold text-primary">
                           {(() => {
                             const rateType = (employee as any).rateType as RateType;
