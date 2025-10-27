@@ -35,7 +35,7 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   familyAllowance?: number; // Family allowance from components
   salaireCategoriel?: number; // Code 11 - Base for CNPS Family/Accident (CI)
   sursalaire?: number; // Code 12 - Additional fixed component (CI)
-  otherAllowances?: Array<{ name: string; amount: number; taxable: boolean }>; // Template components (TPT_*, PHONE, etc.)
+  otherAllowances?: Array<{ code: string; name: string; amount: number; taxable: boolean }>; // Template components (TPT_*, PHONE, etc.)
   customComponents?: SalaryComponentInstance[]; // Custom components for future use
 
   // Rate type support (GAP-JOUR-003)
@@ -132,10 +132,10 @@ function convertAllowancesToComponents(
   if (input.otherAllowances && input.otherAllowances.length > 0) {
     for (const allowance of input.otherAllowances) {
       components.push({
-        code: 'CUSTOM_ALLOWANCE',
+        code: allowance.code, // Use actual component code (e.g., TPT_TRANSPORT_CI)
         name: allowance.name,
         amount: allowance.amount,
-        sourceType: 'custom',
+        sourceType: 'standard', // Template components are always 'standard'
       });
     }
   }
@@ -179,6 +179,17 @@ async function calculateLocationBasedAllowances(
   totalHazardPay: number;
 }> {
   try {
+    // PREVIEW MODE: If employeeId is 'preview', return empty allowances (no site assignments)
+    if (employeeId === 'preview') {
+      return {
+        allowances: [],
+        totalTransport: 0,
+        totalMeal: 0,
+        totalSitePremium: 0,
+        totalHazardPay: 0,
+      };
+    }
+
     // Format dates for database query
     const startDateStr = periodStart.toISOString().split('T')[0];
     const endDateStr = periodEnd.toISOString().split('T')[0];
@@ -356,6 +367,7 @@ export async function calculatePayrollV2(
   const totalRemuneration = allComponents.reduce((sum, c) => sum + c.amount, 0);
 
   console.log(`[COMPONENT PROCESSING] Total components: ${allComponents.length}, Total remuneration: ${totalRemuneration.toLocaleString('fr-FR')} FCFA`);
+  console.log(`[COMPONENT PROCESSING] tenantId received: ${input.tenantId || 'NONE'}`);
 
   // ========================================
   // STEP 0.3: Validate Transport Allowance Against City Minimum
@@ -670,41 +682,72 @@ export async function calculatePayrollV2(
   // since we're already using actual days/hours worked from time entries
   const shouldApplyProration = rateType === 'MONTHLY';
 
-  const grossCalc = calculateGrossSalary({
-    employeeId: input.employeeId,
-    periodStart: input.periodStart,
-    periodEnd: input.periodEnd,
-    baseSalary: effectiveBaseSalary, // Use rate-adjusted base salary
-    hireDate: shouldApplyProration ? input.hireDate : undefined, // Only prorate for monthly workers
-    terminationDate: shouldApplyProration ? input.terminationDate : undefined, // Only prorate for monthly workers
-    housingAllowance: effectiveHousingAllowance, // Use rate-adjusted housing
-    transportAllowance: effectiveTransportAllowance, // Use rate-adjusted transport
-    mealAllowance: effectiveMealAllowance, // Use rate-adjusted meal
-    seniorityBonus: (effectiveSeniorityBonus || 0) + bankingSeniorityBonus, // Use rate-adjusted seniority + banking bonus
-    familyAllowance: effectiveFamilyAllowance || 0, // Use rate-adjusted family allowance
-    otherAllowances: combinedOtherAllowances, // Include template + location components
-    bonuses: input.bonuses,
-    overtimeHours: input.overtimeHours,
-    skipProration: !shouldApplyProration, // Skip period-based proration for daily/hourly workers (amounts already final)
-  });
+  // IMPORTANT: When customComponents provided (onboarding preview), use component-based gross
+  // Otherwise use legacy calculateGrossSalary with individual fields
+  let grossSalary: number;
+  let grossCalc: any;
 
-  const grossSalary = grossCalc.totalGross;
+  if (allComponents.length > 0) {
+    // Component-based approach: Use totalGrossFromComponents
+    grossSalary = totalGrossFromComponents;
+    // Create a minimal grossCalc for backward compatibility
+    grossCalc = {
+      totalGross: totalGrossFromComponents,
+      baseSalary: input.baseSalary || 0,
+      proratedSalary: input.baseSalary || 0,
+      allowances: totalGrossFromComponents - (input.baseSalary || 0),
+      overtimePay: 0,
+      bonuses: input.bonuses || 0,
+      daysWorked: 30,
+      daysInPeriod: 30,
+      prorationFactor: 1.0,
+      breakdown: {
+        base: input.baseSalary || 0,
+        allowances: totalGrossFromComponents - (input.baseSalary || 0),
+        overtime: 0,
+        bonuses: input.bonuses || 0,
+      },
+    };
+  } else {
+    // Legacy approach: Use individual fields
+    grossCalc = calculateGrossSalary({
+      employeeId: input.employeeId,
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      baseSalary: effectiveBaseSalary, // Use rate-adjusted base salary
+      hireDate: shouldApplyProration ? input.hireDate : undefined, // Only prorate for monthly workers
+      terminationDate: shouldApplyProration ? input.terminationDate : undefined, // Only prorate for monthly workers
+      housingAllowance: effectiveHousingAllowance, // Use rate-adjusted housing
+      transportAllowance: effectiveTransportAllowance, // Use rate-adjusted transport
+      mealAllowance: effectiveMealAllowance, // Use rate-adjusted meal
+      seniorityBonus: (effectiveSeniorityBonus || 0) + bankingSeniorityBonus, // Use rate-adjusted seniority + banking bonus
+      familyAllowance: effectiveFamilyAllowance || 0, // Use rate-adjusted family allowance
+      otherAllowances: combinedOtherAllowances, // Include template + location components
+      bonuses: input.bonuses,
+      overtimeHours: input.overtimeHours,
+      skipProration: !shouldApplyProration, // Skip period-based proration for daily/hourly workers (amounts already final)
+    });
+    grossSalary = grossCalc.totalGross;
+  }
 
   // ========================================
   // STEP 2: Calculate Social Security Contributions (Metadata-Driven Bases)
   // ========================================
 
-  // Use CNPS base from metadata-driven processing
-  // This ensures only components marked as includeInCnpsBase are included
-  const { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer } =
+  // Use metadata-driven bases from component processing
+  // - cnpsBaseFromComponents: Base for most contributions
+  // - brutImposableFromComponents: Taxable gross for pension/retirement
+  // - salaireCategorielFromComponents: Code 11 for accident/family
+  const { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer, contributionDetails } =
     calculateSocialSecurityContributions(
-      cnpsBaseFromComponents, // ← Use metadata-driven base instead of gross
+      cnpsBaseFromComponents, // ← CNPS base (total gross)
+      brutImposableFromComponents, // ← Taxable gross (for pension calculation)
       config.contributions,
       config.sectorOverrides,
       {
         sectorCode: input.sectorCode || config.socialSecurityScheme.defaultSectorCode, // Use database default
         hasFamily: input.hasFamily || false,
-        salaireCategoriel: salaireCategorielFromComponents, // ← Use metadata-driven salaire catégoriel
+        salaireCategoriel: salaireCategorielFromComponents, // ← Salaire catégoriel (Code 11) for accident/family
       }
     );
 
@@ -823,6 +866,7 @@ export async function calculatePayrollV2(
   // ========================================
   const { employerTaxes, employeeTaxes, otherTaxesDetails } = calculateOtherTaxes(
     grossSalary,
+    taxResult.taxableIncome,
     config.otherTaxes
   );
 
@@ -840,7 +884,9 @@ export async function calculatePayrollV2(
     cnpsEmployee,
     cmuEmployee,
     taxResult.monthlyTax,
-    config.taxSystem // Pass config for labels
+    config.taxSystem, // Pass config for labels
+    contributionDetails, // Pass contribution details for rate info
+    input.fiscalParts ?? 1 // Pass fiscal parts for ITS display
   );
 
   // ========================================
@@ -887,6 +933,7 @@ export async function calculatePayrollV2(
     // Detailed Breakdowns
     earningsDetails,
     deductionsDetails,
+    contributionDetails, // Social security contribution details
     itsDetails: {
       grossSalary: taxResult.grossSalary,
       cnpsEmployeeDeduction: cnpsEmployee,
@@ -918,6 +965,7 @@ export async function calculatePayrollV2(
  */
 function calculateOtherTaxes(
   grossSalary: number,
+  taxableGross: number,
   otherTaxes: any[]
 ) {
   let employerTaxes = 0;
@@ -925,16 +973,21 @@ function calculateOtherTaxes(
   const details: any[] = [];
 
   for (const tax of otherTaxes) {
-    // Determine calculation base
+    // Determine calculation base according to database configuration
     const base = tax.calculationBase === 'brut_imposable'
-      ? grossSalary
-      : grossSalary;
+      ? taxableGross  // Use taxable gross (excludes non-taxable components like transport)
+      : grossSalary;  // Use total gross salary
 
     const amount = Math.round(base * Number(tax.taxRate));
 
+    // Extract French label if name is an object with {en, fr} keys
+    const displayName = typeof tax.name === 'object' && tax.name !== null
+      ? (tax.name.fr || tax.name.en || tax.code)
+      : tax.name;
+
     details.push({
       code: tax.code,
-      name: tax.name,
+      name: displayName,
       amount,
       rate: Number(tax.taxRate),
       base,
@@ -967,7 +1020,8 @@ function calculateOtherTaxes(
  * - Other employer-only contributions → cnpsEmployer
  */
 function calculateSocialSecurityContributions(
-  grossSalary: number,
+  cnpsBase: number, // Base for most CNPS calculations (gross salary)
+  brutImposable: number, // Taxable gross for pension/retirement
   contributions: any[],
   sectorOverrides: any[],
   options: {
@@ -976,24 +1030,31 @@ function calculateSocialSecurityContributions(
     salaireCategoriel?: number; // Code 11 - For CNPS calculations
   }
 ) {
-  console.log('[DEBUG SS START]', { grossSalary, hasFamily: options.hasFamily, numContributions: contributions.length });
+  console.log('[DEBUG SS START]', { cnpsBase, brutImposable, hasFamily: options.hasFamily, numContributions: contributions.length });
   let cnpsEmployee = 0;
   let cnpsEmployer = 0;
   let cmuEmployee = 0;
   let cmuEmployer = 0;
+  const contributionDetails: Array<{
+    code: string;
+    name: string;
+    amount: number;
+    paidBy: 'employee' | 'employer';
+    rate?: number; // Percentage rate (0.063 for 6.3%)
+    base?: number; // Calculation base
+  }> = [];
 
   for (const contrib of contributions) {
     const code = contrib.code.toLowerCase();
 
-    console.log(`[DEBUG CONTRIB] ${contrib.code}: fixedAmount=${contrib.fixedAmount}, employeeRate=${contrib.employeeRate}, employerRate=${contrib.employerRate}`);
+    console.log(`[DEBUG CONTRIB] ${contrib.code}: fixedAmount=${contrib.fixedAmount}, employeeRate=${contrib.employeeRate}, employerRate=${contrib.employerRate}, calculationBase=${contrib.calculationBase}`);
 
     // Determine calculation base based on contribution type
-    let calculationBase = grossSalary;
+    let calculationBase = cnpsBase; // Default to CNPS base
 
     if (contrib.calculationBase === 'salaire_categoriel') {
-      // For salaire_categoriel: use the specific component amount, capped at ceiling
+      // For salaire_categoriel: use Code 11 (salaire catégoriel), capped at ceiling
       // This is used for family benefits and work accident in Côte d'Ivoire
-      // If salaireCategoriel is provided, use it (capped at ceiling), otherwise use ceiling as default
       if (options.salaireCategoriel) {
         calculationBase = Math.min(
           options.salaireCategoriel,
@@ -1008,14 +1069,20 @@ function calculateSocialSecurityContributions(
           `Contribution ${contrib.code} requires salaireCategoriel but none provided and no ceiling defined in database`
         );
       }
-    } else if (contrib.calculationBase === 'brut_imposable' || contrib.calculationBase === 'gross_salary') {
-      // For brut_imposable/gross_salary: use gross salary, optionally capped by ceiling
+    } else if (contrib.calculationBase === 'brut_imposable') {
+      // For brut_imposable: use taxable gross (excludes non-taxable components like transport)
       calculationBase = Math.min(
-        grossSalary,
+        brutImposable,
+        contrib.ceilingAmount ? Number(contrib.ceilingAmount) : Infinity
+      );
+    } else if (contrib.calculationBase === 'gross_salary') {
+      // For gross_salary: use total CNPS base
+      calculationBase = Math.min(
+        cnpsBase,
         contrib.ceilingAmount ? Number(contrib.ceilingAmount) : Infinity
       );
     }
-    // else: use grossSalary as default
+    // else: use cnpsBase as default
 
     // Fixed amount contributions (e.g., CMU in Côte d'Ivoire)
     if (contrib.fixedAmount) {
@@ -1023,26 +1090,63 @@ function calculateSocialSecurityContributions(
 
       console.log(`[DEBUG CMU] Processing ${code}, fixedAmount: ${fixedAmount}, hasFamily: ${options.hasFamily}`);
 
+      // Extract display name (French label)
+      const displayName = typeof contrib.name === 'object' && contrib.name !== null
+        ? (contrib.name.fr || contrib.name.en || contrib.code)
+        : contrib.name;
+
       // Categorize by code pattern
       if (code.includes('cmu') || code.includes('health') || code.includes('medical')) {
         // CMU Employee (e.g., cmu_employee)
         if (code === 'cmu_employee') {
           console.log(`[DEBUG CMU] Setting cmuEmployee to ${fixedAmount}`);
           cmuEmployee = fixedAmount;
+          contributionDetails.push({
+            code: contrib.code,
+            name: displayName,
+            amount: fixedAmount,
+            paidBy: 'employee',
+            rate: undefined, // Fixed amount, not percentage
+            base: undefined,
+          });
         }
         // CMU Employer Base (no family)
         else if (code === 'cmu_employer_base' && !options.hasFamily) {
           console.log(`[DEBUG CMU] Setting cmuEmployer (base) to ${fixedAmount}`);
           cmuEmployer = fixedAmount;
+          contributionDetails.push({
+            code: contrib.code,
+            name: displayName,
+            amount: fixedAmount,
+            paidBy: 'employer',
+            rate: undefined, // Fixed amount, not percentage
+            base: undefined,
+          });
         }
         // CMU Employer Family (with family)
         else if (code === 'cmu_employer_family' && options.hasFamily) {
           console.log(`[DEBUG CMU] Setting cmuEmployer (family) to ${fixedAmount}`);
           cmuEmployer = fixedAmount;
+          contributionDetails.push({
+            code: contrib.code,
+            name: displayName,
+            amount: fixedAmount,
+            paidBy: 'employer',
+            rate: undefined, // Fixed amount, not percentage
+            base: undefined,
+          });
         }
       } else {
         // Other fixed contributions go to CNPS employer bucket
         cnpsEmployer += fixedAmount;
+        contributionDetails.push({
+          code: contrib.code,
+          name: displayName,
+          amount: fixedAmount,
+          paidBy: 'employer',
+          rate: undefined, // Fixed amount, not percentage
+          base: undefined,
+        });
       }
       continue;
     }
@@ -1066,7 +1170,34 @@ function calculateSocialSecurityContributions(
     const employeeAmount = Math.round(calculationBase * employeeRate);
     const employerAmount = Math.round(calculationBase * employerRate);
 
-    // Categorize contributions by code pattern (country-agnostic)
+    // Extract display name (French label)
+    const displayName = typeof contrib.name === 'object' && contrib.name !== null
+      ? (contrib.name.fr || contrib.name.en || contrib.code)
+      : contrib.name;
+
+    // Add individual contribution details
+    if (employeeAmount > 0) {
+      contributionDetails.push({
+        code: contrib.code,
+        name: displayName,
+        amount: employeeAmount,
+        paidBy: 'employee',
+        rate: employeeRate, // Percentage rate (e.g., 0.063 for 6.3%)
+        base: calculationBase, // Base amount used for calculation
+      });
+    }
+    if (employerAmount > 0) {
+      contributionDetails.push({
+        code: contrib.code,
+        name: displayName,
+        amount: employerAmount,
+        paidBy: 'employer',
+        rate: employerRate, // Percentage rate (e.g., 0.0575 for 5.75%)
+        base: calculationBase, // Base amount used for calculation
+      });
+    }
+
+    // Categorize contributions by code pattern (country-agnostic) for totals
     // Retirement/Pension → CNPS buckets (both employee and employer)
     if (code.includes('pension') || code.includes('retraite') || code.includes('retirement')) {
       cnpsEmployee += employeeAmount;
@@ -1093,7 +1224,13 @@ function calculateSocialSecurityContributions(
   }
 
   console.log('[DEBUG FINAL] Contribution totals:', { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer });
-  return { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer };
+  return {
+    cnpsEmployee,
+    cnpsEmployer,
+    cmuEmployee,
+    cmuEmployer,
+    contributionDetails,
+  };
 }
 
 /**
@@ -1169,7 +1306,7 @@ function buildEarningsDetails(grossCalc: any, input: PayrollCalculationInputV2) 
 }
 
 /**
- * Build deductions details array with country-specific labels
+ * Build deductions details array with country-specific labels and rate information
  */
 function buildDeductionsDetails(
   cnpsEmployee: number,
@@ -1179,22 +1316,48 @@ function buildDeductionsDetails(
     retirementContributionLabel: Record<string, string>;
     healthContributionLabel: Record<string, string>;
     incomeTaxLabel: Record<string, string>;
-  }
+  },
+  contributionDetails: Array<{
+    code: string;
+    name: string;
+    amount: number;
+    paidBy: 'employee' | 'employer';
+    rate?: number;
+    base?: number;
+  }>,
+  fiscalParts: number
 ) {
+  // Find employee contributions with rate info
+  const cnpsEmployeeContrib = contributionDetails.find(
+    c => c.paidBy === 'employee' && (c.code.includes('pension') || c.code.includes('retraite'))
+  );
+  const cmuEmployeeContrib = contributionDetails.find(
+    c => c.paidBy === 'employee' && (c.code.includes('cmu') || c.code.includes('health'))
+  );
+
+  // Helper to format rate percentage (up to 2 decimals, remove trailing zeros)
+  const formatRate = (rate: number) => (rate * 100).toFixed(2).replace(/\.?0+$/, '');
+
   return [
     {
       type: 'cnps_employee',
-      description: taxSystem.retirementContributionLabel.fr, // Use country-specific label
+      description: cnpsEmployeeContrib?.rate
+        ? `${taxSystem.retirementContributionLabel.fr} (${formatRate(cnpsEmployeeContrib.rate)}%)`
+        : taxSystem.retirementContributionLabel.fr,
       amount: cnpsEmployee,
     },
     {
       type: 'cmu_employee',
-      description: taxSystem.healthContributionLabel.fr, // Use country-specific label
+      description: cmuEmployeeContrib?.rate
+        ? `${taxSystem.healthContributionLabel.fr} (${formatRate(cmuEmployeeContrib.rate)}%)`
+        : cmuEmployee > 0
+        ? `${taxSystem.healthContributionLabel.fr} (${cmuEmployee.toLocaleString('fr-FR')} FCFA)`
+        : taxSystem.healthContributionLabel.fr,
       amount: cmuEmployee,
     },
     {
       type: 'its',
-      description: taxSystem.incomeTaxLabel.fr, // Use country-specific label
+      description: `${taxSystem.incomeTaxLabel.fr} (${fiscalParts} part${fiscalParts > 1 ? 's' : ''})`,
       amount: tax,
     },
   ];

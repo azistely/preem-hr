@@ -31,6 +31,7 @@ import {
   completeOnboardingV2,
 } from '@/features/onboarding/services/onboarding-v2.service';
 import { TRPCError } from '@trpc/server';
+import type { SalaryComponentInstance, ComponentMetadata } from '@/features/employees/types/salary-components';
 
 // Input validation schemas
 const answerQuestionSchema = z.object({
@@ -594,6 +595,7 @@ export const onboardingRouter = createTRPCRouter({
    * Used during onboarding to show preview before confirming
    *
    * ✅ MULTI-COUNTRY: Uses database-driven base salary component structure
+   * ✅ PREVIEW MODE: Uses 'preview' employee ID to skip database queries
    */
   calculatePayslipPreview: publicProcedure
     .input(z.object({
@@ -634,19 +636,19 @@ export const onboardingRouter = createTRPCRouter({
         const countryCode = tenant.countryCode || 'CI';
 
         // Build base salary components from inputs (database-driven)
-        let baseSalaryComponentsList: Array<{ code: string; amount: number }> = [];
+        let baseSalaryComponentsList: SalaryComponentInstance[];
         let totalBaseSalary = 0;
 
         if (input.baseComponents) {
           // NEW: Use base components structure
-          baseSalaryComponentsList = await buildBaseSalaryComponents(input.baseComponents, countryCode);
+          baseSalaryComponentsList = await buildBaseSalaryComponents(input.baseComponents, countryCode) as SalaryComponentInstance[];
           totalBaseSalary = await calculateBaseSalaryTotal(baseSalaryComponentsList, countryCode);
         } else if (input.baseSalary) {
           // FALLBACK: Use legacy baseSalary (create Code 11 component automatically)
           baseSalaryComponentsList = await buildBaseSalaryComponents(
             { '11': input.baseSalary }, // Map to Code 11 for CI
             countryCode
-          );
+          ) as SalaryComponentInstance[];
           totalBaseSalary = input.baseSalary;
         } else {
           throw new TRPCError({
@@ -714,6 +716,7 @@ export const onboardingRouter = createTRPCRouter({
         // Pass user components as otherAllowances (template components like TPT_*, PHONE, etc.)
         const otherAllowances = input.components
           ? input.components.map(c => ({
+              code: c.code,
               name: c.name,
               amount: c.amount,
               taxable: true, // All template components are taxable by default
@@ -731,26 +734,79 @@ export const onboardingRouter = createTRPCRouter({
         const periodStart = new Date(previewDate.getFullYear(), previewDate.getMonth(), 1);
         const periodEnd = new Date(previewDate.getFullYear(), previewDate.getMonth() + 1, 0);
 
-        // Extract base component amounts for payroll calculation
-        const baseAmounts: Record<string, number> = {};
-        for (const comp of baseSalaryComponentsList) {
-          baseAmounts[comp.code] = comp.amount;
-        }
+        // Merge all components: base components (with metadata) + template components (from user)
+        // Base components already have metadata from buildBaseSalaryComponents()
+        // Template components need metadata fetched from database
+        const { salaryComponentTemplates } = await import('@/drizzle/schema');
+        const { and: andOp } = await import('drizzle-orm');
+
+        // Enrich template components with metadata from database
+        const enrichedTemplateComponents = await Promise.all(
+          (input.components || []).map(async (comp) => {
+            // Fetch template metadata
+            const [template] = await db
+              .select()
+              .from(salaryComponentTemplates)
+              .where(
+                andOp(
+                  eq(salaryComponentTemplates.code, comp.code),
+                  eq(salaryComponentTemplates.countryCode, countryCode)
+                )
+              )
+              .limit(1);
+
+            if (template) {
+              return {
+                code: comp.code,
+                name: typeof template.name === 'object' ? (template.name as any).fr || (template.name as any).en || comp.code : String(template.name),
+                amount: comp.amount,
+                sourceType: 'template' as const,
+                metadata: template.metadata as ComponentMetadata | undefined,
+              };
+            }
+
+            // If template not found, return as-is with defaults (will use safe defaults)
+            return {
+              code: comp.code,
+              name: comp.code, // Use code as fallback name
+              amount: comp.amount,
+              sourceType: 'custom' as const,
+            };
+          })
+        ) as SalaryComponentInstance[];
+
+        const allComponentsWithMetadata: SalaryComponentInstance[] = [
+          ...baseSalaryComponentsList, // These have proper metadata
+          ...enrichedTemplateComponents, // Template components now with metadata
+        ];
+
+        // DEBUG LOGGING - BEFORE calculatePayrollV2
+        console.log('============================================================');
+        console.log('[ONBOARDING DEBUG] Input values to calculatePayrollV2:');
+        console.log('- totalBaseSalary:', totalBaseSalary);
+        console.log('- salaireCategoriel (Code 11):', salaireCategoriel);
+        console.log('- allComponents:', JSON.stringify(allComponentsWithMetadata, null, 2));
+        console.log('- hasFamily:', hasFamily);
+        console.log('- fiscalParts:', fiscalParts);
+        console.log('- countryCode:', tenant.countryCode || 'CI');
+        console.log('- sectorCode:', tenant.genericSectorCode || tenant.sectorCode || 'SERVICES');
+        console.log('- tenantId:', ctx.user.tenantId);
+        console.log('============================================================');
 
         const payrollResult = await calculatePayrollV2({
           employeeId: 'preview', // Dummy ID for preview
           countryCode: tenant.countryCode || 'CI',
+          tenantId: ctx.user.tenantId, // Required for template component lookup (TPT_*, etc.)
           periodStart,
           periodEnd,
-          baseSalary: totalBaseSalary, // Total of all base components
-          salaireCategoriel, // Code 11 (or equivalent)
-          sursalaire: baseAmounts['12'], // Code 12 for CI (if present)
+          baseSalary: totalBaseSalary, // Total of all base salary components
+          // NEW APPROACH: Pass all components with metadata (not individual parameters)
+          // This allows component processor to properly calculate bases using metadata
+          customComponents: allComponentsWithMetadata,
           hireDate: periodStart, // Set hire date to period start for full month preview
           fiscalParts: fiscalParts,
           hasFamily: hasFamily, // For CMU employer contribution
-          // Pass template components properly as otherAllowances
-          otherAllowances: otherAllowances,
-          sectorCode: tenant.sectorCode || 'SERVICES',
+          sectorCode: tenant.genericSectorCode || tenant.sectorCode || 'SERVICES',
           isPreview: true, // Use safe defaults for components not yet activated
           // Rate type support (GAP-JOUR-003)
           rateType: input.rateType || 'MONTHLY',
@@ -758,12 +814,27 @@ export const onboardingRouter = createTRPCRouter({
           hoursWorkedThisMonth: input.rateType === 'HOURLY' ? 30 * 8 : undefined, // Full month for preview
         });
 
-        // Return preview in expected format
+        // DEBUG LOGGING - AFTER calculatePayrollV2
+        console.log('============================================================');
+        console.log('[ONBOARDING DEBUG] Output from calculatePayrollV2:');
+        console.log('- grossSalary:', payrollResult.grossSalary);
+        console.log('- cnpsEmployee:', payrollResult.cnpsEmployee);
+        console.log('- cnpsEmployer:', payrollResult.cnpsEmployer);
+        console.log('- cmuEmployee:', payrollResult.cmuEmployee);
+        console.log('- cmuEmployer:', payrollResult.cmuEmployer);
+        console.log('- its (income tax):', payrollResult.its);
+        console.log('- netSalary:', payrollResult.netSalary);
+        console.log('- employerCost:', payrollResult.employerCost);
+        console.log('- contributionDetails:', JSON.stringify(payrollResult.contributionDetails, null, 2));
+        console.log('- otherTaxesDetails:', JSON.stringify(payrollResult.otherTaxesDetails, null, 2));
+        console.log('============================================================');
+
+        // Return preview in expected format with detailed breakdowns
         return {
           success: true,
           payslipPreview: {
             grossSalary: payrollResult.grossSalary,
-            baseSalary: payrollResult.baseSalary,
+            baseSalary: totalBaseSalary, // Use totalBaseSalary (Code 11 + Code 12) calculated above
             baseComponents: baseSalaryComponentsList, // Include base component breakdown
             components: input.components || [],
             cnpsEmployee: payrollResult.cnpsEmployee,
@@ -774,6 +845,10 @@ export const onboardingRouter = createTRPCRouter({
             cnpsEmployer: payrollResult.cnpsEmployer,
             cmuEmployer: payrollResult.cmuEmployer || 0,
             totalEmployerCost: payrollResult.employerCost,
+            // Add detailed breakdowns
+            deductionsDetails: payrollResult.deductionsDetails || [],
+            otherTaxesDetails: payrollResult.otherTaxesDetails || [],
+            contributionDetails: payrollResult.contributionDetails || [], // Social security details
           },
         };
       } catch (error: any) {

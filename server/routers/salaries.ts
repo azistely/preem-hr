@@ -195,8 +195,24 @@ export const salariesRouter = createTRPCRouter({
           });
         }
 
-        // Get country code
-        const countryCode = input.countryCode || employee.countryCode || await getTenantCountryCode(ctx.user.tenantId);
+        // Get tenant data for sector and country code
+        const { tenants } = await import('@/drizzle/schema');
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, ctx.user.tenantId))
+          .limit(1);
+
+        if (!tenant) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Entreprise non trouvée',
+          });
+        }
+
+        // Get country code and sector from tenant
+        const countryCode = input.countryCode || employee.countryCode || tenant.countryCode || await getTenantCountryCode(ctx.user.tenantId);
+        const sectorCode = tenant.genericSectorCode || tenant.sectorCode;
 
         // Extract base salary components (database-driven)
         const baseAmounts = await extractBaseSalaryAmounts(input.components, countryCode);
@@ -308,6 +324,8 @@ export const salariesRouter = createTRPCRouter({
           bonuses: otherBonuses,
           fiscalParts: employee.taxDependents || 1.0,
           countryCode,
+          sectorCode, // Pass tenant's sector for work accident rate calculation
+          tenantId: ctx.user.tenantId,
         });
 
         return {

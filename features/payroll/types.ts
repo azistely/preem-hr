@@ -221,6 +221,16 @@ export interface PayrollCalculationResult {
     paidBy: string;
   }>;
 
+  // Social Security Contribution Details
+  contributionDetails?: Array<{
+    code: string;
+    name: string;
+    amount: number;
+    paidBy: 'employee' | 'employer';
+    rate?: number; // Percentage rate (e.g., 0.063 for 6.3%)
+    base?: number; // Calculation base
+  }>;
+
   // Days
   daysWorked: number;
   daysInPeriod: number;

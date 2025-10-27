@@ -33,6 +33,27 @@ interface PayslipPreviewCardProps {
     cnpsEmployer: number;
     cmuEmployer?: number;
     totalEmployerCost: number;
+    // Detailed breakdowns
+    deductionsDetails?: Array<{
+      type: string;
+      description: string;
+      amount: number;
+    }>;
+    otherTaxesDetails?: Array<{
+      code: string;
+      name: string;
+      amount: number;
+      rate?: number;
+      paidBy: string;
+    }>;
+    contributionDetails?: Array<{
+      code: string;
+      name: string;
+      amount: number;
+      paidBy: 'employee' | 'employer';
+      rate?: number;
+      base?: number;
+    }>;
   };
   rateType?: RateType | null;
   onContinue: () => void;
@@ -77,6 +98,29 @@ export function PayslipPreviewCard({
     return formatCurrencyWithRate(amount ?? 0, rateType as RateType);
   };
 
+  // Calculate subtotals for employee and employer
+  const employeeDeductionsTotal = payslip.deductionsDetails?.reduce((sum, deduction) => sum + deduction.amount, 0) ?? 0;
+
+  const employerContributionsTotal =
+    (payslip.contributionDetails?.filter(c => c.paidBy === 'employer').reduce((sum, contrib) => sum + contrib.amount, 0) ?? 0) +
+    (payslip.otherTaxesDetails?.filter(t => t.paidBy === 'employer').reduce((sum, tax) => sum + tax.amount, 0) ?? 0);
+
+  // Helper to format contribution name with rate
+  const formatContributionName = (contrib: {
+    name: string;
+    rate?: number;
+    base?: number;
+    amount: number;
+  }): string => {
+    if (contrib.rate) {
+      // Format rate with up to 2 decimals, removing trailing zeros
+      const ratePercent = (contrib.rate * 100).toFixed(2).replace(/\.?0+$/, '');
+      return `${contrib.name} (${ratePercent}%)`;
+    }
+    // For fixed amounts (like CMU), show the fixed amount
+    return contrib.name;
+  };
+
   return (
     <Card className="border-2 border-green-500 bg-green-50/50 mt-6">
       <CardHeader>
@@ -108,22 +152,42 @@ export function PayslipPreviewCard({
 
             <Separator />
 
-            <div className="flex justify-between text-sm">
-              <span>CNPS (6.3%):</span>
-              <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.cnpsEmployee))}</span>
-            </div>
+            {/* Employee Deductions - Display all individual lines */}
+            {payslip.deductionsDetails && payslip.deductionsDetails.length > 0 ? (
+              <>
+                {payslip.deductionsDetails.map((deduction, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span>{deduction.description}:</span>
+                    <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(deduction.amount))}</span>
+                  </div>
+                ))}
+                {/* Employee deductions subtotal */}
+                <div className="flex justify-between text-sm font-semibold pt-1 border-t">
+                  <span>Total retenues salarié:</span>
+                  <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(employeeDeductionsTotal))}</span>
+                </div>
+              </>
+            ) : (
+              // Fallback to summary if detailed breakdown not available
+              <>
+                <div className="flex justify-between text-sm">
+                  <span>CNPS (6.3%):</span>
+                  <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.cnpsEmployee))}</span>
+                </div>
 
-            {payslip.cmuEmployee && payslip.cmuEmployee > 0 && (
-              <div className="flex justify-between text-sm">
-                <span>CMU (1%):</span>
-                <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.cmuEmployee))}</span>
-              </div>
+                {payslip.cmuEmployee && payslip.cmuEmployee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span>CMU:</span>
+                    <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.cmuEmployee))}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-sm">
+                  <span>ITS ({payslip.fiscalParts ?? 1} parts):</span>
+                  <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.incomeTax))}</span>
+                </div>
+              </>
             )}
-
-            <div className="flex justify-between text-sm">
-              <span>ITS ({payslip.fiscalParts ?? 1} parts):</span>
-              <span className="text-red-600">-{formatWithRate(convertMonthlyToRate(payslip.incomeTax))}</span>
-            </div>
 
             <Separator />
 
@@ -192,15 +256,67 @@ export function PayslipPreviewCard({
               <div>
                 <h5 className="font-semibold mb-2">Cotisations patronales:</h5>
                 <div className="space-y-1 pl-3">
-                  <div className="flex justify-between">
-                    <span>CNPS employeur:</span>
-                    <span>{formatWithRate(convertMonthlyToRate(payslip.cnpsEmployer))}</span>
-                  </div>
-                  {payslip.cmuEmployer && payslip.cmuEmployer > 0 && (
-                    <div className="flex justify-between">
-                      <span>CMU employeur:</span>
-                      <span>{formatWithRate(convertMonthlyToRate(payslip.cmuEmployer))}</span>
-                    </div>
+                  {/* If detailed contribution breakdown available, use it */}
+                  {payslip.contributionDetails && payslip.contributionDetails.length > 0 ? (
+                    <>
+                      {/* Show all employer contributions from contributionDetails */}
+                      {payslip.contributionDetails
+                        .filter(contrib => contrib.paidBy === 'employer')
+                        .map((contrib, index) => (
+                          <div key={index} className="flex justify-between">
+                            <span>{formatContributionName(contrib)}:</span>
+                            <span>{formatWithRate(convertMonthlyToRate(contrib.amount))}</span>
+                          </div>
+                        ))
+                      }
+
+                      {/* Display all employer-paid taxes from otherTaxesDetails (FDFP, etc.) */}
+                      {payslip.otherTaxesDetails && payslip.otherTaxesDetails.length > 0 && (
+                        payslip.otherTaxesDetails
+                          .filter(tax => tax.paidBy === 'employer')
+                          .map((tax, index) => {
+                            const ratePercent = tax.rate ? (tax.rate * 100).toFixed(2).replace(/\.?0+$/, '') : null;
+                            return (
+                              <div key={index} className="flex justify-between">
+                                <span>{ratePercent ? `${tax.name} (${ratePercent}%)` : tax.name}:</span>
+                                <span>{formatWithRate(convertMonthlyToRate(tax.amount))}</span>
+                              </div>
+                            );
+                          })
+                      )}
+
+                      {/* Employer contributions subtotal */}
+                      <div className="flex justify-between font-semibold pt-2 mt-1 border-t">
+                        <span>Total cotisations patronales:</span>
+                        <span>{formatWithRate(convertMonthlyToRate(employerContributionsTotal))}</span>
+                      </div>
+                    </>
+                  ) : (
+                    // Fallback: show summary if detailed breakdown not available
+                    <>
+                      <div className="flex justify-between">
+                        <span>CNPS employeur:</span>
+                        <span>{formatWithRate(convertMonthlyToRate(payslip.cnpsEmployer))}</span>
+                      </div>
+
+                      {payslip.cmuEmployer && payslip.cmuEmployer > 0 && (
+                        <div className="flex justify-between">
+                          <span>CMU employeur:</span>
+                          <span>{formatWithRate(convertMonthlyToRate(payslip.cmuEmployer))}</span>
+                        </div>
+                      )}
+
+                      {payslip.otherTaxesDetails && payslip.otherTaxesDetails.length > 0 && (
+                        payslip.otherTaxesDetails
+                          .filter(tax => tax.paidBy === 'employer')
+                          .map((tax, index) => (
+                            <div key={index} className="flex justify-between">
+                              <span>{tax.name}:</span>
+                              <span>{formatWithRate(convertMonthlyToRate(tax.amount))}</span>
+                            </div>
+                          ))
+                      )}
+                    </>
                   )}
                 </div>
               </div>
