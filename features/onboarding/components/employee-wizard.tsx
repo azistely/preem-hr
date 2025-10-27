@@ -107,7 +107,9 @@ export function EmployeeWizard({
   const cgeciSectorCode = tenant?.cgeciSectorCode;
 
   // Load locations for primary site selection
-  const { data: locations, isLoading: loadingLocations } = trpc.locations.list.useQuery();
+  const { data: locations, isLoading: loadingLocations } = trpc.locations.list.useQuery({
+    includeInactive: false,
+  });
 
   // Load CGECI categories
   const { data: cgeciCategories, isLoading: loadingCategories } =

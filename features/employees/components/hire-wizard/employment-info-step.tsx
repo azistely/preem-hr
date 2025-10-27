@@ -59,7 +59,9 @@ interface EmploymentInfoStepProps {
 
 export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
   const { data: positions, isLoading, refetch } = usePositions('active');
-  const { data: locations, isLoading: loadingLocations } = trpc.locations.list.useQuery();
+  const { data: locations, isLoading: loadingLocations } = trpc.locations.list.useQuery({
+    includeInactive: false,
+  });
   const utils = trpc.useUtils();
   const createPositionMutation = trpc.positions.create.useMutation();
   const countryCode = 'CI'; // TODO: Get from tenant context
