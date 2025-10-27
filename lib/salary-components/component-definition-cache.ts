@@ -14,7 +14,7 @@
 
 import { db } from '@/lib/db';
 import { salaryComponentDefinitions } from '@/lib/db/schema';
-import { tenantSalaryComponentActivations } from '@/drizzle/schema';
+import { tenantSalaryComponentActivations, salaryComponentTemplates } from '@/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 import type { ComponentDefinition, ComponentMetadata } from './types';
 
@@ -30,13 +30,17 @@ export class ComponentDefinitionCache {
    * Get component definition from cache or database
    *
    * Implements 3-level architecture:
-   * 1. Fetch system definition (salary_component_definitions)
+   * 1. Fetch system definition (salary_component_definitions) OR template (salary_component_templates)
    * 2. If tenantId provided, fetch tenant overrides (tenant_salary_component_activations.overrides)
-   * 3. Merge: System + Tenant overrides
+   * 3. Merge: System/Template + Tenant overrides
    *
-   * @param code - Component code (e.g., '22', '34')
+   * Lookup order:
+   * - First: Check salary_component_definitions (base definitions like "transport", "22")
+   * - If not found AND tenantId provided: Check salary_component_templates + verify tenant activation
+   *
+   * @param code - Component code (e.g., '22', 'TPT_TRANSPORT_CI')
    * @param countryCode - Country code (e.g., 'CI', 'SN')
-   * @param tenantId - Tenant ID (for tenant-specific overrides)
+   * @param tenantId - Tenant ID (for tenant-specific overrides and template activation check)
    * @param effectiveDate - Date for versioning (future use)
    * @returns Component definition (merged) or null if not found
    */
@@ -59,7 +63,10 @@ export class ComponentDefinitionCache {
 
     // Fetch from database
     try {
-      // Level 1: Fetch system definition
+      let definition: ComponentDefinition | null = null;
+      let isFromTemplate = false;
+
+      // Level 1a: Try salary_component_definitions first
       const systemResults = await db
         .select()
         .from(salaryComponentDefinitions)
@@ -71,34 +78,106 @@ export class ComponentDefinitionCache {
         )
         .limit(1);
 
-      if (systemResults.length === 0) {
+      if (systemResults.length > 0) {
+        // Found in system definitions
+        const systemRow = systemResults[0];
+        definition = {
+          id: systemRow.id,
+          countryCode: systemRow.countryCode,
+          code: systemRow.code,
+          name: systemRow.name as Record<string, string>,
+          category: systemRow.category,
+          componentType: systemRow.componentType,
+          isTaxable: systemRow.isTaxable,
+          isSubjectToSocialSecurity: systemRow.isSubjectToSocialSecurity,
+          calculationMethod: systemRow.calculationMethod ?? undefined,
+          defaultValue: systemRow.defaultValue ?? null,
+          displayOrder: systemRow.displayOrder,
+          isCommon: systemRow.isCommon,
+          metadata: systemRow.metadata as ComponentMetadata,
+          createdAt: systemRow.createdAt,
+          updatedAt: systemRow.updatedAt,
+          cachedAt: Date.now(),
+        };
+      } else if (tenantId) {
+        // Level 1b: Not found in definitions, try templates (only if tenantId provided)
+        // First check if tenant has activated this template
+        const tenantActivation = await db
+          .select()
+          .from(tenantSalaryComponentActivations)
+          .where(
+            and(
+              eq(tenantSalaryComponentActivations.tenantId, tenantId),
+              eq(tenantSalaryComponentActivations.templateCode, code),
+              eq(tenantSalaryComponentActivations.countryCode, countryCode),
+              eq(tenantSalaryComponentActivations.isActive, true)
+            )
+          )
+          .limit(1);
+
+        if (tenantActivation.length === 0) {
+          // Template not activated by tenant
+          console.log(`[ComponentDefinitionCache] Template ${code} not activated by tenant ${tenantId}`);
+          return null;
+        }
+
+        // Tenant has activated it, fetch the template
+        const templateResults = await db
+          .select()
+          .from(salaryComponentTemplates)
+          .where(
+            and(
+              eq(salaryComponentTemplates.countryCode, countryCode),
+              eq(salaryComponentTemplates.code, code)
+            )
+          )
+          .limit(1);
+
+        if (templateResults.length === 0) {
+          console.warn(`[ComponentDefinitionCache] Template ${code} activated but not found in salary_component_templates`);
+          return null;
+        }
+
+        // Convert template to ComponentDefinition format
+        const templateRow = templateResults[0];
+        const templateMetadata = templateRow.metadata as ComponentMetadata;
+
+        definition = {
+          id: templateRow.id,
+          countryCode: templateRow.countryCode,
+          code: templateRow.code,
+          name: templateRow.name as Record<string, string>,
+          category: templateRow.category,
+          // Templates don't have componentType field, default to 'allowance'
+          componentType: 'allowance',
+          isTaxable: templateMetadata?.taxTreatment?.isTaxable ?? true,
+          isSubjectToSocialSecurity: templateMetadata?.socialSecurityTreatment?.includeInCnpsBase ?? true,
+          calculationMethod: undefined,
+          defaultValue: templateRow.suggestedAmount ? String(templateRow.suggestedAmount) : null,
+          displayOrder: templateRow.displayOrder,
+          isCommon: false, // Templates are not common by default
+          metadata: templateMetadata,
+          createdAt: new Date(templateRow.createdAt),
+          updatedAt: new Date(templateRow.updatedAt),
+          cachedAt: Date.now(),
+        };
+
+        isFromTemplate = true;
+        console.log(`[ComponentDefinitionCache] Found ${code} in templates for tenant ${tenantId}`);
+      } else {
+        // Not found in definitions and no tenantId to check templates
+        console.log(`[ComponentDefinitionCache] ${code} not found in definitions and no tenantId provided`);
         return null;
       }
 
-      const systemRow = systemResults[0];
-
-      // Convert database row to ComponentDefinition (Level 1: System)
-      let definition: ComponentDefinition = {
-        id: systemRow.id,
-        countryCode: systemRow.countryCode,
-        code: systemRow.code,
-        name: systemRow.name as Record<string, string>,
-        category: systemRow.category,
-        componentType: systemRow.componentType,
-        isTaxable: systemRow.isTaxable,
-        isSubjectToSocialSecurity: systemRow.isSubjectToSocialSecurity,
-        calculationMethod: systemRow.calculationMethod ?? undefined,
-        defaultValue: systemRow.defaultValue ?? null,
-        displayOrder: systemRow.displayOrder,
-        isCommon: systemRow.isCommon,
-        metadata: systemRow.metadata as ComponentMetadata,
-        createdAt: systemRow.createdAt,
-        updatedAt: systemRow.updatedAt,
-        cachedAt: Date.now(),
-      };
+      if (!definition) {
+        return null;
+      }
 
       // Level 2: Apply tenant overrides (if tenantId provided)
-      if (tenantId) {
+      // Note: If we loaded from template, we already fetched tenant activation above
+      // Only need to query again if we loaded from system definitions
+      if (tenantId && !isFromTemplate) {
         const tenantResults = await db
           .select()
           .from(tenantSalaryComponentActivations)
@@ -106,6 +185,7 @@ export class ComponentDefinitionCache {
             and(
               eq(tenantSalaryComponentActivations.tenantId, tenantId),
               eq(tenantSalaryComponentActivations.templateCode, code),
+              eq(tenantSalaryComponentActivations.countryCode, countryCode),
               eq(tenantSalaryComponentActivations.isActive, true)
             )
           )
@@ -121,6 +201,44 @@ export class ComponentDefinitionCache {
 
             console.log(
               `[ComponentDefinitionCache] Applied tenant overrides for ${code} (tenant: ${tenantId}):`,
+              overrides
+            );
+          }
+
+          // Use custom name if provided
+          if (tenantRow.customName) {
+            definition.name = {
+              ...definition.name,
+              fr: tenantRow.customName,
+            };
+          }
+        }
+      } else if (tenantId && isFromTemplate) {
+        // We already fetched tenant activation above when loading template
+        // Just need to apply overrides if they exist
+        const tenantActivation = await db
+          .select()
+          .from(tenantSalaryComponentActivations)
+          .where(
+            and(
+              eq(tenantSalaryComponentActivations.tenantId, tenantId),
+              eq(tenantSalaryComponentActivations.templateCode, code),
+              eq(tenantSalaryComponentActivations.countryCode, countryCode),
+              eq(tenantSalaryComponentActivations.isActive, true)
+            )
+          )
+          .limit(1);
+
+        if (tenantActivation.length > 0) {
+          const tenantRow = tenantActivation[0];
+          const overrides = tenantRow.overrides as Record<string, any> | null;
+
+          if (overrides && Object.keys(overrides).length > 0) {
+            // Merge tenant overrides into template definition
+            definition = this.mergeOverrides(definition, overrides);
+
+            console.log(
+              `[ComponentDefinitionCache] Applied tenant overrides for template ${code} (tenant: ${tenantId}):`,
               overrides
             );
           }

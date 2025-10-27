@@ -209,6 +209,7 @@ export async function calculatePayrollRun(
 
     // Process each employee
     for (const employee of activeEmployees) {
+      console.log(`[PAYROLL DEBUG] Starting processing for employee ${employee.id} (${employee.firstName} ${employee.lastName})`);
       try {
         // FIX: Get current salary using sql operator for date comparisons
         // Drizzle's lte()/gte() have issues with date strings
@@ -290,11 +291,18 @@ export async function calculatePayrollRun(
           daysWorkedThisMonth = uniqueDays.size;
 
           console.log(`[PAYROLL DEBUG] Daily worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${daysWorkedThisMonth} days worked, ${entries.length} time entries`);
+
+          // Skip daily workers with 0 days worked (no salary to pay)
+          if (daysWorkedThisMonth === 0) {
+            console.log(`[PAYROLL DEBUG] Skipping daily worker ${employee.id} (${employee.firstName} ${employee.lastName}): 0 days worked`);
+            continue; // Skip to next employee
+          }
         }
 
         // Calculate payroll using V2 (database-driven, multi-country)
         const calculation = await calculatePayrollV2({
           employeeId: employee.id,
+          tenantId: run.tenantId, // CRITICAL: Pass tenantId for template component lookup
           countryCode: tenant.countryCode,
           sectorCode: tenant.sectorCode || 'SERVICES', // Fallback to SERVICES if not set
           periodStart: new Date(run.periodStart),
@@ -384,7 +392,9 @@ export async function calculatePayrollRun(
       } catch (error) {
         // Log error but continue with other employees
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        const errorStack = error instanceof Error ? error.stack : '';
         console.error(`[PAYROLL ERROR] Employee ${employee.id} (${employee.firstName} ${employee.lastName}):`, errorMsg);
+        console.error(`[PAYROLL ERROR] Stack trace:`, errorStack);
         errors.push({
           employeeId: employee.id,
           error: errorMsg,
