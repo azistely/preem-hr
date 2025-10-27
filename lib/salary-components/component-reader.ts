@@ -25,7 +25,7 @@ export interface ComponentsBreakdown {
   mealAllowance: number;
   seniorityBonus: number;
   familyAllowance: number;
-  otherAllowances: Array<{ name: string; amount: number; taxable: boolean }>;
+  otherAllowances: Array<{ code: string; name: string; amount: number; taxable: boolean }>;
   customComponents: SalaryComponentInstance[];
 }
 
@@ -148,6 +148,7 @@ function readFromComponents(
       case 'responsibility': // Indemnité de responsabilité (Responsibility allowance)
         // These are non-taxable allowances - add to otherAllowances
         breakdown.otherAllowances.push({
+          code: component.code,
           name: component.name,
           amount: component.amount,
           taxable: false, // Explicitly non-taxable
@@ -161,6 +162,7 @@ function readFromComponents(
         } else {
           // Other standard components → add to otherAllowances
           breakdown.otherAllowances.push({
+            code: component.code,
             name: component.name,
             amount: component.amount,
             taxable: isComponentTaxable(component),
