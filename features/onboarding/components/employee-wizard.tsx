@@ -26,6 +26,7 @@ const employeeSchemaV2 = z.object({
   positionTitle: z.string().min(1, 'La fonction est requise'),
   contractType: z.enum(['CDI', 'CDD', 'STAGE']),
   contractEndDate: z.date().optional(),
+  cddReason: z.enum(['REMPLACEMENT', 'SURCROIT_ACTIVITE', 'SAISONNIER', 'PROJET', 'AUTRE']).optional(),
   category: z.string().min(1, 'La catégorie professionnelle est requise'),
   departmentId: z.string().optional(),
   primaryLocationId: z.string().min(1, 'Le site principal est requis'),
@@ -49,6 +50,14 @@ const employeeSchemaV2 = z.object({
 }, {
   message: 'La date de fin de contrat est requise pour un CDD',
   path: ['contractEndDate'],
+}).refine((data) => {
+  if (data.contractType === 'CDD' && !data.cddReason) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Le motif du CDD est requis par la loi',
+  path: ['cddReason'],
 }).refine((data) => {
   // Validate hire date is before contract end date for CDD
   if (data.contractType === 'CDD' && data.contractEndDate && data.hireDate) {
@@ -383,7 +392,7 @@ export function EmployeeWizard({
       title: 'Type de contrat',
       description: 'Informations contractuelles',
       validate: async () => {
-        return await trigger(['contractType', 'contractEndDate', 'hireDate']);
+        return await trigger(['contractType', 'contractEndDate', 'cddReason', 'hireDate']);
       },
       content: (
         <div className="space-y-4">
@@ -415,20 +424,38 @@ export function EmployeeWizard({
           />
 
           {contractType === 'CDD' && (
-            <FormField
-              label="Date de fin de contrat"
-              type="date"
-              {...register('contractEndDate', {
-                setValueAs: (value) => {
-                  if (!value || value === '') return undefined;
-                  const date = new Date(value);
-                  return isNaN(date.getTime()) ? undefined : date;
-                },
-              })}
-              error={errors.contractEndDate?.message}
-              required
-              helperText="Dernière date de travail prévue"
-            />
+            <>
+              <FormField
+                label="Date de fin de contrat"
+                type="date"
+                {...register('contractEndDate', {
+                  setValueAs: (value) => {
+                    if (!value || value === '') return undefined;
+                    const date = new Date(value);
+                    return isNaN(date.getTime()) ? undefined : date;
+                  },
+                })}
+                error={errors.contractEndDate?.message}
+                required
+                helperText="Dernière date de travail prévue"
+              />
+
+              <FormField
+                label="Motif du CDD"
+                type="select"
+                {...register('cddReason')}
+                error={errors.cddReason?.message}
+                required
+                helperText="Justification légale requise pour un contrat à durée déterminée"
+              >
+                <option value="">-- Sélectionnez un motif --</option>
+                <option value="REMPLACEMENT">Remplacement d'un salarié absent</option>
+                <option value="SURCROIT_ACTIVITE">Surcroît temporaire d'activité</option>
+                <option value="SAISONNIER">Emploi à caractère saisonnier</option>
+                <option value="PROJET">Réalisation d'un projet ou tâche précise</option>
+                <option value="AUTRE">Autre motif légal</option>
+              </FormField>
+            </>
           )}
         </div>
       ),

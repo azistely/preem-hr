@@ -6,8 +6,9 @@
  */
 
 import { db } from '@/lib/db';
-import { tenants, employees, positions, assignments, employeeSalaries } from '@/drizzle/schema';
+import { tenants, employees, positions, assignments, employeeSalaries, employmentContracts } from '@/drizzle/schema';
 import { eq, desc, and, sql } from 'drizzle-orm';
+import { differenceInMonths } from 'date-fns';
 import { ValidationError, NotFoundError } from '@/lib/errors';
 import { generateEmployeeNumber } from '@/features/employees/services/employee-number';
 import { autoInjectCalculatedComponents } from '@/lib/salary-components/component-calculator';
@@ -47,6 +48,7 @@ export interface CreateFirstEmployeeV2Input {
   // NEW: Employment configuration
   contractType: 'CDI' | 'CDD' | 'STAGE';
   contractEndDate?: Date;
+  cddReason?: 'REMPLACEMENT' | 'SURCROIT_ACTIVITE' | 'SAISONNIER' | 'PROJET' | 'AUTRE';
   // Dynamic category (CGECI: "1B", "2B", etc. or Banking: "A1", "A2", etc.)
   category: string;
   departmentId?: string;
@@ -386,6 +388,43 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
       .returning();
     console.timeEnd('[Employee Creation] Employee insert');
     console.log(`[Employee Creation] Employee created in ${Date.now() - employeeStart}ms`);
+
+    // Step 3.5: Create employment contract (CDD compliance tracking)
+    console.time('[Employee Creation] Contract insert');
+    const contractStart = Date.now();
+    const [contract] = await tx
+      .insert(employmentContracts)
+      .values({
+        tenantId: input.tenantId,
+        employeeId: employee.id,
+        contractType: input.contractType,
+        contractNumber: `${input.contractType}-${employeeNumber}`,
+        startDate: hireDate.toISOString().split('T')[0],
+        endDate: input.contractType === 'CDD' && input.contractEndDate
+          ? input.contractEndDate.toISOString().split('T')[0]
+          : null,
+        renewalCount: 0, // Always 0 for new contracts
+        isActive: true,
+        cddReason: input.contractType === 'CDD' ? (input.cddReason || null) : null,
+        cddTotalDurationMonths: input.contractType === 'CDD' && input.contractEndDate
+          ? differenceInMonths(input.contractEndDate, hireDate)
+          : null,
+        createdBy: input.userId,
+      })
+      .returning();
+    console.timeEnd('[Employee Creation] Contract insert');
+    console.log(`[Employee Creation] Contract ${contract.contractNumber} created in ${Date.now() - contractStart}ms`);
+
+    // Step 3.6: Link contract ID to employee customFields (for backward compatibility)
+    await tx
+      .update(employees)
+      .set({
+        customFields: {
+          contractType: input.contractType,
+          contractId: contract.id,
+        },
+      })
+      .where(eq(employees.id, employee.id));
 
     // Step 4: Create assignment
     // NOTE: Department is linked through position, not directly through assignment

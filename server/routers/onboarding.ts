@@ -521,6 +521,7 @@ export const onboardingRouter = createTRPCRouter({
       // NEW: Employment configuration
       contractType: z.enum(['CDI', 'CDD', 'STAGE']),
       contractEndDate: z.date().optional(),
+      cddReason: z.enum(['REMPLACEMENT', 'SURCROIT_ACTIVITE', 'SAISONNIER', 'PROJET', 'AUTRE']).optional(),
       // Dynamic category (CGECI: "1B", "2B", etc. or Banking: "A1", "A2", etc.)
       category: z.string().min(1, 'La catégorie professionnelle est requise'),
       departmentId: z.string().optional(),
