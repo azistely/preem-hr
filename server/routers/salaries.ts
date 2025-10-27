@@ -326,6 +326,9 @@ export const salariesRouter = createTRPCRouter({
           countryCode,
           sectorCode, // Pass tenant's sector for work accident rate calculation
           tenantId: ctx.user.tenantId,
+          // Dynamic CMU calculation (GAP-CMU-001)
+          maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+          dependentChildren: employee.dependentChildren ?? undefined,
         });
 
         return {

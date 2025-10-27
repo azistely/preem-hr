@@ -323,6 +323,9 @@ export async function calculatePayrollRun(
           terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
           rateType, // CRITICAL: Pass rate type to calculation engine
           daysWorkedThisMonth, // CRITICAL: Pass actual days worked for daily workers
+          // Dynamic CMU calculation (GAP-CMU-001)
+          maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+          dependentChildren: employee.dependentChildren ?? undefined,
         });
 
         // Prepare line item data (using new schema structure)

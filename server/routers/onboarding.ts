@@ -815,6 +815,9 @@ export const onboardingRouter = createTRPCRouter({
           rateType: input.rateType || 'MONTHLY',
           daysWorkedThisMonth: input.rateType === 'DAILY' ? 30 : undefined, // Full month for preview
           hoursWorkedThisMonth: input.rateType === 'HOURLY' ? 30 * 8 : undefined, // Full month for preview
+          // Dynamic CMU calculation (GAP-CMU-001)
+          maritalStatus: input.maritalStatus,
+          dependentChildren: input.dependentChildren,
         });
 
         // DEBUG LOGGING - AFTER calculatePayrollV2

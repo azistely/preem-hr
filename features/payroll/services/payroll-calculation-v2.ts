@@ -38,6 +38,10 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   otherAllowances?: Array<{ code: string; name: string; amount: number; taxable: boolean }>; // Template components (TPT_*, PHONE, etc.)
   customComponents?: SalaryComponentInstance[]; // Custom components for future use
 
+  // CMU calculation (GAP-CMU-001)
+  maritalStatus?: 'single' | 'married' | 'divorced' | 'widowed'; // For dynamic CMU calculation
+  dependentChildren?: number; // Number of children under 21 (for CMU)
+
   // Rate type support (GAP-JOUR-003)
   rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY'; // Payment frequency
   daysWorkedThisMonth?: number; // For DAILY workers
@@ -751,6 +755,10 @@ export async function calculatePayrollV2(
         sectorCode: input.sectorCode || config.socialSecurityScheme.defaultSectorCode, // Use database default
         hasFamily: input.hasFamily || false,
         salaireCategoriel: salaireCategorielFromComponents, // ← Salaire catégoriel (Code 11) for accident/family
+        // Dynamic CMU calculation (GAP-CMU-001)
+        maritalStatus: input.maritalStatus,
+        dependentChildren: input.dependentChildren,
+        countryCode: input.countryCode,
       }
     );
 
@@ -1012,6 +1020,53 @@ function calculateOtherTaxes(
 }
 
 /**
+ * Calculate CMU (Couverture Maladie Universelle) dynamically based on family size
+ *
+ * Legal basis: Décret n° 2015-862 du 28 octobre 2015
+ *
+ * Rules:
+ * - 1,000 FCFA per person (employee + spouse if married + children under 21)
+ * - Up to 8,000 FCFA total: Split 50/50 between employer and employee
+ * - Above 8,000 FCFA: Employer capped at 4,000 FCFA, employee pays surplus
+ *
+ * @param maritalStatus - Employee marital status
+ * @param dependentChildren - Number of children under 21 (or with school certificate)
+ * @returns CMU amounts for employee and employer
+ */
+function calculateCMU(
+  maritalStatus: 'single' | 'married' | 'divorced' | 'widowed' = 'single',
+  dependentChildren: number = 0
+): { cmuEmployee: number; cmuEmployer: number; totalCMU: number; totalPersons: number } {
+  // Count persons covered: employee (1) + spouse (if married) + children
+  const totalPersons = 1
+    + (maritalStatus === 'married' ? 1 : 0)
+    + dependentChildren;
+
+  // Base: 1,000 FCFA per person
+  const totalCMU = 1000 * totalPersons;
+
+  // Cost sharing rules
+  let cmuEmployee: number;
+  let cmuEmployer: number;
+
+  if (totalCMU <= 8000) {
+    // Split 50/50 up to 8,000 FCFA
+    cmuEmployee = totalCMU / 2;
+    cmuEmployer = totalCMU / 2;
+  } else {
+    // Above 8,000 FCFA: Employer capped at 4,000 FCFA
+    // Employee pays the surplus alone
+    cmuEmployer = 4000;
+    cmuEmployee = totalCMU - 4000;
+  }
+
+  console.log(`[CMU CALCULATION] Status: ${maritalStatus}, Children: ${dependentChildren}, Persons: ${totalPersons}`);
+  console.log(`[CMU CALCULATION] Total: ${totalCMU}, Employee: ${cmuEmployee}, Employer: ${cmuEmployer}`);
+
+  return { cmuEmployee, cmuEmployer, totalCMU, totalPersons };
+}
+
+/**
  * Calculate social security contributions from database config
  *
  * COUNTRY-AGNOSTIC: Works for any country by categorizing contributions
@@ -1031,6 +1086,10 @@ function calculateSocialSecurityContributions(
     sectorCode: string;
     hasFamily: boolean;
     salaireCategoriel?: number; // Code 11 - For CNPS calculations
+    // Dynamic CMU calculation (GAP-CMU-001)
+    maritalStatus?: 'single' | 'married' | 'divorced' | 'widowed';
+    dependentChildren?: number;
+    countryCode?: string; // To determine if dynamic CMU applies
   }
 ) {
   console.log('[DEBUG SS START]', { cnpsBase, brutImposable, hasFamily: options.hasFamily, numContributions: contributions.length });
@@ -1087,7 +1146,9 @@ function calculateSocialSecurityContributions(
     }
     // else: use cnpsBase as default
 
-    // Fixed amount contributions (e.g., CMU in Côte d'Ivoire)
+    // Fixed amount contributions
+    // NOTE: CMU for Côte d'Ivoire now calculated dynamically (GAP-CMU-001)
+    // Skip CMU database entries if countryCode is CI and dynamic data is available
     if (contrib.fixedAmount) {
       const fixedAmount = Number(contrib.fixedAmount);
 
@@ -1100,6 +1161,13 @@ function calculateSocialSecurityContributions(
 
       // Categorize by code pattern
       if (code.includes('cmu') || code.includes('health') || code.includes('medical')) {
+        // Skip fixed CMU for Côte d'Ivoire if we have dynamic data (GAP-CMU-001)
+        if (options.countryCode === 'CI' && options.maritalStatus !== undefined && options.dependentChildren !== undefined) {
+          console.log(`[CMU] Skipping fixed amount CMU (${code}) for CI - will use dynamic calculation`);
+          continue; // Skip this contribution, use dynamic CMU instead
+        }
+
+        // LEGACY: For other countries or when dynamic data not available, use fixed amounts
         // CMU Employee (e.g., cmu_employee)
         if (code === 'cmu_employee') {
           console.log(`[DEBUG CMU] Setting cmuEmployee to ${fixedAmount}`);
@@ -1224,6 +1292,36 @@ function calculateSocialSecurityContributions(
       cnpsEmployee += employeeAmount;
       cnpsEmployer += employerAmount;
     }
+  }
+
+  // Apply dynamic CMU calculation for Côte d'Ivoire (GAP-CMU-001)
+  if (options.countryCode === 'CI' && options.maritalStatus !== undefined && options.dependentChildren !== undefined) {
+    const dynamicCMU = calculateCMU(options.maritalStatus, options.dependentChildren);
+
+    // Override CMU values with dynamic calculation
+    cmuEmployee = dynamicCMU.cmuEmployee;
+    cmuEmployer = dynamicCMU.cmuEmployer;
+
+    // Add to contribution details
+    contributionDetails.push({
+      code: 'cmu_employee_dynamic',
+      name: `CMU (Cotisation salariale) - ${dynamicCMU.totalPersons} personne${dynamicCMU.totalPersons > 1 ? 's' : ''}`,
+      amount: cmuEmployee,
+      paidBy: 'employee',
+      rate: undefined,
+      base: undefined,
+    });
+
+    contributionDetails.push({
+      code: 'cmu_employer_dynamic',
+      name: `CMU (Cotisation patronale) - ${dynamicCMU.totalPersons} personne${dynamicCMU.totalPersons > 1 ? 's' : ''}`,
+      amount: cmuEmployer,
+      paidBy: 'employer',
+      rate: undefined,
+      base: undefined,
+    });
+
+    console.log('[CMU DYNAMIC] Applied dynamic CMU:', { cmuEmployee, cmuEmployer, totalPersons: dynamicCMU.totalPersons });
   }
 
   console.log('[DEBUG FINAL] Contribution totals:', { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer });

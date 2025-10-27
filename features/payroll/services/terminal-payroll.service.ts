@@ -79,6 +79,8 @@ export async function calculateTerminalPayroll(
       firstName: employees.firstName,
       lastName: employees.lastName,
       hireDate: employees.hireDate,
+      maritalStatus: employees.maritalStatus,
+      dependentChildren: employees.dependentChildren,
     })
     .from(employees)
     .where(
@@ -159,6 +161,9 @@ export async function calculateTerminalPayroll(
     terminationDate: termination.terminationDate,
     hireDate: employee.hireDate,
     sectorCode: tenant.sectorCode || 'SERVICES', // Use tenant's sector code (uppercase to match database)
+    // Dynamic CMU calculation (GAP-CMU-001)
+    maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+    dependentChildren: employee.dependentChildren ?? undefined,
   } as PayrollCalculationInputV2);
 
   // 8. Calculate terminal payments
