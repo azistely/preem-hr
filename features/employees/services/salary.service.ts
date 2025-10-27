@@ -102,11 +102,9 @@ export async function changeSalary(input: ChangeSalaryInput) {
     throw new NotFoundError('Employé', input.employeeId);
   }
 
-  // Extract base salary from components
-  const baseComponent = input.components.find(c =>
-    c.code === '01' || c.name.toLowerCase().includes('base') || c.name.toLowerCase().includes('salaire de base')
-  );
-  const baseSalary = baseComponent?.amount || 0;
+  // Extract base salary from components (use database-driven approach)
+  const { calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
+  const baseSalary = await calculateBaseSalaryTotal(input.components, countryCode);
 
   // Validate against country SMIG (rate-type aware)
   const rateType = (employee.rateType || 'MONTHLY') as string;
