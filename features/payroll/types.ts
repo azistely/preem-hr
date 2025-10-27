@@ -13,6 +13,7 @@ export interface SalaryInfo {
   transportAllowance?: number;
   mealAllowance?: number;
   otherAllowances?: Array<{
+    code: string;
     name: string;
     amount: number;
     taxable: boolean;
@@ -130,6 +131,7 @@ export interface GrossCalculationInput {
   seniorityBonus?: number;
   familyAllowance?: number;
   otherAllowances?: Array<{
+    code: string;
     name: string;
     amount: number;
     taxable: boolean;

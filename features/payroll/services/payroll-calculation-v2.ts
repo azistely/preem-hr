@@ -625,10 +625,11 @@ export async function calculatePayrollV2(
   // Prepare location-based allowances for gross calculation
   // Transport and meal allowances are typically non-taxable (up to legal limits)
   // Site premium is taxable income
-  const locationOtherAllowances: Array<{ name: string; amount: number; taxable: boolean }> = [];
+  const locationOtherAllowances: Array<{ code: string; name: string; amount: number; taxable: boolean }> = [];
 
   if (locationAllowances.totalTransport > 0) {
     locationOtherAllowances.push({
+      code: 'LOC_TRANSPORT',
       name: 'Indemnité de transport (multi-sites)',
       amount: locationAllowances.totalTransport,
       taxable: false, // Non-taxable up to 30,000 FCFA/month in CI
@@ -637,6 +638,7 @@ export async function calculatePayrollV2(
 
   if (locationAllowances.totalMeal > 0) {
     locationOtherAllowances.push({
+      code: 'LOC_MEAL',
       name: 'Indemnité de repas (multi-sites)',
       amount: locationAllowances.totalMeal,
       taxable: false, // Non-taxable up to 30,000 FCFA/month in CI
@@ -645,6 +647,7 @@ export async function calculatePayrollV2(
 
   if (locationAllowances.totalSitePremium > 0) {
     locationOtherAllowances.push({
+      code: 'LOC_SITE_PREMIUM',
       name: 'Prime de site',
       amount: locationAllowances.totalSitePremium,
       taxable: true, // Site premium is taxable
