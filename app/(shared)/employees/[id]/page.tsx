@@ -526,8 +526,8 @@ export default function EmployeeDetailPage() {
                         <p className="text-2xl font-bold text-primary">
                           {(() => {
                             const rateType = (employee as any).rateType as RateType;
-                            const baseSalary = parseFloat((employee as any).currentSalary.baseSalary);
-                            const componentTotal = (employee as any).currentSalary.components.reduce(
+                            // Calculate total from components only (they already include base salary)
+                            const totalGross = (employee as any).currentSalary.components.reduce(
                               (sum: number, c: any) => {
                                 // Base salary (code '11', '01') is already in correct rate type
                                 if (c.code === '11' || c.code === '01') {
@@ -538,7 +538,7 @@ export default function EmployeeDetailPage() {
                               },
                               0
                             );
-                            return formatCurrencyWithRate(baseSalary + componentTotal, rateType);
+                            return formatCurrencyWithRate(totalGross, rateType);
                           })()}
                         </p>
                       </div>
