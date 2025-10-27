@@ -66,18 +66,7 @@ export default function OnboardingSuccessPage() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <div className="text-4xl font-bold text-primary mb-1">
-                {summary?.employeeCount || 1}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Employé{(summary?.employeeCount || 1) > 1 ? 's' : ''} ajouté{(summary?.employeeCount || 1) > 1 ? 's' : ''}
-              </div>
-            </CardContent>
-          </Card>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 max-w-2xl mx-auto">
           <Card>
             <CardContent className="pt-6 text-center">
               <div className="text-4xl font-bold text-green-600 mb-1">
@@ -116,8 +105,8 @@ export default function OnboardingSuccessPage() {
               text="Informations de l'entreprise enregistrées"
             />
             <ChecklistItem
-              icon="👤"
-              text="Employé créé avec configuration complète (contrat, catégorie, rémunération)"
+              icon="📍"
+              text="Sites et emplacements de travail configurés"
             />
             <ChecklistItem
               icon="💰"
@@ -125,7 +114,7 @@ export default function OnboardingSuccessPage() {
             />
             <ChecklistItem
               icon="✅"
-              text="Système prêt pour votre première paie officielle"
+              text="Système prêt à ajouter vos employés"
             />
           </CardContent>
         </Card>
@@ -135,20 +124,20 @@ export default function OnboardingSuccessPage() {
           <Button
             size="lg"
             className="flex-1 min-h-[56px]"
-            onClick={() => router.push('/payroll/runs/new')}
+            onClick={() => router.push('/employees/new')}
           >
-            <FileText className="w-5 h-5 mr-2" />
-            Lancer votre première paie
+            <LayoutDashboard className="w-5 h-5 mr-2" />
+            Ajouter votre premier employé
           </Button>
 
           <Button
             size="lg"
             variant="outline"
             className="flex-1 min-h-[56px]"
-            onClick={() => router.push('/employees')}
+            onClick={() => router.push(getDashboardPath())}
           >
-            <LayoutDashboard className="w-5 h-5 mr-2" />
-            Gérer mes employés
+            <ArrowRight className="w-5 h-5 mr-2" />
+            Aller au tableau de bord
           </Button>
         </div>
 

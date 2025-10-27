@@ -164,8 +164,8 @@ export default function OnboardingQ1Page() {
         toast.success('Configuration enregistrée (sites déjà existants)');
       }
 
-      // Navigate to Q2
-      router.push('/onboarding/q2');
+      // Navigate to success page (skip Q2/employee setup)
+      router.push('/onboarding/success');
     } catch (error: any) {
       toast.error(error.message || 'Impossible d\'enregistrer les informations');
     }
@@ -408,7 +408,7 @@ export default function OnboardingQ1Page() {
     <OnboardingQuestion
       title="Configurez votre entreprise"
       subtitle="Informations de base et emplacements de travail"
-      progress={{ current: 1, total: 3 }}
+      progress={{ current: 1, total: 1 }}
     >
       <Wizard
         steps={wizardSteps}
