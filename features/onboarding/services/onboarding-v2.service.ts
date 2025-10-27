@@ -254,6 +254,38 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
   console.log(`[Employee Creation] Components pre-calculated in ${Date.now() - preCalcStart}ms`);
 
   // ========================================
+  // ✅ CRITICAL FIX: Build base salary components BEFORE transaction to avoid timeout
+  // buildBaseSalaryComponents makes DB queries to load component definitions
+  // Calling it inside transaction causes timeout on Vercel (30s serverless limit)
+  // ========================================
+  console.time('[Employee Creation] Pre-build base components');
+  const baseCompStart = Date.now();
+  let baseComponentsArray: Array<{
+    code: string;
+    name: string;
+    amount: number;
+    sourceType: string;
+    metadata?: Record<string, any>;
+  }> = [];
+
+  if (input.baseComponents && Object.keys(input.baseComponents).length > 0) {
+    // Build base components using database-driven loader
+    baseComponentsArray = await buildBaseSalaryComponents(
+      input.baseComponents,
+      tenant.countryCode || 'CI'
+    );
+  } else if (effectiveBaseSalary > 0) {
+    // LEGACY: If no baseComponents provided, create Code 11 with the baseSalary amount
+    // This ensures backward compatibility and prevents missing Code 11
+    baseComponentsArray = await buildBaseSalaryComponents(
+      { '11': effectiveBaseSalary },
+      tenant.countryCode || 'CI'
+    );
+  }
+  console.timeEnd('[Employee Creation] Pre-build base components');
+  console.log(`[Employee Creation] Base components pre-built in ${Date.now() - baseCompStart}ms`);
+
+  // ========================================
   // CREATE RECORDS IN TRANSACTION
   // ========================================
   console.log('[Employee Creation] Starting transaction...');
@@ -373,35 +405,8 @@ export async function createFirstEmployeeV2(input: CreateFirstEmployeeV2Input) {
     console.log(`[Employee Creation] Assignment created in ${Date.now() - assignmentStart}ms`);
 
     // Step 5: Create salary with components
-    // (componentsWithCalculated already pre-calculated before transaction)
-    console.log('[Employee Creation] Using pre-calculated components');
-
-    // ========================================
-    // BUILD BASE SALARY COMPONENTS (Code 11, Code 12, etc.)
-    // ========================================
-    // CRITICAL FIX: Build base salary components from input.baseComponents
-    let baseComponentsArray: Array<{
-      code: string;
-      name: string;
-      amount: number;
-      sourceType: string;
-      metadata?: Record<string, any>;
-    }> = [];
-
-    if (input.baseComponents && Object.keys(input.baseComponents).length > 0) {
-      // Build base components using database-driven loader
-      baseComponentsArray = await buildBaseSalaryComponents(
-        input.baseComponents,
-        tenant.countryCode || 'CI'
-      );
-    } else if (effectiveBaseSalary > 0) {
-      // LEGACY: If no baseComponents provided, create Code 11 with the baseSalary amount
-      // This ensures backward compatibility and prevents missing Code 11
-      baseComponentsArray = await buildBaseSalaryComponents(
-        { '11': effectiveBaseSalary },
-        tenant.countryCode || 'CI'
-      );
-    }
+    // (componentsWithCalculated and baseComponentsArray already pre-calculated before transaction)
+    console.log('[Employee Creation] Using pre-calculated base components and formula components');
 
     // Handle user-provided components (NEW approach)
     let userComponents: Array<{
