@@ -376,6 +376,55 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'terminated'::text, 'suspended'::text])`),
 ]);
 
+// Employee Dependents Table
+export const employeeDependents: PgTableWithColumns<any> = pgTable("employee_dependents", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	employeeId: uuid("employee_id").notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	// Dependent information
+	firstName: varchar("first_name", { length: 100 }).notNull(),
+	lastName: varchar("last_name", { length: 100 }).notNull(),
+	dateOfBirth: date("date_of_birth").notNull(),
+	relationship: varchar({ length: 50 }).notNull(), // 'child', 'spouse', 'other'
+	// Verification status
+	isVerified: boolean("is_verified").default(false).notNull(),
+	requiresDocument: boolean("requires_document").default(false).notNull(), // TRUE if over 21
+	// Document tracking (for dependents over 21)
+	documentType: varchar("document_type", { length: 100 }), // 'certificat_frequentation', 'attestation_scolarite', 'carte_etudiant'
+	documentNumber: varchar("document_number", { length: 100 }),
+	documentIssueDate: date("document_issue_date"),
+	documentExpiryDate: date("document_expiry_date"),
+	documentUrl: text("document_url"), // Link to uploaded document in storage
+	documentNotes: text("document_notes"),
+	// Eligibility flags
+	eligibleForFiscalParts: boolean("eligible_for_fiscal_parts").default(true).notNull(),
+	eligibleForCmu: boolean("eligible_for_cmu").default(true).notNull(),
+	// Additional metadata
+	notes: text(),
+	// Status
+	status: varchar({ length: 20 }).default('active').notNull(), // 'active', 'inactive', 'expired'
+	// Audit fields
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+	updatedBy: uuid("updated_by"),
+}, (table): any => [
+	index("idx_employee_dependents_employee_id").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_dependents_tenant_id").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_dependents_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	foreignKey({
+		columns: [table.employeeId],
+		foreignColumns: [employees.id],
+		name: "employee_dependents_employee_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "employee_dependents_tenant_id_fkey"
+	}).onDelete("cascade"),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
+]);
+
 // Employees Relations
 export const employeesRelations = relations(employees, ({ one, many }) => ({
 	tenant: one(tenants, {
@@ -402,6 +451,7 @@ export const employeesRelations = relations(employees, ({ one, many }) => ({
 	teamMembers: many(employees, {
 		relationName: "managerToTeam",
 	}),
+	dependents: many(employeeDependents),
 	timeEntries: many(timeEntries),
 	timeOffBalances: many(timeOffBalances),
 	timeOffRequests: many(timeOffRequests),

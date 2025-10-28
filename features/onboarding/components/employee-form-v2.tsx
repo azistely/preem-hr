@@ -80,17 +80,33 @@ interface EmployeeFormV2Props {
   isSubmitting?: boolean;
 }
 
-// Helper: Calculate fiscal parts for preview
+/**
+ * Calculate fiscal parts (CORRECTED FORMULA)
+ *
+ * Côte d'Ivoire Rules:
+ * - Single without children: 1.0
+ * - Single with children: 1.5 (base for single parent) + 0.5 × children
+ * - Married: 2.0 (includes spouse) + 0.5 × children
+ * - Maximum 4 children counted
+ */
 function calculateFiscalParts(maritalStatus: string, dependents: number): number {
-  let parts = 1.0; // Base
+  let parts: number;
 
+  // Determine base parts
   if (maritalStatus === 'married') {
-    parts += 1.0; // +1 for spouse
+    // Married base (includes spouse)
+    parts = 2.0;
+  } else if (dependents > 0) {
+    // Single parent with at least 1 child gets 1.5 base
+    parts = 1.5;
+  } else {
+    // Single without children
+    parts = 1.0;
   }
 
-  // +0.5 per child (max 4 children counted)
-  const countedChildren = Math.min(dependents, 4);
-  parts += countedChildren * 0.5;
+  // Add 0.5 per dependent (max 4 counted)
+  const countedDependents = Math.min(dependents, 4);
+  parts += countedDependents * 0.5;
 
   return parts;
 }

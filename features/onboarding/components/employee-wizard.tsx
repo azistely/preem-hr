@@ -79,12 +79,41 @@ interface EmployeeWizardProps {
   onStepChange?: (step: number) => void; // Callback when step changes
 }
 
-// Helper: Calculate fiscal parts
+/**
+ * Calculate fiscal parts (CORRECTED FORMULA)
+ *
+ * Côte d'Ivoire Rules:
+ * - Single without children: 1.0
+ * - Single with children: 1.5 (base for single parent) + 0.5 × children
+ * - Married: 2.0 (includes spouse) + 0.5 × children
+ * - Maximum 4 children counted
+ *
+ * Examples:
+ * - Single, 0 children = 1.0
+ * - Single, 1 child = 1.5 + 0.5 = 2.0
+ * - Single, 2 children = 1.5 + 1.0 = 2.5
+ * - Married, 0 children = 2.0
+ * - Married, 1 child = 2.0 + 0.5 = 2.5
+ */
 function calculateFiscalParts(maritalStatus: string, dependents: number): number {
-  let parts = 1.0;
-  if (maritalStatus === 'married') parts += 1.0;
-  const countedChildren = Math.min(dependents, 4);
-  parts += countedChildren * 0.5;
+  let parts: number;
+
+  // Determine base parts
+  if (maritalStatus === 'married') {
+    // Married base (includes spouse)
+    parts = 2.0;
+  } else if (dependents > 0) {
+    // Single parent with at least 1 child gets 1.5 base
+    parts = 1.5;
+  } else {
+    // Single without children
+    parts = 1.0;
+  }
+
+  // Add 0.5 per dependent (max 4 counted)
+  const countedDependents = Math.min(dependents, 4);
+  parts += countedDependents * 0.5;
+
   return parts;
 }
 
@@ -545,13 +574,22 @@ export function EmployeeWizard({
             <div className="space-y-2">
               <div className="font-semibold">Parts fiscales calculées: {fiscalParts}</div>
               <div className="text-sm text-muted-foreground">
-                1.0 (base)
-                {maritalStatus === 'married' && ' + 1.0 (marié)'}
+                {/* Base calculation */}
+                {maritalStatus === 'married' && '2.0 (marié)'}
+                {maritalStatus !== 'married' && dependentChildren > 0 && '1.5 (parent célibataire)'}
+                {maritalStatus !== 'married' && dependentChildren === 0 && '1.0 (célibataire)'}
+
+                {/* Children addition */}
                 {dependentChildren > 0 && ` + ${Math.min(dependentChildren, 4) * 0.5} (${Math.min(dependentChildren, 4)} enfant${Math.min(dependentChildren, 4) > 1 ? 's' : ''})`}
               </div>
               {dependentChildren > 4 && (
                 <div className="text-xs text-orange-600">
                   Note: Maximum 4 enfants pris en compte pour le calcul fiscal
+                </div>
+              )}
+              {maritalStatus !== 'married' && dependentChildren > 0 && (
+                <div className="text-xs text-blue-600">
+                  Parent célibataire: 1.5 parts de base + 0.5 par enfant
                 </div>
               )}
             </div>

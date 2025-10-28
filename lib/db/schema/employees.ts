@@ -98,3 +98,63 @@ export const employees = pgTable('employees', {
     withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
   }),
 ]);
+
+/**
+ * Employee Dependents Table
+ *
+ * Tracks individual dependents with document verification for accurate
+ * fiscal parts and CMU calculation.
+ *
+ * Legal Context (Côte d'Ivoire):
+ * - Dependents under 21: Automatic eligibility
+ * - Dependents over 21: Require "certificat de fréquentation" or school proof
+ * - Used for: Fiscal parts (tax deductions) and CMU (health insurance)
+ */
+export const employeeDependents = pgTable('employee_dependents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Dependent information
+  firstName: varchar('first_name', { length: 100 }).notNull(),
+  lastName: varchar('last_name', { length: 100 }).notNull(),
+  dateOfBirth: date('date_of_birth').notNull(),
+  relationship: varchar('relationship', { length: 50 }).notNull(), // 'child', 'spouse', 'other'
+
+  // Verification status
+  isVerified: boolean('is_verified').notNull().default(false),
+  requiresDocument: boolean('requires_document').notNull().default(false), // TRUE if over 21
+
+  // Document tracking (for dependents over 21)
+  documentType: varchar('document_type', { length: 100 }), // 'certificat_frequentation', 'attestation_scolarite', 'carte_etudiant'
+  documentNumber: varchar('document_number', { length: 100 }),
+  documentIssueDate: date('document_issue_date'),
+  documentExpiryDate: date('document_expiry_date'),
+  documentUrl: text('document_url'), // Link to uploaded document in storage
+  documentNotes: text('document_notes'),
+
+  // Eligibility flags
+  eligibleForFiscalParts: boolean('eligible_for_fiscal_parts').notNull().default(true),
+  eligibleForCmu: boolean('eligible_for_cmu').notNull().default(true),
+
+  // Additional metadata
+  notes: text('notes'),
+
+  // Status
+  status: varchar('status', { length: 20 }).notNull().default('active'), // 'active', 'inactive', 'expired'
+
+  // Audit fields
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdBy: uuid('created_by'),
+  updatedBy: uuid('updated_by'),
+}, (table) => [
+  // RLS Policy: Tenant Isolation
+  pgPolicy('tenant_isolation', {
+    as: 'permissive',
+    for: 'all',
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);
