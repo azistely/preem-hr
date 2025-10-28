@@ -316,8 +316,13 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
                 </strong>
               </div>
 
-              <div className="text-xs text-muted-foreground mt-3">
-                💡 Cet aperçu est basé sur un statut célibataire sans enfants. Vous pourrez ajuster ces informations après la création de l'employé.
+              <div className="text-xs text-muted-foreground mt-3 space-y-1">
+                <p>
+                  💡 Cet aperçu est basé sur un statut célibataire sans enfants. Vous pourrez ajuster ces informations après la création de l'employé.
+                </p>
+                <p>
+                  👨‍👩‍👧‍👦 <strong>Astuce:</strong> Ajoutez les personnes à charge (enfants, conjoint) dans l'onglet "Personnes à charge" de la fiche employé pour calculer automatiquement les parts fiscales (ITS) et la contribution CMU.
+                </p>
               </div>
             </div>
           </div>

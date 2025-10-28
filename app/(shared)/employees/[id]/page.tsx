@@ -53,6 +53,7 @@ import { trpc } from '@/lib/trpc/client';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Plus, ChevronDown } from 'lucide-react';
+import { DependentsManager } from '@/features/employees/components/dependents-manager';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -315,7 +316,7 @@ export default function EmployeeDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
           <TabsTrigger value="overview" className="min-h-[44px]">
             <UserCircle className="mr-2 h-4 w-4" />
             Vue d'ensemble
@@ -327,6 +328,10 @@ export default function EmployeeDetailPage() {
           <TabsTrigger value="salary" className="min-h-[44px]">
             <DollarSign className="mr-2 h-4 w-4" />
             Salaire
+          </TabsTrigger>
+          <TabsTrigger value="dependents" className="min-h-[44px]">
+            <Users className="mr-2 h-4 w-4" />
+            Personnes à charge
           </TabsTrigger>
           <TabsTrigger value="time" className="min-h-[44px]">
             <Clock className="mr-2 h-4 w-4" />
@@ -662,6 +667,18 @@ export default function EmployeeDetailPage() {
         </TabsContent>
 
         {/* Time Tab */}
+        {/* Dependents Tab */}
+        <TabsContent value="dependents" className="space-y-6">
+          <DependentsManager
+            employeeId={employeeId}
+            tenantId={(employee as any)?.tenantId}
+            onDependentsChange={async () => {
+              // Optionally refresh employee data to update fiscal parts
+              // The component already handles refetching its own data
+            }}
+          />
+        </TabsContent>
+
         <TabsContent value="time" className="space-y-6">
           {/* Leave Balance Summary */}
           {isLoadingBalances ? (
