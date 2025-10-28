@@ -195,7 +195,7 @@ export const dependentsRouter = createTRPCRouter({
           .update(employees)
           .set({
             fiscalParts: fiscalParts.toString(),
-            updatedAt: new Date(),
+            updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
           .where(eq(employees.id, input.employeeId));
@@ -242,7 +242,7 @@ export const dependentsRouter = createTRPCRouter({
           .update(employeeDependents)
           .set({
             ...updateData,
-            updatedAt: new Date(),
+            updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
           .where(eq(employeeDependents.id, input.id))
@@ -259,7 +259,7 @@ export const dependentsRouter = createTRPCRouter({
           .update(employees)
           .set({
             fiscalParts: fiscalParts.toString(),
-            updatedAt: new Date(),
+            updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
           .where(eq(employees.id, existing.employeeId));
@@ -305,7 +305,7 @@ export const dependentsRouter = createTRPCRouter({
           .update(employeeDependents)
           .set({
             status: 'inactive',
-            updatedAt: new Date(),
+            updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
           .where(eq(employeeDependents.id, input.id));
@@ -321,7 +321,7 @@ export const dependentsRouter = createTRPCRouter({
           .update(employees)
           .set({
             fiscalParts: fiscalParts.toString(),
-            updatedAt: new Date(),
+            updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
           .where(eq(employees.id, existing.employeeId));
