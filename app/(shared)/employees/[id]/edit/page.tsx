@@ -237,11 +237,13 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
 
   const onSubmit = async (data: EditEmployeeFormValues) => {
     try {
+      // tRPC expects Date objects, not ISO strings
       await updateEmployee.mutateAsync({
         ...data,
-        dateOfBirth: data.dateOfBirth?.toISOString(),
-        nationalIdExpiry: data.nationalIdExpiry?.toISOString(),
-        workPermitExpiry: data.workPermitExpiry?.toISOString(),
+        // Keep dates as Date objects for tRPC validation
+        dateOfBirth: data.dateOfBirth,
+        nationalIdExpiry: data.nationalIdExpiry,
+        workPermitExpiry: data.workPermitExpiry,
       } as any);
 
       toast({
