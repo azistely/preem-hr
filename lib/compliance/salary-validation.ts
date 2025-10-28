@@ -22,7 +22,7 @@
 
 import { db } from '@/lib/db';
 import { employeeCategoryCoefficients, countries } from '@/drizzle/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 export interface SalaryValidationResult {
   valid: boolean;
@@ -137,19 +137,45 @@ export async function validateSalaryVsCoefficient(
  * ```
  */
 export async function getEmployeeCategories(countryCode: string, sectorCode?: string) {
-  const whereClause = sectorCode
-    ? and(
+  // First, try to get sector-specific categories if sectorCode is provided
+  if (sectorCode) {
+    const sectorCategories = await db.query.employeeCategoryCoefficients.findMany({
+      where: and(
         eq(employeeCategoryCoefficients.countryCode, countryCode),
         eq(employeeCategoryCoefficients.sectorCode, sectorCode)
-      )
-    : eq(employeeCategoryCoefficients.countryCode, countryCode);
+      ),
+      orderBy: (categories, { asc }) => [asc(categories.minCoefficient)],
+    });
 
-  const categories = await db.query.employeeCategoryCoefficients.findMany({
-    where: whereClause,
+    // If sector-specific categories exist, return them (no duplicates)
+    if (sectorCategories.length > 0) {
+      return sectorCategories.map((cat) => ({
+        id: cat.id,
+        code: cat.category,
+        labelFr: cat.labelFr,
+        minCoefficient: cat.minCoefficient,
+        maxCoefficient: cat.maxCoefficient || cat.minCoefficient,
+        sectorCode: cat.sectorCode || undefined,
+        legalReference: cat.legalReference || undefined,
+      }));
+    }
+
+    // If no sector-specific categories found, fall through to generic categories
+    console.warn(
+      `No categories found for sector "${sectorCode}" in ${countryCode}. Falling back to generic categories.`
+    );
+  }
+
+  // Return generic categories (sector_code IS NULL) - these are unique and apply to all sectors
+  const genericCategories = await db.query.employeeCategoryCoefficients.findMany({
+    where: and(
+      eq(employeeCategoryCoefficients.countryCode, countryCode),
+      isNull(employeeCategoryCoefficients.sectorCode)
+    ),
     orderBy: (categories, { asc }) => [asc(categories.minCoefficient)],
   });
 
-  return categories.map((cat) => ({
+  return genericCategories.map((cat) => ({
     id: cat.id,
     code: cat.category,
     labelFr: cat.labelFr,
