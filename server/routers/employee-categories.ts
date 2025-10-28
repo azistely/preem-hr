@@ -227,14 +227,16 @@ export const employeeCategoriesRouter = router({
    * NEW: Compliance Roadmap P0 Feature
    * Use case: Populate category dropdown in hire wizard with minimum salary hints
    *
+   * IMPORTANT: Categories can be sector-specific. Pass sectorCode to avoid duplicates.
+   *
    * @example
    * ```typescript
    * const categories = await trpc.employeeCategories.getAllCategories.query({
    *   countryCode: 'CI',
+   *   sectorCode: 'BANQUES', // Optional - filters to specific sector
    * });
    * // [
-   * //   { code: 'A1', labelFr: 'Ouvrier non qualifié', minCoefficient: 90, maxCoefficient: 115 },
-   * //   { code: 'B1', labelFr: 'Employé', minCoefficient: 150, maxCoefficient: 180 },
+   * //   { id: '...', code: 'EMP_2', labelFr: 'Employé 2ème classe', ... },
    * //   ...
    * // ]
    * ```
@@ -243,9 +245,10 @@ export const employeeCategoriesRouter = router({
     .input(
       z.object({
         countryCode: z.string().length(2),
+        sectorCode: z.string().optional(),
       })
     )
     .query(async ({ input }) => {
-      return getEmployeeCategories(input.countryCode);
+      return getEmployeeCategories(input.countryCode, input.sectorCode);
     }),
 });

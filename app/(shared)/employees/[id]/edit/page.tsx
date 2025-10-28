@@ -144,9 +144,12 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
   });
   const allEmployees = employeesData?.employees || [];
 
-  // Fetch categories
+  // Fetch categories (filtered by employee's sector to avoid duplicates)
   const { data: categories } = trpc.employeeCategories.getAllCategories.useQuery({
     countryCode: 'CI',
+    sectorCode: (employee as any)?.sector || undefined,
+  }, {
+    enabled: !!employee, // Only fetch after employee data is loaded
   });
 
   // Fetch dependents for fiscal parts display
@@ -634,7 +637,7 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                               </FormControl>
                               <SelectContent>
                                 {categories?.map((cat: any) => (
-                                  <SelectItem key={cat.code} value={cat.code}>
+                                  <SelectItem key={cat.id} value={cat.code}>
                                     {cat.code} - {cat.labelFr}
                                   </SelectItem>
                                 ))}

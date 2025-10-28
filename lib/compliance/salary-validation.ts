@@ -124,29 +124,38 @@ export async function validateSalaryVsCoefficient(
  * Useful for populating category dropdowns in hire wizard.
  *
  * @param countryCode - ISO 3166-1 alpha-2 country code
+ * @param sectorCode - Optional sector code to filter categories (e.g., 'BANQUES', 'ASSURANCES')
  * @returns Array of category codes with labels and coefficients
  *
  * @example
  * ```typescript
  * const categories = await getEmployeeCategories('CI');
- * // [
- * //   { code: 'A1', labelFr: 'Ouvrier non qualifié', minCoefficient: 90, maxCoefficient: 115 },
- * //   { code: 'A2', labelFr: 'Ouvrier qualifié / Ouvrier spécialisé', minCoefficient: 120, maxCoefficient: 145 },
- * //   ...
- * // ]
+ * // Returns all categories (may have duplicates across sectors)
+ *
+ * const bankCategories = await getEmployeeCategories('CI', 'BANQUES');
+ * // Returns only BANQUES sector categories
  * ```
  */
-export async function getEmployeeCategories(countryCode: string) {
+export async function getEmployeeCategories(countryCode: string, sectorCode?: string) {
+  const whereClause = sectorCode
+    ? and(
+        eq(employeeCategoryCoefficients.countryCode, countryCode),
+        eq(employeeCategoryCoefficients.sectorCode, sectorCode)
+      )
+    : eq(employeeCategoryCoefficients.countryCode, countryCode);
+
   const categories = await db.query.employeeCategoryCoefficients.findMany({
-    where: eq(employeeCategoryCoefficients.countryCode, countryCode),
+    where: whereClause,
     orderBy: (categories, { asc }) => [asc(categories.minCoefficient)],
   });
 
   return categories.map((cat) => ({
+    id: cat.id,
     code: cat.category,
     labelFr: cat.labelFr,
     minCoefficient: cat.minCoefficient,
     maxCoefficient: cat.maxCoefficient || cat.minCoefficient,
+    sectorCode: cat.sectorCode || undefined,
     legalReference: cat.legalReference || undefined,
   }));
 }

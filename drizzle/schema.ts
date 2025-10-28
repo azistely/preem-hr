@@ -563,6 +563,8 @@ export const employeeCategoryCoefficients = pgTable("employee_category_coefficie
 	notes: text(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sectorCode: varchar("sector_code", { length: 50 }),
+	actualMinimumWage: numeric("actual_minimum_wage", { precision: 10, scale: 2 }),
 }, (table) => [
 	index("idx_employee_categories_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),
 	index("idx_employee_categories_coefficient_range").using("btree", table.countryCode.asc().nullsLast().op("text_ops"), table.minCoefficient.asc().nullsLast().op("int4_ops"), table.maxCoefficient.asc().nullsLast().op("int4_ops")),
