@@ -14,7 +14,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -115,9 +115,9 @@ const editEmployeeSchema = z.object({
 type EditEmployeeFormValues = z.infer<typeof editEmployeeSchema>;
 
 interface EmployeeEditPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
@@ -126,7 +126,9 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
   const [activeTab, setActiveTab] = useState('essential');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const employeeId = params.id;
+  // Next.js 15: Unwrap async params
+  const resolvedParams = React.use(params);
+  const employeeId = resolvedParams.id;
 
   // Fetch employee data
   const { data: employee, isLoading: isLoadingEmployee } = trpc.employees.getById.useQuery({
