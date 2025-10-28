@@ -134,6 +134,8 @@ const createEmployeeSchema = z.object({
 
 const updateEmployeeSchema = z.object({
   id: z.string().uuid(),
+
+  // Personal Info
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   preferredName: z.string().optional(),
@@ -141,19 +143,43 @@ const updateEmployeeSchema = z.object({
   gender: genderEnum.optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
-  nationalId: z.string().optional(),
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
   city: z.string().optional(),
   postalCode: z.string().optional(),
   countryCode: z.string().length(2).optional(),
+
+  // Employment Info
+  primaryLocationId: z.string().optional(),
+  reportingManagerId: z.string().optional(),
+  categoryCode: z.string().optional(),
+  coefficient: z.number().int().min(90).max(1000).optional(),
+  rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+  dailyRate: z.number().optional(),
+  hourlyRate: z.number().optional(),
+  sector: z.string().optional(),
+  sectorCodeCgeci: z.string().optional(),
+  conventionCode: z.string().optional(),
+  professionalLevel: z.number().int().min(1).max(10).optional(),
+
+  // Family Info
+  maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
+  // dependentChildren is auto-calculated from employee_dependents table via dependents router - not editable
+
+  // Documents
+  nationalId: z.string().optional(),
+  nationalIdExpiry: z.date().optional(),
+  workPermitExpiry: z.date().optional(),
+  passportNumber: z.string().optional(),
+
+  // Banking & Tax
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
-  coefficient: z.number().int().min(90).max(1000).optional(),
-  rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+
+  // Custom Fields
   customFields: z.record(z.any()).optional(),
 });
 

@@ -15,7 +15,52 @@ import {
   getAllDependents,
   getDependentCounts,
   calculateFiscalPartsFromDependents,
+  calculateMaritalStatusFromDependents,
 } from '@/features/employees/services/dependent-verification.service';
+
+// ========================================
+// Helper Functions
+// ========================================
+
+/**
+ * Calculate if a dependent is verified based on relationship and document data
+ *
+ * Rules:
+ * - Spouse: Requires document type, document number, and valid expiry date
+ * - Child under 21: Auto-verified (no document needed)
+ * - Child 21+: Requires document type, document number, and valid expiry date
+ * - Other: Requires document type, document number, and valid expiry date
+ */
+function calculateIsVerified(
+  relationship: 'child' | 'spouse' | 'other',
+  dateOfBirth: string,
+  documentType: string | null | undefined,
+  documentNumber: string | null | undefined,
+  documentExpiryDate: string | null | undefined
+): boolean {
+  // Calculate age
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+
+  // CHILD UNDER 21: Auto-verified
+  if (relationship === 'child' && age < 21) {
+    return true;
+  }
+
+  // SPOUSE, CHILD 21+, OTHER: Requires document
+  // Check if document type and number are provided
+  const hasDocumentType = !!documentType && documentType.trim() !== '';
+  const hasDocumentNumber = !!documentNumber && documentNumber.trim() !== '';
+
+  // For spouse/other/child21+, we need both document type and number
+  // Expiry date is optional (some documents don't expire)
+  return hasDocumentType && hasDocumentNumber;
+}
 
 // ========================================
 // Input Schemas
@@ -161,6 +206,15 @@ export const dependentsRouter = createTRPCRouter({
           });
         }
 
+        // Auto-calculate isVerified based on relationship and document data
+        const isVerified = calculateIsVerified(
+          input.relationship,
+          input.dateOfBirth,
+          input.documentType,
+          input.documentNumber,
+          input.documentExpiryDate
+        );
+
         // Create dependent
         const [dependent] = await db
           .insert(employeeDependents)
@@ -171,6 +225,7 @@ export const dependentsRouter = createTRPCRouter({
             lastName: input.lastName,
             dateOfBirth: input.dateOfBirth,
             relationship: input.relationship,
+            isVerified,
             documentType: input.documentType || null,
             documentNumber: input.documentNumber || null,
             documentIssueDate: input.documentIssueDate || null,
@@ -184,17 +239,29 @@ export const dependentsRouter = createTRPCRouter({
           })
           .returning();
 
-        // Recalculate fiscal parts for employee
+        // Recalculate fiscal parts, dependent count, and marital status for employee
         const fiscalParts = await calculateFiscalPartsFromDependents(
           input.employeeId,
           input.tenantId
         );
 
-        // Update employee record
+        const dependentCounts = await getDependentCounts(
+          input.employeeId,
+          input.tenantId
+        );
+
+        const maritalStatus = await calculateMaritalStatusFromDependents(
+          input.employeeId,
+          input.tenantId
+        );
+
+        // Update employee record with fiscal parts, dependent count, and marital status
         await db
           .update(employees)
           .set({
             fiscalParts: fiscalParts.toString(),
+            dependentChildren: dependentCounts.totalDependents,
+            maritalStatus: maritalStatus,
             updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
@@ -236,29 +303,60 @@ export const dependentsRouter = createTRPCRouter({
           });
         }
 
+        // Merge updated data with existing data
+        const mergedData = {
+          relationship: input.relationship || existing.relationship,
+          dateOfBirth: input.dateOfBirth || existing.dateOfBirth,
+          documentType: input.documentType !== undefined ? input.documentType : existing.documentType,
+          documentNumber: input.documentNumber !== undefined ? input.documentNumber : existing.documentNumber,
+          documentExpiryDate: input.documentExpiryDate !== undefined ? input.documentExpiryDate : existing.documentExpiryDate,
+        };
+
+        // Auto-calculate isVerified based on relationship and document data
+        const isVerified = calculateIsVerified(
+          mergedData.relationship,
+          mergedData.dateOfBirth,
+          mergedData.documentType,
+          mergedData.documentNumber,
+          mergedData.documentExpiryDate
+        );
+
         // Update dependent
         const { id, ...updateData } = input;
         const [updated] = await db
           .update(employeeDependents)
           .set({
             ...updateData,
+            isVerified,
             updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
           .where(eq(employeeDependents.id, input.id))
           .returning();
 
-        // Recalculate fiscal parts for employee
+        // Recalculate fiscal parts, dependent count, and marital status for employee
         const fiscalParts = await calculateFiscalPartsFromDependents(
           existing.employeeId,
           existing.tenantId
         );
 
-        // Update employee record
+        const dependentCounts = await getDependentCounts(
+          existing.employeeId,
+          existing.tenantId
+        );
+
+        const maritalStatus = await calculateMaritalStatusFromDependents(
+          existing.employeeId,
+          existing.tenantId
+        );
+
+        // Update employee record with fiscal parts, dependent count, and marital status
         await db
           .update(employees)
           .set({
             fiscalParts: fiscalParts.toString(),
+            dependentChildren: dependentCounts.totalDependents,
+            maritalStatus: maritalStatus,
             updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
@@ -310,17 +408,29 @@ export const dependentsRouter = createTRPCRouter({
           })
           .where(eq(employeeDependents.id, input.id));
 
-        // Recalculate fiscal parts for employee
+        // Recalculate fiscal parts, dependent count, and marital status for employee
         const fiscalParts = await calculateFiscalPartsFromDependents(
           existing.employeeId,
           existing.tenantId
         );
 
-        // Update employee record
+        const dependentCounts = await getDependentCounts(
+          existing.employeeId,
+          existing.tenantId
+        );
+
+        const maritalStatus = await calculateMaritalStatusFromDependents(
+          existing.employeeId,
+          existing.tenantId
+        );
+
+        // Update employee record with fiscal parts, dependent count, and marital status
         await db
           .update(employees)
           .set({
             fiscalParts: fiscalParts.toString(),
+            dependentChildren: dependentCounts.totalDependents,
+            maritalStatus: maritalStatus,
             updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })

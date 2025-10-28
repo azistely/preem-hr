@@ -87,9 +87,18 @@ export function isDocumentValid(expiryDate: Date | string | null, daysThreshold:
 /**
  * Get all verified dependents for an employee
  *
- * A dependent is considered verified if:
- * - Under 21 years old (automatic verification)
- * - Over 21 with valid document (certificat de fréquentation)
+ * A dependent is considered verified based on relationship type:
+ *
+ * SPOUSE:
+ * - Always requires marriage certificate document
+ * - No age-based auto-verification
+ *
+ * CHILD:
+ * - Under 21 years old: Automatic verification (no document needed)
+ * - Over 21: Requires valid "certificat de fréquentation" (school attendance certificate)
+ *
+ * OTHER:
+ * - Requires valid supporting document
  */
 export async function getVerifiedDependents(
   employeeId: string,
@@ -113,8 +122,14 @@ export async function getVerifiedDependents(
     .map(dep => {
       const age = calculateAge(dep.dateOfBirth, asOfDate);
 
-      // Under 21: Automatic verification
-      if (age < 21) {
+      // SPOUSE VERIFICATION: Different rules than children
+      if (dep.relationship === 'spouse') {
+        // Spouse always requires document (marriage certificate)
+        // No age-based auto-verification
+        const hasValidDocument = dep.isVerified &&
+                                 dep.documentType &&
+                                 isDocumentValid(dep.documentExpiryDate);
+
         return {
           id: dep.id,
           firstName: dep.firstName,
@@ -122,16 +137,63 @@ export async function getVerifiedDependents(
           dateOfBirth: dep.dateOfBirth,
           age,
           relationship: dep.relationship,
-          isVerified: true,
-          requiresDocument: false,
-          eligibleForFiscalParts: dep.eligibleForFiscalParts,
-          eligibleForCmu: dep.eligibleForCmu,
+          isVerified: hasValidDocument,
+          requiresDocument: true,
+          eligibleForFiscalParts: hasValidDocument && dep.eligibleForFiscalParts,
+          eligibleForCmu: hasValidDocument && dep.eligibleForCmu,
           documentType: dep.documentType,
+          documentNumber: dep.documentNumber,
           documentExpiryDate: dep.documentExpiryDate,
+          notes: dep.notes,
         };
       }
 
-      // Over 21: Requires valid document
+      // CHILD VERIFICATION: Age-based rules
+      if (dep.relationship === 'child') {
+        // Under 21: Automatic verification
+        if (age < 21) {
+          return {
+            id: dep.id,
+            firstName: dep.firstName,
+            lastName: dep.lastName,
+            dateOfBirth: dep.dateOfBirth,
+            age,
+            relationship: dep.relationship,
+            isVerified: true,
+            requiresDocument: false,
+            eligibleForFiscalParts: dep.eligibleForFiscalParts,
+            eligibleForCmu: dep.eligibleForCmu,
+            documentType: dep.documentType,
+            documentNumber: dep.documentNumber,
+            documentExpiryDate: dep.documentExpiryDate,
+            notes: dep.notes,
+          };
+        }
+
+        // Over 21: Requires valid document (school certificate)
+        const hasValidDocument = dep.isVerified &&
+                                 dep.documentType &&
+                                 isDocumentValid(dep.documentExpiryDate);
+
+        return {
+          id: dep.id,
+          firstName: dep.firstName,
+          lastName: dep.lastName,
+          dateOfBirth: dep.dateOfBirth,
+          age,
+          relationship: dep.relationship,
+          isVerified: hasValidDocument,
+          requiresDocument: true,
+          eligibleForFiscalParts: hasValidDocument && dep.eligibleForFiscalParts,
+          eligibleForCmu: hasValidDocument && dep.eligibleForCmu,
+          documentType: dep.documentType,
+          documentNumber: dep.documentNumber,
+          documentExpiryDate: dep.documentExpiryDate,
+          notes: dep.notes,
+        };
+      }
+
+      // OTHER RELATIONSHIP: Requires valid document
       const hasValidDocument = dep.isVerified &&
                                dep.documentType &&
                                isDocumentValid(dep.documentExpiryDate);
@@ -148,7 +210,9 @@ export async function getVerifiedDependents(
         eligibleForFiscalParts: hasValidDocument && dep.eligibleForFiscalParts,
         eligibleForCmu: hasValidDocument && dep.eligibleForCmu,
         documentType: dep.documentType,
+        documentNumber: dep.documentNumber,
         documentExpiryDate: dep.documentExpiryDate,
+        notes: dep.notes,
       };
     })
     .filter(dep => dep.isVerified); // Only return verified dependents
@@ -338,6 +402,55 @@ export async function getDependentsWithExpiringDocuments(
 }
 
 /**
+ * Calculate marital status from active dependents
+ *
+ * Logic:
+ * - If there's an active spouse dependent → 'married'
+ * - Otherwise → keep existing status (user-managed for divorced/widowed)
+ *
+ * Note: This only auto-sets 'married' status. Divorced/widowed must be set manually
+ * since removing a spouse dependent doesn't automatically mean divorced/widowed.
+ */
+export async function calculateMaritalStatusFromDependents(
+  employeeId: string,
+  tenantId: string
+): Promise<'single' | 'married' | 'divorced' | 'widowed'> {
+  // Check if there's an active spouse dependent
+  const [spouseDependent] = await db
+    .select()
+    .from(employeeDependents)
+    .where(
+      and(
+        eq(employeeDependents.employeeId, employeeId),
+        eq(employeeDependents.tenantId, tenantId),
+        eq(employeeDependents.relationship, 'spouse'),
+        eq(employeeDependents.status, 'active')
+      )
+    )
+    .limit(1);
+
+  if (spouseDependent) {
+    return 'married';
+  }
+
+  // Get current marital status from employee
+  const [employee] = await db
+    .select({ maritalStatus: employees.maritalStatus })
+    .from(employees)
+    .where(
+      and(
+        eq(employees.id, employeeId),
+        eq(employees.tenantId, tenantId)
+      )
+    )
+    .limit(1);
+
+  // Keep existing status (might be 'divorced' or 'widowed')
+  // Default to 'single' if not set
+  return (employee?.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed') || 'single';
+}
+
+/**
  * Get all dependents for an employee (including unverified)
  */
 export async function getAllDependents(
@@ -367,6 +480,7 @@ export async function getAllDependents(
     eligibleForFiscalParts: dep.eligibleForFiscalParts,
     eligibleForCmu: dep.eligibleForCmu,
     documentType: dep.documentType,
+    documentNumber: dep.documentNumber,
     documentExpiryDate: dep.documentExpiryDate,
   }));
 }

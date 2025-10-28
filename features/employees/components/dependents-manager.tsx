@@ -121,45 +121,85 @@ export function DependentsManager({
   const getStatusBadge = (dependent: any) => {
     const age = calculateAge(new Date(dependent.dateOfBirth));
 
-    // Under 21: Auto-verified
-    if (age < 21) {
+    // SPOUSE: Always requires document (marriage certificate)
+    if (dependent.relationship === 'spouse') {
+      if (dependent.isVerified && dependent.documentType) {
+        // Spouse verified with marriage certificate
+        return (
+          <Badge variant="default" className="bg-green-500">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Vérifié (marié/e)
+          </Badge>
+        );
+      }
+      // Spouse not verified
       return (
-        <Badge variant="default" className="bg-green-500">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Vérifié (- de 21 ans)
+        <Badge variant="destructive">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          Acte de mariage requis
         </Badge>
       );
     }
 
-    // Over 21: Check document
-    if (dependent.isVerified && dependent.documentExpiryDate) {
-      const daysUntilExpiry = getDaysUntilExpiry(new Date(dependent.documentExpiryDate));
-
-      if (daysUntilExpiry < 0) {
-        return (
-          <Badge variant="destructive">
-            <XCircle className="w-3 h-3 mr-1" />
-            Document expiré
-          </Badge>
-        );
-      } else if (daysUntilExpiry <= 30) {
-        return (
-          <Badge variant="secondary" className="bg-orange-500 text-white">
-            <Clock className="w-3 h-3 mr-1" />
-            Expire dans {daysUntilExpiry}j
-          </Badge>
-        );
-      } else {
+    // CHILD: Age-based verification
+    if (dependent.relationship === 'child') {
+      // Under 21: Auto-verified
+      if (age < 21) {
         return (
           <Badge variant="default" className="bg-green-500">
             <CheckCircle className="w-3 h-3 mr-1" />
-            Vérifié
+            Vérifié (- de 21 ans)
           </Badge>
         );
       }
+
+      // Over 21: Check document
+      if (dependent.isVerified && dependent.documentExpiryDate) {
+        const daysUntilExpiry = getDaysUntilExpiry(new Date(dependent.documentExpiryDate));
+
+        if (daysUntilExpiry < 0) {
+          return (
+            <Badge variant="destructive">
+              <XCircle className="w-3 h-3 mr-1" />
+              Document expiré
+            </Badge>
+          );
+        } else if (daysUntilExpiry <= 30) {
+          return (
+            <Badge variant="secondary" className="bg-orange-500 text-white">
+              <Clock className="w-3 h-3 mr-1" />
+              Expire dans {daysUntilExpiry}j
+            </Badge>
+          );
+        } else {
+          return (
+            <Badge variant="default" className="bg-green-500">
+              <CheckCircle className="w-3 h-3 mr-1" />
+              Vérifié
+            </Badge>
+          );
+        }
+      }
+
+      // Over 21, not verified
+      return (
+        <Badge variant="destructive">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          Document requis
+        </Badge>
+      );
     }
 
-    // Over 21, not verified
+    // OTHER: Requires document
+    if (dependent.isVerified && dependent.documentType) {
+      return (
+        <Badge variant="default" className="bg-green-500">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Vérifié
+        </Badge>
+      );
+    }
+
     return (
       <Badge variant="destructive">
         <AlertCircle className="w-3 h-3 mr-1" />
@@ -230,6 +270,12 @@ export function DependentsManager({
                             <span className="font-medium">Document:</span>{' '}
                             {getDocumentTypeLabel(dependent.documentType)}
                           </div>
+                          {dependent.documentNumber && (
+                            <div>
+                              <span className="font-medium">N° document:</span>{' '}
+                              {dependent.documentNumber}
+                            </div>
+                          )}
                           {dependent.documentExpiryDate && (
                             <div>
                               <span className="font-medium">Expire le:</span>{' '}
@@ -261,10 +307,10 @@ export function DependentsManager({
                           lastName: dependent.lastName,
                           dateOfBirth: dependent.dateOfBirth,
                           relationship: dependent.relationship,
-                          documentType: dependent.documentType || undefined,
-                          documentNumber: dependent.documentNumber || undefined,
-                          documentExpiryDate: dependent.documentExpiryDate || undefined,
-                          notes: dependent.notes || undefined,
+                          documentType: dependent.documentType || '',
+                          documentNumber: dependent.documentNumber || '',
+                          documentExpiryDate: dependent.documentExpiryDate || '',
+                          notes: dependent.notes || '',
                         });
                         setIsDialogOpen(true);
                       }}
@@ -302,8 +348,9 @@ export function DependentsManager({
             <strong>💡 À savoir:</strong>
           </p>
           <ul className="text-sm text-blue-800 mt-2 space-y-1 list-disc list-inside">
-            <li>Enfants de moins de 21 ans: vérifiés automatiquement</li>
-            <li>Plus de 21 ans: certificat de fréquentation requis</li>
+            <li><strong>Conjoint(e):</strong> Acte de mariage requis</li>
+            <li><strong>Enfants &lt; 21 ans:</strong> Vérifiés automatiquement</li>
+            <li><strong>Enfants ≥ 21 ans:</strong> Certificat de fréquentation requis</li>
             <li>Utilisé pour parts fiscales (ITS) et CMU</li>
             <li>Maximum 4 enfants comptés pour le calcul fiscal</li>
           </ul>
@@ -325,23 +372,28 @@ interface DependentFormProps {
 }
 
 function DependentForm({ data, onSubmit, onCancel, isSubmitting }: DependentFormProps) {
-  const [formData, setFormData] = useState<DependentFormData>(
-    data || {
-      firstName: '',
-      lastName: '',
-      dateOfBirth: '',
-      relationship: 'child',
-      documentType: '',
-      documentNumber: '',
-      documentExpiryDate: '',
-      notes: '',
-    }
-  );
+  const [formData, setFormData] = useState<DependentFormData>({
+    firstName: data?.firstName || '',
+    lastName: data?.lastName || '',
+    dateOfBirth: data?.dateOfBirth || '',
+    relationship: data?.relationship || 'child',
+    documentType: data?.documentType || '',
+    documentNumber: data?.documentNumber || '',
+    documentExpiryDate: data?.documentExpiryDate || '',
+    notes: data?.notes || '',
+    ...(data?.id && { id: data.id }),
+  });
 
   const age = formData.dateOfBirth
     ? calculateAge(new Date(formData.dateOfBirth))
     : null;
-  const requiresDocument = age !== null && age >= 21;
+
+  // Spouse always requires document (marriage certificate)
+  // Children >= 21 require document (school certificate)
+  const requiresDocument =
+    formData.relationship === 'spouse' ||
+    (formData.relationship === 'child' && age !== null && age >= 21) ||
+    formData.relationship === 'other';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -429,12 +481,34 @@ function DependentForm({ data, onSubmit, onCancel, isSubmitting }: DependentForm
         {/* Document Required Warning */}
         {requiresDocument && (
           <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-            <p className="text-sm text-orange-900 font-medium">
-              ⚠️ Document requis (plus de 21 ans)
-            </p>
-            <p className="text-xs text-orange-800 mt-1">
-              Certificat de fréquentation ou attestation de scolarité obligatoire
-            </p>
+            {formData.relationship === 'spouse' ? (
+              <>
+                <p className="text-sm text-orange-900 font-medium">
+                  ⚠️ Document requis (conjoint/conjointe)
+                </p>
+                <p className="text-xs text-orange-800 mt-1">
+                  Acte de mariage ou livret de famille obligatoire
+                </p>
+              </>
+            ) : formData.relationship === 'child' ? (
+              <>
+                <p className="text-sm text-orange-900 font-medium">
+                  ⚠️ Document requis (plus de 21 ans)
+                </p>
+                <p className="text-xs text-orange-800 mt-1">
+                  Certificat de fréquentation ou attestation de scolarité obligatoire
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-orange-900 font-medium">
+                  ⚠️ Document requis
+                </p>
+                <p className="text-xs text-orange-800 mt-1">
+                  Document justificatif obligatoire
+                </p>
+              </>
+            )}
           </div>
         )}
 
@@ -453,15 +527,37 @@ function DependentForm({ data, onSubmit, onCancel, isSubmitting }: DependentForm
                   <SelectValue placeholder="Sélectionner..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="certificat_frequentation">
-                    Certificat de fréquentation
-                  </SelectItem>
-                  <SelectItem value="attestation_scolarite">
-                    Attestation de scolarité
-                  </SelectItem>
-                  <SelectItem value="carte_etudiant">
-                    Carte d'étudiant
-                  </SelectItem>
+                  {formData.relationship === 'spouse' ? (
+                    <>
+                      <SelectItem value="acte_mariage">
+                        Acte de mariage
+                      </SelectItem>
+                      <SelectItem value="livret_famille">
+                        Livret de famille
+                      </SelectItem>
+                    </>
+                  ) : formData.relationship === 'child' ? (
+                    <>
+                      <SelectItem value="certificat_frequentation">
+                        Certificat de fréquentation
+                      </SelectItem>
+                      <SelectItem value="attestation_scolarite">
+                        Attestation de scolarité
+                      </SelectItem>
+                      <SelectItem value="carte_etudiant">
+                        Carte d'étudiant
+                      </SelectItem>
+                    </>
+                  ) : (
+                    <>
+                      <SelectItem value="acte_naissance">
+                        Acte de naissance
+                      </SelectItem>
+                      <SelectItem value="autre">
+                        Autre document
+                      </SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -557,9 +653,16 @@ function getRelationshipLabel(relationship: string): string {
 
 function getDocumentTypeLabel(documentType: string): string {
   const labels: Record<string, string> = {
+    // Spouse documents
+    acte_mariage: 'Acte de mariage',
+    livret_famille: 'Livret de famille',
+    // Child documents
     certificat_frequentation: 'Certificat de fréquentation',
     attestation_scolarite: 'Attestation de scolarité',
     carte_etudiant: 'Carte d\'étudiant',
+    // Other documents
+    acte_naissance: 'Acte de naissance',
+    autre: 'Autre document',
   };
   return labels[documentType] || documentType;
 }

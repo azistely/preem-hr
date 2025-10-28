@@ -95,7 +95,7 @@ const editEmployeeSchema = z.object({
 
   // Family (Tab 3)
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
-  dependentChildren: z.number().int().min(0).max(10).optional(),
+  // dependentChildren is auto-calculated from employee_dependents table - not editable
 
   // Documents (Tab 4)
   dateOfBirth: z.date().optional(),
@@ -184,7 +184,6 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
       conventionCode: '',
       professionalLevel: undefined,
       maritalStatus: 'single',
-      dependentChildren: 0,
       dateOfBirth: undefined,
       gender: undefined,
       nationalId: '',
@@ -225,7 +224,7 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         conventionCode: emp.conventionCode || '',
         professionalLevel: emp.professionalLevel || undefined,
         maritalStatus: (emp.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed') || 'single',
-        dependentChildren: emp.dependentChildren || 0,
+        // dependentChildren is auto-calculated - not included in form
         dateOfBirth: emp.dateOfBirth ? new Date(emp.dateOfBirth) : undefined,
         gender: emp.gender as 'male' | 'female' | 'other' | 'prefer_not_to_say' | undefined,
         nationalId: emp.nationalId || '',
@@ -882,34 +881,13 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                       )}
                     />
 
-                    <FormField
-                      control={form.control}
-                      name="dependentChildren"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Nombre d'enfants à charge (déclaré)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                              onChange={(e) => field.onChange(e.target.valueAsNumber)}
-                              className="min-h-[48px]"
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Maximum 10 enfants. Utilisez l'onglet "Personnes à charge" pour gérer les documents.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
+                    {/* Dependent Children - Read-only, auto-calculated */}
                     {dependentsStats && (
                       <Alert>
                         <Info className="h-4 w-4" />
                         <AlertDescription>
                           <div className="space-y-2">
-                            <p className="font-semibold">Personnes à charge enregistrées:</p>
+                            <p className="font-semibold">Personnes à charge (calculé automatiquement):</p>
                             <div className="grid grid-cols-2 gap-2 text-sm">
                               <div>
                                 <Badge variant="outline">{dependentsStats.totalDependents}</Badge> Total
@@ -924,9 +902,12 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                                 <Badge variant="outline">{dependentsStats.cmuDependents}</Badge> CMU
                               </div>
                             </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Le nombre de personnes à charge est calculé automatiquement à partir des enregistrements ci-dessous.
+                            </p>
                             <Link
                               href={`/employees/${employeeId}#dependents`}
-                              className="text-primary hover:underline text-sm"
+                              className="text-primary hover:underline text-sm inline-flex items-center gap-1"
                             >
                               → Gérer les personnes à charge
                             </Link>
