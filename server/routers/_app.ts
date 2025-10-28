@@ -42,6 +42,7 @@ import { locationsRouter } from './locations';
 import { bonusesRouter } from './bonuses';
 import { cgeciRouter } from './cgeci';
 import { variablePayInputsRouter } from './variable-pay-inputs';
+import { dependentsRouter } from './dependents';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -59,6 +60,7 @@ export const appRouter = createTRPCRouter({
   bonuses: bonusesRouter,
   cgeci: cgeciRouter,
   variablePayInputs: variablePayInputsRouter,
+  dependents: dependentsRouter,
   payroll: payrollRouter,
   tenant: tenantRouter,
   employees: employeesRouter,

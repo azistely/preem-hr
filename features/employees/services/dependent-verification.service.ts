@@ -27,13 +27,15 @@ export interface VerifiedDependent {
   lastName: string;
   dateOfBirth: string;
   age: number;
-  relationship: string;
+  relationship: 'child' | 'spouse' | 'other';
   isVerified: boolean;
   requiresDocument: boolean;
   eligibleForFiscalParts: boolean;
   eligibleForCmu: boolean;
   documentType?: string | null;
+  documentNumber?: string | null;
   documentExpiryDate?: string | null;
+  notes?: string | null;
 }
 
 export interface DependentCounts {
