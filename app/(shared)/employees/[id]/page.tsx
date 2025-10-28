@@ -35,7 +35,6 @@ import type { RateType } from '@/features/employees/utils/rate-type-labels';
 import { TerminateEmployeeModal } from '@/features/employees/components/lifecycle/terminate-employee-modal';
 import { SuspendEmployeeModal } from '@/features/employees/components/lifecycle/suspend-employee-modal';
 import { TransferWizard } from '@/features/employees/components/transfer-wizard';
-import { EditEmployeeModal } from '@/features/employees/components/edit-employee-modal';
 import { SalaryHistoryTimeline } from '@/features/employees/components/salary/salary-history-timeline';
 import { SalaryChangeWizard } from '@/features/employees/components/salary/salary-change-wizard';
 import { AssignmentHistoryTimeline } from '@/features/employees/components/assignment/assignment-history-timeline';
@@ -64,7 +63,6 @@ export default function EmployeeDetailPage() {
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [showSuspendModal, setShowSuspendModal] = useState(false);
   const [showTransferWizard, setShowTransferWizard] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [showSalaryWizard, setShowSalaryWizard] = useState(false);
   const [showTimeOffRequestForm, setShowTimeOffRequestForm] = useState(false);
 
@@ -189,14 +187,15 @@ export default function EmployeeDetailPage() {
 
             {/* Actions */}
             <div className="flex flex-col gap-2 w-full md:w-auto">
-              <Button
-                variant="outline"
-                className="min-h-[44px]"
-                onClick={() => setShowEditModal(true)}
-              >
-                <Edit className="mr-2 h-4 w-4" />
-                Modifier
-              </Button>
+              <Link href={`/employees/${employeeId}/edit`}>
+                <Button
+                  variant="outline"
+                  className="min-h-[44px] w-full"
+                >
+                  <Edit className="mr-2 h-4 w-4" />
+                  Modifier
+                </Button>
+              </Link>
 
               {(employee as any).status === 'active' && (
                 <>
@@ -742,14 +741,6 @@ export default function EmployeeDetailPage() {
       </Tabs>
 
       {/* Modals */}
-      {showEditModal && (
-        <EditEmployeeModal
-          employee={employee as any}
-          open={showEditModal}
-          onClose={() => setShowEditModal(false)}
-        />
-      )}
-
       {showTerminateModal && (
         <TerminateEmployeeModal
           employee={employee as any}
