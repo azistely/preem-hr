@@ -344,13 +344,17 @@ export default function NewEmployeePage() {
       <Form {...form}>
         <form
           onSubmit={(e) => {
-            // Additional guard: prevent default submission behavior
-            // Only allow submission when explicitly on step 5
+            // ⚠️ CRITICAL FIX: Always prevent default form submission
+            // We only want submission via explicit button click, never via Enter key or other triggers
+            e.preventDefault();
+
+            // Only process submission when explicitly on step 5
             if (currentStep !== 5) {
-              e.preventDefault();
               console.warn('[Form] Submission prevented: not on step 5, current step:', currentStep);
               return;
             }
+
+            // Manually invoke the submit handler
             form.handleSubmit(onSubmit)(e);
           }}
         >
