@@ -138,19 +138,6 @@ export default function NewEmployeePage() {
   });
 
   const onSubmit = async (data: FormInput) => {
-    // ⚠️ GUARD 1: Only submit if we're actually on step 5 (confirmation step)
-    // This prevents accidental submission during step transitions
-    if (currentStep !== 5) {
-      console.warn('[Employee Creation] Submit blocked: not on confirmation step, current step:', currentStep);
-      return;
-    }
-
-    // ⚠️ GUARD 2: Prevent double submission
-    if (isSubmitting) {
-      console.warn('[Employee Creation] Submit blocked: already submitting');
-      return;
-    }
-
     setIsSubmitting(true);
     console.log('[Employee Creation] Starting submission from step 5');
 
@@ -277,6 +264,26 @@ export default function NewEmployeePage() {
     }
   };
 
+  // Handle final submission (only called from step 5 button click)
+  const handleFinalSubmit = async () => {
+    // Prevent double submission
+    if (isSubmitting || createEmployee.isPending) {
+      console.warn('[Employee Creation] Submit blocked: already submitting');
+      return;
+    }
+
+    // Validate all fields before submission
+    const isValid = await form.trigger();
+    if (!isValid) {
+      console.warn('[Employee Creation] Submit blocked: form validation failed');
+      return;
+    }
+
+    // Get form data and submit
+    const data = form.getValues();
+    await onSubmit(data);
+  };
+
   const prevStep = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
@@ -340,24 +347,9 @@ export default function NewEmployeePage() {
         </div>
       </div>
 
-      {/* Form */}
+      {/* Form - Note: We use a div instead of form element to prevent implicit submissions */}
       <Form {...form}>
-        <form
-          onSubmit={(e) => {
-            // ⚠️ CRITICAL FIX: Always prevent default form submission
-            // We only want submission via explicit button click, never via Enter key or other triggers
-            e.preventDefault();
-
-            // Only process submission when explicitly on step 5
-            if (currentStep !== 5) {
-              console.warn('[Form] Submission prevented: not on step 5, current step:', currentStep);
-              return;
-            }
-
-            // Manually invoke the submit handler
-            form.handleSubmit(onSubmit)(e);
-          }}
-        >
+        <div>
           <Card>
             <CardHeader>
               <CardTitle>{steps[currentStep - 1].title}</CardTitle>
@@ -394,7 +386,8 @@ export default function NewEmployeePage() {
               </Button>
             ) : (
               <Button
-                type="submit"
+                type="button"
+                onClick={handleFinalSubmit}
                 disabled={createEmployee.isPending || isSubmitting}
                 className="min-h-[56px] px-8 bg-green-600 hover:bg-green-700"
               >
@@ -412,7 +405,7 @@ export default function NewEmployeePage() {
               </Button>
             )}
           </div>
-        </form>
+        </div>
       </Form>
     </div>
   );
