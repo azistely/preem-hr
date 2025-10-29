@@ -137,6 +137,13 @@ export default function NewEmployeePage() {
   });
 
   const onSubmit = async (data: FormInput) => {
+    // ⚠️ GUARD: Only submit if we're actually on step 5 (confirmation step)
+    // This prevents accidental submission during step transitions
+    if (currentStep !== 5) {
+      console.warn('[Employee Creation] Submit blocked: not on confirmation step');
+      return;
+    }
+
     // Generate default email if not provided (DB requires email field)
     // Remove accents and special characters for valid email format
     const email = data.email && data.email !== ''
