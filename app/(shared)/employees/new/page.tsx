@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -29,6 +29,7 @@ import { BankingInfoStep } from '@/features/employees/components/hire-wizard/ban
 import { ConfirmationStep } from '@/features/employees/components/hire-wizard/confirmation-step';
 import { buildEmployeeComponents } from '@/features/employees/actions/create-employee.action';
 import Link from 'next/link';
+import { api } from '@/trpc/react';
 
 // Component schema
 const componentSchema = z.object({
@@ -112,7 +113,24 @@ const steps = [
 export default function NewEmployeePage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cityTransportMinimum, setCityTransportMinimum] = useState<number | null>(null);
+  const [cityName, setCityName] = useState<string | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const createEmployee = useCreateEmployee();
+
+  // Fetch transport minimum when location is selected
+  const { data: transportMinData } = api.locations.getTransportMinimum.useQuery(
+    { locationId: selectedLocationId! },
+    { enabled: !!selectedLocationId }
+  );
+
+  // Update city transport minimum when data is fetched
+  useEffect(() => {
+    if (transportMinData) {
+      setCityTransportMinimum(Number(transportMinData.monthlyMinimum));
+      setCityName(transportMinData.city);
+    }
+  }, [transportMinData]);
 
   const form = useForm<FormInput>({
     resolver: zodResolver(createEmployeeSchema),
@@ -196,6 +214,12 @@ export default function NewEmployeePage() {
         break;
       case 2:
         isValid = await form.trigger(['hireDate', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
+
+        // Update selected location ID to fetch transport minimum
+        if (isValid) {
+          const locationId = form.getValues('primaryLocationId');
+          setSelectedLocationId(locationId);
+        }
         break;
       case 3:
         // Validate form fields first
@@ -234,20 +258,26 @@ export default function NewEmployeePage() {
           }
 
           // Validation 2: Check transport allowance (Code 22) meets city minimum
-          // Note: This validation should be done BEFORE allowing step progression
-          // The actual city lookup happens in the SalaryInfoStep component
-          // We just check if Code 22 exists and has a reasonable minimum
+          // Uses city-specific minimum from database via cityTransportMinimum state
           const transportComponent = components.find((c: any) => c.code === '22');
 
-          if (transportComponent) {
-            // Minimum transport allowance is 20,000 FCFA (lowest tier for "other cities")
-            // City-specific minimums: Abidjan (30,000), Bouaké (24,000), Other (20,000)
-            const absoluteMinimum = 20000;
-
-            if (transportComponent.amount < absoluteMinimum) {
+          if (transportComponent && cityTransportMinimum !== null && cityName) {
+            // Validate against city-specific minimum from database
+            if (transportComponent.amount < cityTransportMinimum) {
               form.setError('components', {
                 type: 'manual',
-                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (minimum: ${absoluteMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville: Abidjan (30 000 FCFA), Bouaké (24 000 FCFA), autres villes (20 000 FCFA).`,
+                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum pour ${cityName} (${cityTransportMinimum.toLocaleString('fr-FR')} FCFA).`,
+              });
+              isValid = false;
+            }
+          } else if (transportComponent && !cityTransportMinimum) {
+            // Fallback validation if city data not yet loaded
+            // This should rarely happen since location is selected in step 2
+            const fallbackMinimum = 20000;
+            if (transportComponent.amount < fallbackMinimum) {
+              form.setError('components', {
+                type: 'manual',
+                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (${fallbackMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville.`,
               });
               isValid = false;
             }

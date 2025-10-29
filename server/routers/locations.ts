@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createTRPCRouter, hrManagerProcedure } from '../api/trpc';
 import { db } from '@/lib/db';
-import { locations, employeeSiteAssignments, LOCATION_TYPES } from '@/lib/db/schema';
+import { locations, employeeSiteAssignments, LOCATION_TYPES, cityTransportMinimums } from '@/lib/db/schema';
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
@@ -108,6 +108,74 @@ export const locationsRouter = createTRPCRouter({
         if (error instanceof TRPCError) throw error;
 
         const message = error instanceof Error ? error.message : 'Erreur lors de la récupération du site';
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message,
+        });
+      }
+    }),
+
+  /**
+   * Get transport minimum for a location based on its city
+   */
+  getTransportMinimum: hrManagerProcedure
+    .input(z.object({ locationId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        // Get location with city info
+        const location = await db
+          .select({ city: locations.city })
+          .from(locations)
+          .where(
+            and(
+              eq(locations.id, input.locationId),
+              eq(locations.tenantId, ctx.user.tenantId)
+            )
+          )
+          .limit(1);
+
+        if (!location[0]) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Site non trouvé',
+          });
+        }
+
+        const city = location[0].city?.trim() || 'OTHER';
+
+        // Look up city transport minimum
+        const transportMin = await db
+          .select()
+          .from(cityTransportMinimums)
+          .where(sql`LOWER(TRIM(${cityTransportMinimums.cityName})) = LOWER(${city})`)
+          .limit(1);
+
+        // Default to "OTHER" city if specific city not found
+        if (!transportMin[0]) {
+          const defaultMin = await db
+            .select()
+            .from(cityTransportMinimums)
+            .where(eq(cityTransportMinimums.cityName, 'OTHER'))
+            .limit(1);
+
+          return {
+            city: city,
+            monthlyMinimum: defaultMin[0]?.monthlyMinimum || 20000,
+            dailyRate: defaultMin[0]?.dailyRate || 667,
+            isDefault: true,
+          };
+        }
+
+        return {
+          city: transportMin[0].cityName,
+          monthlyMinimum: Number(transportMin[0].monthlyMinimum),
+          dailyRate: Number(transportMin[0].dailyRate),
+          isDefault: false,
+        };
+      } catch (error: unknown) {
+        if (error instanceof TRPCError) throw error;
+
+        const message = error instanceof Error ? error.message : 'Erreur lors de la récupération du minimum de transport';
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message,
