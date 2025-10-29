@@ -95,6 +95,7 @@ export interface OtherTax {
   taxRate: number; // 0-1
   calculationBase: 'gross_salary' | 'brut_imposable';
   paidBy: 'employer' | 'employee' | 'shared';
+  appliesToEmployeeType?: 'local' | 'expat' | null; // For ITS filtering (local vs expat)
   effectiveFrom: Date;
   effectiveTo: Date | null;
   metadata?: Record<string, unknown>;

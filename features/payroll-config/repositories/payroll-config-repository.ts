@@ -305,6 +305,7 @@ async function loadOtherTaxes(
     taxRate: Number(row.taxRate),
     calculationBase: row.calculationBase as OtherTax['calculationBase'],
     paidBy: row.paidBy as OtherTax['paidBy'],
+    appliesToEmployeeType: row.appliesToEmployeeType as 'local' | 'expat' | null | undefined,
     effectiveFrom: new Date(row.effectiveFrom),
     effectiveTo: row.effectiveTo ? new Date(row.effectiveTo) : null,
     metadata: row.metadata as Record<string, unknown> | undefined,
