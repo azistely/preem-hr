@@ -22,7 +22,7 @@ import { formatCurrencyWithRate, convertMonthlyAmountToRateType } from '@/featur
 import type { RateType } from '@/features/employees/utils/rate-type-labels';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, CheckCircle, Plus, Sparkles, Info, Settings2, X, Edit2 } from 'lucide-react';
-import { usePopularTemplates, useCustomComponents } from '@/features/employees/hooks/use-salary-components';
+import { useComponentTemplates, useCustomComponents } from '@/features/employees/hooks/use-salary-components';
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const [showTemplates, setShowTemplates] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editAmount, setEditAmount] = useState<number>(0);
+  const [showAllTemplates, setShowAllTemplates] = useState(false);
 
   const baseSalary = form.watch('baseSalary') || 0;
   const baseComponents = form.watch('baseComponents') || {};
@@ -68,7 +69,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
     rateLabel = 'horaire';
   }
 
-  const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
+  const { data: templates, isLoading: loadingTemplates } = useComponentTemplates(countryCode, !showAllTemplates);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
 
   // Load base salary components for this country
@@ -341,17 +342,37 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
               <DialogHeader>
                 <DialogTitle>Ajouter un composant salarial</DialogTitle>
                 <DialogDescription>
-                  Sélectionnez parmi les modèles populaires ou vos composants personnalisés
+                  Sélectionnez parmi les modèles {showAllTemplates ? '' : 'populaires ou '}ou vos composants personnalisés
                 </DialogDescription>
               </DialogHeader>
 
+              {/* Toggle to show all templates */}
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">
+                    {showAllTemplates
+                      ? `${templates?.length || 0} composants disponibles`
+                      : `${templates?.length || 0} composants populaires`}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllTemplates(!showAllTemplates)}
+                >
+                  {showAllTemplates ? 'Populaires uniquement' : 'Voir tous les composants'}
+                </Button>
+              </div>
+
               <div className="space-y-4 mt-4">
-                {/* Popular Templates */}
+                {/* Templates */}
                 {templates && templates.length > 0 && (
                   <div>
                     <h4 className="font-semibold mb-3 flex items-center gap-2">
                       <Sparkles className="h-4 w-4" />
-                      Modèles populaires
+                      {showAllTemplates ? 'Tous les composants' : 'Modèles populaires'}
                     </h4>
                     <div className="grid gap-2">
                       {templates.map((template) => {
