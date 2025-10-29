@@ -99,8 +99,29 @@ export interface UpdateEmployeeInput {
   cnpsNumber?: string;
   taxNumber?: string;
   taxDependents?: number;
+
+  // Employment fields
+  primaryLocationId?: string;
+  reportingManagerId?: string;
+  categoryCode?: string;
   coefficient?: number;
   rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY';
+  dailyRate?: number;
+  hourlyRate?: number;
+  sector?: string;
+  sectorCodeCgeci?: string;
+  conventionCode?: string;
+  professionalLevel?: number;
+
+  // Family fields
+  maritalStatus?: 'single' | 'married' | 'divorced' | 'widowed';
+
+  // Document fields
+  nationalIdExpiry?: Date;
+  workPermitExpiry?: Date;
+  passportNumber?: string;
+
+  // Custom fields
   customFields?: Record<string, any>;
 }
 
@@ -492,8 +513,29 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.cnpsNumber !== undefined) updateValues.cnpsNumber = input.cnpsNumber;
   if (input.taxNumber !== undefined) updateValues.taxNumber = input.taxNumber;
   if (input.taxDependents !== undefined) updateValues.taxDependents = input.taxDependents;
+
+  // Employment fields
+  if (input.primaryLocationId !== undefined) updateValues.primaryLocationId = input.primaryLocationId;
+  if (input.reportingManagerId !== undefined) updateValues.reportingManagerId = input.reportingManagerId;
+  if (input.categoryCode !== undefined) updateValues.categoryCode = input.categoryCode;
   if (input.coefficient !== undefined) updateValues.coefficient = input.coefficient;
   if (input.rateType !== undefined) updateValues.rateType = input.rateType;
+  if (input.dailyRate !== undefined) updateValues.dailyRate = input.dailyRate;
+  if (input.hourlyRate !== undefined) updateValues.hourlyRate = input.hourlyRate;
+  if (input.sector !== undefined) updateValues.sector = input.sector;
+  if (input.sectorCodeCgeci !== undefined) updateValues.sectorCodeCgeci = input.sectorCodeCgeci;
+  if (input.conventionCode !== undefined) updateValues.conventionCode = input.conventionCode;
+  if (input.professionalLevel !== undefined) updateValues.professionalLevel = input.professionalLevel;
+
+  // Family fields
+  if (input.maritalStatus !== undefined) updateValues.maritalStatus = input.maritalStatus;
+
+  // Document fields
+  if (input.nationalIdExpiry !== undefined) updateValues.nationalIdExpiry = input.nationalIdExpiry?.toISOString().split('T')[0];
+  if (input.workPermitExpiry !== undefined) updateValues.workPermitExpiry = input.workPermitExpiry?.toISOString().split('T')[0];
+  if (input.passportNumber !== undefined) updateValues.passportNumber = input.passportNumber;
+
+  // Custom fields
   if (input.customFields !== undefined) updateValues.customFields = input.customFields;
 
   // Update employee

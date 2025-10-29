@@ -34,16 +34,20 @@ interface CoefficientSelectorProps {
   countryCode: string;
   value?: number;
   onChange: (coefficient: number) => void;
+  onCategoryChange?: (categoryCode: string) => void; // Callback to update category_code
   showExamples?: boolean;
   className?: string;
+  hideLabel?: boolean; // Hide internal label when used within FormField
 }
 
 export function CoefficientSelector({
   countryCode,
   value = 100, // Smart default: Category A1
   onChange,
+  onCategoryChange,
   showExamples = true,
   className,
+  hideLabel = false,
 }: CoefficientSelectorProps) {
   const [selectedCoefficient, setSelectedCoefficient] = useState(value);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -76,9 +80,13 @@ export function CoefficientSelector({
       );
       if (initialCategory) {
         setSelectedCategoryId(initialCategory.id);
+        // Auto-update category code
+        if (onCategoryChange) {
+          onCategoryChange(initialCategory.category);
+        }
       }
     }
-  }, [categories, selectedCoefficient, selectedCategoryId]);
+  }, [categories, selectedCoefficient, selectedCategoryId, onCategoryChange]);
 
   // Validate selected coefficient (only if sector is configured)
   const { data: validation } = trpc.employeeCategories.validateCoefficient.useQuery(
@@ -138,18 +146,20 @@ export function CoefficientSelector({
 
   return (
     <div className={className}>
-      {/* Label with helper text */}
-      <div className="flex items-center justify-between mb-2">
-        <Label htmlFor="coefficient" className="text-base">
-          Catégorie professionnelle
-        </Label>
-        {currentCategory && (
-          <Badge variant="secondary" className="gap-1">
-            <Briefcase className="h-3 w-3" />
-            {currentCategory.labelFr}
-          </Badge>
-        )}
-      </div>
+      {/* Label with helper text - hide when used in FormField */}
+      {!hideLabel && (
+        <div className="flex items-center justify-between mb-2">
+          <Label htmlFor="coefficient" className="text-base">
+            Catégorie professionnelle
+          </Label>
+          {currentCategory && (
+            <Badge variant="secondary" className="gap-1">
+              <Briefcase className="h-3 w-3" />
+              {currentCategory.labelFr}
+            </Badge>
+          )}
+        </div>
+      )}
 
       {/* Category Selector */}
       <Select
@@ -159,6 +169,10 @@ export function CoefficientSelector({
           const category = categories?.find((cat) => cat.id === categoryId);
           if (category) {
             setSelectedCoefficient(category.minCoefficient);
+            // Auto-update category code
+            if (onCategoryChange) {
+              onCategoryChange(category.category);
+            }
           }
         }}
       >

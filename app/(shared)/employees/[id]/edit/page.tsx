@@ -618,62 +618,33 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                       )}
                     />
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="categoryCode"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Catégorie CGECI</FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              value={field.value || ''}
-                            >
-                              <FormControl>
-                                <SelectTrigger className="min-h-[48px]">
-                                  <SelectValue placeholder="Sélectionner" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {categories?.map((cat: any) => (
-                                  <SelectItem key={cat.id} value={cat.code}>
-                                    {cat.code} - {cat.labelFr}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormDescription>
-                              Détermine le SMIG applicable
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {categoryCode && (
-                        <FormField
-                          control={form.control}
-                          name="coefficient"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Coefficient</FormLabel>
-                              <FormControl>
-                                <CoefficientSelector
-                                  countryCode="CI"
-                                  value={field.value}
-                                  onChange={field.onChange}
-                                  className="min-h-[48px]"
-                                />
-                              </FormControl>
-                              <FormDescription>
-                                Entre 90 et 1000 selon la catégorie
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                    {/* Coefficient determines category automatically */}
+                    <FormField
+                      control={form.control}
+                      name="coefficient"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Catégorie professionnelle</FormLabel>
+                          <FormControl>
+                            <CoefficientSelector
+                              countryCode="CI"
+                              value={field.value}
+                              onChange={field.onChange}
+                              onCategoryChange={(categoryCode) => {
+                                // Auto-update hidden categoryCode field
+                                form.setValue('categoryCode', categoryCode);
+                              }}
+                              className="min-h-[48px]"
+                              hideLabel={true}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Sélectionnez la catégorie, le coefficient sera défini automatiquement
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
                       )}
-                    </div>
+                    />
 
                     <FormField
                       control={form.control}
