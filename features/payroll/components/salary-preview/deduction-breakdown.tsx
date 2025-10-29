@@ -70,11 +70,6 @@ export function DeductionBreakdown({
                 </div>
                 <div className="text-right">
                   <div className="font-semibold">- {formatCurrency(deduction.amount)}</div>
-                  {grossSalary && (
-                    <div className="text-xs text-muted-foreground">
-                      {formatPercentage(deduction.amount / grossSalary)}
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
@@ -92,11 +87,6 @@ export function DeductionBreakdown({
                 </div>
                 <div className="text-right">
                   <div className="font-semibold">- {formatCurrency(contrib.amount)}</div>
-                  {grossSalary && (
-                    <div className="text-xs text-muted-foreground">
-                      {formatPercentage(contrib.amount / grossSalary)}
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
@@ -108,11 +98,6 @@ export function DeductionBreakdown({
               <span>Total retenues</span>
               <div className="text-right">
                 <div>- {formatCurrency(totalDeductions)}</div>
-                {grossSalary && (
-                  <div className="text-xs text-muted-foreground">
-                    {formatPercentage(totalDeductions / grossSalary)}
-                  </div>
-                )}
               </div>
             </div>
           </>
@@ -129,11 +114,6 @@ export function DeductionBreakdown({
               </div>
               <div className="text-right">
                 <div className="font-semibold">- {formatCurrency(cnps)}</div>
-                {grossSalary && (
-                  <div className="text-xs text-muted-foreground">
-                    {formatPercentage(cnps / grossSalary)}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -147,11 +127,6 @@ export function DeductionBreakdown({
               </div>
               <div className="text-right">
                 <div className="font-semibold">- {formatCurrency(cmu)}</div>
-                {grossSalary && (
-                  <div className="text-xs text-muted-foreground">
-                    {formatPercentage(cmu / grossSalary)}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -165,11 +140,6 @@ export function DeductionBreakdown({
               </div>
               <div className="text-right">
                 <div className="font-semibold">- {formatCurrency(its)}</div>
-                {grossSalary && (
-                  <div className="text-xs text-muted-foreground">
-                    {formatPercentage(its / grossSalary)}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -180,11 +150,6 @@ export function DeductionBreakdown({
               <span>Total retenues</span>
               <div className="text-right">
                 <div>- {formatCurrency(totalDeductions)}</div>
-                {grossSalary && (
-                  <div className="text-xs text-muted-foreground">
-                    {formatPercentage(totalDeductions / grossSalary)}
-                  </div>
-                )}
               </div>
             </div>
           </>
