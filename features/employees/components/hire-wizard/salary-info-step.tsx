@@ -99,7 +99,8 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const salaireCategoriel = baseComponents['11'] || baseSalary || 0;
 
   /**
-   * Calculate auto-calculated component amounts (like seniority bonus)
+   * Calculate auto-calculated component amounts
+   * Handles various calculation types: seniority, percentage, overtime, etc.
    */
   const calculateComponentAmount = (
     component: SalaryComponentTemplate | CustomSalaryComponent,
@@ -107,18 +108,24 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   ): number => {
     const code = 'code' in component ? component.code : '';
     const metadata = 'metadata' in component ? component.metadata : null;
+    const calculationMethod = 'calculationMethod' in component ? component.calculationMethod : null;
 
-    // Prime d'ancienneté (Code 21): 2% per year, max 25%
-    if (code === '21' && metadata && typeof metadata === 'object') {
-      const calculationRule = (metadata as any).calculationRule;
-      if (calculationRule?.type === 'auto-calculated') {
+    if (!metadata || typeof metadata !== 'object') {
+      return suggestedAmount;
+    }
+
+    const calculationRule = (metadata as any).calculationRule;
+
+    // Auto-calculated components (from metadata)
+    if (calculationRule?.type === 'auto-calculated') {
+      // Prime d'ancienneté (Code 21): 2% per year, max 25%
+      if (code === '21') {
         const hireDate = form.watch('hireDate');
         if (hireDate && salaireCategoriel > 0) {
           const today = new Date();
           const hire = hireDate instanceof Date ? hireDate : new Date(hireDate);
           const yearsOfService = (today.getTime() - hire.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
 
-          // Calculate percentage based on years (2% per year)
           const rate = calculationRule.rate || 0.02;
           const cap = calculationRule.cap || 0.25;
           const percentage = Math.min(yearsOfService * rate, cap);
@@ -126,6 +133,26 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
           return Math.round(salaireCategoriel * percentage);
         }
       }
+
+      // Overtime (TPT_OVERTIME): Not applicable in hire wizard (needs actual hours)
+      // Return 0 since we don't have overtime hours at hiring stage
+      if (code === 'TPT_OVERTIME') {
+        return 0;
+      }
+    }
+
+    // Percentage-based components (e.g., responsibility allowance)
+    if (calculationMethod === 'percentage' && calculationRule?.rate && salaireCategoriel > 0) {
+      const percentage = calculationRule.rate;
+      return Math.round(salaireCategoriel * percentage);
+    }
+
+    // Formula-based components (e.g., family allowances Code 41)
+    // These typically depend on family status which should be handled server-side
+    if (calculationMethod === 'formula' && code === '41') {
+      // Family allowances are auto-calculated server-side based on maritalStatus and dependents
+      // Return 0 here as it will be properly calculated in payroll preview
+      return 0;
     }
 
     // Default: use suggested amount
@@ -330,7 +357,23 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                       {templates.map((template) => {
                         const suggestedAmount = parseFloat(String(template.suggestedAmount || '10000'));
                         const calculatedAmount = calculateComponentAmount(template, suggestedAmount);
-                        const isAutoCalculated = template.code === '21'; // Seniority bonus
+
+                        // Determine if auto-calculated and get hint text
+                        const metadata = template.metadata as any;
+                        const calculationRule = metadata?.calculationRule;
+                        const calcMethod = metadata?.calculationMethod || (template as any).calculationMethod;
+                        const isAutoCalculated = calculationRule?.type === 'auto-calculated' || calcMethod === 'percentage' || calcMethod === 'formula';
+
+                        let autoCalcHint = '';
+                        if (template.code === '21') {
+                          autoCalcHint = 'Calculé automatiquement selon l\'ancienneté';
+                        } else if (calcMethod === 'percentage') {
+                          autoCalcHint = 'Pourcentage du salaire catégoriel';
+                        } else if (calcMethod === 'formula') {
+                          autoCalcHint = 'Montant calculé selon la situation familiale';
+                        } else if (template.code === 'TPT_OVERTIME') {
+                          autoCalcHint = 'Calculé selon les heures travaillées';
+                        }
 
                         return (
                           <Card
@@ -349,13 +392,13 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                                       {template.description}
                                     </CardDescription>
                                   )}
-                                  {isAutoCalculated && calculatedAmount > 0 && (
+                                  {isAutoCalculated && autoCalcHint && (
                                     <CardDescription className="text-xs mt-1 text-primary font-medium">
-                                      Calculé automatiquement selon l'ancienneté
+                                      {autoCalcHint}
                                     </CardDescription>
                                   )}
                                 </div>
-                                <Badge variant={isAutoCalculated ? "default" : "outline"}>
+                                <Badge variant={isAutoCalculated && calculatedAmount > 0 ? "default" : "outline"}>
                                   {calculatedAmount.toLocaleString('fr-FR')} FCFA
                                 </Badge>
                               </div>
