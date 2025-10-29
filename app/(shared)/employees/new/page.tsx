@@ -328,7 +328,18 @@ export default function NewEmployeePage() {
 
       {/* Form */}
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          onSubmit={(e) => {
+            // Additional guard: prevent default submission behavior
+            // Only allow submission when explicitly on step 5
+            if (currentStep !== 5) {
+              e.preventDefault();
+              console.warn('[Form] Submission prevented: not on step 5, current step:', currentStep);
+              return;
+            }
+            form.handleSubmit(onSubmit)(e);
+          }}
+        >
           <Card>
             <CardHeader>
               <CardTitle>{steps[currentStep - 1].title}</CardTitle>
