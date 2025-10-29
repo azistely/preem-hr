@@ -52,6 +52,7 @@ const createEmployeeSchema = z.object({
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
   nationalId: z.string().optional(),
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional().default('single'),
+  isExpat: z.boolean().optional().default(false), // For ITS employer tax calculation (1.2% local, 10.4% expat)
 
   // Employment info
   hireDate: z.date(),
@@ -143,6 +144,7 @@ export default function NewEmployeePage() {
       phone: '',
       nationalId: '',
       maritalStatus: 'single',
+      isExpat: false,
       hireDate: new Date(),
       positionId: '',
       coefficient: 100,

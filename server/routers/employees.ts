@@ -71,6 +71,7 @@ const createEmployeeSchema = z.object({
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).default(0),
+  isExpat: z.boolean().optional().default(false), // For ITS employer tax calculation (1.2% local, 10.4% expat)
 
   // Position & Salary (base salary + components)
   positionId: z.string().uuid('Position invalide'),
@@ -167,6 +168,7 @@ const updateEmployeeSchema = z.object({
   // dependentChildren is auto-calculated from employee_dependents table via dependents router - not editable
 
   // Documents
+  identityDocumentType: z.enum(['cni', 'passport', 'residence_permit', 'other']).optional(),
   nationalId: z.string().optional(),
   nationalIdExpiry: z.date().optional(),
   workPermitExpiry: z.date().optional(),
@@ -178,6 +180,7 @@ const updateEmployeeSchema = z.object({
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
+  isExpat: z.boolean().optional(),
 
   // Custom Fields
   customFields: z.record(z.any()).optional(),
