@@ -16,7 +16,8 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -137,6 +138,8 @@ export function SalaryChangeWizard({
   const [showPreview, setShowPreview] = useState(false);
   const [baseSalaryTouched, setBaseSalaryTouched] = useState(false);
   const [baseSalaryInput, setBaseSalaryInput] = useState(currentSalary.baseSalary.toString());
+  const [categoryValidationError, setCategoryValidationError] = useState<string | null>(null);
+  const [transportValidationError, setTransportValidationError] = useState<string | null>(null);
 
   // Smart default: First day of next month
   const defaultEffectiveDate = startOfMonth(addMonths(new Date(), 1));
@@ -147,6 +150,15 @@ export function SalaryChangeWizard({
 
   // Get trpc utils for cache invalidation
   const utils = trpc.useUtils();
+
+  // Fetch employee data for validations
+  const { data: employeeData } = trpc.employees.getById.useQuery({ id: employeeId });
+
+  // Fetch transport minimum when employee location is available
+  const { data: transportMinData } = trpc.locations.getTransportMinimum.useQuery(
+    { locationId: (employeeData as any)?.primaryLocationId! },
+    { enabled: !!( employeeData as any)?.primaryLocationId }
+  );
 
   // Load available templates
   const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
@@ -280,6 +292,62 @@ export function SalaryChangeWizard({
 
   // Real-time SMIG validation on TOTAL gross salary (not just base)
   const { validationResult, isLoading: validatingSmig } = useSalaryValidation(componentTotal, rateType);
+
+  // Additional validation: Category minimum wage and transport minimum
+  // Run validation whenever components change
+  React.useEffect(() => {
+    // Skip validation if employee data not loaded yet
+    if (!employeeData || components.length === 0) {
+      setCategoryValidationError(null);
+      setTransportValidationError(null);
+      return;
+    }
+
+    // Validation 1: Category minimum wage
+    const coefficient = (employeeData as any).coefficient || 100;
+    const countryMinimumWage = minWageData?.minimumWage || 75000;
+    const requiredMinimum = countryMinimumWage * (coefficient / 100);
+
+    if (componentTotal < requiredMinimum) {
+      setCategoryValidationError(
+        `Le salaire total (${componentTotal.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`
+      );
+    } else {
+      setCategoryValidationError(null);
+    }
+
+    // Validation 2: Transport minimum (Code 22)
+    const transportComponent = components.find((c: any) => c.code === '22');
+    const cityTransportMinimum = transportMinData?.monthlyMinimum ? Number(transportMinData.monthlyMinimum) : null;
+    const cityName = transportMinData?.city;
+
+    if (transportComponent && cityTransportMinimum !== null && cityName) {
+      // Convert to same rate type for comparison
+      const transportAmountMonthly = transportComponent.amount; // Components are stored monthly
+
+      if (transportAmountMonthly < cityTransportMinimum) {
+        setTransportValidationError(
+          `La prime de transport (${transportAmountMonthly.toLocaleString('fr-FR')} FCFA) est inférieure au minimum pour ${cityName} (${cityTransportMinimum.toLocaleString('fr-FR')} FCFA).`
+        );
+      } else {
+        setTransportValidationError(null);
+      }
+    } else if (transportComponent && !cityTransportMinimum) {
+      // Fallback validation if city data not yet loaded
+      const fallbackMinimum = 20000;
+      const transportAmountMonthly = transportComponent.amount;
+
+      if (transportAmountMonthly < fallbackMinimum) {
+        setTransportValidationError(
+          `La prime de transport (${transportAmountMonthly.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (${fallbackMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville.`
+        );
+      } else {
+        setTransportValidationError(null);
+      }
+    } else {
+      setTransportValidationError(null);
+    }
+  }, [components, componentTotal, employeeData, minWageData, transportMinData]);
 
   // Mutation - will be updated to accept components
   const changeSalaryMutation = trpc.salaries.change.useMutation({
@@ -434,7 +502,12 @@ export function SalaryChangeWizard({
   };
 
   const canProceedToStep2 =
-    !!baseSalary && validationResult?.isValid && !validatingSmig && components.length > 0;
+    !!baseSalary &&
+    validationResult?.isValid &&
+    !validatingSmig &&
+    components.length > 0 &&
+    !categoryValidationError &&
+    !transportValidationError;
   const canProceedToStep3 = canProceedToStep2 && !!form.watch('effectiveFrom');
   const canSubmit = canProceedToStep3 && !!form.watch('changeReason');
 
@@ -801,6 +874,26 @@ export function SalaryChangeWizard({
                         <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
                         <p className="text-sm text-destructive font-medium">
                           {validationResult.errorMessage}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Category minimum wage validation */}
+                    {categoryValidationError && (
+                      <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive rounded-md">
+                        <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                        <p className="text-sm text-destructive font-medium">
+                          {categoryValidationError}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Transport minimum validation */}
+                    {transportValidationError && (
+                      <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive rounded-md">
+                        <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                        <p className="text-sm text-destructive font-medium">
+                          {transportValidationError}
                         </p>
                       </div>
                     )}
