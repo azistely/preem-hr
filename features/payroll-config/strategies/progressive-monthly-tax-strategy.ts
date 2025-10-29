@@ -46,14 +46,14 @@ export class ProgressiveMonthlyTaxStrategy {
   /**
    * Calculate tax using progressive monthly method
    *
-   * IMPORTANT: As of 2025-10-18, tax brackets are stored as MONTHLY values in the database.
-   * The calculation now applies brackets directly to monthly income (no annualization).
+   * IMPORTANT: As of 2025-10-29, following the documentation method from docs/payroll-joel-ci-hr-.md
+   * The family deduction is subtracted from the calculated tax, NOT from the taxable base.
    *
-   * Process (Updated for Monthly Brackets):
+   * Process (Documentation Method):
    * 1. Calculate monthly taxable income (gross - employee contributions)
-   * 2. Apply monthly family deduction if applicable
-   * 3. Apply progressive brackets to monthly taxable income
-   * 4. Return monthly tax (no division needed)
+   * 2. Apply progressive brackets to FULL taxable income
+   * 3. Calculate family deduction based on fiscal parts
+   * 4. Subtract family deduction from calculated tax (not from base!)
    */
   calculate(input: TaxCalculationInput): TaxCalculationResult {
     // Step 1: Calculate monthly taxable income (Brut Imposable in CI)
@@ -62,30 +62,27 @@ export class ProgressiveMonthlyTaxStrategy {
       input.grossSalary - input.employeeContributions
     );
 
-    // Step 2: Apply monthly family deduction
-    const familyDeduction = this.getFamilyDeduction(input.fiscalParts || 1.0);
-    const monthlyTaxableAfterDeduction = Math.max(
-      0,
-      taxableIncome - familyDeduction
-    );
-
-    // Step 3: Calculate monthly tax using progressive brackets
+    // Step 2: Calculate tax on FULL taxable income (before family deduction)
     const { totalTax, bracketDetails } = this.calculateProgressiveTax(
-      monthlyTaxableAfterDeduction
+      taxableIncome
     );
 
-    // Step 4: Monthly tax is the total (no division)
-    const monthlyTax = Math.round(totalTax);
+    // Step 3: Get family deduction amount
+    const familyDeduction = this.getFamilyDeduction(input.fiscalParts || 1.0);
+
+    // Step 4: Subtract family deduction from calculated tax (Documentation Method)
+    // Important: Deduction is applied to the tax amount, not the taxable base!
+    const monthlyTax = Math.max(0, Math.round(totalTax - familyDeduction));
 
     // For backwards compatibility, calculate "annual" values (monthly × 12)
     const annualTaxableIncome = taxableIncome * 12;
-    const annualTaxableAfterDeduction = monthlyTaxableAfterDeduction * 12;
+    const annualTaxableAfterDeduction = taxableIncome * 12; // No longer used for tax calc
     const annualTax = monthlyTax * 12;
 
-    // Effective rate (on monthly taxable after deduction)
+    // Effective rate (on monthly taxable income)
     const effectiveRate =
-      monthlyTaxableAfterDeduction > 0
-        ? (monthlyTax / monthlyTaxableAfterDeduction) * 100
+      taxableIncome > 0
+        ? (monthlyTax / taxableIncome) * 100
         : 0;
 
     return {
