@@ -144,10 +144,10 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
   });
   const allEmployees = employeesData?.employees || [];
 
-  // Fetch categories (filtered by employee's sector to avoid duplicates)
+  // Fetch categories (filtered by employee's CGECI sector to avoid duplicates)
   const { data: categories } = trpc.employeeCategories.getAllCategories.useQuery({
     countryCode: 'CI',
-    sectorCode: (employee as any)?.sector || undefined,
+    sectorCode: (employee as any)?.sectorCodeCgeci || undefined,
   }, {
     enabled: !!employee, // Only fetch after employee data is loaded
   });
