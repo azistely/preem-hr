@@ -160,25 +160,54 @@ export function SalaryChangeWizard({
     );
 
   // Initialize components with current salary
-  // IMPORTANT: Always ensure base salary component (code '11') exists
+  // IMPORTANT: Base salary components (Code 11, Code 12) are managed by baseSalaryDefinitions inputs
+  // We only pre-populate them here if components array is empty (legacy data)
   const baseComponents: SalaryComponentInstance[] = currentSalary.components || [];
-  const hasBaseSalary = baseComponents.some(c => c.code === '11');
+
+  // Get codes of base salary components that will be rendered by baseSalaryDefinitions
+  const baseSalaryCodes = baseSalaryDefinitions?.map(def => def.code) || [];
+
+  // Filter out base salary components - they will be managed by baseSalaryDefinitions inputs
+  const nonBaseSalaryComponents = baseComponents.filter(
+    c => !baseSalaryCodes.includes(c.code)
+  );
+
+  // If components array is empty and we have a baseSalary value, create base components from definitions
+  const needsBaseSalaryInit = baseComponents.length === 0 && currentSalary.baseSalary > 0;
 
   const initialComponents: SalaryComponentInstance[] = [
-    // Always include base salary (from components or baseSalary field)
-    ...(hasBaseSalary
-      ? []
-      : [{
-          code: '11',
-          name: 'Salaire de base',
-          amount: Number(currentSalary.baseSalary), // Ensure it's a number
-          sourceType: 'standard' as const,
-        }]
+    // Pre-populate base salary components if needed (for baseSalaryDefinitions inputs)
+    ...(needsBaseSalaryInit && baseSalaryCodes.length > 0
+      ? baseSalaryCodes.map(code => {
+          // For legacy data, put baseSalary value into Code 11, rest get default values
+          const amount = code === '11'
+            ? Number(currentSalary.baseSalary)
+            : (baseSalaryDefinitions?.find(def => def.code === code)?.defaultValue || 0);
+
+          return {
+            code,
+            name: baseSalaryDefinitions?.find(def => def.code === code)?.name.fr || '',
+            amount,
+            sourceType: 'standard' as const,
+          };
+        })
+      : baseSalaryCodes.map(code => {
+          const existing = baseComponents.find(c => c.code === code);
+          return existing ? {
+            ...existing,
+            amount: Number(existing.amount),
+          } : {
+            code,
+            name: baseSalaryDefinitions?.find(def => def.code === code)?.name.fr || '',
+            amount: baseSalaryDefinitions?.find(def => def.code === code)?.defaultValue || 0,
+            sourceType: 'standard' as const,
+          };
+        })
     ),
-    // Include all existing components (ensure amounts are numbers)
-    ...baseComponents.map(c => ({
+    // Include non-base salary components (allowances, etc.)
+    ...nonBaseSalaryComponents.map(c => ({
       ...c,
-      amount: Number(c.amount), // Ensure amount is a number, not a string
+      amount: Number(c.amount),
     })),
     // Add legacy allowances if they exist but aren't in components
     ...(currentSalary.housingAllowance && !baseComponents.some(c =>
@@ -223,13 +252,10 @@ export function SalaryChangeWizard({
   // Extract rate type early - needed for component calculations
   const rateType = (currentSalary.rateType || 'MONTHLY') as RateType;
 
-  // Extract base salary codes from definitions
-  const baseSalaryCodes = new Set(baseSalaryDefinitions?.map(c => c.code) || ['11']);
-
   // Calculate base salary total from all base components
-  // Note: Base salary components (code '11') are already in the correct rate type
+  // Note: Base salary components (code '11', '12') are already in the correct rate type
   const baseSalary = components
-    .filter(c => baseSalaryCodes.has(c.code))
+    .filter(c => baseSalaryCodes.includes(c.code))
     .reduce((sum, c) => sum + c.amount, 0);
 
   // Calculate totals with rate conversion
@@ -237,7 +263,7 @@ export function SalaryChangeWizard({
   // Convert them to the employee's rate type for display
   const componentTotal = components.reduce((sum, c) => {
     // Base salary (code '11') is already in the correct rate type
-    if (baseSalaryCodes.has(c.code)) {
+    if (baseSalaryCodes.includes(c.code)) {
       return sum + c.amount;
     }
     // Other components (allowances, bonuses) are monthly - convert them
@@ -302,12 +328,31 @@ export function SalaryChangeWizard({
 
     const code = 'code' in component ? component.code : `CUSTOM_${Date.now()}`;
 
+    // Check if this is an auto-calculated component
+    let calculatedAmount = suggestedAmount;
+    const metadata = 'metadata' in component ? component.metadata as any : null;
+    const calculationRule = metadata?.calculationRule;
+
+    if (calculationRule?.type === 'auto-calculated' && calculationRule?.rate) {
+      // For auto-calculated components (e.g., seniority bonus),
+      // calculate based on salaire catégoriel
+      const currentComponents = form.getValues('components') || [];
+      const salaireCategorielComponent = currentComponents.find(c => c.code === '11');
+      const salaireCategoriel = salaireCategorielComponent?.amount || 0;
+
+      if (salaireCategoriel > 0) {
+        const rate = calculationRule.rate; // e.g., 0.02 for 2%
+        calculatedAmount = Math.round(salaireCategoriel * rate);
+        console.log(`[Salary Change] Auto-calculated ${name} as ${rate * 100}% of ${salaireCategoriel}: ${calculatedAmount} FCFA`);
+      }
+    }
+
     const newComponent: SalaryComponentInstance = {
       code,
       name,
-      amount: suggestedAmount,
+      amount: calculatedAmount,
       sourceType: 'template',
-      metadata: undefined, // Metadata will be set from template or can be customized later
+      metadata: metadata, // Store metadata for later use
     };
 
     const currentComponents = form.getValues('components') || [];
@@ -350,7 +395,7 @@ export function SalaryChangeWizard({
     const component = components[index];
 
     // Prevent removing base salary components
-    if (component && baseSalaryCodes.has(component.code)) {
+    if (component && baseSalaryCodes.includes(component.code)) {
       toast.error('Les composantes du salaire de base ne peuvent pas être supprimées');
       return;
     }
@@ -647,10 +692,10 @@ export function SalaryChangeWizard({
                     </div>
 
                     {/* Display added components (excluding base salary) */}
-                    {components.filter(c => !baseSalaryCodes.has(c.code)).length > 0 && (
+                    {components.filter(c => !baseSalaryCodes.includes(c.code)).length > 0 && (
                       <div className="space-y-2">
                         {components
-                          .filter(c => !baseSalaryCodes.has(c.code))
+                          .filter(c => !baseSalaryCodes.includes(c.code))
                           .map((component, index) => {
                             const actualIndex = components.findIndex(c => c === component);
                             return (

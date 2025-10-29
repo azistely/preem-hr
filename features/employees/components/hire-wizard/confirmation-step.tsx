@@ -10,9 +10,11 @@ import { formatCurrency } from '@/features/employees/hooks/use-salary-validation
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Separator } from '@/components/ui/separator';
-import { trpc } from '@/lib/trpc/client';
+import { api } from '@/trpc/react';
 import { Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { SalaryPreviewCard } from '@/features/payroll/components/salary-preview';
+import type { SalaryPreviewData } from '@/features/payroll/components/salary-preview/types';
 
 interface ConfirmationStepProps {
   form: UseFormReturn<any>;
@@ -20,10 +22,10 @@ interface ConfirmationStepProps {
 
 export function ConfirmationStep({ form }: ConfirmationStepProps) {
   const values = form.getValues();
-  const [payslipPreview, setPayslipPreview] = useState<any>(null);
+  const [salaryPreview, setSalaryPreview] = useState<SalaryPreviewData | null>(null);
 
-  // Calculate payslip preview
-  const calculatePreviewMutation = trpc.onboarding.calculatePayslipPreview.useMutation();
+  // Calculate salary preview using unified endpoint
+  const calculatePreviewMutation = api.payroll.calculateSalaryPreview.useMutation();
 
   // Calculate total gross from components or individual allowances
   const components = values.components || [];
@@ -86,23 +88,24 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
           : undefined;
 
         const result = await calculatePreviewMutation.mutateAsync({
+          context: 'hiring',
           baseSalary: previewBaseSalary,
           baseComponents: previewBaseComponents,
           rateType: 'MONTHLY', // Always pass MONTHLY for preview calculation
           hireDate: values.hireDate instanceof Date ? values.hireDate : new Date(values.hireDate),
           maritalStatus: values.maritalStatus || 'single',
-          dependentChildren: values.dependentChildren || 0,
+          dependentChildren: values.taxDependents || 0,
           components: components.length > 0 ? components : undefined,
         });
 
-        setPayslipPreview(result.payslipPreview);
+        setSalaryPreview(result.preview);
       } catch (error: any) {
-        console.error('Error calculating payslip preview:', error);
+        console.error('Error calculating salary preview:', error);
       }
     };
 
     calculatePreview();
-  }, [values.hireDate, baseSalaryTotal, componentTotal, rateType, components.length]);
+  }, [values.hireDate, baseSalaryTotal, componentTotal, rateType, components.length, values.taxDependents]);
 
   return (
     <div className="space-y-6">
@@ -228,7 +231,7 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
 
       <Separator />
 
-      {/* Payslip Preview */}
+      {/* Salary Preview */}
       <div>
         <h3 className="font-semibold mb-3">
           {rateType === 'MONTHLY'
@@ -258,74 +261,11 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
               Impossible de calculer l'aperçu de la paie. Veuillez vérifier les informations saisies.
             </AlertDescription>
           </Alert>
-        ) : payslipPreview ? (
-          <div className="p-4 bg-white rounded-lg border">
-            <div className="space-y-2">
-              {rateType !== 'MONTHLY' && (
-                <>
-                  <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>
-                      Taux {rateType === 'DAILY' ? 'journalier' : 'horaire'}:
-                    </span>
-                    <span className="font-medium">
-                      {formatCurrency(baseSalaryTotal)}/{rateType === 'DAILY' ? 'jour' : 'heure'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>
-                      × {rateType === 'DAILY' ? '30 jours' : '240 heures'} (mois type):
-                    </span>
-                    <span className="font-medium">
-                      {formatCurrency(estimatedMonthlySalary)}
-                    </span>
-                  </div>
-                  <Separator />
-                </>
-              )}
-
-              <div className="flex justify-between">
-                <span>Salaire brut {rateType !== 'MONTHLY' ? 'estimé' : ''}:</span>
-                <strong className="text-lg">{formatCurrency(payslipPreview.grossSalary)}</strong>
-              </div>
-
-              <Separator />
-
-              <div className="flex justify-between text-sm">
-                <span>CNPS (6.3%):</span>
-                <span className="text-red-600">-{formatCurrency(payslipPreview.cnpsEmployee)}</span>
-              </div>
-
-              {payslipPreview.cmuEmployee && payslipPreview.cmuEmployee > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span>CMU (1%):</span>
-                  <span className="text-red-600">-{formatCurrency(payslipPreview.cmuEmployee)}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between text-sm">
-                <span>ITS ({payslipPreview.fiscalParts ?? 1} parts):</span>
-                <span className="text-red-600">-{formatCurrency(payslipPreview.incomeTax)}</span>
-              </div>
-
-              <Separator />
-
-              <div className="flex justify-between items-center p-3 bg-green-100 rounded-lg">
-                <span className="font-semibold">Salaire net {rateType !== 'MONTHLY' ? 'estimé' : ''}:</span>
-                <strong className="text-2xl text-green-700">
-                  {formatCurrency(payslipPreview.netSalary)}
-                </strong>
-              </div>
-
-              <div className="text-xs text-muted-foreground mt-3 space-y-1">
-                <p>
-                  💡 Cet aperçu est basé sur un statut célibataire sans enfants. Vous pourrez ajuster ces informations après la création de l'employé.
-                </p>
-                <p>
-                  👨‍👩‍👧‍👦 <strong>Astuce:</strong> Ajoutez les personnes à charge (enfants, conjoint) dans l'onglet "Personnes à charge" de la fiche employé pour calculer automatiquement les parts fiscales (ITS) et la contribution CMU.
-                </p>
-              </div>
-            </div>
-          </div>
+        ) : salaryPreview ? (
+          <SalaryPreviewCard
+            preview={salaryPreview}
+            context="hiring"
+          />
         ) : (
           <Alert>
             <AlertDescription>

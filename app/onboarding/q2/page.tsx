@@ -13,17 +13,18 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/trpc/react';
 import { OnboardingQuestion } from '@/features/onboarding/components/onboarding-question';
 import { EmployeeWizard } from '@/features/onboarding/components/employee-wizard';
-import { PayslipPreviewCard } from '@/features/onboarding/components/payslip-preview-card';
+import { SalaryPreviewCard } from '@/features/payroll/components/salary-preview';
 import { toast } from 'sonner';
+import type { SalaryPreviewData } from '@/features/payroll/components/salary-preview/types';
 
 export default function OnboardingQ2Page() {
   const router = useRouter();
   const [showSuccess, setShowSuccess] = useState(false);
   const [formData, setFormData] = useState<any>(null); // Store form data, not employee
-  const [payslipPreview, setPayslipPreview] = useState<any>(null);
+  const [salaryPreview, setSalaryPreview] = useState<SalaryPreviewData | null>(null);
 
   // tRPC mutations
-  const calculatePreviewMutation = api.onboarding.calculatePayslipPreview.useMutation();
+  const calculatePreviewMutation = api.payroll.calculateSalaryPreview.useMutation();
   const createEmployeeMutation = api.onboarding.createFirstEmployeeV2.useMutation();
 
   // Get user info for pre-filling
@@ -64,11 +65,13 @@ export default function OnboardingQ2Page() {
         hireDate: data.hireDate instanceof Date ? data.hireDate : new Date(data.hireDate),
       };
 
-      // PHASE 1: Calculate preview only (no DB write)
+      // PHASE 1: Calculate preview using unified endpoint
       const result = await calculatePreviewMutation.mutateAsync({
+        context: 'hiring',
         baseSalary: submitData.baseSalary,
         baseComponents: submitData.baseComponents,
         rateType: submitData.rateType,
+        contractType: submitData.contractType,
         hireDate: submitData.hireDate,
         maritalStatus: submitData.maritalStatus,
         dependentChildren: submitData.dependentChildren,
@@ -77,7 +80,7 @@ export default function OnboardingQ2Page() {
 
       // Store form data and preview
       setFormData(submitData);
-      setPayslipPreview(result.payslipPreview);
+      setSalaryPreview(result.preview);
       setShowSuccess(true);
 
       toast.success(`Aperçu du bulletin de paie généré! 🎉`);
@@ -129,19 +132,35 @@ export default function OnboardingQ2Page() {
           onSubmit={handleEmployeeSubmit}
           isSubmitting={calculatePreviewMutation.isPending}
         />
-      ) : (
-        <PayslipPreviewCard
-          employee={{
-            firstName: formData.firstName,
-            lastName: formData.lastName,
-          }}
-          payslip={payslipPreview}
-          rateType={formData.rateType}
-          onContinue={handleContinue}
-          onEdit={handleEdit}
-          isCreating={createEmployeeMutation.isPending}
-        />
-      )}
+      ) : salaryPreview ? (
+        <div className="space-y-4">
+          {/* Success message */}
+          <div className="flex items-center gap-3 p-4 bg-green-50 border-2 border-green-500 rounded-lg">
+            <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-green-900">
+                {formData.firstName} {formData.lastName} ajouté(e)
+              </h3>
+              <p className="text-sm text-green-700">
+                Profil créé et paie calculée automatiquement
+              </p>
+            </div>
+          </div>
+
+          {/* Salary Preview Card */}
+          <SalaryPreviewCard
+            preview={salaryPreview}
+            context="hiring"
+            onConfirm={handleContinue}
+            onCancel={handleEdit}
+            isLoading={createEmployeeMutation.isPending}
+          />
+        </div>
+      ) : null}
     </OnboardingQuestion>
   );
 }

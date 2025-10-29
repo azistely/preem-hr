@@ -20,6 +20,7 @@ import {
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
 import { payrollRuns, payrollLineItems, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions } from '@/lib/db/schema';
+import { salaryComponentTemplates } from '@/drizzle/schema';
 import { eq, and, lte, gte, or, isNull, asc, desc, sql } from 'drizzle-orm';
 import { ruleLoader } from '@/features/payroll/services/rule-loader';
 
@@ -365,10 +366,15 @@ export const payrollRouter = createTRPCRouter({
       // Calculate hasFamily flag (for CMU employer contribution)
       const hasFamily = maritalStatus === 'married' || dependentChildren > 0;
 
+      // Get salaire catégoriel (code 11) for percentage calculations
+      const salaireCategorielComponent = baseSalaryComponentsList.find(c => c.code === '11');
+      const salaireCategoriel = salaireCategorielComponent?.amount || 0;
+
       // Enrich template components with metadata
       const enrichedTemplateComponents = await Promise.all(
         (input.components || []).map(async (comp: any) => {
-          const [template] = await db
+          // First try salary_component_definitions
+          const [definition] = await db
             .select()
             .from(salaryComponentDefinitions)
             .where(
@@ -376,14 +382,46 @@ export const payrollRouter = createTRPCRouter({
             )
             .limit(1);
 
+          // If not found in definitions, try salary_component_templates
+          let templateFromTemplates: any = null;
+          if (!definition) {
+            const results = await db
+              .select()
+              .from(salaryComponentTemplates)
+              .where(eq(salaryComponentTemplates.code, comp.code))
+              .limit(1);
+            templateFromTemplates = results[0] || null;
+          }
+
+          const template = definition || templateFromTemplates;
+
           if (template) {
+            // Check if this is a percentage-based or auto-calculated component
+            let calculatedAmount = comp.amount;
+            const metadata = template.metadata as any;
+            const calculationRule = metadata?.calculationRule;
+            const calculationMethod = 'calculationMethod' in template ? template.calculationMethod : null;
+
+            if (calculationMethod === 'percentage' && salaireCategoriel > 0) {
+              // For percentage components from definitions table
+              const percentageRate = comp.amount / 100;
+              calculatedAmount = Math.round(salaireCategoriel * percentageRate);
+              console.log(`[Salary Preview] Calculated ${template.name} as ${percentageRate * 100}% of ${salaireCategoriel}: ${calculatedAmount} FCFA`);
+            } else if (calculationRule?.type === 'auto-calculated' && calculationRule?.rate && salaireCategoriel > 0) {
+              // For auto-calculated components from templates table (e.g., seniority)
+              // Use the rate from metadata instead of the user-provided amount
+              const rate = calculationRule.rate; // e.g., 0.02 for 2%
+              calculatedAmount = Math.round(salaireCategoriel * rate);
+              console.log(`[Salary Preview] Auto-calculated ${template.name} using ${rate * 100}% of ${salaireCategoriel}: ${calculatedAmount} FCFA`);
+            }
+
             return {
               code: comp.code,
               name:
                 typeof template.name === 'object'
                   ? (template.name as any).fr || (template.name as any).en || comp.code
                   : String(template.name),
-              amount: comp.amount,
+              amount: calculatedAmount,
               sourceType: 'template' as const,
               metadata: template.metadata,
             };
