@@ -237,26 +237,18 @@ export default function NewEmployeePage() {
           const coefficient = form.getValues('coefficient') || 100;
           const primaryLocationId = form.getValues('primaryLocationId');
 
-          // Calculate total gross salary
-          const baseSalaryTotal = Object.keys(baseComponents).length > 0
-            ? Object.values(baseComponents).reduce((sum: number, amt: any) => sum + (amt || 0), 0)
-            : baseSalary;
+          // Calculate salaire catégoriel (Code 11 only)
+          // This is the base that must meet the coefficient minimum
+          const salaireCategoriel = baseComponents['11'] || baseSalary || 0;
 
-          const componentTotal = components.reduce(
-            (sum: number, component: any) => sum + (component.amount || 0),
-            0
-          );
-
-          const totalGross = baseSalaryTotal + componentTotal;
-
-          // Validation 1: Check salary meets category minimum wage
+          // Validation 1: Check salaire catégoriel meets category minimum wage
           const countryMinimumWage = 75000; // TODO: Get from tenant/countries table
           const requiredMinimum = countryMinimumWage * (coefficient / 100);
 
-          if (totalGross < requiredMinimum) {
+          if (salaireCategoriel < requiredMinimum) {
             form.setError('baseSalary', {
               type: 'manual',
-              message: `Le salaire total (${totalGross.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`,
+              message: `Le salaire catégoriel (${salaireCategoriel.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`,
             });
             isValid = false;
           }
