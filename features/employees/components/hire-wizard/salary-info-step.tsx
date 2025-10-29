@@ -99,6 +99,40 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const salaireCategoriel = baseComponents['11'] || baseSalary || 0;
 
   /**
+   * Calculate auto-calculated component amounts (like seniority bonus)
+   */
+  const calculateComponentAmount = (
+    component: SalaryComponentTemplate | CustomSalaryComponent,
+    suggestedAmount: number
+  ): number => {
+    const code = 'code' in component ? component.code : '';
+    const metadata = 'metadata' in component ? component.metadata : null;
+
+    // Prime d'ancienneté (Code 21): 2% per year, max 25%
+    if (code === '21' && metadata && typeof metadata === 'object') {
+      const calculationRule = (metadata as any).calculationRule;
+      if (calculationRule?.type === 'auto-calculated') {
+        const hireDate = form.watch('hireDate');
+        if (hireDate && salaireCategoriel > 0) {
+          const today = new Date();
+          const hire = hireDate instanceof Date ? hireDate : new Date(hireDate);
+          const yearsOfService = (today.getTime() - hire.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+
+          // Calculate percentage based on years (2% per year)
+          const rate = calculationRule.rate || 0.02;
+          const cap = calculationRule.cap || 0.25;
+          const percentage = Math.min(yearsOfService * rate, cap);
+
+          return Math.round(salaireCategoriel * percentage);
+        }
+      }
+    }
+
+    // Default: use suggested amount
+    return suggestedAmount;
+  };
+
+  /**
    * Add a component from template/custom
    */
   const handleAddComponent = (
@@ -115,10 +149,13 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
 
     const code = 'code' in component ? component.code : `CUSTOM_${Date.now()}`;
 
+    // Calculate final amount (auto-calculated for Code 21, or use suggested amount)
+    const finalAmount = calculateComponentAmount(component, suggestedAmount);
+
     const newComponent: SalaryComponentInstance = {
       code,
       name,
-      amount: suggestedAmount,
+      amount: finalAmount,
       sourceType: 'standard',
       metadata: getSmartDefaults(countryCode, code === '22' ? 'transport' : code === '23' ? 'housing' : code === '24' ? 'meal' : 'housing'),
     };
@@ -290,38 +327,42 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                       Modèles populaires
                     </h4>
                     <div className="grid gap-2">
-                      {templates.map((template) => (
-                        <Card
-                          key={template.id}
-                          className="cursor-pointer hover:border-primary transition-colors"
-                          onClick={() =>
-                            handleAddComponent(
-                              template,
-                              parseFloat(String(template.suggestedAmount || '10000'))
-                            )
-                          }
-                        >
-                          <CardHeader className="py-3">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <CardTitle className="text-sm">
-                                  {(template.name as Record<string, string>).fr}
-                                </CardTitle>
-                                {template.description && (
-                                  <CardDescription className="text-xs mt-1">
-                                    {template.description}
-                                  </CardDescription>
-                                )}
-                              </div>
-                              {template.suggestedAmount && (
-                                <Badge variant="outline">
-                                  {parseFloat(String(template.suggestedAmount)).toLocaleString('fr-FR')} FCFA
+                      {templates.map((template) => {
+                        const suggestedAmount = parseFloat(String(template.suggestedAmount || '10000'));
+                        const calculatedAmount = calculateComponentAmount(template, suggestedAmount);
+                        const isAutoCalculated = template.code === '21'; // Seniority bonus
+
+                        return (
+                          <Card
+                            key={template.id}
+                            className="cursor-pointer hover:border-primary transition-colors"
+                            onClick={() => handleAddComponent(template, suggestedAmount)}
+                          >
+                            <CardHeader className="py-3">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <CardTitle className="text-sm">
+                                    {(template.name as Record<string, string>).fr}
+                                  </CardTitle>
+                                  {template.description && (
+                                    <CardDescription className="text-xs mt-1">
+                                      {template.description}
+                                    </CardDescription>
+                                  )}
+                                  {isAutoCalculated && calculatedAmount > 0 && (
+                                    <CardDescription className="text-xs mt-1 text-primary font-medium">
+                                      Calculé automatiquement selon l'ancienneté
+                                    </CardDescription>
+                                  )}
+                                </div>
+                                <Badge variant={isAutoCalculated ? "default" : "outline"}>
+                                  {calculatedAmount.toLocaleString('fr-FR')} FCFA
                                 </Badge>
-                              )}
-                            </div>
-                          </CardHeader>
-                        </Card>
-                      ))}
+                              </div>
+                            </CardHeader>
+                          </Card>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
