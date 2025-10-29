@@ -407,8 +407,10 @@ export async function calculatePayrollV2(
             input.periodStart
           );
 
-          // Check transport allowance (both direct and location-based)
-          const totalTransport = (input.transportAllowance || 0);
+          // Check transport allowance from both old field-based approach and new component-based approach
+          // Transport component has code '22'
+          const transportFromComponent = allComponents.find(c => c.code === '22')?.amount || 0;
+          const totalTransport = transportFromComponent || (input.transportAllowance || 0);
 
           // Validate transport meets minimum
           if (totalTransport < cityMinimum.monthlyMinimum) {
