@@ -446,6 +446,16 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
             </AlertDescription>
           </Alert>
         )}
+
+        {/* Display validation errors for components */}
+        {form.formState.errors.components && (
+          <Alert variant="destructive" className="mt-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {form.formState.errors.components.message?.toString()}
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
 
       {/* Total Gross Salary */}
