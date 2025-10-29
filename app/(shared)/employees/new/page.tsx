@@ -111,6 +111,7 @@ const steps = [
 
 export default function NewEmployeePage() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const createEmployee = useCreateEmployee();
 
   const form = useForm<FormInput>({
@@ -137,12 +138,21 @@ export default function NewEmployeePage() {
   });
 
   const onSubmit = async (data: FormInput) => {
-    // ⚠️ GUARD: Only submit if we're actually on step 5 (confirmation step)
+    // ⚠️ GUARD 1: Only submit if we're actually on step 5 (confirmation step)
     // This prevents accidental submission during step transitions
     if (currentStep !== 5) {
-      console.warn('[Employee Creation] Submit blocked: not on confirmation step');
+      console.warn('[Employee Creation] Submit blocked: not on confirmation step, current step:', currentStep);
       return;
     }
+
+    // ⚠️ GUARD 2: Prevent double submission
+    if (isSubmitting) {
+      console.warn('[Employee Creation] Submit blocked: already submitting');
+      return;
+    }
+
+    setIsSubmitting(true);
+    console.log('[Employee Creation] Starting submission from step 5');
 
     // Generate default email if not provided (DB requires email field)
     // Remove accents and special characters for valid email format
@@ -173,16 +183,20 @@ export default function NewEmployeePage() {
     );
 
     // Transform to API format (all defaults are applied by Zod)
-    await createEmployee.mutateAsync({
-      ...data,
-      email,
-      baseSalary,
-      coefficient: data.coefficient ?? 100,
-      taxDependents: data.taxDependents ?? 0,
-      components: allComponents, // ✅ Now includes Code 11!
-      rateType: data.rateType ?? 'MONTHLY',
-      // Note: primaryLocationId will be added to employee in a future update
-    });
+    try {
+      await createEmployee.mutateAsync({
+        ...data,
+        email,
+        baseSalary,
+        coefficient: data.coefficient ?? 100,
+        taxDependents: data.taxDependents ?? 0,
+        components: allComponents, // ✅ Now includes Code 11!
+        rateType: data.rateType ?? 'MONTHLY',
+        // Note: primaryLocationId will be added to employee in a future update
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const nextStep = async () => {
@@ -377,10 +391,10 @@ export default function NewEmployeePage() {
             ) : (
               <Button
                 type="submit"
-                disabled={createEmployee.isPending}
+                disabled={createEmployee.isPending || isSubmitting}
                 className="min-h-[56px] px-8 bg-green-600 hover:bg-green-700"
               >
-                {createEmployee.isPending ? (
+                {(createEmployee.isPending || isSubmitting) ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Embauche en cours...
