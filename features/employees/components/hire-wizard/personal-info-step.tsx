@@ -214,7 +214,7 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
               />
             </FormControl>
             <FormDescription>
-              Enfants de moins de 21 ans (ou avec certificat de fréquentation). Maximum 4 pour les déductions fiscales.
+              Enfants de moins de 21 ans (ou avec certificat de fréquentation scolaire)
             </FormDescription>
             <FormMessage />
           </FormItem>
