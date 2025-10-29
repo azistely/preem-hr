@@ -233,43 +233,22 @@ export default function NewEmployeePage() {
           }
 
           // Validation 2: Check transport allowance (Code 22) meets city minimum
-          if (isValid && primaryLocationId) {
-            const transportComponent = components.find((c: any) => c.code === '22');
+          // Note: This validation should be done BEFORE allowing step progression
+          // The actual city lookup happens in the SalaryInfoStep component
+          // We just check if Code 22 exists and has a reasonable minimum
+          const transportComponent = components.find((c: any) => c.code === '22');
 
-            if (transportComponent) {
-              // Fetch location to determine city-based minimum
-              // City minimums: Abidjan (30,000), Bouaké (24,000), Other (20,000)
-              try {
-                const response = await fetch(`/api/trpc/locations.getById?input=${encodeURIComponent(JSON.stringify({ id: primaryLocationId }))}`);
-                const data = await response.json();
+          if (transportComponent) {
+            // Minimum transport allowance is 20,000 FCFA (lowest tier for "other cities")
+            // City-specific minimums: Abidjan (30,000), Bouaké (24,000), Other (20,000)
+            const absoluteMinimum = 20000;
 
-                if (data.result?.data) {
-                  const location = data.result.data;
-                  const city = location.city?.toLowerCase() || '';
-
-                  let minimumTransport = 20000; // Default for other cities
-                  let cityLabel = 'autres villes';
-
-                  if (city.includes('abidjan')) {
-                    minimumTransport = 30000;
-                    cityLabel = 'Abidjan';
-                  } else if (city.includes('bouaké') || city.includes('bouake')) {
-                    minimumTransport = 24000;
-                    cityLabel = 'Bouaké';
-                  }
-
-                  if (transportComponent.amount < minimumTransport) {
-                    form.setError('components', {
-                      type: 'manual',
-                      message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal pour ${cityLabel} (${minimumTransport.toLocaleString('fr-FR')} FCFA).`,
-                    });
-                    isValid = false;
-                  }
-                }
-              } catch (error) {
-                console.error('[Validation] Failed to fetch location for transport validation:', error);
-                // Don't block submission if location fetch fails
-              }
+            if (transportComponent.amount < absoluteMinimum) {
+              form.setError('components', {
+                type: 'manual',
+                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (minimum: ${absoluteMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville: Abidjan (30 000 FCFA), Bouaké (24 000 FCFA), autres villes (20 000 FCFA).`,
+              });
+              isValid = false;
             }
           }
         }
