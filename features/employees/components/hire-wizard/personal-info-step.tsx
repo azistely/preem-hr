@@ -9,6 +9,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
@@ -191,6 +192,30 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
             <p className="text-sm text-muted-foreground">
               Utilisé pour le calcul des parts fiscales et des déductions familiales
             </p>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="taxDependents"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Nombre d'enfants à charge</FormLabel>
+            <FormControl>
+              <Input
+                {...field}
+                type="number"
+                min={0}
+                max={10}
+                className="min-h-[48px]"
+                onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+              />
+            </FormControl>
+            <FormDescription>
+              Enfants de moins de 21 ans (ou avec certificat de fréquentation). Maximum 4 pour les déductions fiscales.
+            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
