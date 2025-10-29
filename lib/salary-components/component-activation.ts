@@ -13,10 +13,9 @@
 import { db } from '@/lib/db';
 import {
   salaryComponentDefinitions,
-  salaryComponentTemplates,
   tenantSalaryComponentActivations
 } from '@/drizzle/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 
 export interface ComponentActivationInput {
   code: string;
@@ -114,60 +113,31 @@ export async function ensureComponentActivated(
     };
   } else {
     // sourceType === 'template'
-    // Check salary_component_templates first
-    const [template] = await dbConn
+    // Query unified definitions by code OR template_code
+    const [component] = await dbConn
       .select()
-      .from(salaryComponentTemplates)
-      .where(eq(salaryComponentTemplates.code, code))
-      .limit(1);
-
-    if (!template) {
-      // Template not found - check if it's a standard component code instead
-      // This handles cases where component definition codes (e.g., 'transport')
-      // are used with sourceType='template'
-      const [definition] = await dbConn
-        .select()
-        .from(salaryComponentDefinitions)
-        .where(
-          and(
+      .from(salaryComponentDefinitions)
+      .where(
+        and(
+          eq(salaryComponentDefinitions.countryCode, countryCode),
+          or(
             eq(salaryComponentDefinitions.code, code),
-            eq(salaryComponentDefinitions.countryCode, countryCode)
+            eq(salaryComponentDefinitions.templateCode, code)
           )
         )
-        .limit(1);
+      )
+      .limit(1);
 
-      if (definition) {
-        // Create activation using the standard component definition
-        const [newActivation] = await dbConn
-          .insert(tenantSalaryComponentActivations)
-          .values({
-            tenantId,
-            countryCode,
-            templateCode: code,
-            overrides: {}, // No overrides initially
-            customName: null,
-            isActive: true,
-            displayOrder: 0,
-            createdBy: userId || null,
-          })
-          .returning();
-
-        return {
-          isNewActivation: true,
-          activationId: newActivation.id,
-          componentCode: code,
-        };
-      }
-
-      throw new Error(`Template component ${code} not found in templates or definitions`);
+    if (!component) {
+      throw new Error(`Component ${code} not found for country ${countryCode}`);
     }
 
-    // Create activation for template component
+    // Create activation using unified component
     const [newActivation] = await dbConn
       .insert(tenantSalaryComponentActivations)
       .values({
         tenantId,
-        countryCode: template.countryCode,
+        countryCode: component.countryCode,
         templateCode: code,
         overrides: {}, // No overrides initially
         customName: null,

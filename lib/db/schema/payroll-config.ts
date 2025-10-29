@@ -151,6 +151,7 @@ export const salaryComponentDefinitions = pgTable(
       .notNull()
       .references(() => countries.code),
     code: varchar('code', { length: 50 }).notNull(),
+    templateCode: varchar('template_code', { length: 50 }), // User-friendly code (TPT_TRANSPORT_CI)
     name: jsonb('name').notNull(),
     category: varchar('category', { length: 50 }).notNull(),
     componentType: varchar('component_type', { length: 50 }).notNull(),
@@ -162,6 +163,7 @@ export const salaryComponentDefinitions = pgTable(
     defaultValue: numeric('default_value', { precision: 15, scale: 2 }),
     displayOrder: integer('display_order').notNull().default(0),
     isCommon: boolean('is_common').notNull().default(false),
+    isPopular: boolean('is_popular').default(false), // Show in "Popular Templates" UI
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),

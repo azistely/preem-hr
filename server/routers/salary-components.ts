@@ -14,12 +14,11 @@ import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import { db } from '@/lib/db';
 import {
   salaryComponentDefinitions,
-  salaryComponentTemplates,
   sectorConfigurations,
   tenantSalaryComponentActivations,
   customSalaryComponents,
 } from '@/drizzle/schema';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, or } from 'drizzle-orm';
 import type {
   SalaryComponentDefinition,
   SalaryComponentTemplate,
@@ -136,22 +135,25 @@ export const salaryComponentsRouter = createTRPCRouter({
   /**
    * Get component templates (curated library)
    * Users can add from template with one click
+   *
+   * NOTE: Now queries from unified salary_component_definitions table
+   * using template_code and is_popular columns
    */
   getComponentTemplates: publicProcedure
     .input(getComponentTemplatesSchema)
     .query(async ({ input }) => {
       const { countryCode, popularOnly } = input;
 
-      const conditions = [eq(salaryComponentTemplates.countryCode, countryCode)];
+      const conditions = [eq(salaryComponentDefinitions.countryCode, countryCode)];
       if (popularOnly) {
-        conditions.push(eq(salaryComponentTemplates.isPopular, true));
+        conditions.push(eq(salaryComponentDefinitions.isPopular, true));
       }
 
       const templates = await db
         .select()
-        .from(salaryComponentTemplates)
+        .from(salaryComponentDefinitions)
         .where(and(...conditions))
-        .orderBy(salaryComponentTemplates.displayOrder);
+        .orderBy(salaryComponentDefinitions.displayOrder);
 
       return templates as unknown as SalaryComponentTemplate[];
     }),
@@ -177,10 +179,12 @@ export const salaryComponentsRouter = createTRPCRouter({
   /**
    * Get active components for the current tenant (Option B)
    *
-   * Fetches tenant activations + templates, then merges them.
+   * Fetches tenant activations + component definitions, then merges them.
    * Returns components with:
-   * - Tax treatment from template (law)
+   * - Tax treatment from definition (law)
    * - Customizations from activation (tenant choice)
+   *
+   * NOTE: Now queries unified salary_component_definitions table
    */
   getCustomComponents: publicProcedure.query(async ({ ctx }) => {
     const tenantId = ctx.user?.tenantId;
@@ -206,16 +210,22 @@ export const salaryComponentsRouter = createTRPCRouter({
       return [];
     }
 
-    // 2. Fetch all activated templates
+    // 2. Fetch all activated component definitions
+    // Query by code OR template_code to handle both systems
     const templateCodes = activations.map((a) => a.templateCode);
-    const templates = await db
+    const components = await db
       .select()
-      .from(salaryComponentTemplates)
-      .where(inArray(salaryComponentTemplates.code, templateCodes));
+      .from(salaryComponentDefinitions)
+      .where(
+        or(
+          inArray(salaryComponentDefinitions.code, templateCodes),
+          inArray(salaryComponentDefinitions.templateCode, templateCodes)
+        )
+      );
 
-    // 3. Merge templates with activations
+    // 3. Merge component definitions with activations
     const merged = mergeTemplatesWithActivations(
-      templates as unknown as TemplateMergerTemplate[],
+      components as unknown as TemplateMergerTemplate[],
       activations as unknown as TenantActivation[]
     );
 
@@ -229,13 +239,15 @@ export const salaryComponentsRouter = createTRPCRouter({
   /**
    * Add component from template (Option B Architecture)
    *
-   * Creates an activation (reference to template + customizations)
+   * Creates an activation (reference to component definition + customizations)
    * instead of copying full component.
    *
    * Validation:
    * - Ensures customizations only contain customizable fields
    * - Validates against compliance rules
    * - Prevents duplicate activations
+   *
+   * NOTE: Now queries unified salary_component_definitions table
    */
   addFromTemplate: publicProcedure
     .input(addFromTemplateSchema)
@@ -252,17 +264,22 @@ export const salaryComponentsRouter = createTRPCRouter({
 
       const { templateCode, customizations } = input;
 
-      // 1. Find the template
-      const [template] = await db
+      // 1. Find the component definition (by code OR template_code)
+      const [component] = await db
         .select()
-        .from(salaryComponentTemplates)
-        .where(eq(salaryComponentTemplates.code, templateCode))
+        .from(salaryComponentDefinitions)
+        .where(
+          or(
+            eq(salaryComponentDefinitions.code, templateCode),
+            eq(salaryComponentDefinitions.templateCode, templateCode)
+          )
+        )
         .limit(1);
 
-      if (!template) {
+      if (!component) {
         throw new TRPCError({
           code: 'NOT_FOUND',
-          message: 'Template introuvable',
+          message: 'Composant introuvable',
         });
       }
 
@@ -288,7 +305,7 @@ export const salaryComponentsRouter = createTRPCRouter({
       // 3. Validate customizations against compliance rules
       const validationResult = await complianceValidator.validateComponent(
         templateCode,
-        template.countryCode,
+        component.countryCode,
         customizations
       );
 
@@ -312,7 +329,7 @@ export const salaryComponentsRouter = createTRPCRouter({
         .insert(tenantSalaryComponentActivations)
         .values({
           tenantId,
-          countryCode: template.countryCode,
+          countryCode: component.countryCode,
           templateCode,
           overrides,
           customName: customizations?.name || null,
@@ -324,7 +341,7 @@ export const salaryComponentsRouter = createTRPCRouter({
 
       // 6. Return merged component (for UI)
       const merged = mergeTemplateWithOverrides(
-        template as unknown as TemplateMergerTemplate,
+        component as unknown as TemplateMergerTemplate,
         activation as unknown as TenantActivation
       );
 
@@ -375,17 +392,22 @@ export const salaryComponentsRouter = createTRPCRouter({
         });
       }
 
-      // 2. Fetch template to get compliance rules
-      const [template] = await db
+      // 2. Fetch component definition to get compliance rules
+      const [component] = await db
         .select()
-        .from(salaryComponentTemplates)
-        .where(eq(salaryComponentTemplates.code, existingActivation.templateCode))
+        .from(salaryComponentDefinitions)
+        .where(
+          or(
+            eq(salaryComponentDefinitions.code, existingActivation.templateCode),
+            eq(salaryComponentDefinitions.templateCode, existingActivation.templateCode)
+          )
+        )
         .limit(1);
 
-      if (!template) {
+      if (!component) {
         throw new TRPCError({
           code: 'NOT_FOUND',
-          message: 'Template introuvable',
+          message: 'Composant introuvable',
         });
       }
 
@@ -393,7 +415,7 @@ export const salaryComponentsRouter = createTRPCRouter({
       if (updates.metadata) {
         const validationResult = await complianceValidator.validateComponent(
           existingActivation.templateCode,
-          template.countryCode,
+          component.countryCode,
           { metadata: updates.metadata }
         );
 
@@ -450,7 +472,7 @@ export const salaryComponentsRouter = createTRPCRouter({
 
       // 7. Return merged component (for UI)
       const merged = mergeTemplateWithOverrides(
-        template as unknown as TemplateMergerTemplate,
+        component as unknown as TemplateMergerTemplate,
         updatedActivation as unknown as TenantActivation
       );
 

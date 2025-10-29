@@ -283,18 +283,43 @@ export function validateMetadata(
 // Smart Defaults for Common Component Types
 // ============================================================================
 
+/**
+ * @deprecated Use getComponentMetadata() from component-loader.ts instead
+ *
+ * This function is deprecated as part of the single source of truth migration.
+ * All component metadata should now be loaded from the database.
+ *
+ * Migration guide:
+ * ```typescript
+ * // BEFORE (hardcoded)
+ * const metadata = getSmartDefaults('CI', 'transport');
+ *
+ * // AFTER (database-driven)
+ * import { getComponentMetadata } from '@/lib/salary-components/component-loader';
+ * const component = await getComponentMetadata('CI', 'TPT_TRANSPORT_CI');
+ * const metadata = component.metadata;
+ * ```
+ *
+ * This function is kept temporarily for backward compatibility but will be removed in a future update.
+ * New code should NOT use this function.
+ */
 export function getSmartDefaults(
   countryCode: string,
   componentType: 'transport' | 'phone' | 'meal' | 'housing' | 'seniority' | 'bonus'
 ): ComponentMetadata {
+  console.warn(
+    `getSmartDefaults() is deprecated. Use getComponentMetadata() from component-loader.ts instead. ` +
+      `Called with: countryCode=${countryCode}, componentType=${componentType}`
+  );
+
   if (countryCode === 'CI') {
     switch (componentType) {
       case 'transport':
         return buildCIMetadata({
-          isTaxable: true,
-          includeInBrutImposable: true,
+          isTaxable: false, // Transport is NOT taxable per Code du Travail Art. 31
+          includeInBrutImposable: false, // NOT included in taxable gross
           includeInSalaireCategoriel: false,
-          exemptionCap: 30000, // Tax-exempt up to 30k FCFA
+          exemptionCap: 30000, // Exemption cap for city-based transport allowances
           includeInCnpsBase: false,
         });
 
