@@ -141,6 +141,15 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
               <span className="font-medium">{values.phone}</span>
             </div>
           )}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Situation matrimoniale</span>
+            <span className="font-medium">
+              {values.maritalStatus === 'married' && 'Marié(e)'}
+              {values.maritalStatus === 'divorced' && 'Divorcé(e)'}
+              {values.maritalStatus === 'widowed' && 'Veuf/Veuve'}
+              {(!values.maritalStatus || values.maritalStatus === 'single') && 'Célibataire'}
+            </span>
+          </div>
         </div>
       </div>
 

@@ -165,6 +165,36 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
           )}
         />
       </div>
+
+      <FormField
+        control={form.control}
+        name="maritalStatus"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Situation matrimoniale</FormLabel>
+            <Select
+              onValueChange={field.onChange}
+              defaultValue={field.value || 'single'}
+            >
+              <FormControl>
+                <SelectTrigger className="min-h-[48px]">
+                  <SelectValue placeholder="Sélectionner" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="single">Célibataire</SelectItem>
+                <SelectItem value="married">Marié(e)</SelectItem>
+                <SelectItem value="divorced">Divorcé(e)</SelectItem>
+                <SelectItem value="widowed">Veuf/Veuve</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              Utilisé pour le calcul des parts fiscales et des déductions familiales
+            </p>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   );
 }

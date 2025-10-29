@@ -51,6 +51,7 @@ const createEmployeeSchema = z.object({
   dateOfBirth: z.date().optional(),
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
   nationalId: z.string().optional(),
+  maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional().default('single'),
 
   // Employment info
   hireDate: z.date(),
@@ -141,6 +142,7 @@ export default function NewEmployeePage() {
       email: '',
       phone: '',
       nationalId: '',
+      maritalStatus: 'single',
       hireDate: new Date(),
       positionId: '',
       coefficient: 100,
