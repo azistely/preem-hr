@@ -266,7 +266,7 @@ export default function NewPayrollRunPage() {
                           <FormItem>
                             <FormLabel>Date de début</FormLabel>
                             <FormControl>
-                              <Input type="date" {...field} />
+                              <Input type="date" {...field} className="min-h-[48px]" />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -279,13 +279,29 @@ export default function NewPayrollRunPage() {
                           <FormItem>
                             <FormLabel>Date de fin</FormLabel>
                             <FormControl>
-                              <Input type="date" {...field} />
+                              <Input type="date" {...field} className="min-h-[48px]" />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
+                    <FormField
+                      control={form.control}
+                      name="paymentDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Date de paiement</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} className="min-h-[48px]" />
+                          </FormControl>
+                          <FormDescription>
+                            Date à laquelle les salaires seront versés aux employés
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </Form>
                 </div>
               )}
