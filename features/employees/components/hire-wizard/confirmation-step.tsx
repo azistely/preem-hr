@@ -96,6 +96,7 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
           maritalStatus: values.maritalStatus || 'single',
           dependentChildren: values.taxDependents || 0,
           components: components.length > 0 ? components : undefined,
+          isExpat: values.isExpat ?? false, // For ITS employer tax calculation (1.2% local, 10.4% expat)
         });
 
         setSalaryPreview(result.preview);
@@ -105,7 +106,7 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
     };
 
     calculatePreview();
-  }, [values.hireDate, baseSalaryTotal, componentTotal, rateType, components.length, values.taxDependents]);
+  }, [values.hireDate, baseSalaryTotal, componentTotal, rateType, components.length, values.taxDependents, values.isExpat]);
 
   return (
     <div className="space-y-6">
