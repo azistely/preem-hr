@@ -100,6 +100,7 @@ const editEmployeeSchema = z.object({
   // Documents (Tab 4)
   dateOfBirth: z.date().optional(),
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
+  identityDocumentType: z.enum(['cni', 'passport', 'residence_permit', 'other']).optional(),
   nationalId: z.string().optional(),
   nationalIdExpiry: z.date().optional(),
   workPermitExpiry: z.date().optional(),
@@ -110,6 +111,7 @@ const editEmployeeSchema = z.object({
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
+  isExpat: z.boolean().optional(),
 });
 
 type EditEmployeeFormValues = z.infer<typeof editEmployeeSchema>;
@@ -186,6 +188,7 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
       maritalStatus: 'single',
       dateOfBirth: undefined,
       gender: undefined,
+      identityDocumentType: undefined,
       nationalId: '',
       nationalIdExpiry: undefined,
       workPermitExpiry: undefined,
@@ -194,6 +197,7 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
       cnpsNumber: '',
       taxNumber: '',
       taxDependents: 0,
+      isExpat: false,
     },
   });
 
@@ -227,6 +231,7 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         // dependentChildren is auto-calculated - not included in form
         dateOfBirth: emp.dateOfBirth ? new Date(emp.dateOfBirth) : undefined,
         gender: emp.gender as 'male' | 'female' | 'other' | 'prefer_not_to_say' | undefined,
+        identityDocumentType: emp.identityDocumentType as 'cni' | 'passport' | 'residence_permit' | 'other' | undefined,
         nationalId: emp.nationalId || '',
         nationalIdExpiry: emp.nationalIdExpiry ? new Date(emp.nationalIdExpiry) : undefined,
         workPermitExpiry: emp.workPermitExpiry ? new Date(emp.workPermitExpiry) : undefined,
@@ -235,6 +240,7 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         cnpsNumber: emp.cnpsNumber || '',
         taxNumber: emp.taxNumber || '',
         taxDependents: emp.taxDependents || 0,
+        isExpat: emp.isExpat ?? false,
       });
     }
   }, [employee, form]);
@@ -248,6 +254,8 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         dateOfBirth: data.dateOfBirth,
         nationalIdExpiry: data.nationalIdExpiry,
         workPermitExpiry: data.workPermitExpiry,
+        isExpat: data.isExpat,
+        identityDocumentType: data.identityDocumentType,
       } as any);
 
       toast({
@@ -961,22 +969,56 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                       />
                     </div>
 
-                    <FormField
-                      control={form.control}
-                      name="nationalId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Numéro CNI</FormLabel>
-                          <FormControl>
-                            <Input {...field} className="min-h-[48px]" />
-                          </FormControl>
-                          <FormDescription>
-                            Carte nationale d'identité
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <div className="space-y-4 pt-4 border-t">
+                      <h4 className="text-sm font-medium">Pièce d'identité</h4>
+
+                      <FormField
+                        control={form.control}
+                        name="identityDocumentType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type de document</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ''}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="min-h-[48px]">
+                                  <SelectValue placeholder="Sélectionner le type de document" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="cni">CNI (Carte Nationale d'Identité)</SelectItem>
+                                <SelectItem value="passport">Passeport</SelectItem>
+                                <SelectItem value="residence_permit">Titre de séjour</SelectItem>
+                                <SelectItem value="other">Autre</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Type de pièce d'identité utilisée
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="nationalId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Numéro du document</FormLabel>
+                            <FormControl>
+                              <Input {...field} className="min-h-[48px]" placeholder="Ex: CI-ABJ-123456" />
+                            </FormControl>
+                            <FormDescription>
+                              Numéro de la pièce d'identité
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     <FormField
                       control={form.control}
@@ -1021,6 +1063,34 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                         </FormItem>
                       )}
                     />
+
+                    <div className="space-y-4 pt-4 border-t">
+                      <h4 className="text-sm font-medium">Statut d'expatrié</h4>
+                      <FormField
+                        control={form.control}
+                        name="isExpat"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                            <FormControl>
+                              <input
+                                type="checkbox"
+                                checked={field.value ?? false}
+                                onChange={field.onChange}
+                                className="h-5 w-5 mt-0.5"
+                              />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                              <FormLabel className="text-base font-medium">
+                                Personnel expatrié
+                              </FormLabel>
+                              <FormDescription className="text-xs">
+                                Cochez cette case si l'employé est expatrié. Cela affectera le calcul de l'ITS employeur (1,2% pour personnel local, 10,4% pour expatrié).
+                              </FormDescription>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>

@@ -306,6 +306,7 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	email: text(),
 	phone: text().notNull(),
 	nationalId: text("national_id"),
+	identityDocumentType: varchar("identity_document_type", { length: 20 }),
 	addressLine1: text("address_line1"),
 	addressLine2: text("address_line2"),
 	city: text(),
@@ -326,6 +327,7 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	cnpsNumber: text("cnps_number"),
 	taxNumber: text("tax_number"),
 	taxDependents: integer("tax_dependents").default(0).notNull(),
+	isExpat: boolean("is_expat").default(false).notNull(),
 	// Family status fields (for payroll correctness)
 	maritalStatus: varchar("marital_status", { length: 20 }),
 	dependentChildren: integer("dependent_children").default(0),
@@ -919,6 +921,7 @@ export const otherTaxes = pgTable("other_taxes", {
 	taxRate: numeric("tax_rate", { precision: 6, scale:  4 }).notNull(),
 	calculationBase: varchar("calculation_base", { length: 50 }).notNull(),
 	paidBy: varchar("paid_by", { length: 20 }).notNull(),
+	appliesToEmployeeType: varchar("applies_to_employee_type", { length: 20 }),
 	effectiveFrom: date("effective_from").notNull(),
 	effectiveTo: date("effective_to"),
 	metadata: jsonb(),

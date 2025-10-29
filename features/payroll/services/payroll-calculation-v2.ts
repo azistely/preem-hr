@@ -56,6 +56,9 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
 
   // Preview mode (for hiring flow before component activation)
   isPreview?: boolean; // If true, use safe defaults for unknown components
+
+  // ITS employer tax calculation
+  isExpat?: boolean; // If true, apply 10.4% ITS employer rate; otherwise 1.2% for local personnel
 }
 
 /**
@@ -875,12 +878,13 @@ export async function calculatePayrollV2(
   const netSalary = Math.round(grossSalary - totalDeductions);
 
   // ========================================
-  // STEP 5: Calculate Other Taxes (FDFP, etc.)
+  // STEP 5: Calculate Other Taxes (FDFP, ITS, etc.)
   // ========================================
   const { employerTaxes, employeeTaxes, otherTaxesDetails } = calculateOtherTaxes(
     grossSalary,
     taxResult.taxableIncome,
-    config.otherTaxes
+    config.otherTaxes,
+    input.isExpat ?? false // Pass employee expat status for ITS calculation
   );
 
   // ========================================
@@ -974,18 +978,45 @@ export async function calculatePayrollV2(
 }
 
 /**
- * Calculate other taxes (FDFP, 3FPT, etc.) from database config
+ * Calculate other taxes (FDFP, ITS, etc.) from database config
+ * Filters ITS taxes based on employee type (local vs expat)
  */
 function calculateOtherTaxes(
   grossSalary: number,
   taxableGross: number,
-  otherTaxes: any[]
+  otherTaxes: any[],
+  isExpat: boolean = false
 ) {
   let employerTaxes = 0;
   let employeeTaxes = 0;
   const details: any[] = [];
 
+  // DEBUG: Log ITS filtering
+  console.log('🔍 [ITS DEBUG] calculateOtherTaxes called:', {
+    isExpat,
+    taxesCount: otherTaxes.length,
+    itsTaxes: otherTaxes.filter(t => t.code?.includes('its_employer')).map(t => ({
+      code: t.code,
+      appliesToEmployeeType: t.appliesToEmployeeType
+    }))
+  });
+
   for (const tax of otherTaxes) {
+    // Filter ITS taxes based on employee type
+    if (tax.appliesToEmployeeType) {
+      const employeeType = isExpat ? 'expat' : 'local';
+      console.log('🔍 [ITS DEBUG] Checking tax:', {
+        code: tax.code,
+        appliesToEmployeeType: tax.appliesToEmployeeType,
+        employeeType,
+        willSkip: tax.appliesToEmployeeType !== employeeType
+      });
+      if (tax.appliesToEmployeeType !== employeeType) {
+        // Skip this tax - it doesn't apply to this employee type
+        continue;
+      }
+    }
+
     // Determine calculation base according to database configuration
     const base = tax.calculationBase === 'brut_imposable'
       ? taxableGross  // Use taxable gross (excludes non-taxable components like transport)

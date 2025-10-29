@@ -117,9 +117,11 @@ export interface UpdateEmployeeInput {
   maritalStatus?: 'single' | 'married' | 'divorced' | 'widowed';
 
   // Document fields
+  identityDocumentType?: 'cni' | 'passport' | 'residence_permit' | 'other';
   nationalIdExpiry?: Date;
   workPermitExpiry?: Date;
   passportNumber?: string;
+  isExpat?: boolean;
 
   // Custom fields
   customFields?: Record<string, any>;
@@ -498,7 +500,9 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.firstName !== undefined) updateValues.firstName = input.firstName;
   if (input.lastName !== undefined) updateValues.lastName = input.lastName;
   if (input.preferredName !== undefined) updateValues.preferredName = input.preferredName;
-  if (input.dateOfBirth !== undefined) updateValues.dateOfBirth = input.dateOfBirth?.toISOString().split('T')[0];
+  if (input.dateOfBirth !== undefined) {
+    updateValues.dateOfBirth = input.dateOfBirth ? input.dateOfBirth.toISOString().split('T')[0] : null;
+  }
   if (input.gender !== undefined) updateValues.gender = input.gender;
   if (input.email !== undefined) updateValues.email = input.email;
   if (input.phone !== undefined) updateValues.phone = input.phone;
@@ -531,9 +535,15 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.maritalStatus !== undefined) updateValues.maritalStatus = input.maritalStatus;
 
   // Document fields
-  if (input.nationalIdExpiry !== undefined) updateValues.nationalIdExpiry = input.nationalIdExpiry?.toISOString().split('T')[0];
-  if (input.workPermitExpiry !== undefined) updateValues.workPermitExpiry = input.workPermitExpiry?.toISOString().split('T')[0];
+  if (input.identityDocumentType !== undefined) updateValues.identityDocumentType = input.identityDocumentType;
+  if (input.nationalIdExpiry !== undefined) {
+    updateValues.nationalIdExpiry = input.nationalIdExpiry ? input.nationalIdExpiry.toISOString().split('T')[0] : null;
+  }
+  if (input.workPermitExpiry !== undefined) {
+    updateValues.workPermitExpiry = input.workPermitExpiry ? input.workPermitExpiry.toISOString().split('T')[0] : null;
+  }
   if (input.passportNumber !== undefined) updateValues.passportNumber = input.passportNumber;
+  if (input.isExpat !== undefined) updateValues.isExpat = input.isExpat;
 
   // Custom fields
   if (input.customFields !== undefined) updateValues.customFields = input.customFields;

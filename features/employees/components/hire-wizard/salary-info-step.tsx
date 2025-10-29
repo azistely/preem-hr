@@ -94,6 +94,10 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
 
   const totalGross = baseSalaryTotal + componentTotal;
 
+  // Calculate salaire catégoriel (Code 11 only) for coefficient minimum validation
+  // This is the base that must meet the coefficient minimum wage requirement
+  const salaireCategoriel = baseComponents['11'] || baseSalary || 0;
+
   /**
    * Add a component from template/custom
    */
@@ -474,10 +478,10 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
         </div>
       )}
 
-      {/* SMIG Validation - Check gross salary against coefficient minimum */}
+      {/* SMIG Validation - Check salaire catégoriel against coefficient minimum */}
       <MinimumWageAlert
         coefficient={coefficient}
-        currentSalary={totalGross}
+        currentSalary={salaireCategoriel}
         countryMinimumWage={countryMinimumWage}
         countryCode={countryCode}
       />

@@ -93,6 +93,7 @@ export interface OtherTax {
   taxRate: number;
   calculationBase: string;
   paidBy: string;
+  appliesToEmployeeType?: 'local' | 'expat' | null; // For ITS filtering
 }
 
 export interface CityTransportMinimum {
@@ -267,6 +268,13 @@ export class RuleLoader {
         )
       );
 
+    // DEBUG: Log raw database values
+    console.log('🔍 [RULE LOADER] Raw taxes from database:', taxes.map(t => ({
+      code: t.code,
+      appliesToEmployeeType: t.appliesToEmployeeType,
+      appliesToEmployeeTypeType: typeof t.appliesToEmployeeType
+    })));
+
     return taxes.map((tax) => ({
       id: tax.id,
       code: tax.code,
@@ -274,6 +282,7 @@ export class RuleLoader {
       taxRate: Number(tax.taxRate),
       calculationBase: tax.calculationBase,
       paidBy: tax.paidBy,
+      appliesToEmployeeType: tax.appliesToEmployeeType as 'local' | 'expat' | null | undefined, // For ITS filtering (local vs expat)
     }));
   }
 

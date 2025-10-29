@@ -30,6 +30,7 @@ interface PayrollPreviewCardProps {
   onCalculate?: () => void;
   isCalculating?: boolean;
   rateType?: RateType; // Add rate type for rate-aware labels
+  isExpat?: boolean; // For ITS employer tax calculation (1.2% local, 10.4% expat)
 }
 
 export function PayrollPreviewCard({
@@ -40,6 +41,7 @@ export function PayrollPreviewCard({
   onCalculate,
   isCalculating,
   rateType = 'MONTHLY',
+  isExpat = false,
 }: PayrollPreviewCardProps) {
   const [salaryPreview, setSalaryPreview] = useState<SalaryPreviewData | null>(null);
   const [comparison, setComparison] = useState<SalaryPreviewComparison | null>(null);
@@ -69,6 +71,7 @@ export function PayrollPreviewCard({
         sourceType: c.sourceType as 'standard' | 'template',
       })),
       rateType,
+      isExpat, // For ITS employer tax calculation
     });
 
     // Calculate current salary preview for comparison (if available)
@@ -83,6 +86,7 @@ export function PayrollPreviewCard({
           sourceType: (c.sourceType || 'standard') as 'standard' | 'template',
         })),
         rateType,
+        isExpat, // For ITS employer tax calculation
       }, {
         onSuccess: (currentResult) => {
           // Calculate comparison when both previews are available
@@ -96,7 +100,7 @@ export function PayrollPreviewCard({
         },
       });
     }
-  }, [newComponents, currentComponents, employeeId, rateType]);
+  }, [newComponents, currentComponents, employeeId, rateType, isExpat]);
 
   // Update comparison when salaryPreview changes
   useEffect(() => {

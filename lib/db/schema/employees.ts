@@ -19,6 +19,7 @@ export const employees = pgTable('employees', {
   email: text('email').notNull(),
   phone: text('phone'),
   nationalId: text('national_id'),
+  identityDocumentType: varchar('identity_document_type', { length: 20 }), // 'cni', 'passport', 'residence_permit'
 
   // Address
   addressLine1: text('address_line1'),
@@ -42,6 +43,7 @@ export const employees = pgTable('employees', {
   // Tax
   taxNumber: text('tax_number'),
   taxDependents: integer('tax_dependents').notNull().default(0),
+  isExpat: boolean('is_expat').notNull().default(false), // For ITS employer calculation (1.2% local, 10.4% expat)
 
   // Coefficient (catégorie professionnelle)
   coefficient: integer('coefficient').notNull().default(100),

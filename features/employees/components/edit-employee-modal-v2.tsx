@@ -110,6 +110,7 @@ const editEmployeeSchema = z.object({
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
+  isExpat: z.boolean().optional(),
 });
 
 type EditEmployeeFormData = z.infer<typeof editEmployeeSchema>;
@@ -179,6 +180,7 @@ export function EditEmployeeModalV2({ employee, open, onClose }: EditEmployeeMod
       cnpsNumber: employee.cnpsNumber ?? '',
       taxNumber: employee.taxNumber ?? '',
       taxDependents: employee.taxDependents ?? 0,
+      isExpat: employee.isExpat ?? false,
     },
   });
 
@@ -206,6 +208,7 @@ export function EditEmployeeModalV2({ employee, open, onClose }: EditEmployeeMod
         cnpsNumber: data.cnpsNumber,
         taxNumber: data.taxNumber,
         taxDependents: data.taxDependents,
+        isExpat: data.isExpat,
         coefficient: data.coefficient,
         rateType: data.rateType,
         // Note: Other fields like primaryLocationId, maritalStatus, etc. are not in updateEmployeeSchema yet
@@ -980,6 +983,34 @@ export function EditEmployeeModalV2({ employee, open, onClose }: EditEmployeeMod
                       )}
                     />
                   </div>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t">
+                  <h4 className="text-sm font-medium">Type de personnel</h4>
+                  <FormField
+                    control={form.control}
+                    name="isExpat"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                        <FormControl>
+                          <input
+                            type="checkbox"
+                            checked={field.value ?? false}
+                            onChange={field.onChange}
+                            className="h-5 w-5 mt-0.5"
+                          />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                          <FormLabel className="text-base font-medium">
+                            Personnel expatrié
+                          </FormLabel>
+                          <FormDescription className="text-xs">
+                            Cochez cette case si l'employé est expatrié. Cela affectera le calcul de l'ITS employeur (1,2% pour personnel local, 10,4% pour expatrié).
+                          </FormDescription>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
                 <Alert className="mt-4">

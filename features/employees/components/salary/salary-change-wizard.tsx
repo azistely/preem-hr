@@ -936,6 +936,7 @@ export function SalaryChangeWizard({
                   newComponents={components}
                   currentComponents={currentSalary.components}
                   rateType={rateType}
+                  isExpat={(employeeData as any)?.isExpat ?? false}
                 />
               )}
             </div>

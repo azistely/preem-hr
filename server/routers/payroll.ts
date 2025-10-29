@@ -243,6 +243,7 @@ export const payrollRouter = createTRPCRouter({
         maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
         dependentChildren: z.number().min(0).max(10).optional(),
         hireDate: z.date().optional(),
+        isExpat: z.boolean().optional(), // For ITS employer tax calculation (1.2% local, 10.4% expat)
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -289,6 +290,17 @@ export const payrollRouter = createTRPCRouter({
       const rateType = input.rateType || existingEmployee?.rateType || 'MONTHLY';
       const contractType = input.contractType || existingEmployee?.contractType;
       const maritalStatus = input.maritalStatus ?? existingEmployee?.maritalStatus ?? 'single';
+      const isExpat = input.isExpat ?? existingEmployee?.isExpat ?? false;
+
+      // DEBUG: Log expatriate status resolution
+      console.log('🔍 [ITS DEBUG] Expatriate status resolution:', {
+        inputIsExpat: input.isExpat,
+        existingEmployeeIsExpat: existingEmployee?.isExpat,
+        resolvedIsExpat: isExpat,
+        employeeId: input.employeeId,
+        employeeName: existingEmployee ? `${existingEmployee.firstName} ${existingEmployee.lastName}` : 'N/A'
+      });
+
       // Count only children (not spouse) from verified dependents
       const childrenCount = verifiedDependents.filter(d =>
         d.relationship === 'child' && d.eligibleForFiscalParts
@@ -319,7 +331,7 @@ export const payrollRouter = createTRPCRouter({
         totalBaseSalary = await calculateBaseSalaryTotal(baseSalaryComponentsList, countryCode);
 
         console.log('[SALARY EDIT MODE] Using components from input only, ignoring database');
-        console.log('[SALARY EDIT MODE] Input components:', input.components.map(c => c.code));
+        console.log('[SALARY EDIT MODE] Input components:', JSON.stringify(input.components, null, 2));
         console.log('[SALARY EDIT MODE] Base components:', baseSalaryComponentsList.map((c: any) => c.code));
       } else if (existingEmployee) {
         // Load salary from employee_salaries table
@@ -477,6 +489,7 @@ export const payrollRouter = createTRPCRouter({
         hoursWorkedThisMonth: rateType === 'HOURLY' ? 30 * 8 : undefined,
         maritalStatus,
         dependentChildren,
+        isExpat, // For ITS employer tax calculation (resolved above)
       });
 
       // Format response to match SalaryPreviewData type

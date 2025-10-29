@@ -132,6 +132,7 @@ export const otherTaxes = pgTable('other_taxes', {
   taxRate: numeric('tax_rate', { precision: 6, scale: 4 }).notNull(),
   calculationBase: varchar('calculation_base', { length: 50 }).notNull(),
   paidBy: varchar('paid_by', { length: 20 }).notNull(),
+  appliesToEmployeeType: varchar('applies_to_employee_type', { length: 20 }), // 'local', 'expat', or NULL for all
   effectiveFrom: date('effective_from').notNull(),
   effectiveTo: date('effective_to'),
   metadata: jsonb('metadata'),
