@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure, employeeProcedure, hrManagerProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, protectedProcedure, employeeProcedure, hrManagerProcedure } from '../api/trpc';
 import { calculateGrossSalary } from '@/features/payroll/services/gross-calculation';
 import { calculatePayroll } from '@/features/payroll/services/payroll-calculation';
 import { calculatePayrollV2 } from '@/features/payroll/services/payroll-calculation-v2';
@@ -19,8 +19,8 @@ import {
   calculatePayrollRun,
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
-import { payrollRuns, payrollLineItems, employees, timeEntries } from '@/lib/db/schema';
-import { eq, and, lte, gte, or, isNull, asc, sql } from 'drizzle-orm';
+import { payrollRuns, payrollLineItems, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions } from '@/lib/db/schema';
+import { eq, and, lte, gte, or, isNull, asc, desc, sql } from 'drizzle-orm';
 import { ruleLoader } from '@/features/payroll/services/rule-loader';
 
 // Export services
@@ -175,6 +175,306 @@ export const payrollRouter = createTRPCRouter({
     .input(calculatePayrollV2InputSchema)
     .query(async ({ input }) => {
       return await calculatePayrollV2(input);
+    }),
+
+  /**
+   * Calculate Salary Preview (Unified endpoint for hiring, salary edit, what-if)
+   *
+   * Single source of truth for salary preview calculations.
+   * Supports three contexts:
+   * - 'hiring': New employee preview (no employeeId)
+   * - 'salary_edit': Existing employee salary change preview
+   * - 'what_if': Family status simulation for existing employee
+   *
+   * @example
+   * ```typescript
+   * // Hiring flow
+   * const preview = await trpc.payroll.calculateSalaryPreview.mutation({
+   *   context: 'hiring',
+   *   baseComponents: { '11': 150000 },
+   *   components: [{ code: 'TPT_ABIDJAN', name: 'Transport Abidjan', amount: 25000 }],
+   *   maritalStatus: 'single',
+   *   dependentChildren: 0,
+   *   hireDate: new Date(),
+   * });
+   *
+   * // Salary edit flow
+   * const preview = await trpc.payroll.calculateSalaryPreview.mutation({
+   *   context: 'salary_edit',
+   *   employeeId: 'emp-123',
+   *   baseComponents: { '11': 200000 }, // New base salary
+   * });
+   *
+   * // What-if mode (simulate family status change)
+   * const preview = await trpc.payroll.calculateSalaryPreview.mutation({
+   *   context: 'what_if',
+   *   employeeId: 'emp-123',
+   *   maritalStatus: 'married',
+   *   dependentChildren: 2,
+   * });
+   * ```
+   */
+  calculateSalaryPreview: protectedProcedure
+    .input(
+      z.object({
+        context: z.enum(['hiring', 'salary_edit', 'what_if']).default('hiring'),
+        employeeId: z.string().uuid().optional(), // Required for salary_edit and what_if
+
+        // Base salary components (database-driven)
+        baseComponents: z.record(z.string(), z.number()).optional(),
+        baseSalary: z.number().min(1).optional(), // Deprecated fallback
+
+        // Additional components (allowances, bonuses, etc.)
+        components: z
+          .array(
+            z.object({
+              code: z.string(),
+              name: z.string(),
+              amount: z.number(),
+              sourceType: z.enum(['standard', 'template']).default('template'),
+            })
+          )
+          .optional(),
+
+        // Employee details (required for hiring, optional for salary_edit/what_if)
+        rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+        contractType: z.enum(['CDI', 'CDD', 'STAGE']).optional(),
+        maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
+        dependentChildren: z.number().min(0).max(10).optional(),
+        hireDate: z.date().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { buildBaseSalaryComponents, calculateBaseSalaryTotal } = await import(
+        '@/lib/salary-components/base-salary-loader'
+      );
+
+      // Dynamic imports for schema to avoid Turbopack module resolution issues
+      const { tenants: tenantsSchema, employees: employeesSchema, employeeDependents: employeeDependentsSchema } = await import('@/drizzle/schema');
+      const { eq: eqOp, and: andOp } = await import('drizzle-orm');
+
+      // Get tenant info
+      const [tenant] = await db.select().from(tenantsSchema).where(eqOp(tenantsSchema.id, ctx.user.tenantId)).limit(1);
+
+      if (!tenant) {
+        throw new Error('Entreprise non trouvée');
+      }
+
+      const countryCode = tenant.countryCode || 'CI';
+
+      // Load existing employee data if employeeId provided
+      let existingEmployee: any = null;
+      let verifiedDependents: any[] = [];
+
+      if (input.employeeId) {
+        [existingEmployee] = await db
+          .select()
+          .from(employeesSchema)
+          .where(andOp(eqOp(employeesSchema.id, input.employeeId), eqOp(employeesSchema.tenantId, ctx.user.tenantId)))
+          .limit(1);
+
+        if (!existingEmployee) {
+          throw new Error('Employé non trouvé');
+        }
+
+        // Load verified dependents for family calculations
+        verifiedDependents = await db
+          .select()
+          .from(employeeDependentsSchema)
+          .where(andOp(eqOp(employeeDependentsSchema.employeeId, input.employeeId), eqOp(employeeDependentsSchema.isVerified, true)));
+      }
+
+      // Determine values based on context
+      const rateType = input.rateType || existingEmployee?.rateType || 'MONTHLY';
+      const contractType = input.contractType || existingEmployee?.contractType;
+      const maritalStatus = input.maritalStatus ?? existingEmployee?.maritalStatus ?? 'single';
+      // Count only children (not spouse) from verified dependents
+      const childrenCount = verifiedDependents.filter(d =>
+        d.relationship === 'child' && d.eligibleForFiscalParts
+      ).length;
+      const dependentChildren = input.dependentChildren ?? childrenCount ?? 0;
+      const hireDate = input.hireDate || existingEmployee?.hireDate || new Date();
+
+      // Build base salary components
+      let baseSalaryComponentsList: any[];
+      let totalBaseSalary = 0;
+
+      if (input.baseComponents) {
+        baseSalaryComponentsList = (await buildBaseSalaryComponents(input.baseComponents, countryCode)) as any[];
+        totalBaseSalary = await calculateBaseSalaryTotal(baseSalaryComponentsList, countryCode);
+      } else if (input.baseSalary) {
+        // Fallback to legacy baseSalary
+        baseSalaryComponentsList = (await buildBaseSalaryComponents({ '11': input.baseSalary }, countryCode)) as any[];
+        totalBaseSalary = input.baseSalary;
+      } else if (input.context === 'salary_edit' && input.components && input.components.length > 0) {
+        // In salary_edit context with components provided, extract base components from input
+        // This ensures we only use the components the user selected in the UI
+        const { getBaseSalaryComponents } = await import('@/lib/salary-components/base-salary-loader');
+        const baseComponentsList = await getBaseSalaryComponents(countryCode);
+        const baseComponentCodes = baseComponentsList.map(bc => bc.code);
+
+        // Filter base components from input
+        baseSalaryComponentsList = input.components.filter(c => baseComponentCodes.includes(c.code));
+        totalBaseSalary = await calculateBaseSalaryTotal(baseSalaryComponentsList, countryCode);
+
+        console.log('[SALARY EDIT MODE] Using components from input only, ignoring database');
+        console.log('[SALARY EDIT MODE] Input components:', input.components.map(c => c.code));
+        console.log('[SALARY EDIT MODE] Base components:', baseSalaryComponentsList.map((c: any) => c.code));
+      } else if (existingEmployee) {
+        // Load salary from employee_salaries table
+        const { employeeSalaries: employeeSalariesSchema } = await import('@/drizzle/schema');
+        const [employeeSalary] = await db
+          .select()
+          .from(employeeSalariesSchema)
+          .where(
+            andOp(
+              eqOp(employeeSalariesSchema.employeeId, input.employeeId!),
+              eqOp(employeeSalariesSchema.tenantId, ctx.user.tenantId)
+            )
+          )
+          .orderBy(desc(employeeSalariesSchema.effectiveFrom))
+          .limit(1);
+
+        if (employeeSalary) {
+          // Use components from salary record if available
+          const components = employeeSalary.components as any[] || [];
+          if (components.length > 0) {
+            baseSalaryComponentsList = components;
+            totalBaseSalary = await calculateBaseSalaryTotal(components, countryCode);
+          } else {
+            // Fallback to base_salary field
+            const baseSalaryAmount = parseFloat(employeeSalary.baseSalary?.toString() || '75000');
+            baseSalaryComponentsList = (await buildBaseSalaryComponents({ '11': baseSalaryAmount }, countryCode)) as any[];
+            totalBaseSalary = baseSalaryAmount;
+          }
+        } else {
+          throw new Error('Aucun salaire trouvé pour cet employé');
+        }
+      } else {
+        throw new Error('Le salaire de base est requis');
+      }
+
+      // Calculate fiscal parts
+      let fiscalParts = 1.0;
+      if (maritalStatus === 'married' || maritalStatus === 'divorced' || maritalStatus === 'widowed') {
+        fiscalParts += 1.0;
+      }
+      const countedChildren = Math.min(dependentChildren, 4);
+      fiscalParts += countedChildren * 0.5;
+
+      // Calculate hasFamily flag (for CMU employer contribution)
+      const hasFamily = maritalStatus === 'married' || dependentChildren > 0;
+
+      // Enrich template components with metadata
+      const enrichedTemplateComponents = await Promise.all(
+        (input.components || []).map(async (comp: any) => {
+          const [template] = await db
+            .select()
+            .from(salaryComponentDefinitions)
+            .where(
+              and(eq(salaryComponentDefinitions.code, comp.code), eq(salaryComponentDefinitions.countryCode, countryCode))
+            )
+            .limit(1);
+
+          if (template) {
+            return {
+              code: comp.code,
+              name:
+                typeof template.name === 'object'
+                  ? (template.name as any).fr || (template.name as any).en || comp.code
+                  : String(template.name),
+              amount: comp.amount,
+              sourceType: 'template' as const,
+              metadata: template.metadata,
+            };
+          }
+
+          return {
+            code: comp.code,
+            name: comp.name || comp.code,
+            amount: comp.amount,
+            sourceType: 'custom' as const,
+          };
+        })
+      );
+
+      // Deduplicate components by code (prefer baseSalaryComponentsList over enrichedTemplateComponents)
+      const componentMap = new Map<string, any>();
+
+      // Add base salary components first (these take priority)
+      baseSalaryComponentsList.forEach(comp => {
+        componentMap.set(comp.code, comp);
+      });
+
+      // Add enriched template components (only if not already present)
+      enrichedTemplateComponents.forEach(comp => {
+        if (!componentMap.has(comp.code)) {
+          componentMap.set(comp.code, comp);
+        }
+      });
+
+      const allComponentsWithMetadata = Array.from(componentMap.values());
+
+      // Calculate preview for a full month
+      const previewDate = hireDate >= new Date() ? hireDate : new Date();
+      const periodStart = new Date(previewDate.getFullYear(), previewDate.getMonth(), 1);
+      const periodEnd = new Date(previewDate.getFullYear(), previewDate.getMonth() + 1, 0);
+
+      // Call calculatePayrollV2
+      const payrollResult = await calculatePayrollV2({
+        employeeId: input.employeeId || 'preview',
+        countryCode,
+        tenantId: ctx.user.tenantId,
+        periodStart,
+        periodEnd,
+        baseSalary: 0, // Set to 0 to avoid double-counting
+        customComponents: allComponentsWithMetadata,
+        hireDate: periodStart,
+        fiscalParts,
+        hasFamily,
+        sectorCode: tenant.genericSectorCode || tenant.sectorCode || 'SERVICES',
+        isPreview: true,
+        rateType,
+        daysWorkedThisMonth: rateType === 'DAILY' ? 30 : undefined,
+        hoursWorkedThisMonth: rateType === 'HOURLY' ? 30 * 8 : undefined,
+        maritalStatus,
+        dependentChildren,
+      });
+
+      // Format response to match SalaryPreviewData type
+      const previewData: any = {
+        grossSalary: payrollResult.grossSalary,
+        netSalary: payrollResult.netSalary,
+        totalEmployerCost: payrollResult.employerCost,
+        cnpsEmployee: payrollResult.cnpsEmployee,
+        cnpsEmployer: payrollResult.cnpsEmployer,
+        its: payrollResult.its,
+        cmuEmployee: payrollResult.cmuEmployee || 0,
+        cmuEmployer: payrollResult.cmuEmployer || 0,
+
+        // Include detailed breakdowns for itemized display
+        contributionDetails: payrollResult.contributionDetails || [],
+        deductionsDetails: payrollResult.deductionsDetails || [],
+        otherTaxesDetails: payrollResult.otherTaxesDetails || [],
+
+        components: allComponentsWithMetadata.map((c: any) => ({
+          code: c.code,
+          name: c.name,
+          amount: c.amount,
+        })),
+        fiscalParts,
+        maritalStatus,
+        dependentChildren,
+        rateType,
+        contractType,
+        countryCode,
+        currencySymbol: 'FCFA',
+      };
+
+      return {
+        success: true,
+        preview: previewData,
+      };
     }),
 
   /**
