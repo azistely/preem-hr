@@ -304,13 +304,15 @@ export function SalaryChangeWizard({
     }
 
     // Validation 1: Category minimum wage
+    // IMPORTANT: Validate salaire catégoriel (Code 11) NOT total gross salary
+    const salaireCategoriel = components.find(c => c.code === '11')?.amount || 0;
     const coefficient = (employeeData as any).coefficient || 100;
     const countryMinimumWage = minWageData?.minimumWage || 75000;
     const requiredMinimum = countryMinimumWage * (coefficient / 100);
 
-    if (componentTotal < requiredMinimum) {
+    if (salaireCategoriel < requiredMinimum) {
       setCategoryValidationError(
-        `Le salaire total (${componentTotal.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`
+        `Le salaire catégoriel (${salaireCategoriel.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`
       );
     } else {
       setCategoryValidationError(null);
