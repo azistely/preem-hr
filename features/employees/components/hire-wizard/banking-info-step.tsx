@@ -70,7 +70,7 @@ export function BankingInfoStep({ form }: BankingInfoStepProps) {
         name="taxDependents"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Nombre de personnes à charge</FormLabel>
+            <FormLabel>Nombre d'enfants à charge</FormLabel>
             <FormControl>
               <Input
                 {...field}
@@ -82,7 +82,7 @@ export function BankingInfoStep({ form }: BankingInfoStepProps) {
               />
             </FormControl>
             <FormDescription>
-              Utilisé pour le calcul des impôts (parts fiscales)
+              Enfants de moins de 21 ans (ou avec certificat de fréquentation). Maximum 4 pour les déductions fiscales.
             </FormDescription>
             <FormMessage />
           </FormItem>

@@ -69,7 +69,7 @@ const createEmployeeSchema = z.object({
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
 
-  // Tax info
+  // Family info (for fiscal parts calculation)
   taxDependents: z.number().int().min(0).max(10).optional().default(0),
 });
 
