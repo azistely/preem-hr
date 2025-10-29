@@ -74,7 +74,7 @@ import {
 } from '@/components/ui/dialog';
 import { trpc } from '@/lib/trpc/client';
 import { useSalaryValidation, formatCurrency } from '../../hooks/use-salary-validation';
-import { usePopularTemplates, useCustomComponents } from '../../hooks/use-salary-components';
+import { useComponentTemplates, useCustomComponents } from '../../hooks/use-salary-components';
 import { SalaryComparisonCard } from './salary-comparison-card';
 import { PayrollPreviewCard } from './payroll-preview-card';
 import { toast } from 'sonner';
@@ -133,6 +133,7 @@ export function SalaryChangeWizard({
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showAllTemplates, setShowAllTemplates] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editAmount, setEditAmount] = useState<number>(0);
   const [showPreview, setShowPreview] = useState(false);
@@ -161,7 +162,7 @@ export function SalaryChangeWizard({
   );
 
   // Load available templates
-  const { data: templates, isLoading: loadingTemplates } = usePopularTemplates(countryCode);
+  const { data: templates, isLoading: loadingTemplates } = useComponentTemplates(countryCode, !showAllTemplates);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
 
   // Load base salary components for this country
@@ -382,6 +383,69 @@ export function SalaryChangeWizard({
   };
 
   /**
+   * Calculate auto-calculated component amounts
+   * Handles various calculation types: seniority, percentage, overtime, etc.
+   */
+  const calculateComponentAmount = (
+    component: SalaryComponentTemplate | CustomSalaryComponent,
+    suggestedAmount: number
+  ): number => {
+    const code = 'code' in component ? component.code : '';
+    const metadata = 'metadata' in component ? component.metadata : null;
+    const calculationMethod = (metadata as any)?.calculationMethod || (component as any).calculationMethod;
+
+    if (!metadata || typeof metadata !== 'object') {
+      return suggestedAmount;
+    }
+
+    const calculationRule = (metadata as any).calculationRule;
+
+    // Get salaire catégoriel from current components
+    const currentComponents = form.getValues('components') || [];
+    const salaireCategorielComponent = currentComponents.find(c => c.code === '11');
+    const salaireCategoriel = salaireCategorielComponent?.amount || 0;
+
+    // Auto-calculated components (from metadata)
+    if (calculationRule?.type === 'auto-calculated') {
+      // Prime d'ancienneté (Code 21): 2% per year, max 25%
+      if (code === '21') {
+        const hireDate = (employeeData as any)?.hireDate;
+        if (hireDate && salaireCategoriel > 0) {
+          const today = new Date();
+          const hire = hireDate instanceof Date ? hireDate : new Date(hireDate);
+          const yearsOfService = (today.getTime() - hire.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+
+          const rate = calculationRule.rate || 0.02;
+          const cap = calculationRule.cap || 0.25;
+          const percentage = Math.min(yearsOfService * rate, cap);
+
+          return Math.round(salaireCategoriel * percentage);
+        }
+      }
+
+      // Overtime (TPT_OVERTIME): Not applicable in salary change (needs actual hours)
+      if (code === 'TPT_OVERTIME') {
+        return 0;
+      }
+    }
+
+    // Percentage-based components (e.g., responsibility allowance)
+    if (calculationMethod === 'percentage' && calculationRule?.rate && salaireCategoriel > 0) {
+      const percentage = calculationRule.rate;
+      return Math.round(salaireCategoriel * percentage);
+    }
+
+    // Formula-based components (e.g., family allowances Code 41)
+    if (calculationMethod === 'formula' && code === '41') {
+      // Family allowances are auto-calculated server-side
+      return 0;
+    }
+
+    // Default: use suggested amount
+    return suggestedAmount;
+  };
+
+  /**
    * Add a component from template/custom
    */
   const handleAddComponent = (
@@ -398,31 +462,15 @@ export function SalaryChangeWizard({
 
     const code = 'code' in component ? component.code : `CUSTOM_${Date.now()}`;
 
-    // Check if this is an auto-calculated component
-    let calculatedAmount = suggestedAmount;
-    const metadata = 'metadata' in component ? component.metadata as any : null;
-    const calculationRule = metadata?.calculationRule;
-
-    if (calculationRule?.type === 'auto-calculated' && calculationRule?.rate) {
-      // For auto-calculated components (e.g., seniority bonus),
-      // calculate based on salaire catégoriel
-      const currentComponents = form.getValues('components') || [];
-      const salaireCategorielComponent = currentComponents.find(c => c.code === '11');
-      const salaireCategoriel = salaireCategorielComponent?.amount || 0;
-
-      if (salaireCategoriel > 0) {
-        const rate = calculationRule.rate; // e.g., 0.02 for 2%
-        calculatedAmount = Math.round(salaireCategoriel * rate);
-        console.log(`[Salary Change] Auto-calculated ${name} as ${rate * 100}% of ${salaireCategoriel}: ${calculatedAmount} FCFA`);
-      }
-    }
+    // Calculate final amount (auto-calculated for Code 21, or use suggested amount)
+    const calculatedAmount = calculateComponentAmount(component, suggestedAmount);
 
     const newComponent: SalaryComponentInstance = {
       code,
       name,
       amount: calculatedAmount,
       sourceType: 'template',
-      metadata: metadata, // Store metadata for later use
+      metadata: 'metadata' in component ? component.metadata as any : undefined,
     };
 
     const currentComponents = form.getValues('components') || [];
@@ -672,51 +720,91 @@ export function SalaryChangeWizard({
                           <DialogHeader>
                             <DialogTitle>Ajouter un composant salarial</DialogTitle>
                             <DialogDescription>
-                              Sélectionnez parmi les modèles populaires ou vos composants personnalisés
+                              Sélectionnez parmi les modèles {showAllTemplates ? '' : 'populaires ou '}ou vos composants personnalisés
                             </DialogDescription>
                           </DialogHeader>
 
+                          {/* Toggle to show all templates */}
+                          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <Info className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm">
+                                {showAllTemplates
+                                  ? `${templates?.length || 0} composants disponibles`
+                                  : `${templates?.length || 0} composants populaires`}
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowAllTemplates(!showAllTemplates)}
+                            >
+                              {showAllTemplates ? 'Populaires uniquement' : 'Voir tous les composants'}
+                            </Button>
+                          </div>
+
                           <div className="space-y-4 mt-4">
-                            {/* Popular Templates */}
+                            {/* Templates */}
                             {templates && templates.length > 0 && (
                               <div>
                                 <h4 className="font-semibold mb-3 flex items-center gap-2">
                                   <Sparkles className="h-4 w-4" />
-                                  Modèles populaires
+                                  {showAllTemplates ? 'Tous les composants' : 'Modèles populaires'}
                                 </h4>
                                 <div className="grid gap-2">
-                                  {templates.map((template) => (
-                                    <Card
-                                      key={template.id}
-                                      className="cursor-pointer hover:border-primary transition-colors"
-                                      onClick={() =>
-                                        handleAddComponent(
-                                          template,
-                                          parseFloat(String(template.suggestedAmount || '10000'))
-                                        )
-                                      }
-                                    >
-                                      <CardHeader className="py-3">
-                                        <div className="flex items-start justify-between">
-                                          <div>
-                                            <CardTitle className="text-sm">
-                                              {(template.name as Record<string, string>).fr}
-                                            </CardTitle>
-                                            {template.description && (
-                                              <CardDescription className="text-xs mt-1">
-                                                {template.description}
-                                              </CardDescription>
-                                            )}
-                                          </div>
-                                          {template.suggestedAmount && (
-                                            <Badge variant="outline">
-                                              {parseFloat(String(template.suggestedAmount)).toLocaleString('fr-FR')} FCFA
+                                  {templates.map((template) => {
+                                    const suggestedAmount = parseFloat(String(template.suggestedAmount || '10000'));
+                                    const calculatedAmount = calculateComponentAmount(template, suggestedAmount);
+
+                                    // Determine if auto-calculated and get hint text
+                                    const metadata = template.metadata as any;
+                                    const calculationRule = metadata?.calculationRule;
+                                    const calcMethod = metadata?.calculationMethod || (template as any).calculationMethod;
+                                    const isAutoCalculated = calculationRule?.type === 'auto-calculated' || calcMethod === 'percentage' || calcMethod === 'formula';
+
+                                    let autoCalcHint = '';
+                                    if (template.code === '21') {
+                                      autoCalcHint = 'Calculé automatiquement selon l\'ancienneté';
+                                    } else if (calcMethod === 'percentage') {
+                                      autoCalcHint = 'Pourcentage du salaire catégoriel';
+                                    } else if (calcMethod === 'formula') {
+                                      autoCalcHint = 'Montant calculé selon la situation familiale';
+                                    } else if (template.code === 'TPT_OVERTIME') {
+                                      autoCalcHint = 'Calculé selon les heures travaillées';
+                                    }
+
+                                    return (
+                                      <Card
+                                        key={template.id}
+                                        className="cursor-pointer hover:border-primary transition-colors"
+                                        onClick={() => handleAddComponent(template, suggestedAmount)}
+                                      >
+                                        <CardHeader className="py-3">
+                                          <div className="flex items-start justify-between">
+                                            <div className="flex-1">
+                                              <CardTitle className="text-sm">
+                                                {(template.name as Record<string, string>).fr}
+                                              </CardTitle>
+                                              {template.description && (
+                                                <CardDescription className="text-xs mt-1">
+                                                  {template.description}
+                                                </CardDescription>
+                                              )}
+                                              {isAutoCalculated && autoCalcHint && (
+                                                <CardDescription className="text-xs mt-1 text-primary font-medium">
+                                                  {autoCalcHint}
+                                                </CardDescription>
+                                              )}
+                                            </div>
+                                            <Badge variant={isAutoCalculated && calculatedAmount > 0 ? "default" : "outline"}>
+                                              {calculatedAmount.toLocaleString('fr-FR')} FCFA
                                             </Badge>
-                                          )}
-                                        </div>
-                                      </CardHeader>
-                                    </Card>
-                                  ))}
+                                          </div>
+                                        </CardHeader>
+                                      </Card>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}
