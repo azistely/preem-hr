@@ -55,12 +55,17 @@ export const cgeciRouter = createTRPCRouter({
       try {
         const categories = await db
           .select({
+            id: employeeCategoryCoefficients.id,
             category: employeeCategoryCoefficients.category,
             labelFr: employeeCategoryCoefficients.labelFr,
             minCoefficient: employeeCategoryCoefficients.minCoefficient,
             maxCoefficient: employeeCategoryCoefficients.maxCoefficient,
             actualMinimumWage: employeeCategoryCoefficients.actualMinimumWage,
             minimumWageBase: employeeCategoryCoefficients.minimumWageBase,
+            noticePeriodDays: employeeCategoryCoefficients.noticePeriodDays,
+            noticeReductionPercent: employeeCategoryCoefficients.noticeReductionPercent,
+            notes: employeeCategoryCoefficients.notes,
+            legalReference: employeeCategoryCoefficients.legalReference,
           })
           .from(employeeCategoryCoefficients)
           .where(

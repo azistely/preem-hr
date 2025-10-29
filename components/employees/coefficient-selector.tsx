@@ -48,10 +48,18 @@ export function CoefficientSelector({
   const [selectedCoefficient, setSelectedCoefficient] = useState(value);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
-  // Fetch all categories for country
-  const { data: categories, isLoading } = trpc.employeeCategories.getCategoriesByCountry.useQuery({
-    countryCode,
-  });
+  // Get tenant data to fetch CGECI sector
+  const { data: tenant } = trpc.tenant.getCurrent.useQuery();
+  const cgeciSectorCode = tenant?.cgeciSectorCode;
+
+  // Fetch categories filtered by tenant's CGECI sector
+  const { data: categories, isLoading } = trpc.cgeci.getCategoriesBySector.useQuery(
+    {
+      sectorCode: cgeciSectorCode || '',
+      countryCode,
+    },
+    { enabled: !!cgeciSectorCode }
+  );
 
   // Find current category by ID or by coefficient
   const currentCategory = categories?.find((cat) =>
@@ -72,14 +80,14 @@ export function CoefficientSelector({
     }
   }, [categories, selectedCoefficient, selectedCategoryId]);
 
-  // Validate selected coefficient
+  // Validate selected coefficient (only if sector is configured)
   const { data: validation } = trpc.employeeCategories.validateCoefficient.useQuery(
     {
       coefficient: selectedCoefficient,
       countryCode,
     },
     {
-      enabled: selectedCoefficient > 0,
+      enabled: selectedCoefficient > 0 && !!cgeciSectorCode,
     }
   );
 
@@ -93,6 +101,37 @@ export function CoefficientSelector({
       <div className={className}>
         <Label>Catégorie professionnelle</Label>
         <Skeleton className="h-12 w-full mt-2" />
+      </div>
+    );
+  }
+
+  // Show helpful message if sector is not configured
+  if (!cgeciSectorCode) {
+    return (
+      <div className={className}>
+        <Label>Catégorie professionnelle</Label>
+        <Alert className="mt-2">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Veuillez d'abord configurer le secteur d'activité de votre entreprise dans les paramètres.
+            Les catégories professionnelles dépendent de votre secteur CGECI.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Show message if no categories found for sector
+  if (!categories || categories.length === 0) {
+    return (
+      <div className={className}>
+        <Label>Catégorie professionnelle</Label>
+        <Alert className="mt-2">
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            Aucune catégorie disponible pour le secteur configuré ({cgeciSectorCode}).
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
