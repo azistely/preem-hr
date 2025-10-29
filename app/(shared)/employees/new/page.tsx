@@ -197,7 +197,82 @@ export default function NewEmployeePage() {
         isValid = await form.trigger(['hireDate', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
         break;
       case 3:
+        // Validate form fields first
         isValid = await form.trigger(['baseSalary', 'baseComponents', 'components']);
+
+        // Additional validation: Check salary meets category minimum wage
+        if (isValid) {
+          const baseSalary = form.getValues('baseSalary') || 0;
+          const baseComponents = form.getValues('baseComponents') || {};
+          const components = form.getValues('components') || [];
+          const coefficient = form.getValues('coefficient') || 100;
+          const primaryLocationId = form.getValues('primaryLocationId');
+
+          // Calculate total gross salary
+          const baseSalaryTotal = Object.keys(baseComponents).length > 0
+            ? Object.values(baseComponents).reduce((sum: number, amt: any) => sum + (amt || 0), 0)
+            : baseSalary;
+
+          const componentTotal = components.reduce(
+            (sum: number, component: any) => sum + (component.amount || 0),
+            0
+          );
+
+          const totalGross = baseSalaryTotal + componentTotal;
+
+          // Validation 1: Check salary meets category minimum wage
+          const countryMinimumWage = 75000; // TODO: Get from tenant/countries table
+          const requiredMinimum = countryMinimumWage * (coefficient / 100);
+
+          if (totalGross < requiredMinimum) {
+            form.setError('baseSalary', {
+              type: 'manual',
+              message: `Le salaire total (${totalGross.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`,
+            });
+            isValid = false;
+          }
+
+          // Validation 2: Check transport allowance (Code 22) meets city minimum
+          if (isValid && primaryLocationId) {
+            const transportComponent = components.find((c: any) => c.code === '22');
+
+            if (transportComponent) {
+              // Fetch location to determine city-based minimum
+              // City minimums: Abidjan (30,000), Bouaké (24,000), Other (20,000)
+              try {
+                const response = await fetch(`/api/trpc/locations.getById?input=${encodeURIComponent(JSON.stringify({ id: primaryLocationId }))}`);
+                const data = await response.json();
+
+                if (data.result?.data) {
+                  const location = data.result.data;
+                  const city = location.city?.toLowerCase() || '';
+
+                  let minimumTransport = 20000; // Default for other cities
+                  let cityLabel = 'autres villes';
+
+                  if (city.includes('abidjan')) {
+                    minimumTransport = 30000;
+                    cityLabel = 'Abidjan';
+                  } else if (city.includes('bouaké') || city.includes('bouake')) {
+                    minimumTransport = 24000;
+                    cityLabel = 'Bouaké';
+                  }
+
+                  if (transportComponent.amount < minimumTransport) {
+                    form.setError('components', {
+                      type: 'manual',
+                      message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal pour ${cityLabel} (${minimumTransport.toLocaleString('fr-FR')} FCFA).`,
+                    });
+                    isValid = false;
+                  }
+                }
+              } catch (error) {
+                console.error('[Validation] Failed to fetch location for transport validation:', error);
+                // Don't block submission if location fetch fails
+              }
+            }
+          }
+        }
         break;
       case 4:
         isValid = true; // Banking info is optional

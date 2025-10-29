@@ -245,6 +245,11 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
           <FormDescription>
             Minimum {rateLabel}: {formatCurrency(countryMinimumWage)} (SMIG {rateType === 'DAILY' ? '÷ 30' : rateType === 'HOURLY' ? '÷ 240' : ''})
           </FormDescription>
+          {form.formState.errors.baseSalary && (
+            <p className="text-sm text-destructive mt-1">
+              {form.formState.errors.baseSalary.message?.toString()}
+            </p>
+          )}
           {form.formState.errors.components && (
             <p className="text-sm text-destructive mt-1">
               {form.formState.errors.components.message?.toString()}
