@@ -70,10 +70,9 @@ export function PayrollEmployeeRow({
   };
 
   return (
-    <Collapsible asChild open={isExpanded} onOpenChange={onToggle}>
-      <>
-        {/* Summary Row */}
-        <TableRow className="cursor-pointer hover:bg-muted/50">
+    <Collapsible open={isExpanded} onOpenChange={onToggle}>
+      {/* Summary Row */}
+      <TableRow className="cursor-pointer hover:bg-muted/50">
           <TableCell>
             <CollapsibleTrigger asChild>
               <div className="flex items-center gap-2">
@@ -157,7 +156,7 @@ export function PayrollEmployeeRow({
 
         {/* Detailed Breakdown (Expanded) */}
         <CollapsibleContent asChild>
-          <TableRow>
+          <tr>
             <TableCell colSpan={status === 'approved' || status === 'paid' ? 9 : 8} className="bg-muted/30 p-6">
               <div className="space-y-6">
                 {/* Action Buttons */}
@@ -333,9 +332,8 @@ export function PayrollEmployeeRow({
                 </div>
               </div>
             </TableCell>
-          </TableRow>
+          </tr>
         </CollapsibleContent>
-      </>
     </Collapsible>
   );
 }
