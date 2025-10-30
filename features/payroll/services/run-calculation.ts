@@ -169,8 +169,9 @@ export async function calculatePayrollRun(
     throw new Error('Payroll run not found');
   }
 
-  if (run.status !== 'draft') {
-    throw new Error('La paie a déjà été calculée ou est en cours de traitement');
+  // Allow recalculation of draft and calculated runs (before approval)
+  if (run.status !== 'draft' && run.status !== 'calculated') {
+    throw new Error('La paie a déjà été approuvée et ne peut plus être recalculée');
   }
 
   // Update status to calculating
@@ -180,6 +181,12 @@ export async function calculatePayrollRun(
     .where(eq(payrollRuns.id, input.runId));
 
   try {
+    // Delete existing line items if recalculating
+    // This allows users to recalculate runs with 'calculated' status
+    await db
+      .delete(payrollLineItems)
+      .where(eq(payrollLineItems.payrollRunId, input.runId));
+
     // Get tenant with sector information
     const tenant = await db.query.tenants.findFirst({
       where: eq(tenants.id, run.tenantId),
