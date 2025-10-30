@@ -164,8 +164,8 @@ export default function OnboardingQ1Page() {
         toast.success('Configuration enregistrée (sites déjà existants)');
       }
 
-      // Navigate to success page (skip Q2/employee setup)
-      router.push('/onboarding/success');
+      // Navigate to Q2 (employee migration wizard)
+      router.push('/onboarding/q2');
     } catch (error: any) {
       toast.error(error.message || 'Impossible d\'enregistrer les informations');
     }
