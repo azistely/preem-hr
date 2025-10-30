@@ -123,6 +123,14 @@ export interface UpdateEmployeeInput {
   passportNumber?: string;
   isExpat?: boolean;
 
+  // Personnel Record fields (Registre du Personnel)
+  nationalityZone?: 'LOCAL' | 'CEDEAO' | 'HORS_CEDEAO';
+  employeeType?: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE';
+  fatherName?: string;
+  motherName?: string;
+  placeOfBirth?: string;
+  emergencyContactName?: string;
+
   // Custom fields
   customFields?: Record<string, any>;
 }
@@ -229,6 +237,13 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
         taxDependents: input.taxDependents || 0,
         coefficient: input.coefficient || 100,
         rateType: input.rateType || 'MONTHLY',
+        // Personnel Record (Registre du Personnel) fields
+        nationalityZone: input.nationalityZone || null,
+        employeeType: input.employeeType || null,
+        fatherName: input.fatherName || null,
+        motherName: input.motherName || null,
+        placeOfBirth: input.placeOfBirth || null,
+        emergencyContactName: input.emergencyContactName || null,
         customFields: input.customFields || {},
         status: 'active',
         createdBy: input.createdBy,
@@ -518,9 +533,13 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.taxNumber !== undefined) updateValues.taxNumber = input.taxNumber;
   if (input.taxDependents !== undefined) updateValues.taxDependents = input.taxDependents;
 
-  // Employment fields
-  if (input.primaryLocationId !== undefined) updateValues.primaryLocationId = input.primaryLocationId;
-  if (input.reportingManagerId !== undefined) updateValues.reportingManagerId = input.reportingManagerId;
+  // Employment fields (handle empty strings for UUID fields)
+  if (input.primaryLocationId !== undefined) {
+    updateValues.primaryLocationId = input.primaryLocationId === '' ? null : input.primaryLocationId;
+  }
+  if (input.reportingManagerId !== undefined) {
+    updateValues.reportingManagerId = input.reportingManagerId === '' ? null : input.reportingManagerId;
+  }
   if (input.categoryCode !== undefined) updateValues.categoryCode = input.categoryCode;
   if (input.coefficient !== undefined) updateValues.coefficient = input.coefficient;
   if (input.rateType !== undefined) updateValues.rateType = input.rateType;
@@ -545,20 +564,35 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.passportNumber !== undefined) updateValues.passportNumber = input.passportNumber;
   if (input.isExpat !== undefined) updateValues.isExpat = input.isExpat;
 
+  // Personnel Record fields (Registre du Personnel)
+  if (input.nationalityZone !== undefined) updateValues.nationalityZone = input.nationalityZone;
+  if (input.employeeType !== undefined) updateValues.employeeType = input.employeeType;
+  if (input.fatherName !== undefined) updateValues.fatherName = input.fatherName;
+  if (input.motherName !== undefined) updateValues.motherName = input.motherName;
+  if (input.placeOfBirth !== undefined) updateValues.placeOfBirth = input.placeOfBirth;
+  if (input.emergencyContactName !== undefined) updateValues.emergencyContactName = input.emergencyContactName;
+
   // Custom fields
   if (input.customFields !== undefined) updateValues.customFields = input.customFields;
 
   // Update employee
-  const [updated] = await db
-    .update(employees)
-    .set(updateValues)
-    .where(
-      and(
-        eq(employees.id, input.id),
-        eq(employees.tenantId, input.tenantId)
+  let updated;
+  try {
+    [updated] = await db
+      .update(employees)
+      .set(updateValues)
+      .where(
+        and(
+          eq(employees.id, input.id),
+          eq(employees.tenantId, input.tenantId)
+        )
       )
-    )
-    .returning();
+      .returning();
+  } catch (error: any) {
+    // Expose the actual PostgreSQL error for debugging
+    console.error('Database update error:', error);
+    throw new Error(`Database error: ${error.message || error.toString()}`);
+  }
 
   if (!updated) {
     throw new NotFoundError('Employé', input.id);

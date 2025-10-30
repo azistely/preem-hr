@@ -23,6 +23,8 @@ import {
 import { eventBus } from '@/lib/event-bus';
 import { TRPCError } from '@trpc/server';
 import { getMinimumWageHelper } from '@/lib/compliance/coefficient-validation.service';
+import { db } from '@/lib/db';
+import { employeeBenefitEnrollments } from '@/drizzle/schema';
 
 // Zod Schemas
 const genderEnum = z.enum(['male', 'female', 'other', 'prefer_not_to_say']);
@@ -35,6 +37,12 @@ const componentSchema = z.object({
   amount: z.number().min(0, 'Le montant doit être positif'),
   sourceType: z.enum(['standard', 'custom', 'calculated']).default('standard'),
   metadata: z.record(z.any()).optional(),
+});
+
+// Benefits enrollment schema
+const benefitEnrollmentSchema = z.object({
+  planId: z.string().uuid('Plan invalide'),
+  effectiveFrom: z.date(),
 });
 
 const createEmployeeSchema = z.object({
@@ -57,6 +65,14 @@ const createEmployeeSchema = z.object({
   postalCode: z.string().optional(),
   countryCode: z.string().length(2).default('CI'),
 
+  // Personnel Record (Registre du Personnel) - Legal fields for CI
+  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO']).optional(),
+  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE']).optional(),
+  fatherName: z.string().optional(),
+  motherName: z.string().optional(),
+  placeOfBirth: z.string().optional(),
+  emergencyContactName: z.string().optional(),
+
   // Employment
   hireDate: z.date(),
   contractType: z.enum(['CDI', 'CDD', 'STAGE']).default('CDI'),
@@ -71,7 +87,6 @@ const createEmployeeSchema = z.object({
   cnpsNumber: z.string().optional(),
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).default(0),
-  isExpat: z.boolean().optional().default(false), // For ITS employer tax calculation (1.2% local, 10.4% expat)
 
   // Position & Salary (base salary + components)
   positionId: z.string().uuid('Position invalide'),
@@ -81,6 +96,9 @@ const createEmployeeSchema = z.object({
 
   // GAP-JOUR-003: Rate type support
   rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).default('MONTHLY'),
+
+  // Benefits enrollment
+  benefitEnrollments: z.array(benefitEnrollmentSchema).optional().default([]),
 
   // Custom fields
   customFields: z.record(z.any()).optional(),
@@ -182,6 +200,14 @@ const updateEmployeeSchema = z.object({
   taxDependents: z.number().int().min(0).max(10).optional(),
   isExpat: z.boolean().optional(),
 
+  // Personnel Record Fields (Registre du Personnel)
+  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO']).optional(),
+  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE']).optional(),
+  fatherName: z.string().optional(),
+  motherName: z.string().optional(),
+  placeOfBirth: z.string().optional(),
+  emergencyContactName: z.string().optional(),
+
   // Custom Fields
   customFields: z.record(z.any()).optional(),
 });
@@ -223,12 +249,32 @@ export const employeesRouter = createTRPCRouter({
     .input(createEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
+        // Extract benefits enrollments from input
+        const { benefitEnrollments, ...employeeData } = input;
+
+        // Create employee
         const employee = await createEmployee({
-          ...input,
+          ...employeeData,
           tenantId: ctx.user.tenantId,
           createdBy: ctx.user.id,
           createdByEmail: 'system', // TODO: Add email to user context
         } as any);
+
+        // Create benefit enrollments if provided
+        if (benefitEnrollments && benefitEnrollments.length > 0) {
+          for (const enrollment of benefitEnrollments) {
+            await db.insert(employeeBenefitEnrollments).values({
+              tenantId: ctx.user.tenantId,
+              employeeId: employee.id,
+              benefitPlanId: enrollment.planId,
+              enrollmentDate: enrollment.effectiveFrom.toISOString().split('T')[0],
+              effectiveDate: enrollment.effectiveFrom.toISOString().split('T')[0],
+              enrollmentStatus: 'active',
+              createdBy: ctx.user.id,
+              updatedBy: ctx.user.id,
+            });
+          }
+        }
 
         // Emit employee.hired event
         await eventBus.publish('employee.hired', {
@@ -306,9 +352,13 @@ export const employeesRouter = createTRPCRouter({
 
         return updatedEmployee;
       } catch (error: any) {
+        console.error('Employee update error:', error);
+        // Include more error details for debugging
+        const errorMessage = error.message || error.toString() || 'Erreur lors de la mise à jour de l\'employé';
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: error.message || 'Erreur lors de la mise à jour de l\'employé',
+          message: errorMessage,
+          cause: error,
         });
       }
     }),

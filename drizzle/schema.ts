@@ -231,6 +231,9 @@ export const positions = pgTable("positions", {
 	maxSalary: numeric("max_salary", { precision: 15, scale:  2 }),
 	currency: text().default('XOF').notNull(),
 	jobLevel: text("job_level"),
+	// Job classification fields (from migration 20251030_enhance_positions_for_job_classification)
+	jobFunction: varchar("job_function", { length: 255 }), // Fonction - broader role category
+	jobTrade: varchar("job_trade", { length: 255 }), // Métier - specific job/trade performed
 	employmentType: text("employment_type").default('full_time').notNull(),
 	weeklyHours: numeric("weekly_hours", { precision: 5, scale:  2 }).default('40').notNull(),
 	workSchedule: jsonb("work_schedule"),
@@ -328,6 +331,13 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	taxNumber: text("tax_number"),
 	taxDependents: integer("tax_dependents").default(0).notNull(),
 	isExpat: boolean("is_expat").default(false).notNull(),
+	// Personnel record fields (from migration 20251030_add_personnel_record_fields)
+	nationalityZone: varchar("nationality_zone", { length: 20 }), // 'CEDEAO', 'HORS_CEDEAO', 'LOCAL'
+	employeeType: varchar("employee_type", { length: 50 }), // 'LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE'
+	fatherName: varchar("father_name", { length: 255 }),
+	motherName: varchar("mother_name", { length: 255 }),
+	emergencyContactName: varchar("emergency_contact_name", { length: 255 }),
+	placeOfBirth: varchar("place_of_birth", { length: 255 }),
 	// Family status fields (for payroll correctness)
 	maritalStatus: varchar("marital_status", { length: 20 }),
 	dependentChildren: integer("dependent_children").default(0),
@@ -2059,6 +2069,185 @@ export const contractRenewalHistoryRelations = relations(contractRenewalHistory,
 	}),
 	renewedByUser: one(users, {
 		fields: [contractRenewalHistory.renewedBy],
+		references: [users.id],
+	}),
+}));
+
+// ============================================================================
+// Employee Benefits Management System
+// ============================================================================
+
+export const benefitPlans = pgTable("benefit_plans", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+
+	// Plan identification
+	planName: varchar("plan_name", { length: 255 }).notNull(),
+	planCode: varchar("plan_code", { length: 50 }).notNull(),
+	benefitType: varchar("benefit_type", { length: 50 }).notNull(), // 'health', 'dental', 'vision', 'life_insurance', 'retirement', 'disability', 'transport', 'meal', 'other'
+
+	// Plan details
+	description: text(),
+	providerName: varchar("provider_name", { length: 255 }),
+	coverageLevel: varchar("coverage_level", { length: 50 }), // 'individual', 'family', 'employee_spouse', 'employee_children'
+
+	// Cost structure
+	employeeCost: numeric("employee_cost", { precision: 12, scale: 2 }),
+	employerCost: numeric("employer_cost", { precision: 12, scale: 2 }),
+	totalCost: numeric("total_cost", { precision: 12, scale: 2 }),
+	currency: varchar("currency", { length: 3 }).default('XOF'),
+	costFrequency: varchar("cost_frequency", { length: 20 }).default('monthly'), // 'monthly', 'annual', 'per_payroll'
+
+	// Eligibility rules
+	eligibleEmployeeTypes: jsonb("eligible_employee_types"), // ['LOCAL', 'EXPAT'] or null for all types
+	waitingPeriodDays: integer("waiting_period_days").default(0),
+	requiresDependentVerification: boolean("requires_dependent_verification").default(false),
+
+	// Plan lifecycle
+	isActive: boolean("is_active").default(true),
+	effectiveFrom: date("effective_from").notNull(),
+	effectiveTo: date("effective_to"),
+
+	// Payroll integration
+	linksToSalaryComponentId: uuid("links_to_salary_component_id").references(() => salaryComponentDefinitions.id),
+
+	// Metadata
+	customFields: jsonb("custom_fields").default({}).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by").references(() => users.id),
+	updatedBy: uuid("updated_by").references(() => users.id),
+}, (table) => [
+	index("idx_benefit_plans_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_benefit_plans_type").using("btree", table.benefitType.asc().nullsLast().op("text_ops")),
+	index("idx_benefit_plans_active").using("btree", table.isActive.asc().nullsLast().op("bool_ops")).where(sql`(is_active = true)`),
+	index("idx_benefit_plans_effective_dates").using("btree", table.effectiveFrom.asc().nullsLast().op("date_ops"), table.effectiveTo.asc().nullsLast().op("date_ops")),
+	unique("benefit_plans_tenant_code_unique").on(table.tenantId, table.planCode),
+]);
+
+export const employeeBenefitEnrollments = pgTable("employee_benefit_enrollments", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+	employeeId: uuid("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+	benefitPlanId: uuid("benefit_plan_id").notNull().references(() => benefitPlans.id, { onDelete: "restrict" }),
+
+	// Enrollment lifecycle
+	enrollmentDate: date("enrollment_date").notNull(),
+	effectiveDate: date("effective_date").notNull(),
+	terminationDate: date("termination_date"),
+
+	// External enrollment identification
+	enrollmentNumber: varchar("enrollment_number", { length: 100 }), // N° CMU for CI
+	policyNumber: varchar("policy_number", { length: 100 }),
+
+	// Coverage details
+	coverageLevel: varchar("coverage_level", { length: 50 }),
+	coveredDependents: jsonb("covered_dependents").default([]).notNull(), // [{dependent_id, name, relationship}]
+
+	// Cost overrides
+	employeeCostOverride: numeric("employee_cost_override", { precision: 12, scale: 2 }),
+	employerCostOverride: numeric("employer_cost_override", { precision: 12, scale: 2 }),
+
+	// Enrollment status
+	enrollmentStatus: varchar("enrollment_status", { length: 50 }).default('active'), // 'active', 'pending', 'terminated', 'suspended'
+	terminationReason: varchar("termination_reason", { length: 255 }),
+
+	// Supporting documents
+	enrollmentDocumentUrl: text("enrollment_document_url"),
+	beneficiaryDesignation: jsonb("beneficiary_designation"), // [{name, relationship, percentage}]
+
+	// Metadata
+	notes: text(),
+	customFields: jsonb("custom_fields").default({}).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by").references(() => users.id),
+	updatedBy: uuid("updated_by").references(() => users.id),
+}, (table) => [
+	index("idx_employee_benefit_enrollments_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_benefit_enrollments_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_benefit_enrollments_plan").using("btree", table.benefitPlanId.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_benefit_enrollments_status").using("btree", table.enrollmentStatus.asc().nullsLast().op("text_ops")).where(sql`(enrollment_status = 'active'::text)`),
+	index("idx_employee_benefit_enrollments_effective_date").using("btree", table.effectiveDate.asc().nullsLast().op("date_ops")),
+	index("idx_employee_benefit_enrollments_enrollment_number").using("btree", table.enrollmentNumber.asc().nullsLast().op("text_ops")).where(sql`(enrollment_number IS NOT NULL)`),
+]);
+
+export const employeeBenefitEnrollmentHistory = pgTable("employee_benefit_enrollment_history", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	enrollmentId: uuid("enrollment_id").notNull().references(() => employeeBenefitEnrollments.id, { onDelete: "cascade" }),
+
+	// What changed
+	changeType: varchar("change_type", { length: 50 }).notNull(), // 'enrolled', 'modified', 'terminated', 'cost_changed', 'dependent_added', 'dependent_removed', 'status_changed'
+	changeDescription: text("change_description"),
+
+	// Change tracking
+	previousValues: jsonb("previous_values"),
+	newValues: jsonb("new_values"),
+
+	// When and why
+	changeDate: date("change_date").notNull(),
+	changeReason: varchar("change_reason", { length: 255 }),
+	effectiveDate: date("effective_date").notNull(),
+
+	// Who made the change
+	changedBy: uuid("changed_by").references(() => users.id),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_employee_benefit_enrollment_history_enrollment").using("btree", table.enrollmentId.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_benefit_enrollment_history_change_date").using("btree", table.changeDate.asc().nullsLast().op("date_ops")),
+]);
+
+export const benefitPlansRelations = relations(benefitPlans, ({ one, many }) => ({
+	tenant: one(tenants, {
+		fields: [benefitPlans.tenantId],
+		references: [tenants.id],
+	}),
+	salaryComponent: one(salaryComponentDefinitions, {
+		fields: [benefitPlans.linksToSalaryComponentId],
+		references: [salaryComponentDefinitions.id],
+	}),
+	enrollments: many(employeeBenefitEnrollments),
+	createdByUser: one(users, {
+		fields: [benefitPlans.createdBy],
+		references: [users.id],
+	}),
+	updatedByUser: one(users, {
+		fields: [benefitPlans.updatedBy],
+		references: [users.id],
+	}),
+}));
+
+export const employeeBenefitEnrollmentsRelations = relations(employeeBenefitEnrollments, ({ one, many }) => ({
+	tenant: one(tenants, {
+		fields: [employeeBenefitEnrollments.tenantId],
+		references: [tenants.id],
+	}),
+	employee: one(employees, {
+		fields: [employeeBenefitEnrollments.employeeId],
+		references: [employees.id],
+	}),
+	benefitPlan: one(benefitPlans, {
+		fields: [employeeBenefitEnrollments.benefitPlanId],
+		references: [benefitPlans.id],
+	}),
+	history: many(employeeBenefitEnrollmentHistory),
+	createdByUser: one(users, {
+		fields: [employeeBenefitEnrollments.createdBy],
+		references: [users.id],
+	}),
+	updatedByUser: one(users, {
+		fields: [employeeBenefitEnrollments.updatedBy],
+		references: [users.id],
+	}),
+}));
+
+export const employeeBenefitEnrollmentHistoryRelations = relations(employeeBenefitEnrollmentHistory, ({ one }) => ({
+	enrollment: one(employeeBenefitEnrollments, {
+		fields: [employeeBenefitEnrollmentHistory.enrollmentId],
+		references: [employeeBenefitEnrollments.id],
+	}),
+	changedByUser: one(users, {
+		fields: [employeeBenefitEnrollmentHistory.changedBy],
 		references: [users.id],
 	}),
 }));
