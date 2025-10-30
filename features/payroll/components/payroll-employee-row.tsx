@@ -26,7 +26,6 @@ import {
   Loader2,
 } from 'lucide-react';
 import { TableCell, TableRow } from '@/components/ui/table';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -70,110 +69,108 @@ export function PayrollEmployeeRow({
   };
 
   return (
-    <Collapsible open={isExpanded} onOpenChange={onToggle}>
+    <>
       {/* Summary Row */}
-      <TableRow className="cursor-pointer hover:bg-muted/50">
-          <TableCell>
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center gap-2">
-                {isExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onToggle}>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+            <div>
+              <div className="font-medium">{item.employeeName || '-'}</div>
+              <div className="text-sm text-muted-foreground">
+                {item.employeeNumber || '-'}
+              </div>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell>
+          {item.baseSalary ? `${formatCurrency(item.baseSalary)} FCFA` : '-'}
+        </TableCell>
+        <TableCell>
+          {item.grossSalary ? `${formatCurrency(item.grossSalary)} FCFA` : '-'}
+        </TableCell>
+        <TableCell>
+          {item.cnpsEmployee ? `-${formatCurrency(item.cnpsEmployee)} FCFA` : '-'}
+        </TableCell>
+        <TableCell>
+          {item.cmuEmployee ? `-${formatCurrency(item.cmuEmployee)} FCFA` : '-'}
+        </TableCell>
+        <TableCell>
+          {item.its ? `-${formatCurrency(item.its)} FCFA` : '-'}
+        </TableCell>
+        <TableCell>
+          {item.totalDeductions ? `-${formatCurrency(item.totalDeductions)} FCFA` : '-'}
+        </TableCell>
+        <TableCell className="text-right font-semibold">
+          {item.netSalary ? `${formatCurrency(item.netSalary)} FCFA` : '-'}
+        </TableCell>
+        {(status === 'approved' || status === 'paid') && (
+          <TableCell className="text-right">
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                size="default"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPreviewPayslip?.(item.employeeId, item.employeeName || '');
+                }}
+                disabled={isGeneratingPayslip}
+                className="min-h-[44px] gap-2"
+              >
+                <Eye className="h-4 w-4" />
+                <span className="hidden sm:inline">Voir</span>
+              </Button>
+              <Button
+                size="default"
+                variant="default"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDownloadPayslip?.(item.employeeId, item.employeeName || '');
+                }}
+                disabled={isGeneratingPayslip}
+                className="min-h-[44px] gap-2"
+              >
+                {isGeneratingPayslip ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="hidden sm:inline">Chargement...</span>
+                  </>
                 ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  <>
+                    <Download className="h-4 w-4" />
+                    <span className="hidden sm:inline">Télécharger</span>
+                  </>
                 )}
-                <div>
-                  <div className="font-medium">{item.employeeName || '-'}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {item.employeeNumber || '-'}
-                  </div>
-                </div>
-              </div>
-            </CollapsibleTrigger>
+              </Button>
+            </div>
           </TableCell>
-          <TableCell>
-            {item.baseSalary ? `${formatCurrency(item.baseSalary)} FCFA` : '-'}
-          </TableCell>
-          <TableCell>
-            {item.grossSalary ? `${formatCurrency(item.grossSalary)} FCFA` : '-'}
-          </TableCell>
-          <TableCell>
-            {item.cnpsEmployee ? `-${formatCurrency(item.cnpsEmployee)} FCFA` : '-'}
-          </TableCell>
-          <TableCell>
-            {item.cmuEmployee ? `-${formatCurrency(item.cmuEmployee)} FCFA` : '-'}
-          </TableCell>
-          <TableCell>
-            {item.its ? `-${formatCurrency(item.its)} FCFA` : '-'}
-          </TableCell>
-          <TableCell>
-            {item.totalDeductions ? `-${formatCurrency(item.totalDeductions)} FCFA` : '-'}
-          </TableCell>
-          <TableCell className="text-right font-semibold">
-            {item.netSalary ? `${formatCurrency(item.netSalary)} FCFA` : '-'}
-          </TableCell>
-          {(status === 'approved' || status === 'paid') && (
-            <TableCell className="text-right">
-              <div className="flex items-center justify-end gap-2">
+        )}
+      </TableRow>
+
+      {/* Detailed Breakdown (Expanded) */}
+      {isExpanded && (
+        <TableRow>
+          <TableCell colSpan={status === 'approved' || status === 'paid' ? 9 : 8} className="bg-muted/30 p-6">
+            <div className="space-y-6">
+              {/* Action Buttons */}
+              <div className="flex gap-3 flex-wrap">
                 <Button
-                  size="default"
+                  onClick={handleEditSalary}
                   variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPreviewPayslip?.(item.employeeId, item.employeeName || '');
-                  }}
-                  disabled={isGeneratingPayslip}
-                  className="min-h-[44px] gap-2"
+                  className="gap-2 min-h-[44px]"
                 >
-                  <Eye className="h-4 w-4" />
-                  <span className="hidden sm:inline">Voir</span>
-                </Button>
-                <Button
-                  size="default"
-                  variant="default"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDownloadPayslip?.(item.employeeId, item.employeeName || '');
-                  }}
-                  disabled={isGeneratingPayslip}
-                  className="min-h-[44px] gap-2"
-                >
-                  {isGeneratingPayslip ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="hidden sm:inline">Chargement...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-4 w-4" />
-                      <span className="hidden sm:inline">Télécharger</span>
-                    </>
-                  )}
+                  <Edit className="h-4 w-4" />
+                  Modifier le Salaire
                 </Button>
               </div>
-            </TableCell>
-          )}
-        </TableRow>
 
-        {/* Detailed Breakdown (Expanded) */}
-        <CollapsibleContent asChild>
-          <tr>
-            <TableCell colSpan={status === 'approved' || status === 'paid' ? 9 : 8} className="bg-muted/30 p-6">
-              <div className="space-y-6">
-                {/* Action Buttons */}
-                <div className="flex gap-3 flex-wrap">
-                  <Button
-                    onClick={handleEditSalary}
-                    variant="outline"
-                    className="gap-2 min-h-[44px]"
-                  >
-                    <Edit className="h-4 w-4" />
-                    Modifier le Salaire
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Earnings Breakdown */}
-                  <Card>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Earnings Breakdown */}
+                <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Détails des Gains</CardTitle>
                     </CardHeader>
@@ -211,10 +208,10 @@ export function PayrollEmployeeRow({
                         <span className="text-primary">{formatCurrency(item.grossSalary)} FCFA</span>
                       </div>
                     </CardContent>
-                  </Card>
+                </Card>
 
-                  {/* Deductions Breakdown */}
-                  <Card>
+                {/* Deductions Breakdown */}
+                <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Détails des Déductions</CardTitle>
                     </CardHeader>
@@ -257,10 +254,10 @@ export function PayrollEmployeeRow({
                         <span className="text-primary">{formatCurrency(item.netSalary)} FCFA</span>
                       </div>
                     </CardContent>
-                  </Card>
+                </Card>
 
-                  {/* Employer Cost Breakdown */}
-                  <Card>
+                {/* Employer Cost Breakdown */}
+                <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Charges Patronales</CardTitle>
                     </CardHeader>
@@ -295,10 +292,10 @@ export function PayrollEmployeeRow({
                         <span className="text-primary">{formatCurrency(item.totalEmployerCost)} FCFA</span>
                       </div>
                     </CardContent>
-                  </Card>
+                </Card>
 
-                  {/* Time Tracking & Time Off (Placeholder for future integration) */}
-                  <Card>
+                {/* Time Tracking & Time Off (Placeholder for future integration) */}
+                <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Temps de Travail et Congés</CardTitle>
                     </CardHeader>
@@ -328,12 +325,12 @@ export function PayrollEmployeeRow({
                         Les détails de pointage et congés seront affichés ici
                       </div>
                     </CardContent>
-                  </Card>
-                </div>
+                </Card>
               </div>
-            </TableCell>
-          </tr>
-        </CollapsibleContent>
-    </Collapsible>
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   );
 }
