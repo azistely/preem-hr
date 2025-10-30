@@ -81,8 +81,23 @@ export async function createPayrollRun(
     throw new Error('Aucun employé actif trouvé pour ce tenant');
   }
 
-  // Generate run number
-  const runNumber = `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`;
+  // Generate run number with sequential counter
+  // Get the count of existing runs for this tenant in this month
+  const monthStart = new Date(input.periodStart.getFullYear(), input.periodStart.getMonth(), 1).toISOString().split('T')[0];
+  const monthEnd = new Date(input.periodStart.getFullYear(), input.periodStart.getMonth() + 1, 0).toISOString().split('T')[0];
+
+  const existingRuns = await db.query.payrollRuns.findMany({
+    where: and(
+      eq(payrollRuns.tenantId, input.tenantId),
+      gte(payrollRuns.periodStart, monthStart),
+      lte(payrollRuns.periodStart, monthEnd)
+    ),
+  });
+
+  const counter = existingRuns.length + 1;
+  const runNumber = counter === 1
+    ? `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`
+    : `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}-${counter}`;
 
   // Validate country has payroll config
   const { ruleLoader } = await import('./rule-loader');
