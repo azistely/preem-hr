@@ -38,19 +38,17 @@ export function WhatsAppAssistance({ dataSource, onComplete, onBack, onSkip }: W
   });
 
   const handleSubmit = () => {
-    setStep('confirming');
-    // TODO: Send WhatsApp message or create support ticket
-    setTimeout(() => {
-      setStep('confirmed');
-    }, 1500);
+    // Open WhatsApp directly with all form data
+    const message = encodeURIComponent(
+      `Bonjour! J'ai besoin d'aide pour importer mes employés dans Preem HR.\n\nMon système actuel: ${getSystemLabel(formData.system)}\nNombre d'employés: ${formData.employeeCount}\nMon numéro WhatsApp: ${formData.whatsappNumber}`
+    );
+    const whatsappUrl = `https://wa.me/2250708786828?text=${message}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   const handleLaunchWhatsApp = () => {
-    const message = encodeURIComponent(
-      `Bonjour! J'ai besoin d'aide pour importer mes employés dans Preem HR.\n\nMon système actuel: ${getSystemLabel(formData.system)}\nNombre d'employés: ${formData.employeeCount}`
-    );
-    const whatsappUrl = `https://wa.me/2250101010101?text=${message}`;
-    window.open(whatsappUrl, '_blank');
+    // Same as handleSubmit - kept for compatibility
+    handleSubmit();
   };
 
   const getSystemLabel = (system: string) => {
