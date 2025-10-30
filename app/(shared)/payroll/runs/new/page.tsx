@@ -155,6 +155,12 @@ export default function NewPayrollRunPage() {
       return;
     }
 
+    // Prevent submission if an existing run is detected
+    if (existingRun) {
+      setError(`Une paie existe déjà pour cette période (${existingRun.runNumber}). Veuillez modifier la période ou consulter le run existant.`);
+      return;
+    }
+
     const values = form.getValues();
 
     try {
@@ -182,6 +188,16 @@ export default function NewPayrollRunPage() {
   const periodEnd = formValues.periodEnd ? parseISO(formValues.periodEnd) : currentMonthEnd;
   const paymentDate = formValues.paymentDate ? parseISO(formValues.paymentDate) : new Date();
 
+  // Check for existing run
+  const { data: existingRun } = api.payroll.checkExistingRun.useQuery(
+    {
+      tenantId: tenantId!,
+      periodStart,
+      periodEnd,
+    },
+    { enabled: !!tenantId }
+  );
+
   // Wizard steps (removed period selection - it's auto-calculated)
   const wizardSteps: WizardStep[] = [
     // Step 1: Employee Preview & Validation (with period editor)
@@ -190,6 +206,42 @@ export default function NewPayrollRunPage() {
       description: 'Assurez-vous que tous les employés journaliers ont leurs heures saisies',
       content: (
         <div className="space-y-6">
+          {/* Existing Run Warning */}
+          {existingRun && (
+            <Card className="border-blue-500 bg-blue-50">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-4">
+                  <AlertCircle className="h-6 w-6 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-blue-900 mb-2">
+                      Une paie existe déjà pour cette période
+                    </h3>
+                    <p className="text-sm text-blue-800 mb-4">
+                      Le run <span className="font-mono font-semibold">{existingRun.runNumber}</span> couvre
+                      la période du {format(new Date(existingRun.periodStart), 'd MMM', { locale: fr })} au{' '}
+                      {format(new Date(existingRun.periodEnd), 'd MMM yyyy', { locale: fr })}.
+                    </p>
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={() => router.push(`/payroll/runs/${existingRun.id}`)}
+                        className="min-h-[44px]"
+                      >
+                        Voir le run existant
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowPeriodEdit(true)}
+                        className="min-h-[44px]"
+                      >
+                        Modifier la période
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Period Display/Editor */}
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="pt-6">
@@ -413,7 +465,7 @@ export default function NewPayrollRunPage() {
           <Wizard
             steps={wizardSteps}
             onComplete={handleComplete}
-            isSubmitting={isSubmitting}
+            isSubmitting={isSubmitting || !!existingRun}
             currentStep={currentStep}
             onStepChange={setCurrentStep}
           />

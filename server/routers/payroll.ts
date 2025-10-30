@@ -653,6 +653,55 @@ export const payrollRouter = createTRPCRouter({
     }),
 
   /**
+   * Check if a payroll run exists for the given period
+   *
+   * Returns existing run details if found, null otherwise.
+   * Used to prevent duplicates and guide users to existing runs.
+   */
+  checkExistingRun: publicProcedure
+    .input(
+      z.object({
+        tenantId: z.string().uuid(),
+        periodStart: z.date(),
+        periodEnd: z.date(),
+      })
+    )
+    .query(async ({ input }) => {
+      const periodStartStr = input.periodStart.toISOString().split('T')[0];
+      const periodEndStr = input.periodEnd.toISOString().split('T')[0];
+
+      const existing = await db.query.payrollRuns.findFirst({
+        where: and(
+          eq(payrollRuns.tenantId, input.tenantId),
+          or(
+            // Exact match
+            and(
+              eq(payrollRuns.periodStart, periodStartStr),
+              eq(payrollRuns.periodEnd, periodEndStr)
+            ),
+            // Overlapping periods (new period starts during existing period)
+            and(
+              lte(payrollRuns.periodStart, periodStartStr),
+              gte(payrollRuns.periodEnd, periodStartStr)
+            ),
+            // Overlapping periods (new period ends during existing period)
+            and(
+              lte(payrollRuns.periodStart, periodEndStr),
+              gte(payrollRuns.periodEnd, periodEndStr)
+            ),
+            // Overlapping periods (new period contains existing period)
+            and(
+              gte(payrollRuns.periodStart, periodStartStr),
+              lte(payrollRuns.periodEnd, periodEndStr)
+            )
+          )
+        ),
+      });
+
+      return existing || null;
+    }),
+
+  /**
    * Create a new payroll run
    *
    * Initializes a payroll run for a specific period.
