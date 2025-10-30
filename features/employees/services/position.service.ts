@@ -21,6 +21,8 @@ export interface CreatePositionInput {
   minSalary?: number;
   maxSalary?: number;
   jobLevel?: string;
+  jobFunction?: string; // Fonction (broader role category)
+  jobTrade?: string; // Métier (specific job/trade)
   employmentType?: 'full_time' | 'part_time' | 'contract';
   weeklyHours?: number;
   workSchedule?: Record<string, any>;
@@ -78,6 +80,8 @@ export async function createPosition(input: CreatePositionInput) {
       minSalary: input.minSalary?.toString(),
       maxSalary: input.maxSalary?.toString(),
       jobLevel: input.jobLevel,
+      jobFunction: input.jobFunction,
+      jobTrade: input.jobTrade,
       employmentType: input.employmentType || 'full_time',
       weeklyHours: input.weeklyHours?.toString() || '40',
       workSchedule: input.workSchedule,

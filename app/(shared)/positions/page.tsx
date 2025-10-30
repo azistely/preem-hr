@@ -100,6 +100,8 @@ export default function PositionsPage() {
                     <TableRow>
                       <TableHead>Titre</TableHead>
                       <TableHead>Code</TableHead>
+                      <TableHead>Fonction</TableHead>
+                      <TableHead>Métier</TableHead>
                       <TableHead>Département</TableHead>
                       <TableHead>Effectif</TableHead>
                       <TableHead>Fourchette salariale</TableHead>
@@ -112,6 +114,12 @@ export default function PositionsPage() {
                         <TableCell className="font-medium">{position.title}</TableCell>
                         <TableCell className="font-mono text-sm">
                           {position.code || '-'}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {position.jobFunction || '-'}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {position.jobTrade || '-'}
                         </TableCell>
                         <TableCell>{position.department || '-'}</TableCell>
                         <TableCell>{position.headcount || 1}</TableCell>

@@ -38,6 +38,8 @@ const createPositionSchema = z.object({
   title: z.string().min(1, 'Le titre est requis'),
   code: z.string().optional(),
   description: z.string().optional(),
+  jobFunction: z.string().optional(), // Fonction (broader role category)
+  jobTrade: z.string().optional(), // Métier (specific job/trade)
   departmentId: z.string().optional(),
   minSalary: z.number().min(75000, 'Le salaire minimum doit être >= 75000 FCFA'),
   maxSalary: z.number().min(75000, 'Le salaire maximum doit être >= 75000 FCFA'),
@@ -57,6 +59,8 @@ export default function NewPositionPage() {
       title: '',
       code: '',
       description: '',
+      jobFunction: '',
+      jobTrade: '',
       weeklyHours: 40,
       headcount: 1,
       minSalary: 75000,
@@ -78,11 +82,13 @@ export default function NewPositionPage() {
       return;
     }
 
-    // Transform empty strings to undefined for optional UUID fields
+    // Transform empty strings to undefined for optional fields
     const cleanedData = {
       ...data,
       code: data.code || undefined,
       description: data.description || undefined,
+      jobFunction: data.jobFunction || undefined,
+      jobTrade: data.jobTrade || undefined,
       departmentId: data.departmentId || undefined,
     };
 
@@ -170,6 +176,50 @@ export default function NewPositionPage() {
                   </FormItem>
                 )}
               />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="jobFunction"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fonction (optionnel)</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="Ex: Cadre, Agent de maîtrise"
+                          className="min-h-[48px]"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Catégorie professionnelle
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="jobTrade"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Métier (optionnel)</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="Ex: Comptable, Électricien"
+                          className="min-h-[48px]"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Métier ou spécialité
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </CardContent>
           </Card>
 

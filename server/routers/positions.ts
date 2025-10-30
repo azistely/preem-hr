@@ -20,6 +20,8 @@ const createPositionSchema = z.object({
   minSalary: z.number().min(75000).optional(),
   maxSalary: z.number().optional(),
   jobLevel: z.string().optional(),
+  jobFunction: z.string().optional(), // Fonction (broader role category)
+  jobTrade: z.string().optional(), // Métier (specific job/trade)
   employmentType: z.enum(['full_time', 'part_time', 'contract']).default('full_time'),
   weeklyHours: z.number().min(1).max(80).default(40),
   workSchedule: z.record(z.any()).optional(),
