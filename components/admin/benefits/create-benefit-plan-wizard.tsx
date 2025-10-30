@@ -49,14 +49,14 @@ const formSchema = z.object({
   // Step 2: Costs
   employeeCost: z.string().optional(),
   employerCost: z.string().optional(),
-  currency: z.string().default('XOF'),
-  costFrequency: z.enum(['monthly', 'annual', 'per_payroll']).default('monthly'),
+  currency: z.string(),
+  costFrequency: z.enum(['monthly', 'annual', 'per_payroll']),
 
   // Step 3: Eligibility
   eligibleEmployeeTypes: z.array(z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE'])).optional(),
-  waitingPeriodDays: z.number().int().min(0).default(0),
+  waitingPeriodDays: z.number().int().min(0),
   effectiveFrom: z.string().min(1, 'La date de début est requise'),
-  isActive: z.boolean().default(true),
+  isActive: z.boolean(),
 });
 
 type FormValues = z.infer<typeof formSchema>;

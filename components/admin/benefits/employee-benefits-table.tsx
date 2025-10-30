@@ -164,7 +164,7 @@ export function EmployeeBenefitsTable() {
                       {employee.employeeNumber || '-'}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {employee.position?.title || '-'}
+                      {employee.position && 'title' in employee.position ? (employee.position as any).title : '-'}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
@@ -174,6 +174,9 @@ export function EmployeeBenefitsTable() {
                           </span>
                         ) : (
                           activeEnrollments.map((enrollment) => {
+                            // Skip if plan is null
+                            if (!enrollment.plan) return null;
+
                             const Icon = benefitTypeIcons[enrollment.plan.benefitType as keyof typeof benefitTypeIcons] || Package;
                             const typeLabel = benefitTypeLabels[enrollment.plan.benefitType as keyof typeof benefitTypeLabels] || enrollment.plan.benefitType;
 
@@ -211,7 +214,9 @@ export function EmployeeBenefitsTable() {
                                     className="h-5 w-5 p-0 hover:bg-destructive hover:text-destructive-foreground"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleCancelEnrollment(enrollment.id, enrollment.plan.planName);
+                                      if (enrollment.plan) {
+                                        handleCancelEnrollment(enrollment.id, enrollment.plan.planName);
+                                      }
                                     }}
                                     disabled={cancelMutation.isPending}
                                   >

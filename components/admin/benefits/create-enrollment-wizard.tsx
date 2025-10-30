@@ -185,7 +185,7 @@ export function CreateEnrollmentWizard({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {employees?.items?.map((employee) => (
+                      {(employees?.employees || []).map((employee: any) => (
                         <SelectItem key={employee.id} value={employee.id}>
                           {employee.firstName} {employee.lastName}
                           {employee.employeeNumber && ` (${employee.employeeNumber})`}

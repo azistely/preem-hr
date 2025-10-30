@@ -70,6 +70,14 @@ export interface CreateEmployeeInput {
   baseSalary: number; // Base salary in separate column
   components?: SalaryComponentInstance[]; // Optional allowances/bonuses
 
+  // Personnel Record fields (Registre du Personnel)
+  nationalityZone?: string;
+  employeeType?: string;
+  fatherName?: string;
+  motherName?: string;
+  placeOfBirth?: string;
+  emergencyContactName?: string;
+
   // Custom fields
   customFields?: Record<string, any>;
 }
