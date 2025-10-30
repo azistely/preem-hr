@@ -23,6 +23,7 @@ import {
   Clock,
   Briefcase,
   UserCircle,
+  Heart,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEmployee, useReactivateEmployee } from '@/features/employees/hooks/use-employees';
@@ -53,6 +54,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Plus, ChevronDown } from 'lucide-react';
 import { DependentsManager } from '@/features/employees/components/dependents-manager';
+import { EmployeeBenefitsTab } from '@/components/employees/employee-benefits-tab';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -315,7 +317,7 @@ export default function EmployeeDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-6">
           <TabsTrigger value="overview" className="min-h-[44px]">
             <UserCircle className="mr-2 h-4 w-4" />
             Vue d'ensemble
@@ -331,6 +333,10 @@ export default function EmployeeDetailPage() {
           <TabsTrigger value="dependents" className="min-h-[44px]">
             <Users className="mr-2 h-4 w-4" />
             Personnes à charge
+          </TabsTrigger>
+          <TabsTrigger value="benefits" className="min-h-[44px]">
+            <Heart className="mr-2 h-4 w-4" />
+            Avantages
           </TabsTrigger>
           <TabsTrigger value="time" className="min-h-[44px]">
             <Clock className="mr-2 h-4 w-4" />
@@ -401,6 +407,120 @@ export default function EmployeeDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Personnel Record Section */}
+          {((employee as any).nationalityZone || (employee as any).employeeType || (employee as any).placeOfBirth || (employee as any).fatherName || (employee as any).motherName || (employee as any).emergencyContactName) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Registre du Personnel</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(employee as any).nationalityZone && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Zone de nationalité</div>
+                      <div className="text-sm font-medium">
+                        {(employee as any).nationalityZone === 'LOCAL' && 'Local'}
+                        {(employee as any).nationalityZone === 'CEDEAO' && 'CEDEAO'}
+                        {(employee as any).nationalityZone === 'HORS_CEDEAO' && 'Hors CEDEAO'}
+                      </div>
+                    </div>
+                  )}
+
+                  {(employee as any).employeeType && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Type d'employé</div>
+                      <div className="text-sm font-medium">
+                        {(employee as any).employeeType === 'LOCAL' && 'Local'}
+                        {(employee as any).employeeType === 'EXPAT' && 'Expatrié'}
+                        {(employee as any).employeeType === 'DETACHE' && 'Détaché'}
+                        {(employee as any).employeeType === 'STAGIAIRE' && 'Stagiaire'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {(employee as any).placeOfBirth && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">Lieu de naissance</div>
+                    <div className="text-sm font-medium">{(employee as any).placeOfBirth}</div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(employee as any).fatherName && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Nom du père</div>
+                      <div className="text-sm font-medium">{(employee as any).fatherName}</div>
+                    </div>
+                  )}
+
+                  {(employee as any).motherName && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Nom de la mère</div>
+                      <div className="text-sm font-medium">{(employee as any).motherName}</div>
+                    </div>
+                  )}
+                </div>
+
+                {(employee as any).emergencyContactName && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">Contact d'urgence</div>
+                    <div className="text-sm font-medium">{(employee as any).emergencyContactName}</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Employment Classification Section */}
+          {((employee as any).professionalLevel || (employee as any).sector || (employee as any).categoryCode || (employee as any).sectorCodeCgeci || (employee as any).coefficient) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Classification Professionnelle</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {(employee as any).professionalLevel && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Niveau professionnel</div>
+                      <div className="text-sm font-medium">Niveau {(employee as any).professionalLevel}</div>
+                    </div>
+                  )}
+
+                  {(employee as any).sector && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Secteur</div>
+                      <div className="text-sm font-medium capitalize">{(employee as any).sector}</div>
+                    </div>
+                  )}
+
+                  {(employee as any).coefficient && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Coefficient</div>
+                      <div className="text-sm font-medium">{(employee as any).coefficient}</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(employee as any).categoryCode && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Code catégorie</div>
+                      <div className="text-sm font-medium font-mono">{(employee as any).categoryCode}</div>
+                    </div>
+                  )}
+
+                  {(employee as any).sectorCodeCgeci && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Code secteur CGECI</div>
+                      <div className="text-sm font-medium font-mono">{(employee as any).sectorCodeCgeci}</div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Employment Tab */}
@@ -417,6 +537,25 @@ export default function EmployeeDetailPage() {
                     <p className="text-sm text-muted-foreground">Titre du poste</p>
                     <p className="font-medium text-lg">{(assignmentHistory[0] as any).position?.title || 'Non défini'}</p>
                   </div>
+
+                  {/* Job Function and Trade */}
+                  {((assignmentHistory[0] as any).position?.jobFunction || (assignmentHistory[0] as any).position?.jobTrade) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(assignmentHistory[0] as any).position?.jobFunction && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Fonction</p>
+                          <p className="font-medium">{(assignmentHistory[0] as any).position.jobFunction}</p>
+                        </div>
+                      )}
+                      {(assignmentHistory[0] as any).position?.jobTrade && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Métier</p>
+                          <p className="font-medium">{(assignmentHistory[0] as any).position.jobTrade}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {(assignmentHistory[0] as any).position?.department?.name && (
                     <div>
                       <p className="text-sm text-muted-foreground">Département</p>
@@ -665,7 +804,6 @@ export default function EmployeeDetailPage() {
           )}
         </TabsContent>
 
-        {/* Time Tab */}
         {/* Dependents Tab */}
         <TabsContent value="dependents" className="space-y-6">
           <DependentsManager
@@ -678,6 +816,12 @@ export default function EmployeeDetailPage() {
           />
         </TabsContent>
 
+        {/* Benefits Tab */}
+        <TabsContent value="benefits" className="space-y-6">
+          <EmployeeBenefitsTab employeeId={employeeId} />
+        </TabsContent>
+
+        {/* Time Tab */}
         <TabsContent value="time" className="space-y-6">
           {/* Leave Balance Summary */}
           {isLoadingBalances ? (

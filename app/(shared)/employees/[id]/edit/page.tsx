@@ -112,6 +112,14 @@ const editEmployeeSchema = z.object({
   taxNumber: z.string().optional(),
   taxDependents: z.number().int().min(0).max(10).optional(),
   isExpat: z.boolean().optional(),
+
+  // Personnel Record Fields (NEW - for Registre du Personnel compliance)
+  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO']).optional(),
+  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE']).optional(),
+  fatherName: z.string().optional(),
+  motherName: z.string().optional(),
+  placeOfBirth: z.string().optional(),
+  emergencyContactName: z.string().optional(),
 });
 
 type EditEmployeeFormValues = z.infer<typeof editEmployeeSchema>;
@@ -198,6 +206,12 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
       taxNumber: '',
       taxDependents: 0,
       isExpat: false,
+      nationalityZone: undefined,
+      employeeType: undefined,
+      fatherName: '',
+      motherName: '',
+      placeOfBirth: '',
+      emergencyContactName: '',
     },
   });
 
@@ -241,6 +255,12 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         taxNumber: emp.taxNumber || '',
         taxDependents: emp.taxDependents || 0,
         isExpat: emp.isExpat ?? false,
+        nationalityZone: emp.nationalityZone as 'LOCAL' | 'CEDEAO' | 'HORS_CEDEAO' | undefined,
+        employeeType: emp.employeeType as 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE' | undefined,
+        fatherName: emp.fatherName || '',
+        motherName: emp.motherName || '',
+        placeOfBirth: emp.placeOfBirth || '',
+        emergencyContactName: emp.emergencyContactName || '',
       });
     }
   }, [employee, form]);
@@ -1087,6 +1107,132 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                                 Cochez cette case si l'employé est expatrié. Cela affectera le calcul de l'ITS employeur (1,2% pour personnel local, 10,4% pour expatrié).
                               </FormDescription>
                             </div>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="space-y-4 pt-4 border-t">
+                      <h4 className="text-sm font-medium">Registre du Personnel</h4>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="nationalityZone"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Zone de nationalité</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ''}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="min-h-[48px]">
+                                    <SelectValue placeholder="Sélectionner" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="LOCAL">Local</SelectItem>
+                                  <SelectItem value="CEDEAO">CEDEAO</SelectItem>
+                                  <SelectItem value="HORS_CEDEAO">Hors CEDEAO</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                Pour le registre du personnel
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="employeeType"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Type d'employé</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ''}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="min-h-[48px]">
+                                    <SelectValue placeholder="Sélectionner" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="LOCAL">Local</SelectItem>
+                                  <SelectItem value="EXPAT">Expatrié</SelectItem>
+                                  <SelectItem value="DETACHE">Détaché</SelectItem>
+                                  <SelectItem value="STAGIAIRE">Stagiaire</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                Statut d'emploi (registre du personnel)
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="placeOfBirth"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Lieu de naissance</FormLabel>
+                            <FormControl>
+                              <Input {...field} className="min-h-[48px]" placeholder="Ville, Pays" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="fatherName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Nom du père</FormLabel>
+                              <FormControl>
+                                <Input {...field} className="min-h-[48px]" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="motherName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Nom de la mère</FormLabel>
+                              <FormControl>
+                                <Input {...field} className="min-h-[48px]" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="emergencyContactName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Contact d'urgence</FormLabel>
+                            <FormControl>
+                              <Input {...field} className="min-h-[48px]" placeholder="Nom et téléphone" />
+                            </FormControl>
+                            <FormDescription>
+                              Personne à contacter en cas d'urgence
+                            </FormDescription>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />

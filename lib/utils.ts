@@ -21,3 +21,15 @@ export function formatDate(date: Date | string, options?: Intl.DateTimeFormatOpt
     year: 'numeric',
   }).format(dateObj);
 }
+
+/**
+ * Format currency amount with locale formatting
+ */
+export function formatCurrency(amount: number, currency: string = 'XOF'): string {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}

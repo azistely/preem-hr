@@ -290,12 +290,31 @@ export const payrollRouter = createTRPCRouter({
       const rateType = input.rateType || existingEmployee?.rateType || 'MONTHLY';
       const contractType = input.contractType || existingEmployee?.contractType;
       const maritalStatus = input.maritalStatus ?? existingEmployee?.maritalStatus ?? 'single';
-      const isExpat = input.isExpat ?? existingEmployee?.isExpat ?? false;
+
+      // Resolve employee type for ITS tax calculation
+      // Priority: input.isExpat (boolean) → existingEmployee.employeeType (enum) → existingEmployee.isExpat (legacy boolean) → default to LOCAL
+      let employeeType: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE' = 'LOCAL';
+
+      if (input.isExpat !== undefined) {
+        // Legacy boolean input - map to enum
+        employeeType = input.isExpat ? 'EXPAT' : 'LOCAL';
+      } else if (existingEmployee?.employeeType) {
+        // Use new employeeType enum from database
+        employeeType = existingEmployee.employeeType;
+      } else if (existingEmployee?.isExpat !== undefined) {
+        // Fallback to legacy isExpat boolean field
+        employeeType = existingEmployee.isExpat ? 'EXPAT' : 'LOCAL';
+      }
+
+      // Map to boolean for ITS calculation (EXPAT = 10.4%, others = 1.2%)
+      const isExpat = employeeType === 'EXPAT';
 
       // DEBUG: Log expatriate status resolution
-      console.log('🔍 [ITS DEBUG] Expatriate status resolution:', {
+      console.log('🔍 [ITS DEBUG] Employee type resolution:', {
         inputIsExpat: input.isExpat,
+        existingEmployeeType: existingEmployee?.employeeType,
         existingEmployeeIsExpat: existingEmployee?.isExpat,
+        resolvedEmployeeType: employeeType,
         resolvedIsExpat: isExpat,
         employeeId: input.employeeId,
         employeeName: existingEmployee ? `${existingEmployee.firstName} ${existingEmployee.lastName}` : 'N/A'

@@ -52,6 +52,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
 
   // Admin employee management (HR Manager+)
   '/admin/employees/import-export': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/benefits': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // Automation Hub (HR Manager+)
   '/automation': ['hr_manager', 'tenant_admin', 'super_admin'],

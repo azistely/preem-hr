@@ -1024,7 +1024,8 @@ export function SalaryChangeWizard({
                   newComponents={components}
                   currentComponents={currentSalary.components}
                   rateType={rateType}
-                  isExpat={(employeeData as any)?.isExpat ?? false}
+                  // Map employeeType to isExpat boolean for ITS tax calculation (EXPAT = 10.4%, others = 1.2%)
+                  isExpat={(employeeData as any)?.employeeType === 'EXPAT' || (employeeData as any)?.isExpat === true}
                 />
               )}
             </div>

@@ -20,6 +20,8 @@ import { fr } from 'date-fns/locale';
 interface Position {
   id: string;
   title: string;
+  jobFunction?: string | null;
+  jobTrade?: string | null;
   department?: string | null;
 }
 
@@ -155,6 +157,23 @@ export function AssignmentHistoryTimeline({ assignments }: AssignmentHistoryTime
                           {getTypeLabel(assignment.assignmentType)}
                         </Badge>
                       </div>
+
+                      {/* Job Function and Trade */}
+                      {(assignment.position?.jobFunction || assignment.position?.jobTrade) && (
+                        <div className="flex gap-3 mb-2 flex-wrap">
+                          {assignment.position?.jobFunction && (
+                            <Badge variant="outline" className="text-xs">
+                              {assignment.position.jobFunction}
+                            </Badge>
+                          )}
+                          {assignment.position?.jobTrade && (
+                            <Badge variant="secondary" className="text-xs">
+                              {assignment.position.jobTrade}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+
                       {assignment.position?.department && (
                         <p className="text-sm text-muted-foreground mb-2">
                           {assignment.position.department}
