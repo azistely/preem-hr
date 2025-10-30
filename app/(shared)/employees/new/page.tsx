@@ -20,12 +20,14 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
-import { Loader2, User, Briefcase, DollarSign, CreditCard, Check } from 'lucide-react';
+import { Loader2, User, Briefcase, DollarSign, CreditCard, Check, FileText, Heart } from 'lucide-react';
 import { useCreateEmployee } from '@/features/employees/hooks/use-employee-mutations';
 import { PersonalInfoStep } from '@/features/employees/components/hire-wizard/personal-info-step';
+import { PersonnelRecordStep } from '@/features/employees/components/hire-wizard/personnel-record-step';
 import { EmploymentInfoStep } from '@/features/employees/components/hire-wizard/employment-info-step';
-import { SalaryInfoStep } from '@/features/employees/components/hire-wizard/salary-info-step';
+import { BenefitsEnrollmentStep } from '@/features/employees/components/hire-wizard/benefits-enrollment-step';
 import { BankingInfoStep } from '@/features/employees/components/hire-wizard/banking-info-step';
+import { SalaryInfoStep } from '@/features/employees/components/hire-wizard/salary-info-step';
 import { ConfirmationStep } from '@/features/employees/components/hire-wizard/confirmation-step';
 import { buildEmployeeComponents } from '@/features/employees/actions/create-employee.action';
 import Link from 'next/link';
@@ -40,9 +42,15 @@ const componentSchema = z.object({
   metadata: z.record(z.any()).optional(),
 });
 
+// Benefits enrollment schema
+const benefitEnrollmentSchema = z.object({
+  planId: z.string(),
+  effectiveFrom: z.date(),
+});
+
 // Form schema
 const createEmployeeSchema = z.object({
-  // Personal info
+  // Step 1: Personal info
   firstName: z.string().min(1, 'Le prénom est requis'),
   lastName: z.string().min(1, 'Le nom est requis'),
   preferredName: z.string().optional(),
@@ -52,26 +60,34 @@ const createEmployeeSchema = z.object({
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
   nationalId: z.string().optional(),
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional().default('single'),
-  isExpat: z.boolean().optional().default(false), // For ITS employer tax calculation (1.2% local, 10.4% expat)
+  taxDependents: z.number().int().min(0).max(10).optional().default(0),
 
-  // Employment info
+  // Step 2: Personnel Record (Registre du Personnel)
+  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO']).optional(),
+  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE']).optional(),
+  fatherName: z.string().optional(),
+  motherName: z.string().optional(),
+  placeOfBirth: z.string().optional(),
+  emergencyContactName: z.string().optional(),
+
+  // Step 3: Employment info
   hireDate: z.date(),
   positionId: z.string().min(1, 'Le poste est requis'),
   coefficient: z.number().int().min(90).max(1000).optional().default(100),
   rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional().default('MONTHLY'),
   primaryLocationId: z.string().min(1, 'Le site principal est requis'),
 
-  // Salary info (base salary + components)
-  baseSalary: z.number().min(0, 'Le salaire de base doit être positif').optional(),
-  baseComponents: z.record(z.string(), z.number()).optional(),
-  components: z.array(componentSchema).optional().default([]),
+  // Step 4: Benefits enrollment
+  benefitEnrollments: z.array(benefitEnrollmentSchema).optional().default([]),
 
-  // Banking info
+  // Step 5: Banking info
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
 
-  // Family info (for fiscal parts calculation)
-  taxDependents: z.number().int().min(0).max(10).optional().default(0),
+  // Step 6: Salary info (base salary + components)
+  baseSalary: z.number().min(0, 'Le salaire de base doit être positif').optional(),
+  baseComponents: z.record(z.string(), z.number()).optional(),
+  components: z.array(componentSchema).optional().default([]),
 });
 
 type FormData = z.infer<typeof createEmployeeSchema>;
@@ -88,24 +104,36 @@ const steps = [
   },
   {
     id: 2,
+    title: 'Registre du Personnel',
+    icon: FileText,
+    description: 'Informations légales',
+  },
+  {
+    id: 3,
     title: 'Informations d\'emploi',
     icon: Briefcase,
     description: 'Date d\'embauche, poste',
   },
   {
-    id: 3,
-    title: 'Salaire et avantages',
-    icon: DollarSign,
-    description: 'Salaire de base, indemnités',
+    id: 4,
+    title: 'Avantages sociaux',
+    icon: Heart,
+    description: 'Couverture maladie, CMU',
   },
   {
-    id: 4,
+    id: 5,
     title: 'Informations bancaires',
     icon: CreditCard,
     description: 'Compte, banque',
   },
   {
-    id: 5,
+    id: 6,
+    title: 'Salaire et indemnités',
+    icon: DollarSign,
+    description: 'Salaire de base, primes',
+  },
+  {
+    id: 7,
     title: 'Confirmation',
     icon: Check,
     description: 'Vérifier et confirmer',
@@ -137,6 +165,7 @@ export default function NewEmployeePage() {
   const form = useForm<FormInput>({
     resolver: zodResolver(createEmployeeSchema),
     defaultValues: {
+      // Step 1: Personal info
       firstName: '',
       lastName: '',
       preferredName: '',
@@ -144,18 +173,29 @@ export default function NewEmployeePage() {
       phone: '',
       nationalId: '',
       maritalStatus: 'single',
-      isExpat: false,
+      taxDependents: 0,
+      // Step 2: Personnel Record
+      nationalityZone: undefined,
+      employeeType: undefined,
+      fatherName: '',
+      motherName: '',
+      placeOfBirth: '',
+      emergencyContactName: '',
+      // Step 3: Employment
       hireDate: new Date(),
       positionId: '',
       coefficient: 100,
       rateType: 'MONTHLY',
       primaryLocationId: '',
+      // Step 4: Benefits
+      benefitEnrollments: [],
+      // Step 5: Banking
+      bankName: '',
+      bankAccount: '',
+      // Step 6: Salary
       baseSalary: 75000,
       baseComponents: {},
       components: [],
-      bankName: '',
-      bankAccount: '',
-      taxDependents: 0,
     },
   });
 
@@ -213,10 +253,13 @@ export default function NewEmployeePage() {
 
     // Validate current step fields
     switch (currentStep) {
-      case 1:
+      case 1: // Personal Info
         isValid = await form.trigger(['firstName', 'lastName', 'phone']);
         break;
-      case 2:
+      case 2: // Personnel Record
+        isValid = true; // All personnel record fields are optional
+        break;
+      case 3: // Employment Info
         isValid = await form.trigger(['hireDate', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
 
         // Update selected location ID to fetch transport minimum
@@ -225,7 +268,13 @@ export default function NewEmployeePage() {
           setSelectedLocationId(locationId);
         }
         break;
-      case 3:
+      case 4: // Benefits Enrollment
+        isValid = true; // Benefits enrollment is optional
+        break;
+      case 5: // Banking Info
+        isValid = true; // Banking info is optional
+        break;
+      case 6: // Salary Info
         // Validate form fields first
         isValid = await form.trigger(['baseSalary', 'baseComponents', 'components']);
 
@@ -268,7 +317,7 @@ export default function NewEmployeePage() {
             }
           } else if (transportComponent && !cityTransportMinimum) {
             // Fallback validation if city data not yet loaded
-            // This should rarely happen since location is selected in step 2
+            // This should rarely happen since location is selected in step 3
             const fallbackMinimum = 20000;
             if (transportComponent.amount < fallbackMinimum) {
               form.setError('components', {
@@ -280,12 +329,9 @@ export default function NewEmployeePage() {
           }
         }
         break;
-      case 4:
-        isValid = true; // Banking info is optional
-        break;
     }
 
-    if (isValid && currentStep < 5) {
+    if (isValid && currentStep < 7) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -332,8 +378,8 @@ export default function NewEmployeePage() {
       </div>
 
       {/* Progress Steps */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
+      <div className="mb-8 overflow-x-auto">
+        <div className="flex items-center justify-between min-w-max md:min-w-0">
           {steps.map((step, index) => (
             <div key={step.id} className="flex items-center">
               <div className="flex flex-col items-center">
@@ -351,9 +397,9 @@ export default function NewEmployeePage() {
                 >
                   <step.icon className="h-5 w-5" />
                 </div>
-                <div className="mt-2 text-center hidden md:block">
+                <div className="mt-2 text-center hidden md:block max-w-[100px] lg:max-w-none">
                   <div
-                    className={`text-sm font-medium ${
+                    className={`text-xs lg:text-sm font-medium ${
                       currentStep >= step.id ? 'text-foreground' : 'text-muted-foreground'
                     }`}
                   >
@@ -363,7 +409,7 @@ export default function NewEmployeePage() {
               </div>
               {index < steps.length - 1 && (
                 <div
-                  className={`h-0.5 w-12 md:w-24 mx-2 ${
+                  className={`h-0.5 w-8 lg:w-16 mx-1 lg:mx-2 ${
                     currentStep > step.id ? 'bg-green-500' : 'bg-gray-300'
                   }`}
                 />
@@ -383,10 +429,12 @@ export default function NewEmployeePage() {
             </CardHeader>
             <CardContent className="space-y-6">
               {currentStep === 1 && <PersonalInfoStep form={form} />}
-              {currentStep === 2 && <EmploymentInfoStep form={form} />}
-              {currentStep === 3 && <SalaryInfoStep form={form} />}
-              {currentStep === 4 && <BankingInfoStep form={form} />}
-              {currentStep === 5 && <ConfirmationStep form={form} />}
+              {currentStep === 2 && <PersonnelRecordStep form={form} />}
+              {currentStep === 3 && <EmploymentInfoStep form={form} />}
+              {currentStep === 4 && <BenefitsEnrollmentStep form={form} />}
+              {currentStep === 5 && <BankingInfoStep form={form} />}
+              {currentStep === 6 && <SalaryInfoStep form={form} />}
+              {currentStep === 7 && <ConfirmationStep form={form} />}
             </CardContent>
           </Card>
 
@@ -402,7 +450,7 @@ export default function NewEmployeePage() {
               Précédent
             </Button>
 
-            {currentStep < 5 ? (
+            {currentStep < 7 ? (
               <Button
                 type="button"
                 onClick={nextStep}
