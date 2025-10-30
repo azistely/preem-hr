@@ -771,6 +771,7 @@ export const payrollRouter = createTRPCRouter({
       }
 
       // Get line items with employee details using direct SQL for JSONB extraction
+      // Include all breakdown details for expandable employee rows
       const lineItems = await db
         .select({
           id: payrollLineItems.id,
@@ -778,12 +779,30 @@ export const payrollRouter = createTRPCRouter({
           employeeName: sql<string>`CONCAT(${employees.firstName}, ' ', ${employees.lastName})`,
           employeeNumber: employees.employeeNumber,
           baseSalary: payrollLineItems.baseSalary,
+          allowances: payrollLineItems.allowances,
+          daysWorked: payrollLineItems.daysWorked,
+          daysAbsent: payrollLineItems.daysAbsent,
           grossSalary: payrollLineItems.grossSalary,
           netSalary: payrollLineItems.netSalary,
           totalDeductions: payrollLineItems.totalDeductions,
+          totalEmployerCost: payrollLineItems.totalEmployerCost,
+          // Employee deductions
           cnpsEmployee: sql<number>`(${payrollLineItems.employeeContributions}->>'cnps')::numeric`,
           cmuEmployee: sql<number>`(${payrollLineItems.employeeContributions}->>'cmu')::numeric`,
           its: sql<number>`(${payrollLineItems.taxDeductions}->>'its')::numeric`,
+          employeeContributions: payrollLineItems.employeeContributions,
+          taxDeductions: payrollLineItems.taxDeductions,
+          otherDeductions: payrollLineItems.otherDeductions,
+          // Employer costs
+          cnpsEmployer: sql<number>`(${payrollLineItems.employerContributions}->>'cnps')::numeric`,
+          cmuEmployer: sql<number>`(${payrollLineItems.employerContributions}->>'cmu')::numeric`,
+          employerContributions: payrollLineItems.employerContributions,
+          // Detailed breakdowns
+          earningsDetails: payrollLineItems.earningsDetails,
+          deductionsDetails: payrollLineItems.deductionsDetails,
+          // Other taxes (FDFP, ITS employer)
+          totalOtherTaxes: payrollLineItems.totalOtherTaxes,
+          otherTaxesDetails: payrollLineItems.otherTaxesDetails,
         })
         .from(payrollLineItems)
         .innerJoin(employees, eq(payrollLineItems.employeeId, employees.id))

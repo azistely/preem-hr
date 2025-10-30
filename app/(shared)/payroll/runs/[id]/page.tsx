@@ -35,6 +35,11 @@ import {
   Landmark,
   Archive,
   Eye,
+  ChevronDown,
+  ChevronUp,
+  Edit,
+  Clock,
+  Plane,
 } from 'lucide-react';
 import { api } from '@/trpc/react';
 
@@ -50,8 +55,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { PayrollEmployeeRow } from '@/features/payroll/components/payroll-employee-row';
 
 type RunStatus = 'draft' | 'calculating' | 'processing' | 'calculated' | 'approved' | 'paid' | 'failed';
 
@@ -107,6 +114,7 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [previewPayslip, setPreviewPayslip] = useState<{ employeeId: string; employeeName: string; pdfUrl: string } | null>(null);
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
 
   // Unwrap params promise (Next.js 15)
   const { id: runId } = use(params);
@@ -679,70 +687,17 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
               </TableHeader>
               <TableBody>
                 {run.lineItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <div className="font-medium">{item.employeeName || '-'}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {item.employeeNumber || '-'}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {item.baseSalary ? `${formatCurrency(item.baseSalary)} FCFA` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {item.grossSalary ? `${formatCurrency(item.grossSalary)} FCFA` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {item.cnpsEmployee ? `-${formatCurrency(item.cnpsEmployee)} FCFA` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {item.cmuEmployee ? `-${formatCurrency(item.cmuEmployee)} FCFA` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {item.its ? `-${formatCurrency(item.its)} FCFA` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {item.totalDeductions ? `-${formatCurrency(item.totalDeductions)} FCFA` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {item.netSalary ? `${formatCurrency(item.netSalary)} FCFA` : '-'}
-                    </TableCell>
-                    {(status === 'approved' || status === 'paid') && (
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="default"
-                            variant="outline"
-                            onClick={() => handlePreviewPayslip(item.employeeId, item.employeeName || '')}
-                            disabled={generatePayslip.isPending}
-                            className="min-h-[44px] gap-2"
-                          >
-                            <Eye className="h-4 w-4" />
-                            <span className="hidden sm:inline">Voir</span>
-                          </Button>
-                          <Button
-                            size="default"
-                            variant="default"
-                            onClick={() => handleDownloadPayslip(item.employeeId, item.employeeName || '')}
-                            disabled={generatePayslip.isPending}
-                            className="min-h-[44px] gap-2"
-                          >
-                            {generatePayslip.isPending ? (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                <span className="hidden sm:inline">Chargement...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Download className="h-4 w-4" />
-                                <span className="hidden sm:inline">Télécharger</span>
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
+                  <PayrollEmployeeRow
+                    key={item.id}
+                    item={item}
+                    isExpanded={expandedEmployeeId === item.employeeId}
+                    onToggle={() => setExpandedEmployeeId(expandedEmployeeId === item.employeeId ? null : item.employeeId)}
+                    formatCurrency={formatCurrency}
+                    status={status}
+                    onPreviewPayslip={handlePreviewPayslip}
+                    onDownloadPayslip={handleDownloadPayslip}
+                    isGeneratingPayslip={generatePayslip.isPending}
+                  />
                 ))}
               </TableBody>
             </Table>
