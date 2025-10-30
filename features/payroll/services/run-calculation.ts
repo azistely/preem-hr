@@ -89,10 +89,10 @@ export async function createPayrollRun(
   });
 
   if (existing) {
-    // Return helpful error with link to existing run
+    // Return helpful error with link to existing payroll
     throw new Error(
       `Une paie existe déjà pour cette période (${existing.runNumber}). ` +
-      `Consultez-la dans /payroll/runs/${existing.id} pour la recalculer ou la modifier.`
+      `Consultez-la sur /payroll/runs/${existing.id} pour la recalculer ou la modifier.`
     );
   }
 

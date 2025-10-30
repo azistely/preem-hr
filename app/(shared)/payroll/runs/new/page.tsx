@@ -157,7 +157,7 @@ export default function NewPayrollRunPage() {
 
     // Prevent submission if an existing run is detected
     if (existingRun) {
-      setError(`Une paie existe déjà pour cette période (${existingRun.runNumber}). Veuillez modifier la période ou consulter le run existant.`);
+      setError(`Une paie existe déjà pour cette période (${existingRun.runNumber}). Veuillez modifier la période ou consulter la paie existante.`);
       return;
     }
 
@@ -217,7 +217,7 @@ export default function NewPayrollRunPage() {
                       Une paie existe déjà pour cette période
                     </h3>
                     <p className="text-sm text-blue-800 mb-4">
-                      Le run <span className="font-mono font-semibold">{existingRun.runNumber}</span> couvre
+                      La paie <span className="font-mono font-semibold">{existingRun.runNumber}</span> couvre
                       la période du {format(new Date(existingRun.periodStart), 'd MMM', { locale: fr })} au{' '}
                       {format(new Date(existingRun.periodEnd), 'd MMM yyyy', { locale: fr })}.
                     </p>
@@ -226,7 +226,7 @@ export default function NewPayrollRunPage() {
                         onClick={() => router.push(`/payroll/runs/${existingRun.id}`)}
                         className="min-h-[44px]"
                       >
-                        Voir le run existant
+                        Voir la paie existante
                       </Button>
                       <Button
                         variant="outline"
