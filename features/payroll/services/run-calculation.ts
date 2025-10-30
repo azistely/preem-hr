@@ -56,17 +56,44 @@ export async function createPayrollRun(
     throw new Error('La date de fin doit être postérieure à la date de début');
   }
 
-  // Check if run already exists for this period
+  // Check if run already exists for this period (exact match or overlapping)
+  const periodStartStr = input.periodStart.toISOString().split('T')[0];
+  const periodEndStr = input.periodEnd.toISOString().split('T')[0];
+
   const existing = await db.query.payrollRuns.findFirst({
     where: and(
       eq(payrollRuns.tenantId, input.tenantId),
-      eq(payrollRuns.periodStart, input.periodStart.toISOString()),
-      eq(payrollRuns.periodEnd, input.periodEnd.toISOString())
+      or(
+        // Exact match
+        and(
+          eq(payrollRuns.periodStart, periodStartStr),
+          eq(payrollRuns.periodEnd, periodEndStr)
+        ),
+        // Overlapping periods (new period starts during existing period)
+        and(
+          lte(payrollRuns.periodStart, periodStartStr),
+          gte(payrollRuns.periodEnd, periodStartStr)
+        ),
+        // Overlapping periods (new period ends during existing period)
+        and(
+          lte(payrollRuns.periodStart, periodEndStr),
+          gte(payrollRuns.periodEnd, periodEndStr)
+        ),
+        // Overlapping periods (new period contains existing period)
+        and(
+          gte(payrollRuns.periodStart, periodStartStr),
+          lte(payrollRuns.periodEnd, periodEndStr)
+        )
+      )
     ),
   });
 
   if (existing) {
-    throw new Error('Une paie existe déjà pour cette période');
+    // Return helpful error with link to existing run
+    throw new Error(
+      `Une paie existe déjà pour cette période (${existing.runNumber}). ` +
+      `Consultez-la dans /payroll/runs/${existing.id} pour la recalculer ou la modifier.`
+    );
   }
 
   // Count active employees
@@ -81,23 +108,8 @@ export async function createPayrollRun(
     throw new Error('Aucun employé actif trouvé pour ce tenant');
   }
 
-  // Generate run number with sequential counter
-  // Get the count of existing runs for this tenant in this month
-  const monthStart = new Date(input.periodStart.getFullYear(), input.periodStart.getMonth(), 1).toISOString().split('T')[0];
-  const monthEnd = new Date(input.periodStart.getFullYear(), input.periodStart.getMonth() + 1, 0).toISOString().split('T')[0];
-
-  const existingRuns = await db.query.payrollRuns.findMany({
-    where: and(
-      eq(payrollRuns.tenantId, input.tenantId),
-      gte(payrollRuns.periodStart, monthStart),
-      lte(payrollRuns.periodStart, monthEnd)
-    ),
-  });
-
-  const counter = existingRuns.length + 1;
-  const runNumber = counter === 1
-    ? `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`
-    : `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}-${counter}`;
+  // Generate run number (simple format: PAY-YYYY-MM)
+  const runNumber = `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`;
 
   // Validate country has payroll config
   const { ruleLoader } = await import('./rule-loader');
