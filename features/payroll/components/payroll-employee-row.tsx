@@ -64,8 +64,8 @@ export function PayrollEmployeeRow({
   const otherTaxesDetails = item.otherTaxesDetails as any[] || [];
 
   const handleEditSalary = () => {
-    // Navigate to employee edit page
-    router.push(`/employees/${item.employeeId}/edit`);
+    // Navigate to salary edit page (direct route for salary changes)
+    router.push(`/employees/${item.employeeId}/salary/edit`);
   };
 
   return (
