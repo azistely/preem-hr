@@ -9,10 +9,10 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, Download, Edit3, Upload, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, Download, Edit3, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { FileUploadDropzone } from '../shared/file-upload-dropzone';
-import { ValidationPreview } from '../shared/validation-preview';
-import { ImportProgress } from '../shared/import-progress';
+import { trpc } from '@/lib/trpc/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface SelfServiceImportProps {
   dataSource: 'excel' | 'sage' | 'manual';
@@ -22,52 +22,162 @@ interface SelfServiceImportProps {
 
 type Step = 'instructions' | 'upload' | 'validation' | 'importing' | 'complete';
 
+type ValidationResult = {
+  success: boolean;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  errors: Array<{
+    row: number;
+    field?: string;
+    message: string;
+    severity: 'error' | 'warning';
+  }>;
+  warnings: Array<{
+    row: number;
+    field?: string;
+    message: string;
+    severity: 'error' | 'warning';
+  }>;
+  preview: Array<any>;
+  fieldMapping: Record<string, string>;
+};
+
+type ImportResult = {
+  success: boolean;
+  importedCount: number;
+  skippedCount: number;
+  employees: Array<{
+    id: string;
+    employeeNumber: string;
+    firstName: string;
+    lastName: string;
+  }>;
+};
+
 export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServiceImportProps) {
   const [step, setStep] = useState<Step>('instructions');
   const [file, setFile] = useState<File | null>(null);
-  const [validationResult, setValidationResult] = useState<any>(null);
-  const [migrationId, setMigrationId] = useState<string | null>(null);
+  const [fileId, setFileId] = useState<string | null>(null);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const { toast } = useToast();
+
+  // tRPC mutations
+  const uploadFileMutation = trpc.employeeImport.uploadFile.useMutation();
+  const validateFileMutation = trpc.employeeImport.validateFile.useMutation();
+  const executeImportMutation = trpc.employeeImport.executeImport.useMutation();
 
   const handleDownloadTemplate = () => {
-    // TODO: Download Excel template
     window.open('/templates/employee-import-template.xlsx', '_blank');
+  };
+
+  const convertFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        // Remove data URL prefix (e.g., "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,")
+        const base64Data = base64.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);
     setStep('validation');
 
-    // TODO: Validate file
-    // Simulate validation for now
-    setTimeout(() => {
-      setValidationResult({
-        totalRecords: 15,
-        validRecords: 13,
-        warnings: 2,
-        errors: 0,
-        details: [
-          { row: 5, type: 'warning', message: 'Salaire (50,000) inférieur au SMIG (75,000)' },
-          { row: 12, type: 'warning', message: 'Email manquant - Un email temporaire sera créé' },
-        ],
+    try {
+      // 1. Convert file to Base64
+      const base64Data = await convertFileToBase64(selectedFile);
+
+      // 2. Upload file to Supabase Storage
+      const uploadResult = await uploadFileMutation.mutateAsync({
+        fileName: selectedFile.name,
+        fileData: base64Data,
+        fileType: selectedFile.type,
       });
-    }, 1500);
+
+      setFileId(uploadResult.fileId);
+
+      // 3. Validate uploaded file
+      const validation = await validateFileMutation.mutateAsync({
+        fileId: uploadResult.fileId,
+      });
+
+      setValidationResult(validation as ValidationResult);
+
+      // Show success toast
+      if (validation.success) {
+        toast({
+          title: '✅ Validation réussie',
+          description: `${validation.validRows} lignes valides trouvées`,
+        });
+      } else {
+        toast({
+          title: '⚠️ Erreurs détectées',
+          description: `${validation.errors.length} erreur(s) trouvée(s)`,
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Validation error:', error);
+      toast({
+        title: '❌ Erreur de validation',
+        description: error.message || 'Impossible de valider le fichier',
+        variant: 'destructive',
+      });
+      setStep('upload');
+    }
   };
 
-  const handleStartImport = () => {
+  const handleStartImport = async (skipErrors = false) => {
+    if (!fileId) {
+      toast({
+        title: '❌ Erreur',
+        description: 'Fichier non trouvé. Veuillez réessayer.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setStep('importing');
 
-    // TODO: Start import process
-    setTimeout(() => {
-      setMigrationId('test-migration-id');
+    try {
+      const result = await executeImportMutation.mutateAsync({
+        fileId,
+        skipErrors,
+      });
+
+      setImportResult(result as ImportResult);
       setStep('complete');
-    }, 3000);
+
+      toast({
+        title: '🎉 Import réussi!',
+        description: `${result.importedCount} employés importés`,
+      });
+    } catch (error: any) {
+      console.error('Import error:', error);
+      toast({
+        title: '❌ Erreur d\'import',
+        description: error.message || 'Impossible d\'importer les employés',
+        variant: 'destructive',
+      });
+      setStep('validation');
+    }
   };
 
   const handleTryAgain = () => {
     setFile(null);
+    setFileId(null);
     setValidationResult(null);
     setStep('upload');
   };
+
+  const isLoading = uploadFileMutation.isPending || validateFileMutation.isPending || executeImportMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -76,6 +186,7 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
         variant="ghost"
         onClick={onBack}
         className="mb-2"
+        disabled={isLoading}
       >
         <ChevronLeft className="w-4 h-4 mr-2" />
         Retour
@@ -138,15 +249,15 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
                 <ul className="text-sm text-blue-800 space-y-2">
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <span>Colonnes pré-formatées selon vos besoins</span>
+                    <span>46 colonnes couvrant tous les champs du registre du personnel + salaires</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <span>Exemples de données pour vous guider</span>
+                    <span>3 exemples complets pour vous guider</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <span>Instructions intégrées dans chaque colonne</span>
+                    <span>Instructions de format dans chaque colonne</span>
                   </li>
                 </ul>
               </div>
@@ -178,31 +289,59 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
             <CardContent>
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-900 mb-3 font-medium">
-                  ✏️ Informations requises:
+                  ✏️ Champs obligatoires (13 minimum):
                 </p>
                 <div className="grid grid-cols-2 gap-3 text-sm text-green-800">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Matricule</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                     <span>Prénom, Nom</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                    <span>Téléphone</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                    <span>Poste</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                    <span>Salaire de base</span>
+                    <span>Contact</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                     <span>Date d'embauche</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Nature du contrat</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Fonction</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Situation Familiale</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Nombre d'enfants</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Catégorie</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>N° CNPS</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Salaire Catégoriel</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>Indemnité de transport</span>
+                  </div>
                   <div className="text-muted-foreground text-xs italic col-span-2 mt-2">
-                    Email, CNI, Compte bancaire sont optionnels
+                    Les autres champs sont optionnels mais recommandés pour le registre du personnel
                   </div>
                 </div>
               </div>
@@ -237,26 +376,144 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
       {step === 'upload' && (
         <div className="space-y-4">
           <FileUploadDropzone onFileSelect={handleFileSelect} dataSource={dataSource} />
+          {isLoading && (
+            <div className="flex items-center justify-center gap-3 p-6 bg-blue-50 border border-blue-200 rounded-lg">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+              <span className="text-blue-900 font-medium">
+                {uploadFileMutation.isPending && 'Téléchargement du fichier...'}
+                {validateFileMutation.isPending && 'Validation en cours...'}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
       {step === 'validation' && validationResult && (
-        <div className="space-y-4">
-          <ValidationPreview
-            result={validationResult}
-            onConfirm={handleStartImport}
-            onCancel={handleTryAgain}
-          />
+        <div className="space-y-6">
+          {/* Validation summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {validationResult.success ? (
+                  <>
+                    <CheckCircle2 className="w-6 h-6 text-green-600" />
+                    Validation réussie
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-6 h-6 text-orange-600" />
+                    Erreurs détectées
+                  </>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-3xl font-bold">{validationResult.totalRows}</div>
+                  <div className="text-sm text-muted-foreground">Total</div>
+                </div>
+                <div className="text-center p-4 bg-green-50 rounded-lg">
+                  <div className="text-3xl font-bold text-green-600">{validationResult.validRows}</div>
+                  <div className="text-sm text-muted-foreground">Valides</div>
+                </div>
+                <div className="text-center p-4 bg-red-50 rounded-lg">
+                  <div className="text-3xl font-bold text-red-600">{validationResult.invalidRows}</div>
+                  <div className="text-sm text-muted-foreground">Erreurs</div>
+                </div>
+              </div>
+
+              {/* Errors */}
+              {validationResult.errors.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-red-900">
+                    Erreurs ({validationResult.errors.length})
+                  </h3>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {validationResult.errors.slice(0, 10).map((error, i) => (
+                      <div key={i} className="text-sm p-2 bg-red-50 border border-red-200 rounded">
+                        <span className="font-medium">Ligne {error.row}:</span>{' '}
+                        {error.field && <span className="text-red-700">[{error.field}]</span>}{' '}
+                        {error.message}
+                      </div>
+                    ))}
+                    {validationResult.errors.length > 10 && (
+                      <div className="text-sm text-muted-foreground text-center py-2">
+                        +{validationResult.errors.length - 10} autres erreurs...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Warnings */}
+              {validationResult.warnings.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-orange-900">
+                    Avertissements ({validationResult.warnings.length})
+                  </h3>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {validationResult.warnings.slice(0, 5).map((warning, i) => (
+                      <div key={i} className="text-sm p-2 bg-orange-50 border border-orange-200 rounded">
+                        <span className="font-medium">Ligne {warning.row}:</span>{' '}
+                        {warning.field && <span className="text-orange-700">[{warning.field}]</span>}{' '}
+                        {warning.message}
+                      </div>
+                    ))}
+                    {validationResult.warnings.length > 5 && (
+                      <div className="text-sm text-muted-foreground text-center py-2">
+                        +{validationResult.warnings.length - 5} autres avertissements...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={handleTryAgain}
+                  className="flex-1"
+                  disabled={isLoading}
+                >
+                  Choisir un autre fichier
+                </Button>
+                {validationResult.validRows > 0 && (
+                  <Button
+                    onClick={() => handleStartImport(validationResult.invalidRows > 0)}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    disabled={isLoading}
+                  >
+                    {validationResult.invalidRows > 0
+                      ? `Importer ${validationResult.validRows} lignes valides`
+                      : `Importer ${validationResult.validRows} lignes`}
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
       {step === 'importing' && (
         <div className="space-y-4">
-          <ImportProgress total={validationResult?.totalRecords || 0} />
+          <Card>
+            <CardContent className="p-12 text-center space-y-4">
+              <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
+              <div>
+                <h3 className="text-xl font-semibold mb-2">Import en cours...</h3>
+                <p className="text-muted-foreground">
+                  Création de {validationResult?.validRows || 0} employés
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
-      {step === 'complete' && (
+      {step === 'complete' && importResult && (
         <div className="space-y-6">
           {/* Success message */}
           <div className="text-center space-y-4">
@@ -268,32 +525,31 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
                 ✅ Import réussi !
               </h3>
               <p className="text-muted-foreground">
-                {validationResult?.validRecords || 0} employés importés avec succès
+                {importResult.importedCount} employés importés avec succès
               </p>
+              {importResult.skippedCount > 0 && (
+                <p className="text-sm text-orange-600 mt-1">
+                  {importResult.skippedCount} lignes ignorées (erreurs)
+                </p>
+              )}
             </div>
           </div>
 
           {/* Summary */}
           <Card>
             <CardContent className="p-6">
-              <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="grid grid-cols-2 gap-4 text-center">
                 <div>
                   <div className="text-3xl font-bold text-green-600">
-                    {validationResult?.validRecords || 0}
+                    {importResult.importedCount}
                   </div>
                   <div className="text-sm text-muted-foreground">Importés</div>
                 </div>
                 <div>
                   <div className="text-3xl font-bold text-orange-600">
-                    {validationResult?.warnings || 0}
+                    {importResult.skippedCount}
                   </div>
-                  <div className="text-sm text-muted-foreground">Avertissements</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-red-600">
-                    {validationResult?.errors || 0}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Erreurs</div>
+                  <div className="text-sm text-muted-foreground">Ignorés</div>
                 </div>
               </div>
             </CardContent>

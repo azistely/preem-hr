@@ -14,6 +14,16 @@ export const employees = pgTable('employees', {
   preferredName: text('preferred_name'),
   dateOfBirth: date('date_of_birth'),
   gender: text('gender'),
+  nationality: text('nationality'),
+  placeOfBirth: text('place_of_birth'),
+
+  // Personnel record (legal requirements)
+  nationalityZone: varchar('nationality_zone', { length: 10 }), // 'LOCAL', 'CEDEAO', 'HORS_CEDEAO'
+  employeeType: varchar('employee_type', { length: 50 }), // 'LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE'
+  fatherName: varchar('father_name', { length: 255 }),
+  motherName: varchar('mother_name', { length: 255 }),
+  emergencyContactName: varchar('emergency_contact_name', { length: 255 }),
+  emergencyContactPhone: varchar('emergency_contact_phone', { length: 50 }),
 
   // Contact
   email: text('email').notNull(),
@@ -32,13 +42,28 @@ export const employees = pgTable('employees', {
   hireDate: date('hire_date').notNull(),
   terminationDate: date('termination_date'),
   terminationReason: text('termination_reason'),
+  contractType: varchar('contract_type', { length: 50 }), // CDI, CDD, INTERIM, STAGE
+  jobTitle: text('job_title'), // "Fonction" from SAGE
+  profession: text('profession'), // "Métier" from SAGE
+  qualification: varchar('qualification', { length: 100 }),
+  employmentClassification: varchar('employment_classification', { length: 50 }), // Temps plein/partiel/occasionnel
+  salaryRegime: varchar('salary_regime', { length: 50 }), // Mensuel/Journalier/Horaire
+
+  // Organizational structure (denormalized for import)
+  establishment: text('establishment'), // "Etablissement"
+  division: text('division'), // "Direction"
+  service: text('service'), // "Service"
+  section: text('section'), // "Section"
+  workSite: text('work_site'), // "Site de travail"
 
   // Banking
   bankName: text('bank_name'),
   bankAccount: text('bank_account'),
 
-  // CNPS
+  // Social security
   cnpsNumber: text('cnps_number'),
+  cmuNumber: text('cmu_number'),
+  // Note: Health coverage is now tracked via employee_benefit_enrollments table
 
   // Tax
   taxNumber: text('tax_number'),
@@ -65,6 +90,11 @@ export const employees = pgTable('employees', {
   dependentChildren: integer('dependent_children'),
   fiscalParts: numeric('fiscal_parts'),
   hasFamily: boolean('has_family'),
+
+  // Compensation (temporary import fields - will migrate to compensation table)
+  categoricalSalary: numeric('categorical_salary', { precision: 15, scale: 2 }), // "Salaire Catégoriel"
+  salaryPremium: numeric('salary_premium', { precision: 15, scale: 2 }), // "Sursalaire"
+  initialLeaveBalance: numeric('initial_leave_balance', { precision: 5, scale: 2 }), // "Solde congés"
 
   // Custom fields (Zod validated)
   customFields: jsonb('custom_fields').notNull().default({}),

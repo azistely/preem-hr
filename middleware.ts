@@ -204,8 +204,9 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/static') ||
+    pathname.startsWith('/templates') || // Public templates (e.g., employee import template)
     pathname.includes('/api/') ||
-    pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|webp|woff|woff2|ttf|eot|css|js)$/)
+    pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|webp|woff|woff2|ttf|eot|css|js|xlsx|xls|csv)$/)
   ) {
     return NextResponse.next();
   }

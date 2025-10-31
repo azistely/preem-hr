@@ -44,6 +44,7 @@ import { cgeciRouter } from './cgeci';
 import { variablePayInputsRouter } from './variable-pay-inputs';
 import { dependentsRouter } from './dependents';
 import { benefitsRouter } from './benefits';
+import { employeeImportRouter } from './employee-import';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -63,6 +64,7 @@ export const appRouter = createTRPCRouter({
   variablePayInputs: variablePayInputsRouter,
   dependents: dependentsRouter,
   benefits: benefitsRouter,
+  employeeImport: employeeImportRouter,
   payroll: payrollRouter,
   tenant: tenantRouter,
   employees: employeesRouter,

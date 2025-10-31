@@ -75,6 +75,7 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.6",
     "file-saver": "^2.0.5",
+    "iconv-lite": "^0.7.0",
     "inngest": "^3.44.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.544.0",
