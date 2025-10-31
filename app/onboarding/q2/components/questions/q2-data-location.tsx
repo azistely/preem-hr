@@ -7,7 +7,7 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileSpreadsheet, Briefcase, FileText, ChevronLeft } from 'lucide-react';
+import { FileSpreadsheet, Briefcase, ChevronLeft } from 'lucide-react';
 
 interface DataLocationQuestionProps {
   onAnswer: (source: 'excel' | 'sage' | 'manual') => void;
@@ -81,31 +81,6 @@ export function DataLocationQuestion({ onAnswer, onBack }: DataLocationQuestionP
                 </p>
                 <p className="text-sm text-blue-600 mt-2">
                   ✓ Guide pas à pas pour exporter vos données
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Option 3: Paper/Manual */}
-        <Card
-          className="cursor-pointer hover:border-primary hover:shadow-lg transition-all"
-          onClick={() => onAnswer('manual')}
-        >
-          <CardContent className="p-6 md:p-8">
-            <div className="flex items-start gap-4">
-              <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-8 h-8 text-orange-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold mb-2">
-                  📝 Papier / Manuel
-                </h3>
-                <p className="text-muted-foreground">
-                  Mes données ne sont pas encore informatisées
-                </p>
-                <p className="text-sm text-orange-600 mt-2">
-                  ✓ Assistance WhatsApp disponible
                 </p>
               </div>
             </div>
