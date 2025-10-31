@@ -396,12 +396,37 @@ export async function listEmployees(input: ListEmployeesInput) {
   const hasMore = results.length > limit;
   const items = hasMore ? results.slice(0, limit) : results;
 
-  // Decrypt PII fields
-  const decryptedItems = items.map((employee) => ({
-    ...employee,
-    nationalId: employee.nationalId ? decrypt(employee.nationalId) : null,
-    bankAccount: employee.bankAccount ? decrypt(employee.bankAccount) : null,
-  }));
+  // Decrypt PII fields (handle decryption failures gracefully)
+  const decryptedItems = items.map((employee) => {
+    let decryptedNationalId = null;
+    let decryptedBankAccount = null;
+
+    // Try to decrypt nationalId, fallback to null on error
+    if (employee.nationalId) {
+      try {
+        decryptedNationalId = decrypt(employee.nationalId);
+      } catch (error) {
+        console.warn(`Failed to decrypt nationalId for employee ${employee.id}:`, error);
+        decryptedNationalId = null;
+      }
+    }
+
+    // Try to decrypt bankAccount, fallback to null on error
+    if (employee.bankAccount) {
+      try {
+        decryptedBankAccount = decrypt(employee.bankAccount);
+      } catch (error) {
+        console.warn(`Failed to decrypt bankAccount for employee ${employee.id}:`, error);
+        decryptedBankAccount = null;
+      }
+    }
+
+    return {
+      ...employee,
+      nationalId: decryptedNationalId,
+      bankAccount: decryptedBankAccount,
+    };
+  });
 
   return {
     employees: decryptedItems,
@@ -429,11 +454,32 @@ export async function getEmployeeById(employeeId: string, tenantId: string) {
     throw new NotFoundError('Employé', employeeId);
   }
 
-  // Decrypt PII
+  // Decrypt PII (handle decryption failures gracefully)
+  let decryptedNationalId = null;
+  let decryptedBankAccount = null;
+
+  if (employee.nationalId) {
+    try {
+      decryptedNationalId = decrypt(employee.nationalId);
+    } catch (error) {
+      console.warn(`Failed to decrypt nationalId for employee ${employee.id}:`, error);
+      decryptedNationalId = null;
+    }
+  }
+
+  if (employee.bankAccount) {
+    try {
+      decryptedBankAccount = decrypt(employee.bankAccount);
+    } catch (error) {
+      console.warn(`Failed to decrypt bankAccount for employee ${employee.id}:`, error);
+      decryptedBankAccount = null;
+    }
+  }
+
   const decrypted = {
     ...employee,
-    nationalId: employee.nationalId ? decrypt(employee.nationalId) : null,
-    bankAccount: employee.bankAccount ? decrypt(employee.bankAccount) : null,
+    nationalId: decryptedNationalId,
+    bankAccount: decryptedBankAccount,
   };
 
   // Get salary history
@@ -606,11 +652,32 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
     throw new NotFoundError('Employé', input.id);
   }
 
-  // Decrypt PII for return
+  // Decrypt PII for return (handle decryption failures gracefully)
+  let decryptedNationalId = null;
+  let decryptedBankAccount = null;
+
+  if (updated.nationalId) {
+    try {
+      decryptedNationalId = decrypt(updated.nationalId);
+    } catch (error) {
+      console.warn(`Failed to decrypt nationalId for employee ${updated.id}:`, error);
+      decryptedNationalId = null;
+    }
+  }
+
+  if (updated.bankAccount) {
+    try {
+      decryptedBankAccount = decrypt(updated.bankAccount);
+    } catch (error) {
+      console.warn(`Failed to decrypt bankAccount for employee ${updated.id}:`, error);
+      decryptedBankAccount = null;
+    }
+  }
+
   return {
     ...updated,
-    nationalId: updated.nationalId ? decrypt(updated.nationalId) : null,
-    bankAccount: updated.bankAccount ? decrypt(updated.bankAccount) : null,
+    nationalId: decryptedNationalId,
+    bankAccount: decryptedBankAccount,
   };
 }
 
