@@ -64,7 +64,6 @@ export function MinimumWageAlert({
   };
 
   // Determine alert state
-  const isValid = currentSalary >= minimumWage;
   const difference = Math.abs(currentSalary - minimumWage);
   const percentageBelow = minimumWage > 0
     ? ((minimumWage - currentSalary) / minimumWage) * 100
@@ -75,42 +74,9 @@ export function MinimumWageAlert({
     return null;
   }
 
-  // Valid salary (at or above minimum)
-  if (isValid && currentSalary > minimumWage) {
+  // Below minimum (ERROR) - Check this FIRST with strict less than
+  if (currentSalary < minimumWage) {
     return (
-      <Alert className={className}>
-        <CheckCircle2 className="h-4 w-4 text-green-600" />
-        <AlertDescription>
-          Salaire conforme au minimum légal pour cette catégorie.{' '}
-          <span className="text-muted-foreground">
-            (Minimum: {formatCurrency(minimumWage)})
-          </span>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  // Exact minimum
-  if (isValid && currentSalary === minimumWage) {
-    return (
-      <Alert className={className}>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          Ce salaire correspond exactement au minimum légal{' '}
-          <span className="font-medium">
-            ({formatCurrency(minimumWage)})
-          </span>
-          {category?.suggestedCategory && (
-            <span> pour la catégorie {category.suggestedCategory}</span>
-          )}
-          .
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
-  // Below minimum (ERROR)
-  return (
     <Alert variant="destructive" className={className}>
       <AlertTriangle className="h-4 w-4" />
       <AlertDescription>
@@ -139,6 +105,39 @@ export function MinimumWageAlert({
             {formatCurrency(minimumWage)}
           </p>
         </div>
+      </AlertDescription>
+    </Alert>
+    );
+  }
+
+  // Exact minimum (at exactly the legal minimum)
+  if (currentSalary === minimumWage) {
+    return (
+      <Alert className={className}>
+        <Info className="h-4 w-4" />
+        <AlertDescription>
+          Ce salaire correspond exactement au minimum légal{' '}
+          <span className="font-medium">
+            ({formatCurrency(minimumWage)})
+          </span>
+          {category?.suggestedCategory && (
+            <span> pour la catégorie {category.suggestedCategory}</span>
+          )}
+          .
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  // Above minimum (valid salary)
+  return (
+    <Alert className={className}>
+      <CheckCircle2 className="h-4 w-4 text-green-600" />
+      <AlertDescription>
+        Salaire conforme au minimum légal pour cette catégorie.{' '}
+        <span className="text-muted-foreground">
+          (Minimum: {formatCurrency(minimumWage)})
+        </span>
       </AlertDescription>
     </Alert>
   );
