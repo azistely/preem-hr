@@ -40,7 +40,8 @@ export function MinimumWageAlert({
   // Calculate minimum wage
   useEffect(() => {
     const calculated = countryMinimumWage * (coefficient / 100);
-    setMinimumWage(calculated);
+    // Round to avoid floating-point precision issues
+    setMinimumWage(Math.round(calculated));
   }, [coefficient, countryMinimumWage]);
 
   // Fetch category for display
@@ -158,7 +159,8 @@ export function MinimumWageInfo({
   countryCode: string;
   className?: string;
 }) {
-  const minimumWage = countryMinimumWage * (coefficient / 100);
+  // Round to avoid floating-point precision issues
+  const minimumWage = Math.round(countryMinimumWage * (coefficient / 100));
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR', {
