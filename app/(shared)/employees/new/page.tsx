@@ -292,7 +292,8 @@ export default function NewEmployeePage() {
 
           // Validation 1: Check salaire catégoriel meets category minimum wage
           const countryMinimumWage = 75000; // TODO: Get from tenant/countries table
-          const requiredMinimum = countryMinimumWage * (coefficient / 100);
+          // Round to avoid floating-point precision errors
+          const requiredMinimum = Math.round(countryMinimumWage * (coefficient / 100));
 
           if (salaireCategoriel < requiredMinimum) {
             form.setError('baseSalary', {
