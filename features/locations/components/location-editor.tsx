@@ -37,7 +37,8 @@ import {
 import { trpc } from '@/lib/trpc/client';
 import { X, Loader2, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { CI_CITIES, ABIDJAN_COMMUNES } from '@/lib/constants/ci-cities';
 
 // Validation Schema
 const locationSchema = z.object({
@@ -49,6 +50,7 @@ const locationSchema = z.object({
   locationName: z.string().min(1, 'Le nom est requis').max(255),
   locationType: z.enum(['headquarters', 'branch', 'construction_site', 'client_site']),
   city: z.string().max(100).optional(),
+  commune: z.string().max(100).optional(),
   transportAllowance: z.string().default('0'),
   mealAllowance: z.string().default('0'),
   sitePremium: z.string().default('0'),
@@ -72,6 +74,7 @@ type LocationEditorProps = {
 export function LocationEditor({ locationId, onClose }: LocationEditorProps) {
   const { toast } = useToast();
   const utils = trpc.useUtils();
+  const [selectedCity, setSelectedCity] = useState<string>('');
 
   // Fetch location if editing
   const { data: location, isLoading: isLoadingLocation } = trpc.locations.get.useQuery(
@@ -124,6 +127,7 @@ export function LocationEditor({ locationId, onClose }: LocationEditorProps) {
       locationName: '',
       locationType: 'headquarters' as const, // SMART DEFAULT
       city: '',
+      commune: '',
       transportAllowance: '0',
       mealAllowance: '0',
       sitePremium: '0',
@@ -139,11 +143,14 @@ export function LocationEditor({ locationId, onClose }: LocationEditorProps) {
   // Load location data when editing
   useEffect(() => {
     if (location) {
+      const cityValue = location.city || '';
+      setSelectedCity(cityValue);
       form.reset({
         locationCode: location.locationCode,
         locationName: location.locationName,
         locationType: location.locationType as 'headquarters' | 'branch' | 'construction_site' | 'client_site',
-        city: location.city || '',
+        city: cityValue,
+        commune: location.commune || '',
         transportAllowance: location.transportAllowance || '0',
         mealAllowance: location.mealAllowance || '0',
         sitePremium: location.sitePremium || '0',
@@ -256,13 +263,57 @@ export function LocationEditor({ locationId, onClose }: LocationEditorProps) {
           {/* City */}
           <div className="space-y-2">
             <Label htmlFor="city">Ville</Label>
-            <Input
-              id="city"
-              {...form.register('city')}
-              placeholder="Abidjan"
-              className="min-h-[48px]"
-            />
+            <Select
+              value={selectedCity}
+              onValueChange={(value) => {
+                setSelectedCity(value);
+                form.setValue('city', value);
+                // Reset commune when changing city
+                if (value !== 'Abidjan') {
+                  form.setValue('commune', '');
+                }
+              }}
+            >
+              <SelectTrigger className="min-h-[48px]">
+                <SelectValue placeholder="Sélectionnez la ville du site" />
+              </SelectTrigger>
+              <SelectContent>
+                {CI_CITIES.map((city) => (
+                  <SelectItem key={city.value} value={city.value}>
+                    {city.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Sélectionnez la ville du site
+            </p>
           </div>
+
+          {/* Commune (only for Abidjan) */}
+          {selectedCity === 'Abidjan' && (
+            <div className="space-y-2">
+              <Label htmlFor="commune">Commune</Label>
+              <Select
+                value={form.watch('commune') || ''}
+                onValueChange={(value) => form.setValue('commune', value)}
+              >
+                <SelectTrigger className="min-h-[48px]">
+                  <SelectValue placeholder="Précisez la commune (optionnel)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ABIDJAN_COMMUNES.map((commune) => (
+                    <SelectItem key={commune.value} value={commune.value}>
+                      {commune.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Précisez la commune (optionnel)
+              </p>
+            </div>
+          )}
 
           {/* Indemnités Section */}
           <div className="border-t pt-6">

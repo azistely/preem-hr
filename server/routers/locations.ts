@@ -15,6 +15,7 @@ const createLocationSchema = z.object({
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
   city: z.string().max(100).optional(),
+  commune: z.string().max(100).optional(),
   postalCode: z.string().max(20).optional(),
   countryCode: z.string().length(2).default('CI'),
   latitude: z.string().optional(),

@@ -21,11 +21,20 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Plus, X, MapPin, Building2, HardHat, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
+import { CI_CITIES, ABIDJAN_COMMUNES } from '@/lib/constants/ci-cities';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // Location schema
 const locationSchema = z.object({
   locationType: z.enum(['headquarters', 'branch', 'construction_site', 'client_site']),
   city: z.string().min(1, 'La ville est requise'),
+  commune: z.string().optional(),
 });
 
 // Company setup schema with locations
@@ -98,6 +107,7 @@ export default function OnboardingQ1Page() {
         .map(loc => ({
           locationType: loc.locationType as LocationFormData['locationType'],
           city: loc.city as string, // Safe cast after filter
+          commune: loc.commune || undefined,
         }));
       setValue('locations', formattedLocations, { shouldValidate: false });
     }
@@ -150,6 +160,7 @@ export default function OnboardingQ1Page() {
           locationName: autoName,
           locationType: location.locationType,
           city: location.city,
+          commune: location.commune,
           countryCode: data.countryCode,
         });
         createdCount++;
@@ -175,6 +186,7 @@ export default function OnboardingQ1Page() {
     const newLocation: LocationFormData = {
       locationType: 'headquarters',
       city: '',
+      commune: undefined,
     };
     setValue('locations', [...locations, newLocation], { shouldValidate: true });
   };
@@ -334,13 +346,13 @@ export default function OnboardingQ1Page() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-3">
                         <div>
                           <label className="text-sm font-medium">Type *</label>
                           <select
                             value={location.locationType}
                             onChange={(e) => updateLocation(index, 'locationType', e.target.value as any)}
-                            className="w-full mt-1 px-3 py-2 border rounded-md"
+                            className="w-full mt-1 px-3 py-2 border rounded-md min-h-[48px]"
                           >
                             {Object.entries(LOCATION_TYPE_LABELS).map(([key, value]) => (
                               <option key={key} value={key}>
@@ -351,17 +363,54 @@ export default function OnboardingQ1Page() {
                         </div>
                         <div>
                           <label className="text-sm font-medium">Ville *</label>
-                          <input
-                            type="text"
+                          <Select
                             value={location.city || ''}
-                            onChange={(e) => updateLocation(index, 'city', e.target.value)}
-                            placeholder="Ex: Abidjan, Bouaké"
-                            className="w-full mt-1 px-3 py-2 border rounded-md"
-                          />
+                            onValueChange={(value) => {
+                              updateLocation(index, 'city', value);
+                              // Reset commune when changing city
+                              if (value !== 'Abidjan') {
+                                updateLocation(index, 'commune', undefined);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-full mt-1 min-h-[48px]">
+                              <SelectValue placeholder="Sélectionnez la ville du site" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CI_CITIES.map((city) => (
+                                <SelectItem key={city.value} value={city.value}>
+                                  {city.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Détermine les indemnités légales
+                            Sélectionnez la ville du site
                           </p>
                         </div>
+                        {location.city === 'Abidjan' && (
+                          <div>
+                            <label className="text-sm font-medium">Commune</label>
+                            <Select
+                              value={location.commune || ''}
+                              onValueChange={(value) => updateLocation(index, 'commune', value)}
+                            >
+                              <SelectTrigger className="w-full mt-1 min-h-[48px]">
+                                <SelectValue placeholder="Précisez la commune (optionnel)" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ABIDJAN_COMMUNES.map((commune) => (
+                                  <SelectItem key={commune.value} value={commune.value}>
+                                    {commune.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Précisez la commune (optionnel)
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

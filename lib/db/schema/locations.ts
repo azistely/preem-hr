@@ -21,6 +21,7 @@ export const locations = pgTable('locations', {
   addressLine1: text('address_line1'),
   addressLine2: text('address_line2'),
   city: varchar('city', { length: 100 }),
+  commune: varchar('commune', { length: 100 }), // Commune or district (e.g., Cocody, Yopougon for Abidjan)
   postalCode: varchar('postal_code', { length: 20 }),
   countryCode: varchar('country_code', { length: 2 }).default('CI'),
 
