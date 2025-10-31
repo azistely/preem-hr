@@ -303,11 +303,17 @@ export default function NewEmployeePage() {
             isValid = false;
           }
 
-          // Validation 2: Check transport allowance (Code 22) meets city minimum
-          // Uses city-specific minimum from database via cityTransportMinimum state
+          // Validation 2: Transport allowance (Code 22) is mandatory in Côte d'Ivoire
           const transportComponent = components.find((c: any) => c.code === '22');
 
-          if (transportComponent && cityTransportMinimum !== null && cityName) {
+          if (!transportComponent) {
+            // Transport is mandatory - show error
+            form.setError('components', {
+              type: 'manual',
+              message: `La prime de transport est obligatoire. Ajoutez la prime de transport (Code 22) en cliquant sur "Ajouter" ci-dessus.`,
+            });
+            isValid = false;
+          } else if (transportComponent && cityTransportMinimum !== null && cityName) {
             // Validate against city-specific minimum from database
             if (transportComponent.amount < cityTransportMinimum) {
               form.setError('components', {
