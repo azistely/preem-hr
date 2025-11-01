@@ -22,9 +22,26 @@ import { loadPayrollConfig, ProgressiveMonthlyTaxStrategy } from '@/features/pay
 import { calculateBankingSeniorityBonus } from '@/features/conventions/services/banking-convention.service';
 import { ruleLoader } from './rule-loader';
 import { db } from '@/lib/db';
-import { employeeSiteAssignments, locations, employees } from '@/lib/db/schema';
+import { employeeSiteAssignments, locations, employees, tenants } from '@/lib/db/schema';
 import { and, eq, gte, lte } from 'drizzle-orm';
 import { ComponentProcessor, componentDefinitionCache } from '@/lib/salary-components';
+import {
+  isJournalier,
+  calculateHourlyRate,
+  calculateHourlyDivisor,
+  classifyOvertime,
+  calculateEquivalentDays,
+  calculateContributionEmployeur,
+  type PaymentFrequency,
+  type WeeklyHoursRegime,
+  type EmployeeType,
+} from './daily-workers-utils';
+import {
+  calculateDailyWorkersGross,
+  calculateProratedDeductions,
+  calculateDailyITS,
+  type DailyWorkersGrossInput,
+} from './daily-workers-calculation';
 
 export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   countryCode: string; // Required for loading config
@@ -46,6 +63,16 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY'; // Payment frequency
   daysWorkedThisMonth?: number; // For DAILY workers
   hoursWorkedThisMonth?: number; // For HOURLY workers
+
+  // Daily workers support (Phase 2)
+  paymentFrequency?: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; // Orthogonal to contract type
+  weeklyHoursRegime?: '40h' | '44h' | '48h' | '52h' | '56h'; // For hourly divisor and OT threshold
+  employeeType?: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE'; // For contribution employeur (uses existing field)
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'; // For CDDTI-specific components
+  saturdayHours?: number; // Hours worked on Saturday (1.40× multiplier)
+  sundayHours?: number; // Hours worked on Sunday/holiday (1.40× multiplier)
+  nightHours?: number; // Hours worked at night 21h-5h (1.75× multiplier)
+  dailyTransportRate?: number; // Transport rate per day (FCFA)
 
   // Banking convention support (GAP-CONV-BANK-001)
   conventionCode?: string; // 'INTERPRO', 'BANKING', 'BTP'
@@ -149,7 +176,17 @@ function convertAllowancesToComponents(
 
   // Custom components (if provided)
   if (input.customComponents && input.customComponents.length > 0) {
-    components.push(...input.customComponents);
+    // For HOURLY workers, multiply component amounts by hours worked
+    if (input.rateType === 'HOURLY' && input.hoursWorkedThisMonth) {
+      const multipliedComponents = input.customComponents.map(comp => ({
+        ...comp,
+        amount: Math.round(comp.amount * input.hoursWorkedThisMonth!),
+      }));
+      components.push(...multipliedComponents);
+      console.log(`[HOURLY COMPONENTS] Multiplied ${input.customComponents.length} components by ${input.hoursWorkedThisMonth} hours`);
+    } else {
+      components.push(...input.customComponents);
+    }
   }
 
   return components;
@@ -413,14 +450,41 @@ export async function calculatePayrollV2(
           // Check transport allowance from both old field-based approach and new component-based approach
           // Transport component has code '22'
           const transportFromComponent = allComponents.find(c => c.code === '22')?.amount || 0;
-          const totalTransport = transportFromComponent || (input.transportAllowance || 0);
+          let totalTransport = transportFromComponent || (input.transportAllowance || 0);
 
-          // Validate transport meets minimum
-          if (totalTransport < cityMinimum.monthlyMinimum) {
+          // For HOURLY rate type (CDDTI), convert hourly rate to monthly equivalent
+          if (input.rateType === 'HOURLY' && totalTransport > 0) {
+            // Calculate monthly hours: (weeklyHours × 52) / 12
+            const weeklyHours = input.weeklyHoursRegime === '40h' ? 40 :
+                                input.weeklyHoursRegime === '44h' ? 44 :
+                                input.weeklyHoursRegime === '48h' ? 48 :
+                                input.weeklyHoursRegime === '52h' ? 52 :
+                                input.weeklyHoursRegime === '56h' ? 56 : 40; // Default 40h
+            const monthlyHours = (weeklyHours * 52) / 12;
+            // Convert hourly rate to monthly equivalent
+            totalTransport = Math.round(totalTransport * monthlyHours);
+          }
+
+          // Validate transport meets minimum (only for MONTHLY workers)
+          const isNonMonthlyWorker =
+            input.paymentFrequency &&
+            ['DAILY', 'WEEKLY', 'BIWEEKLY'].includes(input.paymentFrequency);
+
+          if (!isNonMonthlyWorker && totalTransport < cityMinimum.monthlyMinimum) {
             const cityName = cityMinimum.displayName?.fr || cityMinimum.cityName;
-            throw new Error(
-              `L'indemnité de transport (${totalTransport.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
-            );
+            // Display different message for hourly vs monthly
+            if (input.rateType === 'HOURLY') {
+              const hourlyRate = transportFromComponent || (input.transportAllowance || 0);
+              throw new Error(
+                `L'indemnité de transport (${hourlyRate.toLocaleString('fr-FR')} FCFA/h = ${totalTransport.toLocaleString('fr-FR')} FCFA/mois) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
+              );
+            } else {
+              throw new Error(
+                `L'indemnité de transport (${totalTransport.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
+              );
+            }
+          } else if (isNonMonthlyWorker) {
+            console.log(`[TRANSPORT VALIDATION] Skipping monthly minimum check for ${input.paymentFrequency} worker - prorated amount is valid`);
           }
         } catch (error) {
           // If city minimum not configured, log warning but don't fail
@@ -503,6 +567,9 @@ export async function calculatePayrollV2(
       hireDate: input.hireDate,
       yearsOfService: input.yearsOfService,
       isPreview: input.isPreview, // Use safe defaults for unknown components in preview mode
+      paymentFrequency: input.paymentFrequency, // For transport validation
+      weeklyHoursRegime: input.weeklyHoursRegime, // For transport calculation
+      contractType: input.contractType, // For CDDTI detection
     }
   );
 
@@ -528,23 +595,23 @@ export async function calculatePayrollV2(
   // ========================================
 
   // Total Gross = Sum of all component amounts
-  const totalGrossFromComponents = processedComponents.reduce(
+  let totalGrossFromComponents = processedComponents.reduce(
     (sum, c) => sum + c.originalAmount,
     0
   );
 
   // Brut Imposable = Sum of taxable portions of components marked as includeInBrutImposable
-  const brutImposableFromComponents = processedComponents
+  let brutImposableFromComponents = processedComponents
     .filter((c) => c.includeInBrutImposable)
     .reduce((sum, c) => sum + c.taxablePortion, 0);
 
   // Salaire Catégoriel = Sum of components marked as includeInSalaireCategoriel (CI only)
-  const salaireCategorielFromComponents = processedComponents
+  let salaireCategorielFromComponents = processedComponents
     .filter((c) => c.includeInSalaireCategoriel)
     .reduce((sum, c) => sum + c.originalAmount, 0);
 
   // CNPS Base = Sum of components marked as includeInCnpsBase
-  const cnpsBaseFromComponents = processedComponents
+  let cnpsBaseFromComponents = processedComponents
     .filter((c) => c.includeInCnpsBase)
     .reduce((sum, c) => sum + c.originalAmount, 0);
 
@@ -553,6 +620,167 @@ export async function calculatePayrollV2(
   console.log(`  Brut Imposable: ${brutImposableFromComponents.toLocaleString('fr-FR')} FCFA`);
   console.log(`  Salaire Catégoriel: ${salaireCategorielFromComponents.toLocaleString('fr-FR')} FCFA`);
   console.log(`  CNPS Base: ${cnpsBaseFromComponents.toLocaleString('fr-FR')} FCFA`);
+
+  // ========================================
+  // STEP 0.8: Add CDDTI Components (if applicable)
+  // ========================================
+  // For CDDTI contracts with component-based approach, add CDDTI-specific components
+  const isComponentBasedCDDTI =
+    input.contractType === 'CDDTI' &&
+    allComponents.length > 0 &&
+    input.baseSalary === 0;
+
+  if (isComponentBasedCDDTI) {
+    console.log('[CDDTI COMPONENTS] Adding CDDTI-specific components');
+
+    // Calculate brut base (total gross before CDDTI components)
+    const brutBase = totalGrossFromComponents;
+
+    // CDDTI-specific rates
+    const gratificationRate = 0.0333; // 3.33% (1/30 for unpaid leave)
+    const congesPayesRate = 0.10; // 10% (paid leave provision)
+    const indemnitePrecariteRate = 0.03; // 3% (CDDTI only)
+
+    // Calculate CDDTI component amounts
+    const gratification = Math.round(brutBase * gratificationRate);
+    const congesPayes = Math.round((brutBase + gratification) * congesPayesRate); // On brut + gratification
+    const indemnitPrecarite = Math.round(brutBase * indemnitePrecariteRate);
+
+    console.log(`[CDDTI COMPONENTS] Brut base: ${brutBase.toLocaleString('fr-FR')} FCFA`);
+    console.log(`[CDDTI COMPONENTS] Gratification (3.33%): ${gratification.toLocaleString('fr-FR')} FCFA`);
+    console.log(`[CDDTI COMPONENTS] Congés payés (10%): ${congesPayes.toLocaleString('fr-FR')} FCFA`);
+    console.log(`[CDDTI COMPONENTS] Indemnité de précarité (3%): ${indemnitPrecarite.toLocaleString('fr-FR')} FCFA`);
+
+    // Add to allComponents (which will be processed later)
+    // Use database component codes: GRAT_JOUR, CONGE_JOUR, PREC_JOUR
+    allComponents.push(
+      {
+        code: 'GRAT_JOUR',
+        name: 'Gratification congés non pris',
+        amount: gratification,
+        sourceType: 'standard',
+      },
+      {
+        code: 'CONGE_JOUR',
+        name: 'Provision congés payés',
+        amount: congesPayes,
+        sourceType: 'standard',
+      },
+      {
+        code: 'PREC_JOUR',
+        name: 'Indemnité de précarité',
+        amount: indemnitPrecarite,
+        sourceType: 'standard',
+      }
+    );
+
+    // Re-process components to include CDDTI components
+    const cddtiProcessedComponents = await componentProcessor.processComponents(
+      allComponents,
+      {
+        tenantId: input.tenantId || '',
+        countryCode: input.countryCode,
+        baseSalary: brutBase,
+        totalRemuneration: brutBase + gratification + congesPayes + indemnitPrecarite,
+        effectiveDate: input.periodStart,
+        paymentFrequency: input.paymentFrequency,
+        weeklyHoursRegime: input.weeklyHoursRegime,
+        contractType: input.contractType,
+      }
+    );
+
+    // Replace processedComponents with the new list
+    processedComponents.splice(0, processedComponents.length, ...cddtiProcessedComponents);
+
+    console.log(`[CDDTI COMPONENTS] Reprocessed components: ${processedComponents.length} total`);
+
+    // Recalculate bases with CDDTI components included
+    const oldTotalGross = totalGrossFromComponents;
+    totalGrossFromComponents = processedComponents.reduce((sum, c) => sum + c.originalAmount, 0);
+    brutImposableFromComponents = processedComponents
+      .filter((c) => c.includeInBrutImposable)
+      .reduce((sum, c) => sum + c.taxablePortion, 0);
+    salaireCategorielFromComponents = processedComponents
+      .filter((c) => c.includeInSalaireCategoriel)
+      .reduce((sum, c) => sum + c.originalAmount, 0);
+    cnpsBaseFromComponents = processedComponents
+      .filter((c) => c.includeInCnpsBase)
+      .reduce((sum, c) => sum + c.originalAmount, 0);
+
+    console.log(`[CDDTI COMPONENTS] Recalculated bases:`);
+    console.log(`  New Total Gross: ${totalGrossFromComponents.toLocaleString('fr-FR')} FCFA (was ${oldTotalGross.toLocaleString('fr-FR')})`);
+    console.log(`  New Brut Imposable: ${brutImposableFromComponents.toLocaleString('fr-FR')} FCFA`);
+    console.log(`  New CNPS Base: ${cnpsBaseFromComponents.toLocaleString('fr-FR')} FCFA`);
+  }
+
+  // ========================================
+  // STEP 0.9: Detect Daily Workers (Journaliers) and Apply Special Calculation
+  // ========================================
+  const isJournalierEmployee = input.paymentFrequency ? isJournalier(input.paymentFrequency) : false;
+
+  // Journalier-specific variables (used later if isJournalierEmployee = true)
+  let journalierGrossResult: ReturnType<typeof calculateDailyWorkersGross> | null = null;
+  let journalierEquivalentDays = 0;
+
+  if (isJournalierEmployee) {
+    console.log('[JOURNALIER CALCULATION] Detected daily/weekly/biweekly worker');
+
+    // Only use calculateDailyWorkersGross if using old field-based approach (baseSalary > 0)
+    // Component-based approach will use simpler multiplication
+    const usingComponentBasedApproach = allComponents.length > 0 && input.baseSalary === 0;
+
+    if (!usingComponentBasedApproach && input.baseSalary > 0) {
+      console.log('[JOURNALIER CALCULATION] Using legacy field-based calculation (calculateDailyWorkersGross)');
+
+      // Get tenant's daily transport rate if not provided
+      let dailyTransportRate = input.dailyTransportRate ?? 0;
+      if (!dailyTransportRate && input.tenantId) {
+        const [tenantData] = await db
+          .select({
+            defaultDailyTransportRate: tenants.defaultDailyTransportRate,
+          })
+          .from(tenants)
+          .where(eq(tenants.id, input.tenantId))
+          .limit(1);
+
+        dailyTransportRate = Number(tenantData?.defaultDailyTransportRate ?? 0);
+      }
+
+      // Calculate gross using daily workers formula
+      const hoursWorked = input.hoursWorkedThisMonth ||
+                         (typeof input.overtimeHours === 'number' ? input.overtimeHours : 0) ||
+                         0;
+
+      const dailyWorkersInput: DailyWorkersGrossInput = {
+        categoricalSalary: input.baseSalary,
+        hoursWorked,
+        weeklyHoursRegime: input.weeklyHoursRegime || '40h',
+        contractType: input.contractType || 'CDD',
+        dailyTransportRate,
+        saturdayHours: input.saturdayHours,
+        sundayHours: input.sundayHours,
+        nightHours: input.nightHours,
+      };
+
+      journalierGrossResult = calculateDailyWorkersGross(dailyWorkersInput);
+      journalierEquivalentDays = journalierGrossResult.equivalentDays;
+
+      console.log('[JOURNALIER CALCULATION] Gross calculation complete:');
+      console.log(`  Total Brut: ${journalierGrossResult.totalBrut.toLocaleString('fr-FR')} FCFA`);
+      console.log(`  Equivalent Days: ${journalierEquivalentDays}`);
+      console.log(`  Hourly Rate: ${journalierGrossResult.hourlyRate.toLocaleString('fr-FR')} FCFA`);
+    } else {
+      console.log('[JOURNALIER CALCULATION] Using component-based approach - components will be multiplied by hours');
+      // Calculate equivalent days from hours worked
+      const hoursWorked = input.hoursWorkedThisMonth || 0;
+      journalierEquivalentDays = hoursWorked > 0 ? calculateEquivalentDays(hoursWorked) : 0;
+
+      // For CDDTI contracts, we still need to calculate CDDTI-specific components
+      if (input.contractType === 'CDDTI') {
+        console.log('[JOURNALIER CALCULATION] CDDTI contract detected - will add CDDTI components after gross calculation');
+      }
+    }
+  }
 
   // ========================================
   // STEP 1: Calculate Gross Salary (Rate Type Aware)
@@ -700,26 +928,58 @@ export async function calculatePayrollV2(
   let grossCalc: any;
 
   if (allComponents.length > 0) {
-    // Component-based approach: Use totalGrossFromComponents
-    grossSalary = totalGrossFromComponents;
-    // Create a minimal grossCalc for backward compatibility
-    grossCalc = {
-      totalGross: totalGrossFromComponents,
-      baseSalary: input.baseSalary || 0,
-      proratedSalary: input.baseSalary || 0,
-      allowances: totalGrossFromComponents - (input.baseSalary || 0),
-      overtimePay: 0,
-      bonuses: input.bonuses || 0,
-      daysWorked: 30,
-      daysInPeriod: 30,
-      prorationFactor: 1.0,
-      breakdown: {
-        base: input.baseSalary || 0,
+    if (isJournalierEmployee && journalierGrossResult) {
+      // JOURNALIER: Use daily workers gross calculation
+      grossSalary = journalierGrossResult.totalBrut;
+      grossCalc = {
+        totalGross: journalierGrossResult.totalBrut,
+        baseSalary: journalierGrossResult.brutBase,
+        proratedSalary: journalierGrossResult.brutBase,
+        allowances: journalierGrossResult.totalBrut - journalierGrossResult.brutBase,
+        overtimePay: journalierGrossResult.overtimeGross1 + journalierGrossResult.overtimeGross2 +
+                     journalierGrossResult.saturdayGross + journalierGrossResult.sundayGross +
+                     journalierGrossResult.nightGross,
+        bonuses: 0,
+        daysWorked: journalierEquivalentDays,
+        daysInPeriod: 30,
+        prorationFactor: journalierEquivalentDays / 30,
+        breakdown: {
+          base: journalierGrossResult.regularGross,
+          allowances: journalierGrossResult.gratification + journalierGrossResult.congesPayes +
+                      journalierGrossResult.indemnitPrecarite + journalierGrossResult.transportAllowance,
+          overtime: journalierGrossResult.overtimeGross1 + journalierGrossResult.overtimeGross2 +
+                    journalierGrossResult.saturdayGross + journalierGrossResult.sundayGross +
+                    journalierGrossResult.nightGross,
+          bonuses: 0,
+        },
+      };
+
+      console.log('[JOURNALIER GROSS] Using daily workers calculation:');
+      console.log(`  Total Gross: ${grossSalary.toLocaleString('fr-FR')} FCFA`);
+      console.log(`  Equivalent Days: ${journalierEquivalentDays}`);
+      console.log(`  Prorata: ${(journalierEquivalentDays / 30).toFixed(3)}`);
+    } else {
+      // Component-based approach: Use totalGrossFromComponents
+      grossSalary = totalGrossFromComponents;
+      // Create a minimal grossCalc for backward compatibility
+      grossCalc = {
+        totalGross: totalGrossFromComponents,
+        baseSalary: input.baseSalary || 0,
+        proratedSalary: input.baseSalary || 0,
         allowances: totalGrossFromComponents - (input.baseSalary || 0),
-        overtime: 0,
+        overtimePay: 0,
         bonuses: input.bonuses || 0,
-      },
-    };
+        daysWorked: 30,
+        daysInPeriod: 30,
+        prorationFactor: 1.0,
+        breakdown: {
+          base: input.baseSalary || 0,
+          allowances: totalGrossFromComponents - (input.baseSalary || 0),
+          overtime: 0,
+          bonuses: input.bonuses || 0,
+        },
+      };
+    }
   } else {
     // Legacy approach: Use individual fields
     grossCalc = calculateGrossSalary({
@@ -746,12 +1006,68 @@ export async function calculatePayrollV2(
   // STEP 2: Calculate Social Security Contributions (Metadata-Driven Bases)
   // ========================================
 
-  // Use metadata-driven bases from component processing
-  // - cnpsBaseFromComponents: Base for most contributions
-  // - brutImposableFromComponents: Taxable gross for pension/retirement
-  // - salaireCategorielFromComponents: Code 11 for accident/family
-  const { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer, contributionDetails } =
-    calculateSocialSecurityContributions(
+  let cnpsEmployee: number;
+  let cnpsEmployer: number;
+  let cmuEmployee: number;
+  let cmuEmployer: number;
+  let contributionDetails: any[] = []; // Initialize to empty array to prevent undefined errors
+
+  if (isJournalierEmployee && journalierGrossResult) {
+    // JOURNALIER: Use prorated deductions
+    // Use hardcoded rates for Côte d'Ivoire (simplification for now)
+    const cnpsRate = 0.0367; // 3.67% CNPS employee
+    const cmuFixed = 1000; // 1000 FCFA CMU
+
+    const proratedDeductions = calculateProratedDeductions(
+      journalierGrossResult.totalBrut,
+      journalierEquivalentDays,
+      cnpsRate,
+      cmuFixed
+    );
+
+    cnpsEmployee = proratedDeductions.cnpsEmployee;
+    cmuEmployee = proratedDeductions.cmu;
+
+    // Employer contributions (not prorated - always on brutBase)
+    const cnpsEmployerRate = 0.0767; // 7.67% CNPS employer
+    cnpsEmployer = Math.round(journalierGrossResult.brutBase * cnpsEmployerRate);
+    cmuEmployer = 0; // No employer CMU in CI
+
+    contributionDetails = [
+      {
+        type: 'pension',
+        paidBy: 'employee',
+        amount: cnpsEmployee,
+        rate: cnpsRate,
+        base: journalierGrossResult.totalBrut,
+        prorated: true,
+        prorata: proratedDeductions.prorata,
+      },
+      {
+        type: 'health',
+        paidBy: 'employee',
+        amount: cmuEmployee,
+        fixedAmount: cmuFixed,
+        prorated: true,
+        prorata: proratedDeductions.prorata,
+      },
+      {
+        type: 'pension',
+        paidBy: 'employer',
+        amount: cnpsEmployer,
+        rate: cnpsEmployerRate,
+        base: journalierGrossResult.brutBase,
+        prorated: false,
+      },
+    ];
+
+    console.log('[JOURNALIER DEDUCTIONS] Prorated social security:');
+    console.log(`  CNPS Employee: ${cnpsEmployee} (prorata: ${proratedDeductions.prorata.toFixed(3)})`);
+    console.log(`  CMU Employee: ${cmuEmployee} (prorata: ${proratedDeductions.prorata.toFixed(3)})`);
+    console.log(`  CNPS Employer: ${cnpsEmployer} (not prorated)`);
+  } else {
+    // Regular employee: Use full deductions
+    const result = calculateSocialSecurityContributions(
       cnpsBaseFromComponents, // ← CNPS base (total gross)
       brutImposableFromComponents, // ← Taxable gross (for pension calculation)
       config.contributions,
@@ -767,7 +1083,36 @@ export async function calculatePayrollV2(
       }
     );
 
-  console.log('[SOCIAL SECURITY] Contributions calculated on CNPS base:', cnpsBaseFromComponents.toLocaleString('fr-FR'), 'FCFA');
+    cnpsEmployee = result.cnpsEmployee;
+    cnpsEmployer = result.cnpsEmployer;
+    cmuEmployee = result.cmuEmployee;
+    cmuEmployer = result.cmuEmployer;
+    contributionDetails = result.contributionDetails;
+
+    console.log('[SOCIAL SECURITY] Contributions calculated on CNPS base:', cnpsBaseFromComponents.toLocaleString('fr-FR'), 'FCFA');
+
+    // For weekly/daily workers using component-based approach, add proration info to contributionDetails
+    if (isJournalierEmployee && !journalierGrossResult) {
+      const hoursWorked = input.hoursWorkedThisMonth || 0;
+      const equivalentDays = hoursWorked > 0 ? calculateEquivalentDays(hoursWorked) : 0;
+      const prorata = equivalentDays / 30;
+
+      // Add prorated info to contribution details
+      contributionDetails = contributionDetails.map(contrib => {
+        if (contrib.paidBy === 'employee') {
+          return {
+            ...contrib,
+            prorated: true,
+            prorata,
+          };
+        }
+        return contrib;
+      });
+
+      console.log(`[COMPONENT-BASED JOURNALIER] Added proration info: ${equivalentDays} days, prorata: ${prorata.toFixed(3)}`);
+      console.log(`[COMPONENT-BASED JOURNALIER] ContributionDetails after proration:`, JSON.stringify(contributionDetails, null, 2));
+    }
+  }
 
   console.log('[DEBUG AFTER SS]', { cmuEmployee, cmuEmployer, cnpsEmployee, cnpsEmployer });
 
@@ -794,7 +1139,39 @@ export async function calculatePayrollV2(
   let taxResult: any;
   let taxProrationFactor = 1.0;
 
-  if (rateType === 'DAILY' && input.daysWorkedThisMonth) {
+  if (isJournalierEmployee && journalierGrossResult) {
+    // JOURNALIER: Use daily ITS calculation
+    const fiscalParts = input.fiscalParts || 1.0;
+
+    // Convert TaxBracket[] to expected format
+    const monthlyBrackets = config.taxBrackets.map(bracket => ({
+      min: bracket.minAmount,
+      max: bracket.maxAmount,
+      rate: bracket.rate,
+    }));
+
+    const dailyITS = calculateDailyITS(
+      journalierGrossResult.brutBase, // Tax on brutBase (before CDDTI components)
+      journalierEquivalentDays,
+      fiscalParts,
+      monthlyBrackets
+    );
+
+    taxResult = {
+      monthlyTax: dailyITS,
+      taxableIncome: journalierGrossResult.brutBase - employeeContributionsForTax,
+      grossSalary: journalierGrossResult.brutBase,
+      employeeContributions: employeeContributionsForTax,
+      fiscalParts,
+      brackets: [], // Not applicable for daily calculation
+    };
+
+    console.log('[JOURNALIER TAX] Daily ITS:');
+    console.log(`  Brut Base: ${journalierGrossResult.brutBase.toLocaleString('fr-FR')} FCFA`);
+    console.log(`  Equivalent Days: ${journalierEquivalentDays}`);
+    console.log(`  Fiscal Parts: ${fiscalParts}`);
+    console.log(`  Daily ITS: ${dailyITS.toLocaleString('fr-FR')} FCFA`);
+  } else if (rateType === 'DAILY' && input.daysWorkedThisMonth) {
     const daysWorked = input.daysWorkedThisMonth;
     const standardMonthDays = 30;
 
@@ -890,7 +1267,20 @@ export async function calculatePayrollV2(
   // ========================================
   // STEP 6: Calculate Employer Cost
   // ========================================
-  const totalEmployerContributions = cnpsEmployer + cmuEmployer + employerTaxes;
+  let employerContributionEmployeur = 0;
+
+  if (isJournalierEmployee && journalierGrossResult) {
+    // JOURNALIER: Add contribution employeur (ITS Employeur)
+    const employeeType = input.employeeType || 'LOCAL';
+    employerContributionEmployeur = calculateContributionEmployeur(
+      journalierGrossResult.brutBase,
+      employeeType
+    );
+
+    console.log('[JOURNALIER EMPLOYER COSTS] Contribution Employeur:', employerContributionEmployeur.toLocaleString('fr-FR'), 'FCFA');
+  }
+
+  const totalEmployerContributions = cnpsEmployer + cmuEmployer + employerTaxes + employerContributionEmployeur;
   const employerCost = Math.round(grossSalary + totalEmployerContributions);
 
   // ========================================
@@ -905,6 +1295,8 @@ export async function calculatePayrollV2(
     contributionDetails, // Pass contribution details for rate info
     input.fiscalParts ?? 1 // Pass fiscal parts for ITS display
   );
+
+  console.log('[DEDUCTIONS DETAILS] Built deductions details:', JSON.stringify(deductionsDetails, null, 2));
 
   // ========================================
   // Return Complete Result
@@ -951,6 +1343,19 @@ export async function calculatePayrollV2(
     earningsDetails,
     deductionsDetails,
     contributionDetails, // Social security contribution details
+
+    // Components (for detailed component breakdown in UI)
+    // For journalier workers using legacy calculation, use journalierGrossResult.components
+    // Otherwise, use processedComponents from component processor
+    components: isJournalierEmployee && journalierGrossResult
+      ? journalierGrossResult.components
+      : processedComponents.map(pc => ({
+          code: pc.code,
+          name: pc.name,
+          amount: pc.originalAmount, // Use originalAmount from ProcessedComponent
+          sourceType: undefined, // ProcessedComponent doesn't have sourceType
+        })),
+
     itsDetails: {
       grossSalary: taxResult.grossSalary,
       cnpsEmployeeDeduction: cnpsEmployee,
@@ -960,7 +1365,7 @@ export async function calculatePayrollV2(
       annualTax: taxResult.annualTax,
       monthlyTax: taxResult.monthlyTax,
       effectiveRate: taxResult.effectiveRate,
-      bracketDetails: taxResult.bracketDetails.map((b: {
+      bracketDetails: (taxResult.bracketDetails || []).map((b: {
         min: number;
         max: number | null;
         rate: number;
@@ -1452,37 +1857,52 @@ function buildDeductionsDetails(
     incomeTaxLabel: Record<string, string>;
   },
   contributionDetails: Array<{
-    code: string;
-    name: string;
+    code?: string;
+    name?: string;
+    type?: string;
     amount: number;
     paidBy: 'employee' | 'employer';
     rate?: number;
     base?: number;
+    prorated?: boolean;
+    prorata?: number;
+    fixedAmount?: number;
   }>,
   fiscalParts: number
 ) {
   // Find employee contributions with rate info
   const cnpsEmployeeContrib = contributionDetails.find(
-    c => c.paidBy === 'employee' && (c.code.includes('pension') || c.code.includes('retraite'))
+    c => c.paidBy === 'employee' && ((c.code && (c.code.includes('pension') || c.code.includes('retraite'))) || c.type === 'pension')
   );
   const cmuEmployeeContrib = contributionDetails.find(
-    c => c.paidBy === 'employee' && (c.code.includes('cmu') || c.code.includes('health'))
+    c => c.paidBy === 'employee' && ((c.code && (c.code.includes('cmu') || c.code.includes('health'))) || c.type === 'health')
   );
 
   // Helper to format rate percentage (up to 2 decimals, remove trailing zeros)
   const formatRate = (rate: number) => (rate * 100).toFixed(2).replace(/\.?0+$/, '');
 
+  // Helper to format prorated description
+  const getProratedSuffix = (contrib: typeof cnpsEmployeeContrib) => {
+    if (contrib?.prorated && contrib?.prorata) {
+      const days = Math.round(contrib.prorata * 30);
+      return ` - ${days}j/${30}j`;
+    }
+    return '';
+  };
+
   return [
     {
       type: 'cnps_employee',
       description: cnpsEmployeeContrib?.rate
-        ? `${taxSystem.retirementContributionLabel.fr} (${formatRate(cnpsEmployeeContrib.rate)}%)`
+        ? `${taxSystem.retirementContributionLabel.fr} (${formatRate(cnpsEmployeeContrib.rate)}%)${getProratedSuffix(cnpsEmployeeContrib)}`
         : taxSystem.retirementContributionLabel.fr,
       amount: cnpsEmployee,
     },
     {
       type: 'cmu_employee',
-      description: cmuEmployeeContrib?.rate
+      description: cmuEmployeeContrib?.prorated && cmuEmployeeContrib?.fixedAmount
+        ? `${taxSystem.healthContributionLabel.fr} (${cmuEmployeeContrib.fixedAmount.toLocaleString('fr-FR')} FCFA)${getProratedSuffix(cmuEmployeeContrib)}`
+        : cmuEmployeeContrib?.rate
         ? `${taxSystem.healthContributionLabel.fr} (${formatRate(cmuEmployeeContrib.rate)}%)`
         : cmuEmployee > 0
         ? `${taxSystem.healthContributionLabel.fr} (${cmuEmployee.toLocaleString('fr-FR')} FCFA)`
