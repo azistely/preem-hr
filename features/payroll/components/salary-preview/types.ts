@@ -66,6 +66,15 @@ export interface SalaryPreviewData {
   // Metadata
   countryCode: string;
   currencySymbol: string;
+
+  // Payment period context (for understanding hourly/weekly calculations)
+  paymentPeriodContext?: {
+    paymentFrequency: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+    weeklyHoursRegime: string; // e.g., '40h', '44h'
+    hoursInPeriod: number; // e.g., 40 for weekly, 8 for daily
+    daysInPeriod: number; // e.g., 5 for weekly, 1 for daily
+    periodLabel: string; // French label: 'jour', 'semaine', 'mois'
+  };
 }
 
 export interface SalaryPreviewComparison {

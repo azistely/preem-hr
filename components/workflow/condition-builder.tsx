@@ -19,10 +19,13 @@ interface ConditionBuilderProps {
   onChange: (conditions: WorkflowCondition[]) => void;
 }
 
+// Note: employee.contractType is a UI field option for workflow builder.
+// Actual contract data is retrieved via JOIN with employment_contracts table
+// using employee.currentContractId FK. See employee.service.ts:getEmployeeById
 const FIELD_OPTIONS = [
   { value: "employee.baseSalary", label: "Salaire de base" },
   { value: "employee.department", label: "Département" },
-  { value: "employee.contractType", label: "Type de contrat" },
+  { value: "employee.contractType", label: "Type de contrat" }, // Display field - data from employment_contracts table
   { value: "employee.position", label: "Poste" },
   { value: "employee.sector", label: "Secteur d'activité" },
   { value: "salary.changePercentage", label: "Pourcentage d'augmentation" },

@@ -181,6 +181,14 @@ const updateEmployeeSchema = z.object({
   conventionCode: z.string().optional(),
   professionalLevel: z.number().int().min(1).max(10).optional(),
 
+  // Employment Fields (Daily Workers Phase 1-3)
+  hireDate: z.date().optional(),
+  paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
+  weeklyHoursRegime: z.enum(['40h', '44h', '48h', '52h', '56h']).optional(),
+
+  // Note: Contract fields (contractType, contractStartDate, contractEndDate) are managed
+  // via employment_contracts table. Use complianceRouter for contract operations.
+
   // Family Info
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
   // dependentChildren is auto-calculated from employee_dependents table via dependents router - not editable

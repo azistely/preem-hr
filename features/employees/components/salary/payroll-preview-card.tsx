@@ -18,7 +18,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/trpc/react';
 import type { SalaryComponentInstance } from '../../types/salary-components';
-import type { RateType } from '../../utils/rate-type-labels';
+import type { PaymentFrequency } from '../../utils/payment-frequency-labels';
 import { SalaryPreviewCard } from '@/features/payroll/components/salary-preview';
 import type { SalaryPreviewData, SalaryPreviewComparison } from '@/features/payroll/components/salary-preview/types';
 
@@ -29,7 +29,8 @@ interface PayrollPreviewCardProps {
   currentComponents?: SalaryComponentInstance[]; // Pass current components to calculate old net
   onCalculate?: () => void;
   isCalculating?: boolean;
-  rateType?: RateType; // Add rate type for rate-aware labels
+  paymentFrequency?: PaymentFrequency; // Payment frequency (DAILY, WEEKLY, BIWEEKLY, MONTHLY)
+  contractType?: string; // Contract type (CDI, CDD, CDDTI, STAGE)
   isExpat?: boolean; // For ITS employer tax calculation (1.2% local, 10.4% expat)
 }
 
@@ -40,7 +41,8 @@ export function PayrollPreviewCard({
   currentComponents,
   onCalculate,
   isCalculating,
-  rateType = 'MONTHLY',
+  paymentFrequency = 'MONTHLY',
+  contractType = 'CDI',
   isExpat = false,
 }: PayrollPreviewCardProps) {
   const [salaryPreview, setSalaryPreview] = useState<SalaryPreviewData | null>(null);
@@ -61,6 +63,7 @@ export function PayrollPreviewCard({
     if (newComponents.length === 0) return;
 
     // Calculate new salary preview
+    // All salary amounts are stored as monthly, so always use 'MONTHLY' for the backend
     calculateNewPreviewMutation.mutate({
       context: 'salary_edit',
       employeeId,
@@ -70,7 +73,7 @@ export function PayrollPreviewCard({
         amount: c.amount,
         sourceType: c.sourceType as 'standard' | 'template',
       })),
-      rateType,
+      rateType: 'MONTHLY',
       isExpat, // For ITS employer tax calculation
     });
 
@@ -85,7 +88,7 @@ export function PayrollPreviewCard({
           amount: c.amount,
           sourceType: (c.sourceType || 'standard') as 'standard' | 'template',
         })),
-        rateType,
+        rateType: 'MONTHLY',
         isExpat, // For ITS employer tax calculation
       }, {
         onSuccess: (currentResult) => {
@@ -100,7 +103,7 @@ export function PayrollPreviewCard({
         },
       });
     }
-  }, [newComponents, currentComponents, employeeId, rateType, isExpat]);
+  }, [newComponents, currentComponents, employeeId, isExpat]);
 
   // Update comparison when salaryPreview changes
   useEffect(() => {
@@ -150,11 +153,15 @@ export function PayrollPreviewCard({
     return null;
   }
 
+  // Don't show comparison for weekly/daily workers as it compares different time periods
+  // (weekly preview vs monthly current salary)
+  const shouldShowComparison = paymentFrequency === 'MONTHLY' && comparison;
+
   return (
     <SalaryPreviewCard
       preview={salaryPreview}
       context="salary_edit"
-      comparison={comparison || undefined}
+      comparison={shouldShowComparison ? comparison : undefined}
     />
   );
 }

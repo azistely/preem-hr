@@ -117,6 +117,11 @@ export interface ComponentProcessingContext {
 
   // Preview mode (for hiring flow before component activation)
   isPreview?: boolean; // If true, use safe defaults for unknown components
+
+  // Payment frequency context (for transport validation and calculation)
+  paymentFrequency?: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; // For prorated transport amounts
+  weeklyHoursRegime?: '40h' | '44h' | '48h' | '52h' | '56h'; // For hourly rate calculations
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'; // For CDDTI-specific rules
 }
 
 // ============================================================================

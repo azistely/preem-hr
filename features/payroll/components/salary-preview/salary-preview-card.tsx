@@ -103,6 +103,18 @@ export function SalaryPreviewCard({
               </Badge>
             )}
           </div>
+
+          {/* Payment Period Context (for non-monthly workers) */}
+          {preview.paymentPeriodContext && preview.paymentPeriodContext.paymentFrequency !== 'MONTHLY' && (
+            <div className="mt-3 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-xs font-medium text-blue-900">
+                Aperçu pour 1 {preview.paymentPeriodContext.periodLabel}
+              </div>
+              <div className="text-xs text-blue-700 mt-1">
+                {preview.paymentPeriodContext.hoursInPeriod}h ({preview.paymentPeriodContext.weeklyHoursRegime} régime) • {preview.paymentPeriodContext.daysInPeriod} jours
+              </div>
+            </div>
+          )}
         </div>
       </CardHeader>
 

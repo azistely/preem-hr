@@ -4,11 +4,32 @@
  * Generates CSV/Excel export file for CMU (Couverture Maladie Universelle)
  * portal submission in Côte d'Ivoire.
  *
+ * IMPORTANT: Multi-Closure Aggregation (Phase 5)
+ * ==============================================
+ * With daily workers (journaliers), a company may have multiple payroll closures per month.
+ * CMU declaration follows the same aggregation strategy as CNPS:
+ *
+ * CMU Aggregation Strategy:
+ * -------------------------
+ * - CMU is filed ONCE per month, aggregating all closures
+ * - Sum CMU contributions for each employee across all closures in the month
+ * - Monthly workers pay CMU once, weekly workers 4× per month (1,000 + 500 each week = 6,000 total)
+ * - Example: If a weekly worker has CMU 1,500 FCFA/week:
+ *   - Week 1-4: 1,500 each = 6,000 total CMU
+ *
+ * Implementation Note:
+ * - Accept month parameter (YYYY-MM) instead of single payrollRunId
+ * - Query all approved payroll_runs for that month
+ * - Group by employee_id, sum CMU contributions across all closures
+ * - Generate single CMU declaration with aggregated totals
+ *
+ * Reference: DAILY-WORKERS-ARCHITECTURE-V2.md Section 10.5, Task 3
+ *
  * Required columns:
  * - Matricule (employee number)
  * - Nom et Prénoms (full name)
- * - Cotisation Salarié (1,000 FCFA fixed)
- * - Cotisation Patronale (500 FCFA without family, 5,000 FCFA with family)
+ * - Cotisation Salarié (1,000 FCFA fixed) - AGGREGATED across closures
+ * - Cotisation Patronale (500 FCFA without family, 5,000 FCFA with family) - AGGREGATED
  * - Ayants droit (number of family members - not always available)
  */
 

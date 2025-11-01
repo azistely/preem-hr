@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, varchar, numeric } from 'drizzle-orm/pg-core';
 import { countries } from './countries';
 
 export const tenants = pgTable('tenants', {
@@ -21,6 +21,9 @@ export const tenants = pgTable('tenants', {
 
   // Generic sector (auto-derived from CGECI sector, used for work accident rates)
   genericSectorCode: varchar('generic_sector_code', { length: 50 }), // 'SERVICES', 'CONSTRUCTION', 'INDUSTRY', etc.
+
+  // Daily workers (journaliers) configuration
+  defaultDailyTransportRate: numeric('default_daily_transport_rate', { precision: 10, scale: 2 }).default('0'), // Fixed FCFA per day
 
   // Subscription & features
   plan: text('plan').notNull().default('trial'),

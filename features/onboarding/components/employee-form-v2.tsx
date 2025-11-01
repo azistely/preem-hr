@@ -25,10 +25,14 @@ const employeeSchemaV2 = z.object({
   positionTitle: z.string().min(1, 'La fonction est requise'),
 
   // NEW: Employment configuration
-  contractType: z.enum(['CDI', 'CDD', 'STAGE']),
+  contractType: z.enum(['CDI', 'CDD', 'CDDTI', 'STAGE']),
   contractEndDate: z.date().optional(),
   category: z.string().min(1, 'La catégorie professionnelle est requise'), // Dynamic CGECI category
   departmentId: z.string().optional(),
+
+  // Daily workers fields (Phase 2)
+  weeklyHoursRegime: z.enum(['40h', '44h', '48h', '52h', '56h']).optional(),
+  paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
 
   // NEW: Base salary components (Code 11, Code 12 for CI)
   baseComponents: z.record(z.string(), z.number()).optional(),
@@ -53,17 +57,17 @@ const employeeSchemaV2 = z.object({
     sourceType: z.enum(['standard', 'template']),
   })),
 }).refine((data) => {
-  // If CDD selected, contractEndDate is required
-  if (data.contractType === 'CDD' && !data.contractEndDate) {
+  // If CDD or CDDTI selected, contractEndDate is required
+  if ((data.contractType === 'CDD' || data.contractType === 'CDDTI') && !data.contractEndDate) {
     return false;
   }
   return true;
 }, {
-  message: 'La date de fin de contrat est requise pour un CDD',
+  message: 'La date de fin de contrat est requise pour un CDD/CDDTI',
   path: ['contractEndDate'],
 }).refine((data) => {
-  // Validate hire date is before contract end date for CDD
-  if (data.contractType === 'CDD' && data.contractEndDate && data.hireDate) {
+  // Validate hire date is before contract end date for CDD/CDDTI
+  if ((data.contractType === 'CDD' || data.contractType === 'CDDTI') && data.contractEndDate && data.hireDate) {
     return data.hireDate < data.contractEndDate;
   }
   return true;
@@ -467,10 +471,11 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           {...register('contractType')}
           error={errors.contractType?.message}
           required
-          helperText="CDI = permanent, CDD = contrat à durée déterminée"
+          helperText="CDI = permanent, CDD/CDDTI = durée déterminée"
         >
           <option value="CDI">CDI (Contrat à Durée Indéterminée)</option>
           <option value="CDD">CDD (Contrat à Durée Déterminée)</option>
+          <option value="CDDTI">CDDTI (Travailleur Occasionnel)</option>
           <option value="STAGE">Stage / Apprentissage</option>
         </FormField>
 
@@ -489,7 +494,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
           required
         />
 
-        {contractType === 'CDD' && (
+        {(contractType === 'CDD' || contractType === 'CDDTI') && (
           <FormField
             label="Date de fin de contrat"
             type="date"
@@ -502,8 +507,40 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
             })}
             error={errors.contractEndDate?.message}
             required
-            helperText="Dernière date de travail prévue"
+            helperText={contractType === 'CDDTI' ? "Date de fin de la tâche/mission" : "Dernière date de travail prévue"}
           />
+        )}
+
+        {/* Daily Workers Fields - Show only for CDDTI */}
+        {contractType === 'CDDTI' && (
+          <>
+            <FormField
+              label="Régime horaire hebdomadaire"
+              type="select"
+              {...register('weeklyHoursRegime')}
+              error={errors.weeklyHoursRegime?.message}
+              helperText="Détermine le seuil d'heures supplémentaires"
+            >
+              <option value="40h">40h (Standard - Services)</option>
+              <option value="44h">44h (Commerce / Retail)</option>
+              <option value="48h">48h (Agriculture / Élevage)</option>
+              <option value="52h">52h (Saisonnier)</option>
+              <option value="56h">56h (Sécurité / Domestique)</option>
+            </FormField>
+
+            <FormField
+              label="Fréquence de paiement"
+              type="select"
+              {...register('paymentFrequency')}
+              error={errors.paymentFrequency?.message}
+              helperText="Détermine le nombre de clôtures par mois"
+            >
+              <option value="MONTHLY">Mensuel (1 clôture/mois)</option>
+              <option value="BIWEEKLY">Quinzaine (2 clôtures/mois)</option>
+              <option value="WEEKLY">Hebdomadaire (4 clôtures/mois)</option>
+              <option value="DAILY">Journalier (rare)</option>
+            </FormField>
+          </>
         )}
 
         <FormField

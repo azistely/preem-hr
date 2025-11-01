@@ -11,6 +11,12 @@ const unknown = customType<{ data: string }>({
 // Rate type enum
 export const rateTypeEnum = pgEnum('rate_type_enum', ['MONTHLY', 'DAILY', 'HOURLY']);
 
+// Weekly hours regime enum (for daily workers)
+export const weeklyHoursRegimeEnum = pgEnum('weekly_hours_regime_enum', ['40h', '44h', '48h', '52h', '56h']);
+
+// Payment frequency enum (for daily workers)
+export const paymentFrequencyEnum = pgEnum('payment_frequency_enum', ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']);
+
 
 export const countries = pgTable("countries", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -322,6 +328,16 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }),
 	primaryLocationId: uuid("primary_location_id"),
 	hireDate: date("hire_date").notNull(),
+	// Contract FK (contract details live in employment_contracts table)
+	currentContractId: uuid("current_contract_id"),
+	// Document expiry fields
+	nationalIdExpiry: date("national_id_expiry"),
+	workPermitExpiry: date("work_permit_expiry"),
+	// Employment classification fields (for payroll calculations)
+	sector: varchar({ length: 100 }),
+	sectorCodeCgeci: varchar("sector_code_cgeci", { length: 50 }),
+	conventionCode: varchar("convention_code", { length: 50 }),
+	professionalLevel: integer("professional_level"),
 	terminationDate: date("termination_date"),
 	terminationReason: text("termination_reason"),
 	terminationId: uuid("termination_id"),
@@ -334,6 +350,9 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 	// Personnel record fields (from migration 20251030_add_personnel_record_fields)
 	nationalityZone: varchar("nationality_zone", { length: 20 }), // 'CEDEAO', 'HORS_CEDEAO', 'LOCAL'
 	employeeType: varchar("employee_type", { length: 50 }), // 'LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE'
+	// Daily workers fields (Phase 2)
+	weeklyHoursRegime: varchar("weekly_hours_regime", { length: 10 }).default('40h'),
+	paymentFrequency: varchar("payment_frequency", { length: 20 }).default('MONTHLY'),
 	fatherName: varchar("father_name", { length: 255 }),
 	motherName: varchar("mother_name", { length: 255 }),
 	emergencyContactName: varchar("emergency_contact_name", { length: 255 }),
@@ -380,6 +399,11 @@ export const employees: PgTableWithColumns<any> = pgTable("employees", {
 			columns: [table.reportingManagerId],
 			foreignColumns: [table.id],
 			name: "employees_reporting_manager_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.currentContractId],
+			foreignColumns: [employmentContracts.id],
+			name: "employees_current_contract_id_fkey"
 		}),
 	unique("unique_employee_number").on(table.tenantId, table.employeeNumber),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)`  }),
@@ -979,6 +1003,9 @@ export const payrollRuns = pgTable("payroll_runs", {
 	approvedBy: uuid("approved_by"),
 	paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }),
 	employeeCount: integer("employee_count"),
+	// Daily workers fields (Phase 5)
+	paymentFrequency: varchar("payment_frequency", { length: 20 }).default('MONTHLY'),
+	closureSequence: integer("closure_sequence"), // 1-4 for weekly, 1-2 for biweekly, null for monthly
 }, (table) => [
 	index("idx_payroll_runs_pay_date").using("btree", table.payDate.asc().nullsLast().op("date_ops")),
 	index("idx_payroll_runs_period").using("btree", table.periodStart.asc().nullsLast().op("date_ops"), table.periodEnd.asc().nullsLast().op("date_ops")),
@@ -1877,6 +1904,9 @@ export const employmentContracts = pgTable("employment_contracts", {
 	cddReason: varchar("cdd_reason", { length: 255 }),
 	cddTotalDurationMonths: integer("cdd_total_duration_months"),
 
+	// CDDTI specific (journaliers - daily workers with indefinite term)
+	cddtiTaskDescription: text("cddti_task_description"), // Required by Article 4 Convention Collective
+
 	// Document management
 	signedDate: date("signed_date"),
 	contractFileUrl: text("contract_file_url"),
@@ -1917,8 +1947,8 @@ export const employmentContracts = pgTable("employment_contracts", {
 		name: "employment_contracts_created_by_fkey"
 	}),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["tenant_user"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid)` }),
-	check("valid_contract_type", sql`contract_type IN ('CDI', 'CDD', 'INTERIM', 'STAGE')`),
-	check("valid_cdd_end_date", sql`(contract_type = 'CDI' AND end_date IS NULL) OR (contract_type IN ('CDD', 'INTERIM', 'STAGE') AND end_date IS NOT NULL)`),
+	check("valid_contract_type", sql`contract_type IN ('CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE')`),
+	check("valid_cdd_end_date", sql`(contract_type IN ('CDI', 'CDDTI') AND end_date IS NULL) OR (contract_type IN ('CDD', 'INTERIM', 'STAGE') AND end_date IS NOT NULL)`),
 	check("valid_dates", sql`end_date IS NULL OR end_date > start_date`),
 	check("valid_renewal_count", sql`renewal_count >= 0 AND renewal_count <= 2`),
 ]);

@@ -140,7 +140,6 @@ export default function SalaryEditPage({ params }: SalaryEditPageProps) {
                 transportAllowance: allowances.transport || 0,
                 mealAllowance: allowances.meal || 0,
                 components: Array.isArray(components) ? components : [],
-                rateType: ((employee as any).rateType as 'MONTHLY' | 'DAILY' | 'HOURLY') || 'MONTHLY',
               }}
               onSuccess={handleSuccess}
             />

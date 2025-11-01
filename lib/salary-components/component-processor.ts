@@ -215,23 +215,37 @@ export class ComponentProcessor {
 
     // Check transport minimum (Code 22)
     if (component.code === '22' && context.city) {
-      try {
-        const cityMin = await this.getCityTransportMinimum(
-          context.countryCode,
-          context.city,
-          context.effectiveDate
-        );
+      // Check if this is a non-monthly worker (DAILY, WEEKLY, BIWEEKLY)
+      const isNonMonthlyWorker =
+        context.paymentFrequency &&
+        ['DAILY', 'WEEKLY', 'BIWEEKLY'].includes(context.paymentFrequency);
 
-        if (cityMin && component.amount < cityMin.monthlyMinimum) {
-          errors.push(
-            `Transport ${component.amount.toLocaleString('fr-FR')} FCFA est inférieur au minimum légal de ${context.city} (${cityMin.monthlyMinimum.toLocaleString('fr-FR')} FCFA)`
+      if (isNonMonthlyWorker) {
+        // For non-monthly workers, skip monthly minimum validation
+        // They receive prorated amounts based on hours worked
+        console.log(
+          `[ComponentProcessor] Skipping monthly minimum check for ${context.paymentFrequency} worker - prorated amount is valid`
+        );
+      } else {
+        // Monthly workers - validate against monthly minimum
+        try {
+          const cityMin = await this.getCityTransportMinimum(
+            context.countryCode,
+            context.city,
+            context.effectiveDate
+          );
+
+          if (cityMin && component.amount < cityMin.monthlyMinimum) {
+            errors.push(
+              `Transport ${component.amount.toLocaleString('fr-FR')} FCFA est inférieur au minimum légal de ${context.city} (${cityMin.monthlyMinimum.toLocaleString('fr-FR')} FCFA)`
+            );
+          }
+        } catch (error) {
+          // City minimum not configured - log warning but don't fail
+          console.warn(
+            `[ComponentProcessor] City minimum not found for ${context.city}, skipping validation`
           );
         }
-      } catch (error) {
-        // City minimum not configured - log warning but don't fail
-        console.warn(
-          `[ComponentProcessor] City minimum not found for ${context.city}, skipping validation`
-        );
       }
     }
 

@@ -267,6 +267,7 @@ export const payrollRouter = createTRPCRouter({
       // Load existing employee data if employeeId provided
       let existingEmployee: any = null;
       let verifiedDependents: any[] = [];
+      let employeeContract: any = null;
 
       if (input.employeeId) {
         [existingEmployee] = await db
@@ -279,6 +280,16 @@ export const payrollRouter = createTRPCRouter({
           throw new Error('Employé non trouvé');
         }
 
+        // Load employee's current contract to get contract type
+        if (existingEmployee.currentContractId) {
+          const { employmentContracts } = await import('@/drizzle/schema');
+          [employeeContract] = await db
+            .select()
+            .from(employmentContracts)
+            .where(eqOp(employmentContracts.id, existingEmployee.currentContractId))
+            .limit(1);
+        }
+
         // Load verified dependents for family calculations
         verifiedDependents = await db
           .select()
@@ -286,9 +297,27 @@ export const payrollRouter = createTRPCRouter({
           .where(andOp(eqOp(employeeDependentsSchema.employeeId, input.employeeId), eqOp(employeeDependentsSchema.isVerified, true)));
       }
 
-      // Determine values based on context
-      const rateType = input.rateType || existingEmployee?.rateType || 'MONTHLY';
-      const contractType = input.contractType || existingEmployee?.contractType;
+      // Determine contract type from contract or fallback to employee
+      const contractType = input.contractType || employeeContract?.contractType || existingEmployee?.contractType;
+
+      // Determine rate type - CDDTI contracts are ALWAYS HOURLY
+      let rateType: 'MONTHLY' | 'DAILY' | 'HOURLY' = input.rateType || existingEmployee?.rateType || 'MONTHLY';
+      if (contractType === 'CDDTI') {
+        rateType = 'HOURLY';
+      }
+
+      // Debug log to verify contract type detection
+      console.log('🔍 [CDDTI DEBUG] Contract type detection:', {
+        employeeId: input.employeeId,
+        employeeName: existingEmployee?.firstName + ' ' + existingEmployee?.lastName,
+        inputContractType: input.contractType,
+        employeeContractType: employeeContract?.contractType,
+        existingEmployeeContractType: existingEmployee?.contractType,
+        resolvedContractType: contractType,
+        inputRateType: input.rateType,
+        existingRateType: existingEmployee?.rateType,
+        resolvedRateType: rateType,
+      });
       const maritalStatus = input.maritalStatus ?? existingEmployee?.maritalStatus ?? 'single';
 
       // Resolve employee type for ITS tax calculation
@@ -482,12 +511,53 @@ export const payrollRouter = createTRPCRouter({
         }
       });
 
-      const allComponentsWithMetadata = Array.from(componentMap.values());
-
       // Calculate preview for a full month
       const previewDate = hireDate >= new Date() ? hireDate : new Date();
       const periodStart = new Date(previewDate.getFullYear(), previewDate.getMonth(), 1);
       const periodEnd = new Date(previewDate.getFullYear(), previewDate.getMonth() + 1, 0);
+
+      // Get weeklyHoursRegime and paymentFrequency
+      const weeklyHoursRegime = existingEmployee?.weeklyHoursRegime || '40h';
+      const paymentFrequency = existingEmployee?.paymentFrequency || 'MONTHLY';
+
+      // Calculate hours/days based on payment frequency and weekly hours regime
+      // Extract numeric hours from regime (e.g., '40h' → 40)
+      const weeklyHours = parseInt(weeklyHoursRegime.replace('h', ''));
+      const hoursPerDay = weeklyHours / 5; // Standard 5-day work week
+      const monthlyHours = (weeklyHours * 52) / 12; // Annual hours ÷ 12 months
+
+      let previewHours: number;
+      let previewDays: number;
+
+      switch (paymentFrequency) {
+        case 'DAILY':
+          previewHours = hoursPerDay; // e.g., 8h for 40h regime
+          previewDays = 1;
+          break;
+        case 'WEEKLY':
+          previewHours = weeklyHours; // e.g., 40h for 40h regime
+          previewDays = 5;
+          break;
+        case 'BIWEEKLY':
+          previewHours = weeklyHours * 2; // e.g., 80h for 40h regime
+          previewDays = 10;
+          break;
+        case 'MONTHLY':
+        default:
+          previewHours = monthlyHours; // e.g., 173.33h for 40h regime
+          previewDays = 22;
+          break;
+      }
+
+      // Components remain as rates - calculatePayrollV2 will handle multiplication
+      const allComponentsWithMetadata = Array.from(componentMap.values());
+
+      console.log('[PREVIEW CALCULATION] Rate type:', rateType);
+      console.log('[PREVIEW CALCULATION] Payment frequency:', paymentFrequency);
+      console.log('[PREVIEW CALCULATION] Weekly regime:', weeklyHoursRegime);
+      console.log('[PREVIEW CALCULATION] Preview hours:', previewHours);
+      console.log('[PREVIEW CALCULATION] Preview days:', previewDays);
+      console.log('[PREVIEW CALCULATION] Components (as rates):', allComponentsWithMetadata);
 
       // Call calculatePayrollV2
       const payrollResult = await calculatePayrollV2({
@@ -504,8 +574,11 @@ export const payrollRouter = createTRPCRouter({
         sectorCode: tenant.genericSectorCode || tenant.sectorCode || 'SERVICES',
         isPreview: true,
         rateType,
-        daysWorkedThisMonth: rateType === 'DAILY' ? 30 : undefined,
-        hoursWorkedThisMonth: rateType === 'HOURLY' ? 30 * 8 : undefined,
+        weeklyHoursRegime,
+        paymentFrequency, // Pass payment frequency for transport calculation
+        contractType, // Pass contract type for CDDTI detection
+        hoursWorkedThisMonth: previewHours, // Calculated based on regime and frequency
+        daysWorkedThisMonth: previewDays, // Calculated based on regime and frequency
         maritalStatus,
         dependentChildren,
         isExpat, // For ITS employer tax calculation (resolved above)
@@ -527,11 +600,9 @@ export const payrollRouter = createTRPCRouter({
         deductionsDetails: payrollResult.deductionsDetails || [],
         otherTaxesDetails: payrollResult.otherTaxesDetails || [],
 
-        components: allComponentsWithMetadata.map((c: any) => ({
-          code: c.code,
-          name: c.name,
-          amount: c.amount,
-        })),
+        // Use calculated components from payroll result (not input components)
+        // This includes all journalier-specific components (overtime, gratification, etc.)
+        components: payrollResult.components || [],
         fiscalParts,
         maritalStatus,
         dependentChildren,
@@ -539,6 +610,20 @@ export const payrollRouter = createTRPCRouter({
         contractType,
         countryCode,
         currencySymbol: 'FCFA',
+
+        // Payment period context (for understanding the preview)
+        paymentPeriodContext: {
+          paymentFrequency,
+          weeklyHoursRegime,
+          hoursInPeriod: previewHours,
+          daysInPeriod: previewDays,
+          periodLabel: ({
+            DAILY: 'jour',
+            WEEKLY: 'semaine',
+            BIWEEKLY: '2 semaines',
+            MONTHLY: 'mois',
+          } as const)[paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'] || 'période',
+        },
       };
 
       return {
@@ -610,7 +695,7 @@ export const payrollRouter = createTRPCRouter({
           firstName: employees.firstName,
           lastName: employees.lastName,
           employeeNumber: employees.employeeNumber,
-          rateType: employees.rateType,
+          paymentFrequency: employees.paymentFrequency,
           status: employees.status,
         })
         .from(employees)
@@ -621,19 +706,37 @@ export const payrollRouter = createTRPCRouter({
           )
         );
 
-      // Separate monthly and daily workers
-      const monthlyWorkers = allEmployees.filter(e => e.rateType !== 'DAILY');
-      const dailyWorkers = allEmployees.filter(e => e.rateType === 'DAILY');
+      // Separate by payment frequency (per architecture doc)
+      const monthlyWorkers = allEmployees.filter(
+        (e) => !e.paymentFrequency || e.paymentFrequency === 'MONTHLY'
+      );
+      const biweeklyWorkers = allEmployees.filter(
+        (e) => e.paymentFrequency === 'BIWEEKLY'
+      );
+      const weeklyWorkers = allEmployees.filter(
+        (e) => e.paymentFrequency === 'WEEKLY'
+      );
+      const dailyWorkers = allEmployees.filter(
+        (e) => e.paymentFrequency === 'DAILY'
+      );
 
-      // Check time entries for daily workers
+      // Non-monthly workers need time entries
+      const nonMonthlyWorkers = [
+        ...biweeklyWorkers,
+        ...weeklyWorkers,
+        ...dailyWorkers,
+      ];
+
+      // Check time entries for non-monthly workers
       const missingTimeEntries: Array<{
         id: string;
         firstName: string;
         lastName: string;
         employeeNumber: string;
+        paymentFrequency: string;
       }> = [];
 
-      for (const worker of dailyWorkers) {
+      for (const worker of nonMonthlyWorkers) {
         const entries = await db
           .select({ id: timeEntries.id })
           .from(timeEntries)
@@ -653,6 +756,7 @@ export const payrollRouter = createTRPCRouter({
             firstName: worker.firstName,
             lastName: worker.lastName,
             employeeNumber: worker.employeeNumber,
+            paymentFrequency: worker.paymentFrequency || 'MONTHLY',
           });
         }
       }
@@ -662,9 +766,20 @@ export const payrollRouter = createTRPCRouter({
           count: monthlyWorkers.length,
           employees: monthlyWorkers,
         },
+        biweeklyWorkers: {
+          count: biweeklyWorkers.length,
+          employees: biweeklyWorkers,
+        },
+        weeklyWorkers: {
+          count: weeklyWorkers.length,
+          employees: weeklyWorkers,
+        },
         dailyWorkers: {
           count: dailyWorkers.length,
           employees: dailyWorkers,
+        },
+        nonMonthlyWorkers: {
+          count: nonMonthlyWorkers.length,
           missingTimeEntries,
         },
         totalEmployees: allEmployees.length,

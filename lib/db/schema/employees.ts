@@ -76,6 +76,12 @@ export const employees = pgTable('employees', {
   // Rate type (MONTHLY, DAILY, HOURLY)
   rateType: text('rate_type').notNull().default('MONTHLY'),
 
+  // Payment frequency (orthogonal to contract type - for journaliers)
+  paymentFrequency: varchar('payment_frequency', { length: 20 }).notNull().default('MONTHLY'), // DAILY, WEEKLY, BIWEEKLY, MONTHLY
+
+  // Weekly hours regime (for hourly divisor calculation - journaliers)
+  weeklyHoursRegime: varchar('weekly_hours_regime', { length: 10 }).notNull().default('40h'), // 40h, 44h, 48h, 52h, 56h
+
   // Termination
   terminationId: uuid('termination_id'),
 

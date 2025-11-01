@@ -27,7 +27,7 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import { useDebounce } from '@/hooks/use-debounce';
 
 export default function EmployeesPage() {
-  const [status, setStatus] = useState<'active' | 'terminated' | 'suspended' | undefined>('active');
+  const [status, setStatus] = useState<'active' | 'terminated' | 'suspended' | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 300);
 

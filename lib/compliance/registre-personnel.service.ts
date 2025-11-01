@@ -13,7 +13,7 @@
  */
 
 import { db } from '@/lib/db';
-import { employees, tenants, users } from '@/drizzle/schema';
+import { employees, tenants, users, employmentContracts } from '@/drizzle/schema';
 import { eq, and, gte, lte, isNull, desc, ilike, max, or } from 'drizzle-orm';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -434,13 +434,13 @@ export async function getRegisterStats(tenantId: string): Promise<{
 }
 
 /**
- * Get employee details for register entry
+ * Get employee details for register entry (including contract type from employment_contracts table)
  */
 async function getEmployeeDetails(
   employeeId: string,
   tenantId: string
 ): Promise<EmployeeDetails> {
-  const [employee] = await db
+  const [result] = await db
     .select({
       id: employees.id,
       employeeNumber: employees.employeeNumber,
@@ -449,16 +449,21 @@ async function getEmployeeDetails(
       dateOfBirth: employees.dateOfBirth,
       hireDate: employees.hireDate,
       cnpsNumber: employees.cnpsNumber,
+      contractType: employmentContracts.contractType,
     })
     .from(employees)
+    .leftJoin(
+      employmentContracts,
+      eq(employees.currentContractId, employmentContracts.id)
+    )
     .where(and(eq(employees.id, employeeId), eq(employees.tenantId, tenantId)))
     .limit(1);
 
-  if (!employee) {
+  if (!result) {
     throw new Error(`Employee not found: ${employeeId}`);
   }
 
-  return employee as any;
+  return result as any;
 }
 
 /**

@@ -21,6 +21,13 @@ import {
   getOrCreateEtat301Config,
   updateEtat301Config,
 } from '@/lib/accounting/etat-301-export.service';
+import {
+  generatePayRegisterExcel,
+  generatePayRegisterFilename,
+  formatPayRegisterTitle,
+  PayRegisterExportData,
+  PaymentFrequency,
+} from '@/features/payroll/services/pay-register-export';
 import { db } from '@/lib/db';
 import {
   accountingAccounts,
@@ -30,6 +37,10 @@ import {
   cmuExportConfig,
   etat301Config,
   tenantComponentCodes,
+  payrollRuns,
+  payrollLineItems,
+  employees,
+  tenants,
 } from '@/lib/db/schema';
 import { eq, and, isNull, or } from 'drizzle-orm';
 
@@ -46,6 +57,12 @@ const exportPayrollToGLSchema = z.object({
 
 const exportCMUSchema = z.object({
   payrollRunId: z.string().uuid(),
+});
+
+const exportPayRegisterSchema = z.object({
+  month: z.string(), // 'YYYY-MM' format
+  paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']),
+  closureSequence: z.number().int().min(1).max(4).optional(), // 1-4 for weekly, 1-2 for biweekly
 });
 
 const generateEtat301Schema = z.object({
@@ -364,5 +381,143 @@ export const accountingRouter = createTRPCRouter({
 
         return created;
       }
+    }),
+
+  /**
+   * Generate Pay Register (Livre de Paie) by payment frequency
+   *
+   * Generates separate pay registers for different payment frequencies:
+   * - Monthly workers: 1 register per month
+   * - Weekly workers: 4 registers per month (Semaine 1-4)
+   * - Biweekly workers: 2 registers per month (Quinzaine 1-2)
+   *
+   * Reference: DAILY-WORKERS-ARCHITECTURE-V2.md Section 10.5
+   */
+  exportPayRegister: hrManagerProcedure
+    .input(exportPayRegisterSchema)
+    .mutation(async ({ input, ctx }) => {
+      // Parse month (YYYY-MM format)
+      const [yearStr, monthStr] = input.month.split('-');
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10);
+
+      // Get period boundaries
+      const periodStart = new Date(year, month - 1, 1);
+      const periodEnd = new Date(year, month, 0); // Last day of month
+
+      // Find payroll runs matching frequency, closure sequence, and period
+      const runs = await db
+        .select()
+        .from(payrollRuns)
+        .where(
+          and(
+            eq(payrollRuns.tenantId, ctx.user.tenantId),
+            eq((payrollRuns as any).paymentFrequency, input.paymentFrequency),
+            input.closureSequence
+              ? eq((payrollRuns as any).closureSequence, input.closureSequence)
+              : isNull((payrollRuns as any).closureSequence),
+            eq(payrollRuns.status, 'approved') // Only approved runs
+          )
+        );
+
+      if (runs.length === 0) {
+        throw new Error(
+          `Aucune paie approuvée trouvée pour ${input.paymentFrequency} ${
+            input.closureSequence ? `(${input.closureSequence})` : ''
+          }`
+        );
+      }
+
+      // Get all payroll line items for these runs
+      const runIds = runs.map((r) => r.id);
+      const lineItems = await db
+        .select({
+          lineItem: payrollLineItems,
+          employee: employees,
+        })
+        .from(payrollLineItems)
+        .innerJoin(employees, eq(payrollLineItems.employeeId, employees.id))
+        .where(eq(payrollLineItems.payrollRunId, runIds[0])); // TODO: Support multiple runs aggregation
+
+      // Get tenant info
+      const [tenant] = await db
+        .select()
+        .from(tenants)
+        .where(eq(tenants.id, ctx.user.tenantId))
+        .limit(1);
+
+      if (!tenant) {
+        throw new Error('Entreprise non trouvée');
+      }
+
+      // Transform data for pay register export
+      const exportData: PayRegisterExportData = {
+        companyName: tenant.name || 'N/A',
+        companyCNPS: (tenant.settings as any)?.cnpsNumber || undefined,
+        companyTaxId: tenant.taxId || undefined,
+        periodStart,
+        periodEnd,
+        paymentFrequency: input.paymentFrequency as PaymentFrequency,
+        closureSequence: input.closureSequence,
+        employees: lineItems.map((item) => {
+          const allowances = item.lineItem.allowances as Record<string, number> || {};
+          const earnings = item.lineItem.earningsDetails as Record<string, number> || {};
+          const deductions = item.lineItem.taxDeductions as Record<string, number> || {};
+          const employeeContribs = item.lineItem.employeeContributions as Record<string, number> || {};
+          const employerContribs = item.lineItem.employerContributions as Record<string, number> || {};
+
+          return {
+            employeeNumber: item.employee.employeeNumber || 'N/A',
+            employeeName: `${item.employee.firstName} ${item.employee.lastName}`,
+            position: (item.employee as any).position || undefined,
+            baseSalary: parseFloat(String(item.lineItem.baseSalary || '0')),
+            housingAllowance: allowances.HOUSING,
+            transportAllowance: allowances.TRANSPORT || earnings.TRANSP_DAY,
+            mealAllowance: allowances.MEAL,
+            seniorityBonus: allowances.SENIORITY,
+            familyAllowance: allowances.FAMILY,
+            overtimePay: earnings.OVERTIME,
+            bonuses: earnings.BONUS,
+            gratification: earnings.GRAT_JOUR, // CDDTI component
+            congesPayes: earnings.CONGE_JOUR, // CDDTI component
+            indemnitePrecarite: earnings.PREC_JOUR, // CDDTI component
+            grossSalary: parseFloat(String(item.lineItem.grossSalary || '0')),
+            cnpsEmployee: employeeContribs.CNPS_PENSION || 0,
+            cmuEmployee: employeeContribs.CMU || 0,
+            its: parseFloat(String(deductions.ITS || '0')),
+            totalDeductions: parseFloat(String(item.lineItem.totalDeductions || '0')),
+            netSalary: parseFloat(String(item.lineItem.netSalary || '0')),
+            cnpsEmployer: employerContribs.CNPS_PENSION || 0,
+            cmuEmployer: employerContribs.CMU || 0,
+            fdfp: employerContribs.FDFP,
+            workAccident: employerContribs.WORK_ACCIDENT,
+            employerPayrollTax: employerContribs.EMPLOYER_TAX,
+            totalEmployerCost: parseFloat(String(item.lineItem.totalEmployerCost || '0')),
+            daysWorked: parseFloat(String(item.lineItem.daysWorked || '0')),
+            hoursWorked: undefined, // TODO: Extract from time_entries_summary
+            paymentMethod: item.lineItem.paymentMethod || undefined,
+            bankAccount: item.lineItem.bankAccount || undefined,
+          };
+        }),
+      };
+
+      // Generate Excel file
+      const fileBuffer = generatePayRegisterExcel(exportData);
+      const fileName = generatePayRegisterFilename(
+        input.paymentFrequency as PaymentFrequency,
+        input.closureSequence,
+        periodStart
+      );
+
+      return {
+        fileContent: Buffer.from(fileBuffer).toString('base64'),
+        fileName,
+        employeeCount: exportData.employees.length,
+        title: formatPayRegisterTitle(
+          input.paymentFrequency as PaymentFrequency,
+          input.closureSequence,
+          periodStart
+        ),
+      };
     }),
 });

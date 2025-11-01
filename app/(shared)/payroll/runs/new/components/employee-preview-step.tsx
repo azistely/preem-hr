@@ -42,8 +42,9 @@ export function EmployeePreviewStep({
     );
   }
 
-  const missingCount = preview?.dailyWorkers.missingTimeEntries.length || 0;
+  const missingCount = preview?.nonMonthlyWorkers.missingTimeEntries.length || 0;
   const hasValidationErrors = missingCount > 0;
+  const nonMonthlyCount = preview?.nonMonthlyWorkers.count || 0;
 
   return (
     <div className="space-y-6">
@@ -65,13 +66,20 @@ export function EmployeePreviewStep({
           </CardContent>
         </Card>
 
-        {/* Daily Workers Card */}
+        {/* Non-Monthly Workers Card (Daily/Weekly/Biweekly) */}
         <Card className={missingCount > 0 ? 'border-orange-500' : ''}>
           <CardHeader className="pb-3">
             <div className={`text-4xl font-bold ${missingCount > 0 ? 'text-orange-600' : 'text-primary'}`}>
-              {preview?.dailyWorkers.count || 0}
+              {nonMonthlyCount}
             </div>
-            <div className="text-sm text-muted-foreground">Employés journaliers</div>
+            <div className="text-sm text-muted-foreground">
+              Paiement périodique
+              {nonMonthlyCount > 0 && (
+                <span className="block text-xs">
+                  {preview?.dailyWorkers.count || 0} jour. | {preview?.weeklyWorkers.count || 0} heb. | {preview?.biweeklyWorkers.count || 0} quinz.
+                </span>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {missingCount > 0 ? (
@@ -83,8 +91,8 @@ export function EmployeePreviewStep({
               <div className="flex items-center gap-2 text-green-600">
                 <Check className="h-4 w-4" />
                 <span className="text-sm">
-                  {preview?.dailyWorkers.count === 0
-                    ? 'Aucun employé journalier'
+                  {nonMonthlyCount === 0
+                    ? 'Aucun employé périodique'
                     : 'Tous ont leurs heures'}
                 </span>
               </div>
@@ -110,9 +118,14 @@ export function EmployeePreviewStep({
             <div className="mt-3 text-sm">
               <p className="font-medium mb-1">Employés concernés :</p>
               <ul className="list-disc list-inside space-y-1">
-                {preview?.dailyWorkers.missingTimeEntries.slice(0, 5).map((emp) => (
+                {preview?.nonMonthlyWorkers.missingTimeEntries.slice(0, 5).map((emp) => (
                   <li key={emp.id}>
                     {emp.firstName} {emp.lastName} ({emp.employeeNumber})
+                    {emp.paymentFrequency && emp.paymentFrequency !== 'MONTHLY' && (
+                      <span className="text-muted-foreground text-xs ml-1">
+                        - {emp.paymentFrequency === 'DAILY' ? 'journalier' : emp.paymentFrequency === 'WEEKLY' ? 'hebdomadaire' : 'quinzaine'}
+                      </span>
+                    )}
                   </li>
                 ))}
                 {missingCount > 5 && (
@@ -184,7 +197,93 @@ export function EmployeePreviewStep({
                   </h4>
                   <div className="border rounded-lg divide-y">
                     {preview.dailyWorkers.employees.map((emp) => {
-                      const isMissing = preview.dailyWorkers.missingTimeEntries.some(
+                      const isMissing = preview.nonMonthlyWorkers.missingTimeEntries.some(
+                        (missing) => missing.id === emp.id
+                      );
+                      return (
+                        <div
+                          key={emp.id}
+                          className={`p-3 flex items-center justify-between hover:bg-muted/50 ${
+                            isMissing ? 'bg-orange-50' : ''
+                          }`}
+                        >
+                          <div>
+                            <p className="font-medium">
+                              {emp.firstName} {emp.lastName}
+                            </p>
+                            <p className="text-sm text-muted-foreground">{emp.employeeNumber}</p>
+                          </div>
+                          {isMissing ? (
+                            <div className="flex items-center gap-2 text-orange-600">
+                              <AlertCircle className="h-4 w-4" />
+                              <span className="text-sm">Heures manquantes</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-green-600">
+                              <Check className="h-4 w-4" />
+                              <span className="text-sm">Heures saisies</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Weekly Workers */}
+              {preview.weeklyWorkers.count > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Employés hebdomadaires ({preview.weeklyWorkers.count})
+                  </h4>
+                  <div className="border rounded-lg divide-y">
+                    {preview.weeklyWorkers.employees.map((emp) => {
+                      const isMissing = preview.nonMonthlyWorkers.missingTimeEntries.some(
+                        (missing) => missing.id === emp.id
+                      );
+                      return (
+                        <div
+                          key={emp.id}
+                          className={`p-3 flex items-center justify-between hover:bg-muted/50 ${
+                            isMissing ? 'bg-orange-50' : ''
+                          }`}
+                        >
+                          <div>
+                            <p className="font-medium">
+                              {emp.firstName} {emp.lastName}
+                            </p>
+                            <p className="text-sm text-muted-foreground">{emp.employeeNumber}</p>
+                          </div>
+                          {isMissing ? (
+                            <div className="flex items-center gap-2 text-orange-600">
+                              <AlertCircle className="h-4 w-4" />
+                              <span className="text-sm">Heures manquantes</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-green-600">
+                              <Check className="h-4 w-4" />
+                              <span className="text-sm">Heures saisies</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Biweekly Workers */}
+              {preview.biweeklyWorkers.count > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Employés quinzaine ({preview.biweeklyWorkers.count})
+                  </h4>
+                  <div className="border rounded-lg divide-y">
+                    {preview.biweeklyWorkers.employees.map((emp) => {
+                      const isMissing = preview.nonMonthlyWorkers.missingTimeEntries.some(
                         (missing) => missing.id === emp.id
                       );
                       return (

@@ -82,6 +82,21 @@ export interface PayslipData {
   daysWorked?: number;
   daysInPeriod?: number;
 
+  // CDDTI-specific fields (Phase 5)
+  isCDDTI?: boolean;
+  gratification?: number; // 3.33%
+  congesPayes?: number; // 10%
+  indemnitePrecarite?: number; // 3% for CDDTI only
+  hoursWorked?: number; // Total hours for daily workers
+  timeEntriesSummary?: {
+    regularHours: number;
+    overtimeHours: number;
+    saturdayHours: number;
+    sundayHours: number;
+    nightHours: number;
+  };
+  paymentFrequency?: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+
   // Additional details (optional)
   earningsDetails?: Array<{ description: string; amount: number }>;
   deductionsDetails?: Array<{ description: string; amount: number }>;
@@ -225,6 +240,35 @@ const styles = StyleSheet.create({
   },
   footerText: {
     marginBottom: 3,
+  },
+  // CDDTI-specific styles (Phase 5)
+  highlightBox: {
+    backgroundColor: '#fff8e1',
+    border: '2 solid #ffa726',
+    padding: 10,
+    marginBottom: 15,
+    borderRadius: 4,
+  },
+  highlightTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#e65100',
+    marginBottom: 8,
+  },
+  highlightRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  highlightLabel: {
+    fontSize: 9,
+    color: '#4a4a4a',
+    fontWeight: 'bold',
+  },
+  highlightValue: {
+    fontSize: 9,
+    color: '#1a1a1a',
+    fontWeight: 'bold',
   },
 });
 
@@ -408,6 +452,100 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => (
           <Text style={styles.col2}>{formatCurrency(data.grossSalary)}</Text>
         </View>
       </View>
+
+      {/* CDDTI Highlight Box (Phase 5) */}
+      {data.isCDDTI && (
+        <View style={styles.highlightBox}>
+          <Text style={styles.highlightTitle}>
+            COMPOSANTES CDDTI (Contrat à Durée Déterminée à Terme Imprécis)
+          </Text>
+          {data.gratification && data.gratification > 0 && (
+            <View style={styles.highlightRow}>
+              <Text style={styles.highlightLabel}>Gratification (3,33%) :</Text>
+              <Text style={styles.highlightValue}>{formatCurrency(data.gratification)}</Text>
+            </View>
+          )}
+          {data.congesPayes && data.congesPayes > 0 && (
+            <View style={styles.highlightRow}>
+              <Text style={styles.highlightLabel}>Congés payés (10%) :</Text>
+              <Text style={styles.highlightValue}>{formatCurrency(data.congesPayes)}</Text>
+            </View>
+          )}
+          {data.indemnitePrecarite && data.indemnitePrecarite > 0 && (
+            <View style={styles.highlightRow}>
+              <Text style={styles.highlightLabel}>Indemnité de précarité (3%) :</Text>
+              <Text style={styles.highlightValue}>{formatCurrency(data.indemnitePrecarite)}</Text>
+            </View>
+          )}
+          {data.daysWorked !== undefined && (
+            <View style={styles.highlightRow}>
+              <Text style={styles.highlightLabel}>Jours travaillés :</Text>
+              <Text style={styles.highlightValue}>{data.daysWorked}</Text>
+            </View>
+          )}
+          {data.hoursWorked !== undefined && (
+            <View style={styles.highlightRow}>
+              <Text style={styles.highlightLabel}>Heures travaillées :</Text>
+              <Text style={styles.highlightValue}>{data.hoursWorked} h</Text>
+            </View>
+          )}
+          {data.paymentFrequency && data.paymentFrequency !== 'MONTHLY' && (
+            <View style={styles.highlightRow}>
+              <Text style={styles.highlightLabel}>Fréquence de paiement :</Text>
+              <Text style={styles.highlightValue}>
+                {data.paymentFrequency === 'WEEKLY'
+                  ? 'Hebdomadaire'
+                  : data.paymentFrequency === 'BIWEEKLY'
+                  ? 'Quinzaine'
+                  : 'Journalier'}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Time Entries Summary (for daily workers) */}
+      {data.timeEntriesSummary && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>DÉTAIL DES HEURES</Text>
+          <View style={styles.table}>
+            <View style={[styles.tableRow, styles.tableHeader]}>
+              <Text style={styles.col1}>Type d'heures</Text>
+              <Text style={styles.col2}>Heures</Text>
+            </View>
+            {data.timeEntriesSummary.regularHours > 0 && (
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>Heures normales</Text>
+                <Text style={styles.col2}>{data.timeEntriesSummary.regularHours} h</Text>
+              </View>
+            )}
+            {data.timeEntriesSummary.overtimeHours > 0 && (
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>Heures supplémentaires</Text>
+                <Text style={styles.col2}>{data.timeEntriesSummary.overtimeHours} h</Text>
+              </View>
+            )}
+            {data.timeEntriesSummary.saturdayHours > 0 && (
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>Heures samedi</Text>
+                <Text style={styles.col2}>{data.timeEntriesSummary.saturdayHours} h</Text>
+              </View>
+            )}
+            {data.timeEntriesSummary.sundayHours > 0 && (
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>Heures dimanche/férié</Text>
+                <Text style={styles.col2}>{data.timeEntriesSummary.sundayHours} h</Text>
+              </View>
+            )}
+            {data.timeEntriesSummary.nightHours > 0 && (
+              <View style={styles.tableRow}>
+                <Text style={styles.col1}>Heures de nuit</Text>
+                <Text style={styles.col2}>{data.timeEntriesSummary.nightHours} h</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Deductions */}
       <View style={styles.section}>

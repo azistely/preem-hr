@@ -4,11 +4,36 @@
  * Generates Excel/CSV export file for CNPS (Caisse Nationale de Prévoyance Sociale)
  * portal submission in Côte d'Ivoire.
  *
+ * IMPORTANT: Multi-Closure Aggregation (Phase 5)
+ * ==============================================
+ * With daily workers (journaliers), a company may have multiple payroll closures per month:
+ * - Monthly workers: 1 closure/month
+ * - Weekly workers: 4 closures/month (Semaine 1-4)
+ * - Biweekly workers: 2 closures/month (Quinzaine 1-2)
+ *
+ * CNPS Aggregation Strategy (Option A - Recommended):
+ * ---------------------------------------------------
+ * The CNPS declaration is filed ONCE per month, aggregating all closures:
+ * - Sum all gross salaries for each employee across all closures in the month
+ * - Calculate CNPS contributions on the TOTAL monthly gross (not per closure)
+ * - Monthly workers contribute once, weekly workers 4× per month
+ * - Example: If a weekly worker earns 50,000 FCFA/week:
+ *   - Week 1-4: 50,000 each = 200,000 total
+ *   - CNPS employee (6.3%): 200,000 × 6.3% = 12,600 FCFA (not 4× 3,150)
+ *
+ * Implementation Note:
+ * - This export should accept a month parameter (YYYY-MM)
+ * - Query all approved payroll_runs for that month (all payment_frequency, all closure_sequence)
+ * - Group by employee_id, sum grossSalary across all closures
+ * - Generate single CNPS declaration with aggregated totals
+ *
+ * Reference: DAILY-WORKERS-ARCHITECTURE-V2.md Section 10.5, Task 3
+ *
  * Required columns:
  * - N° (sequence number)
  * - Matricule CNPS (employee CNPS number)
  * - Nom et Prénoms (full name)
- * - Salaire Brut (gross salary)
+ * - Salaire Brut (gross salary) - AGGREGATED across all closures
  * - Cotisation Retraite Salarié (6.3%)
  * - Cotisation Retraite Patronale (7.7%)
  * - Prestations Familiales (5%)

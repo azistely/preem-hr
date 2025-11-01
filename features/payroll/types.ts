@@ -249,6 +249,14 @@ export interface PayrollCalculationResult {
     amount: number;
   }>;
   itsDetails: ITSResult;
+
+  // Components (for detailed component breakdown in UI)
+  components?: Array<{
+    code: string;
+    name: string;
+    amount: number;
+    sourceType?: string;
+  }>;
 }
 
 // ========================================

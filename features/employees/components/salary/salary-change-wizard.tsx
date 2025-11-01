@@ -80,8 +80,8 @@ import { PayrollPreviewCard } from './payroll-preview-card';
 import { toast } from 'sonner';
 import type { SalaryComponentInstance, SalaryComponentTemplate, CustomSalaryComponent } from '../../types/salary-components';
 import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
-import { getBaseSalaryLabel, getCurrencySuffix, formatCurrencyWithRate, convertMonthlyAmountToRateType } from '../../utils/rate-type-labels';
-import type { RateType } from '../../utils/rate-type-labels';
+import { getPaymentFrequencyLabel, formatCurrency as formatCurrencyUtil, getWeeklyHours } from '../../utils/payment-frequency-labels';
+import type { PaymentFrequency } from '../../utils/payment-frequency-labels';
 
 // Validation schema (simplified for components array)
 const salaryChangeSchema = z.object({
@@ -108,7 +108,6 @@ interface SalaryChangeWizardProps {
     transportAllowance?: number;
     mealAllowance?: number;
     components?: SalaryComponentInstance[];
-    rateType?: 'MONTHLY' | 'DAILY' | 'HOURLY';
   };
   employeeName: string;
   onSuccess?: () => void;
@@ -262,26 +261,19 @@ export function SalaryChangeWizard({
 
   const components = form.watch('components') || [];
 
-  // Extract rate type early - needed for component calculations
-  const rateType = (currentSalary.rateType || 'MONTHLY') as RateType;
+  // Get classification fields from employee data
+  const contractType = (employeeData as any)?.contract?.contractType || 'CDI';
+  const paymentFrequency = ((employeeData as any)?.paymentFrequency || 'MONTHLY') as PaymentFrequency;
+  const weeklyHoursRegime = (employeeData as any)?.weeklyHoursRegime || '40h';
 
   // Calculate base salary total from all base components
-  // Note: Base salary components (code '11', '12') are already in the correct rate type
   const baseSalary = components
     .filter(c => baseSalaryCodes.includes(c.code))
     .reduce((sum, c) => sum + c.amount, 0);
 
-  // Calculate totals with rate conversion
-  // Component amounts are stored in monthly terms by convention
-  // Convert them to the employee's rate type for display
-  const componentTotal = components.reduce((sum, c) => {
-    // Base salary (code '11') is already in the correct rate type
-    if (baseSalaryCodes.includes(c.code)) {
-      return sum + c.amount;
-    }
-    // Other components (allowances, bonuses) are monthly - convert them
-    return sum + convertMonthlyAmountToRateType(c.amount, rateType);
-  }, 0);
+  // Calculate total gross salary
+  // All amounts stored as monthly - no conversion needed
+  const componentTotal = components.reduce((sum, c) => sum + c.amount, 0);
 
   // Calculate current salary total (components-first with legacy fallback)
   const totalCurrentSalary = currentSalary.components && currentSalary.components.length > 0
@@ -292,7 +284,11 @@ export function SalaryChangeWizard({
       (currentSalary.mealAllowance || 0);
 
   // Real-time SMIG validation on TOTAL gross salary (not just base)
-  const { validationResult, isLoading: validatingSmig } = useSalaryValidation(componentTotal, rateType);
+  // For CDDTI: validate hourly total, for others: validate monthly total
+  const { validationResult, isLoading: validatingSmig } = useSalaryValidation(
+    componentTotal,
+    contractType === 'CDDTI' ? 'HOURLY' : 'MONTHLY'
+  );
 
   // Additional validation: Category minimum wage and transport minimum
   // Run validation whenever components change
@@ -309,14 +305,38 @@ export function SalaryChangeWizard({
     const salaireCategoriel = components.find(c => c.code === '11')?.amount || 0;
     const coefficient = (employeeData as any).coefficient || 100;
     const countryMinimumWage = minWageData?.minimumWage || 75000;
-    const requiredMinimum = countryMinimumWage * (coefficient / 100);
 
-    if (salaireCategoriel < requiredMinimum) {
-      setCategoryValidationError(
-        `Le salaire catégoriel (${salaireCategoriel.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`
-      );
+    // For CDDTI: validate hourly rate against hourly minimum
+    // For others: validate monthly amount against monthly minimum
+    let requiredMinimum: number;
+    let errorMessage: string;
+
+    if (contractType === 'CDDTI') {
+      // Calculate hourly minimum from monthly SMIG
+      // Assuming 40h/week = 173.33h/month standard
+      const weeklyHours = getWeeklyHours(weeklyHoursRegime);
+      const monthlyHours = (weeklyHours * 52) / 12;
+      const hourlyMinimumWage = countryMinimumWage / monthlyHours;
+      requiredMinimum = Math.round(hourlyMinimumWage * (coefficient / 100));
+
+      if (Math.round(salaireCategoriel) < requiredMinimum) {
+        setCategoryValidationError(
+          `Le taux horaire catégoriel (${Math.round(salaireCategoriel).toLocaleString('fr-FR')} FCFA/h) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA/h) pour un coefficient de ${coefficient}.`
+        );
+      } else {
+        setCategoryValidationError(null);
+      }
     } else {
-      setCategoryValidationError(null);
+      // Monthly validation for CDI, CDD, etc.
+      requiredMinimum = countryMinimumWage * (coefficient / 100);
+
+      if (salaireCategoriel < requiredMinimum) {
+        setCategoryValidationError(
+          `Le salaire catégoriel (${salaireCategoriel.toLocaleString('fr-FR')} FCFA) est inférieur au minimum requis (${requiredMinimum.toLocaleString('fr-FR')} FCFA) pour un coefficient de ${coefficient}.`
+        );
+      } else {
+        setCategoryValidationError(null);
+      }
     }
 
     // Validation 2: Transport minimum (Code 22)
@@ -325,32 +345,65 @@ export function SalaryChangeWizard({
     const cityName = transportMinData?.city;
 
     if (transportComponent && cityTransportMinimum !== null && cityName) {
-      // Convert to same rate type for comparison
-      const transportAmountMonthly = transportComponent.amount; // Components are stored monthly
+      const transportAmount = transportComponent.amount;
 
-      if (transportAmountMonthly < cityTransportMinimum) {
-        setTransportValidationError(
-          `La prime de transport (${transportAmountMonthly.toLocaleString('fr-FR')} FCFA) est inférieure au minimum pour ${cityName} (${cityTransportMinimum.toLocaleString('fr-FR')} FCFA).`
-        );
+      if (contractType === 'CDDTI') {
+        // For CDDTI: validate hourly rate against hourly minimum
+        const weeklyHours = getWeeklyHours(weeklyHoursRegime);
+        const monthlyHours = (weeklyHours * 52) / 12;
+        const hourlyTransportMinimum = Math.round(cityTransportMinimum / monthlyHours);
+
+        if (Math.round(transportAmount) < hourlyTransportMinimum) {
+          setTransportValidationError(
+            `La prime de transport (${Math.round(transportAmount).toLocaleString('fr-FR')} FCFA/h) est inférieure au minimum pour ${cityName} (${hourlyTransportMinimum.toLocaleString('fr-FR')} FCFA/h).`
+          );
+        } else {
+          setTransportValidationError(null);
+        }
       } else {
-        setTransportValidationError(null);
+        // For other contracts: validate monthly amount
+        if (transportAmount < cityTransportMinimum) {
+          setTransportValidationError(
+            `La prime de transport (${transportAmount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum pour ${cityName} (${cityTransportMinimum.toLocaleString('fr-FR')} FCFA).`
+          );
+        } else {
+          setTransportValidationError(null);
+        }
       }
     } else if (transportComponent && !cityTransportMinimum) {
       // Fallback validation if city data not yet loaded
-      const fallbackMinimum = 20000;
-      const transportAmountMonthly = transportComponent.amount;
+      const transportAmount = transportComponent.amount;
 
-      if (transportAmountMonthly < fallbackMinimum) {
-        setTransportValidationError(
-          `La prime de transport (${transportAmountMonthly.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (${fallbackMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville.`
-        );
+      if (contractType === 'CDDTI') {
+        // Hourly fallback minimum
+        const weeklyHours = getWeeklyHours(weeklyHoursRegime);
+        const monthlyHours = (weeklyHours * 52) / 12;
+        const fallbackMinimum = 20000;
+        const hourlyFallbackMinimum = Math.round(fallbackMinimum / monthlyHours);
+
+        if (Math.round(transportAmount) < hourlyFallbackMinimum) {
+          setTransportValidationError(
+            `La prime de transport (${Math.round(transportAmount).toLocaleString('fr-FR')} FCFA/h) est inférieure au minimum légal (${hourlyFallbackMinimum.toLocaleString('fr-FR')} FCFA/h). Le minimum varie selon la ville.`
+          );
+        } else {
+          setTransportValidationError(null);
+        }
       } else {
-        setTransportValidationError(null);
+        // Monthly fallback minimum
+        const fallbackMinimum = 20000;
+
+        if (transportAmount < fallbackMinimum) {
+          setTransportValidationError(
+            `La prime de transport (${transportAmount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (${fallbackMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville.`
+          );
+        } else {
+          setTransportValidationError(null);
+        }
       }
     } else {
       setTransportValidationError(null);
     }
-  }, [components, componentTotal, employeeData, minWageData, transportMinData]);
+  }, [components, componentTotal, employeeData, minWageData, transportMinData, contractType, weeklyHoursRegime]);
 
   // Mutation - will be updated to accept components
   const changeSalaryMutation = trpc.salaries.change.useMutation({
@@ -607,15 +660,37 @@ export function SalaryChangeWizard({
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {/* CDDTI Alert */}
+                  {contractType === 'CDDTI' && (
+                    <Alert className="border-blue-500 bg-blue-50">
+                      <Sparkles className="h-4 w-4 text-blue-600" />
+                      <AlertDescription>
+                        <strong>CDDTI - Calcul automatique:</strong>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          <li>✓ Gratification (3.33%) - calculée sur brut de base</li>
+                          <li>✓ Congés payés (10%) - calculée sur brut + gratification</li>
+                          <li>✓ Indemnité de précarité (3%) - calculée sur total brut</li>
+                        </ul>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Ces montants varient chaque paie selon les heures travaillées.
+                        </p>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
                   {/* Base Salary Components (Dynamic based on country) */}
                   {loadingBaseSalary ? (
                     <div className="text-sm text-muted-foreground">Chargement des composantes salariales...</div>
                   ) : baseSalaryDefinitions && baseSalaryDefinitions.length > 0 ? (
                     <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
                       <div>
-                        <FormLabel className="text-lg">{getBaseSalaryLabel(rateType)} *</FormLabel>
+                        <FormLabel className="text-lg">
+                          {contractType === 'CDDTI' ? 'Taux horaire' : 'Salaire de base mensuel'} *
+                        </FormLabel>
                         <p className="text-sm text-muted-foreground">
-                          Composé de {baseSalaryDefinitions.length} élément{baseSalaryDefinitions.length > 1 ? 's' : ''}
+                          {contractType === 'CDDTI'
+                            ? 'Taux de base calculé selon le salaire catégoriel et le régime horaire'
+                            : `Composé de ${baseSalaryDefinitions.length} élément${baseSalaryDefinitions.length > 1 ? 's' : ''}`}
                         </p>
                       </div>
 
@@ -630,8 +705,8 @@ export function SalaryChangeWizard({
                               <Input
                                 type="number"
                                 min="0"
-                                step="1000"
-                                placeholder={componentDef.defaultValue?.toString() || '0'}
+                                step={contractType === 'CDDTI' ? '10' : '1000'}
+                                placeholder={contractType === 'CDDTI' ? '410' : (componentDef.defaultValue?.toString() || '75000')}
                                 value={value}
                                 onChange={(e) => {
                                   const newAmount = parseFloat(e.target.value) || 0;
@@ -661,7 +736,7 @@ export function SalaryChangeWizard({
                                 required={!componentDef.isOptional}
                               />
                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                                FCFA{getCurrencySuffix(rateType)}
+                                {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
                               </span>
                             </div>
                             <FormDescription className="mt-1">{componentDef.description.fr}</FormDescription>
@@ -673,9 +748,11 @@ export function SalaryChangeWizard({
                       {baseSalary > 0 && (
                         <div className="p-3 bg-white rounded border">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Total {getBaseSalaryLabel(rateType).toLowerCase()}</span>
+                            <span className="text-sm font-medium">
+                              {contractType === 'CDDTI' ? 'Total taux horaire' : 'Total salaire de base mensuel'}
+                            </span>
                             <span className="font-bold text-xl">
-                              {formatCurrencyWithRate(baseSalary, rateType)}
+                              {formatCurrencyUtil(baseSalary)} {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
                             </span>
                           </div>
                         </div>
@@ -684,22 +761,31 @@ export function SalaryChangeWizard({
                   ) : (
                     // Fallback to single baseSalary field if no base components configured
                     <div>
-                      <FormLabel className="text-lg">{getBaseSalaryLabel(rateType)} *</FormLabel>
+                      <FormLabel className="text-lg">
+                        {contractType === 'CDDTI' ? 'Taux horaire *' : 'Salaire de base mensuel *'}
+                      </FormLabel>
                       <div className="relative mt-2">
                         <Input
                           type="number"
                           min="0"
-                          step={rateType === 'DAILY' ? '100' : rateType === 'HOURLY' ? '50' : '1000'}
-                          placeholder={rateType === 'DAILY' ? '2500' : rateType === 'HOURLY' ? '313' : '75000'}
+                          step={contractType === 'CDDTI' ? '10' : '1000'}
+                          placeholder={contractType === 'CDDTI' ? '410' : '75000'}
                           value={baseSalaryInput}
                           onChange={(e) => handleUpdateBaseSalary(e.target.value)}
                           onBlur={() => setBaseSalaryTouched(true)}
                           className="min-h-[56px] text-2xl font-bold pr-28"
                         />
                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-muted-foreground">
-                          FCFA{getCurrencySuffix(rateType)}
+                          {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
                         </span>
                       </div>
+                      <FormDescription className="mt-1">
+                        {contractType === 'CDDTI'
+                          ? 'Taux de base calculé selon le salaire catégoriel et le régime horaire'
+                          : paymentFrequency !== 'MONTHLY'
+                          ? `Sera proraté selon les heures travaillées (paie ${getPaymentFrequencyLabel(paymentFrequency)})`
+                          : 'Montant fixe versé chaque mois'}
+                      </FormDescription>
                     </div>
                   )}
 
@@ -753,7 +839,16 @@ export function SalaryChangeWizard({
                                   {showAllTemplates ? 'Tous les composants' : 'Modèles populaires'}
                                 </h4>
                                 <div className="grid gap-2">
-                                  {templates.map((template) => {
+                                  {templates
+                                    .filter(template => {
+                                      if (paymentFrequency !== 'MONTHLY') {
+                                        // Only show allowances for non-monthly workers
+                                        const allowedCodes = ['TPT_TRANSPORT_CI', 'TPT_HOUSING_CI', 'TPT_MEAL_ALLOWANCE', '22', '23', '24'];
+                                        return allowedCodes.includes(template.code);
+                                      }
+                                      return true; // Show all for monthly workers
+                                    })
+                                    .map((template) => {
                                     const suggestedAmount = parseFloat(String(template.suggestedAmount || '10000'));
                                     const calculatedAmount = calculateComponentAmount(template, suggestedAmount);
 
@@ -897,10 +992,7 @@ export function SalaryChangeWizard({
                                     </div>
                                   ) : (
                                     <p className="text-xs text-muted-foreground">
-                                      {formatCurrencyWithRate(
-                                        convertMonthlyAmountToRateType(component.amount, rateType),
-                                        rateType
-                                      )}
+                                      {formatCurrencyUtil(component.amount)} {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
                                     </p>
                                   )}
                                 </div>
@@ -945,15 +1037,18 @@ export function SalaryChangeWizard({
                     <div className="bg-muted/50 p-4 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium">
-                          {rateType === 'DAILY' ? 'Salaire brut journalier' : rateType === 'HOURLY' ? 'Salaire brut horaire' : 'Salaire brut total'}
+                          {paymentFrequency === 'WEEKLY' ? 'Salaire mensuel équivalent (paie hebdomadaire)' :
+                           paymentFrequency === 'BIWEEKLY' ? 'Salaire mensuel équivalent (paie bimensuelle)' :
+                           paymentFrequency === 'DAILY' ? 'Salaire mensuel équivalent (paie journalière)' :
+                           'Salaire brut mensuel'}
                         </span>
                         <span className="text-2xl font-bold text-primary">
-                          {formatCurrencyWithRate(componentTotal, rateType)}
+                          {formatCurrencyUtil(componentTotal)} FCFA
                         </span>
                       </div>
                       {validationResult?.minimumWage && (
                         <p className="text-xs text-muted-foreground">
-                          SMIG minimum: {formatCurrencyWithRate(validationResult.minimumWage, rateType)}
+                          SMIG minimum: {formatCurrencyUtil(validationResult.minimumWage)} FCFA
                         </p>
                       )}
                     </div>
@@ -984,6 +1079,50 @@ export function SalaryChangeWizard({
                         <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
                         <p className="text-sm text-destructive font-medium">
                           {transportValidationError}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Payment Frequency Equivalents */}
+                    {paymentFrequency !== 'MONTHLY' && componentTotal > 0 && (
+                      <Alert>
+                        <Calculator className="h-4 w-4" />
+                        <AlertDescription>
+                          <strong>💡 Équivalences pour paie {getPaymentFrequencyLabel(paymentFrequency)}:</strong>
+                          <div className="mt-2 space-y-1 text-sm">
+                            {paymentFrequency === 'WEEKLY' && (
+                              <>
+                                <div>Semaine (40h): ~{formatCurrencyUtil((componentTotal / 30) * 7)} FCFA</div>
+                                <div>Mois (4.33 semaines): {formatCurrencyUtil(componentTotal)} FCFA</div>
+                              </>
+                            )}
+                            {paymentFrequency === 'BIWEEKLY' && (
+                              <>
+                                <div>Quinzaine (15 jours): ~{formatCurrencyUtil((componentTotal / 30) * 15)} FCFA</div>
+                                <div>Mois (2 quinzaines): {formatCurrencyUtil(componentTotal)} FCFA</div>
+                              </>
+                            )}
+                            {paymentFrequency === 'DAILY' && (
+                              <>
+                                <div>Jour (8h): ~{formatCurrencyUtil(componentTotal / 30)} FCFA</div>
+                                <div>Mois (30 jours): {formatCurrencyUtil(componentTotal)} FCFA</div>
+                              </>
+                            )}
+                          </div>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Basé sur le salaire mensuel équivalent. Le montant réel dépendra des heures travaillées.
+                          </p>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {/* Weekly Hours Regime Context */}
+                    {paymentFrequency !== 'MONTHLY' && weeklyHoursRegime && (
+                      <div className="p-3 bg-blue-50 rounded-md border border-blue-200 text-sm">
+                        <strong>Régime horaire:</strong> {weeklyHoursRegime}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Les heures au-delà de {getWeeklyHours(weeklyHoursRegime)}h/semaine
+                          seront majorées (heures supplémentaires).
                         </p>
                       </div>
                     )}
@@ -1023,7 +1162,8 @@ export function SalaryChangeWizard({
                   countryCode={countryCode}
                   newComponents={components}
                   currentComponents={currentSalary.components}
-                  rateType={rateType}
+                  paymentFrequency={paymentFrequency}
+                  contractType={contractType}
                   // Map employeeType to isExpat boolean for ITS tax calculation (EXPAT = 10.4%, others = 1.2%)
                   isExpat={(employeeData as any)?.employeeType === 'EXPAT' || (employeeData as any)?.isExpat === true}
                 />

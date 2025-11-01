@@ -21,10 +21,13 @@ const TRIGGER_LABELS: Record<string, { label: string; icon: any }> = {
   leave_approved: { label: "Quand un congé est approuvé", icon: Plane },
 };
 
+// Note: employee.contractType is a UI label for workflow conditions.
+// Actual contract data is retrieved via JOIN with employment_contracts table
+// using employee.currentContractId FK. See employee.service.ts:getEmployeeById
 const FIELD_LABELS: Record<string, string> = {
   "employee.baseSalary": "Salaire de base",
   "employee.department": "Département",
-  "employee.contractType": "Type de contrat",
+  "employee.contractType": "Type de contrat", // Display label only - data comes from employment_contracts table
   "employee.position": "Poste",
   "employee.sector": "Secteur d'activité",
   "salary.changePercentage": "Pourcentage d'augmentation",

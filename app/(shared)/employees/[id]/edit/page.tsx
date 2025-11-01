@@ -60,6 +60,7 @@ import {
 import { useUpdateEmployee } from '@/features/employees/hooks/use-employees';
 import { useToast } from '@/hooks/use-toast';
 import { CoefficientSelector } from '@/components/employees/coefficient-selector';
+import { ContractInfoCard } from '@/components/contracts/contract-info-card';
 import { trpc } from '@/lib/trpc/client';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -92,6 +93,11 @@ const editEmployeeSchema = z.object({
   sectorCodeCgeci: z.string().optional(),
   conventionCode: z.string().optional(),
   professionalLevel: z.number().int().min(1).max(10).optional(),
+
+  // Employment Fields (Contract managed separately via employment_contracts table)
+  hireDate: z.date().optional(),
+  paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
+  weeklyHoursRegime: z.enum(['40h', '44h', '48h', '52h', '56h']).optional(),
 
   // Family (Tab 3)
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
@@ -193,6 +199,9 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
       sectorCodeCgeci: '',
       conventionCode: '',
       professionalLevel: undefined,
+      hireDate: undefined,
+      paymentFrequency: 'MONTHLY',
+      weeklyHoursRegime: '40h',
       maritalStatus: 'single',
       dateOfBirth: undefined,
       gender: undefined,
@@ -241,6 +250,9 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         sectorCodeCgeci: emp.sectorCodeCgeci || '',
         conventionCode: emp.conventionCode || '',
         professionalLevel: emp.professionalLevel || undefined,
+        hireDate: emp.hireDate ? new Date(emp.hireDate) : undefined,
+        paymentFrequency: (emp.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY') || 'MONTHLY',
+        weeklyHoursRegime: (emp.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h') || '40h',
         maritalStatus: (emp.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed') || 'single',
         // dependentChildren is auto-calculated - not included in form
         dateOfBirth: emp.dateOfBirth ? new Date(emp.dateOfBirth) : undefined,
@@ -267,6 +279,10 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
 
   const onSubmit = async (data: EditEmployeeFormValues) => {
     try {
+      // Debug: Log what we're sending
+      console.log('📤 Submitting employee update:', data);
+      console.log('📊 Fields being updated:', Object.keys(data));
+
       // tRPC expects Date objects, not ISO strings
       await updateEmployee.mutateAsync({
         ...data,
@@ -297,7 +313,9 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
     router.push(`/employees/${employeeId}`);
   };
 
-  const rateType = form.watch('rateType');
+  // Derive rate type from contract type (CDDTI = HOURLY, others = form value)
+  const contractType = (employee as any)?.contract?.contractType;
+  const rateType = contractType === 'CDDTI' ? 'HOURLY' : form.watch('rateType');
   const categoryCode = form.watch('categoryCode');
 
   if (isLoadingEmployee) {
@@ -674,31 +692,49 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                       )}
                     />
 
-                    <FormField
-                      control={form.control}
-                      name="rateType"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Type de rémunération</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger className="min-h-[48px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="MONTHLY">Mensuel</SelectItem>
-                              <SelectItem value="DAILY">Journalier</SelectItem>
-                              <SelectItem value="HOURLY">Horaire</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    {/* Rate Type - Auto-determined by contract type for CDDTI */}
+                    {contractType !== 'CDDTI' && (
+                      <FormField
+                        control={form.control}
+                        name="rateType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type de rémunération</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="min-h-[48px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="MONTHLY">Mensuel</SelectItem>
+                                <SelectItem value="DAILY">Journalier</SelectItem>
+                                <SelectItem value="HOURLY">Horaire</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              {contractType === 'CDI' || contractType === 'CDD' ?
+                                'Généralement mensuel pour les CDI/CDD' :
+                                'Type de calcul du salaire'}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Info for CDDTI - Rate type is fixed to HOURLY */}
+                    {contractType === 'CDDTI' && (
+                      <Alert>
+                        <Info className="h-4 w-4" />
+                        <AlertDescription>
+                          <strong>Type de rémunération :</strong> Horaire (déterminé automatiquement par le type de contrat CDDTI - travailleurs journaliers)
+                        </AlertDescription>
+                      </Alert>
+                    )}
 
                     {rateType === 'DAILY' && (
                       <FormField
@@ -741,6 +777,100 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                             </FormControl>
                             <FormDescription>
                               Salaire par heure travaillée (FCFA)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Contract Information - Now managed separately */}
+                    <ContractInfoCard
+                      employeeId={employeeId}
+                      contract={(employee as any)?.contract || null}
+                    />
+
+                    {/* Hire Date - Still editable here */}
+                    <FormField
+                      control={form.control}
+                      name="hireDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Date d'embauche</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="date"
+                              value={field.value ? format(field.value, 'yyyy-MM-dd') : ''}
+                              onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                              className="min-h-[48px]"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Date d'entrée dans l'entreprise
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Payment Frequency (CDDTI specific) */}
+                    <FormField
+                      control={form.control}
+                      name="paymentFrequency"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fréquence de paiement</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || 'MONTHLY'}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="min-h-[48px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="MONTHLY">Mensuel</SelectItem>
+                              <SelectItem value="BIWEEKLY">Quinzaine</SelectItem>
+                              <SelectItem value="WEEKLY">Hebdomadaire</SelectItem>
+                              <SelectItem value="DAILY">Journalier</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Détermine le cycle de paie (CDDTI uniquement)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Weekly Hours Regime (for CDDTI) */}
+                    {form.watch('paymentFrequency') !== 'MONTHLY' && (
+                      <FormField
+                        control={form.control}
+                        name="weeklyHoursRegime"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Régime horaire hebdomadaire</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || '40h'}
+                            >
+                              <FormControl>
+                                <SelectTrigger className="min-h-[48px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="40h">40 heures/semaine</SelectItem>
+                                <SelectItem value="44h">44 heures/semaine</SelectItem>
+                                <SelectItem value="48h">48 heures/semaine</SelectItem>
+                                <SelectItem value="52h">52 heures/semaine</SelectItem>
+                                <SelectItem value="56h">56 heures/semaine</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Définit le seuil des heures supplémentaires
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
