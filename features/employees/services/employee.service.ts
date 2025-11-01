@@ -139,6 +139,14 @@ export interface UpdateEmployeeInput {
   placeOfBirth?: string;
   emergencyContactName?: string;
 
+  // Contract & CDDTI fields (Daily Workers Phase 1-3)
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'STAGE';
+  hireDate?: Date;
+  contractStartDate?: Date;
+  contractEndDate?: Date;
+  paymentFrequency?: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+  weeklyHoursRegime?: '40h' | '44h' | '48h' | '52h' | '56h';
+
   // Custom fields
   customFields?: Record<string, any>;
 }
@@ -260,6 +268,7 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
       .returning();
 
     // Create employment contract (CDD compliance tracking)
+    // This creates the initial contract record with proper metadata
     const contractType = input.contractType || 'CDI';
     const [contract] = await tx
       .insert(employmentContracts)
@@ -282,10 +291,13 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
       })
       .returning();
 
-    // Link contract ID to employee customFields (backward compatibility)
+    // Link contract to employee record
+    // - Update current_contract_id FK (primary reference)
+    // - Update customFields for backward compatibility with existing code
     await tx
       .update(employees)
       .set({
+        currentContractId: contract.id,
         customFields: {
           ...(input.customFields || {}),
           contractType: contractType,
@@ -367,12 +379,11 @@ export async function listEmployees(input: ListEmployeesInput) {
   // Build where conditions
   const conditions = [eq(employees.tenantId, input.tenantId)];
 
+  // Only filter by status if explicitly provided
   if (input.status) {
     conditions.push(eq(employees.status, input.status));
-  } else {
-    // Default: only active
-    conditions.push(eq(employees.status, 'active'));
   }
+  // If status is undefined, show all statuses (no filter)
 
   if (input.search) {
     conditions.push(
@@ -436,12 +447,19 @@ export async function listEmployees(input: ListEmployeesInput) {
 }
 
 /**
- * Get employee by ID with full details
+ * Get employee by ID with full details (including current contract)
  */
-export async function getEmployeeById(employeeId: string, tenantId: string) {
-  const [employee] = await db
-    .select()
+export async function getEmployeeById(employeeId: string, tenantId: string): Promise<any> {
+  const [result] = await db
+    .select({
+      employee: employees,
+      contract: employmentContracts,
+    })
     .from(employees)
+    .leftJoin(
+      employmentContracts,
+      eq(employees.currentContractId, employmentContracts.id)
+    )
     .where(
       and(
         eq(employees.id, employeeId),
@@ -450,9 +468,12 @@ export async function getEmployeeById(employeeId: string, tenantId: string) {
     )
     .limit(1);
 
-  if (!employee) {
+  if (!result || !result.employee) {
     throw new NotFoundError('Employé', employeeId);
   }
+
+  const employee = result.employee;
+  const contract = result.contract;
 
   // Decrypt PII (handle decryption failures gracefully)
   let decryptedNationalId = null;
@@ -509,6 +530,7 @@ export async function getEmployeeById(employeeId: string, tenantId: string) {
 
   return {
     ...decrypted,
+    contract, // Current contract details (contract_type, start_date, end_date, etc.) from employment_contracts table
     currentSalary,
     currentPosition,
     salaryHistory,
@@ -625,6 +647,16 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
   if (input.motherName !== undefined) updateValues.motherName = input.motherName;
   if (input.placeOfBirth !== undefined) updateValues.placeOfBirth = input.placeOfBirth;
   if (input.emergencyContactName !== undefined) updateValues.emergencyContactName = input.emergencyContactName;
+
+  // Employment fields (Daily Workers Phase 1-3)
+  if (input.hireDate !== undefined) {
+    updateValues.hireDate = input.hireDate ? input.hireDate.toISOString().split('T')[0] : null;
+  }
+  if (input.paymentFrequency !== undefined) updateValues.paymentFrequency = input.paymentFrequency;
+  if (input.weeklyHoursRegime !== undefined) updateValues.weeklyHoursRegime = input.weeklyHoursRegime;
+
+  // Note: Contract fields (contractType, contractStartDate, contractEndDate) are now managed
+  // via the employment_contracts table. Use the contract management API to update contracts.
 
   // Custom fields
   if (input.customFields !== undefined) updateValues.customFields = input.customFields;
