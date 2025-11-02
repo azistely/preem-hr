@@ -14,7 +14,7 @@
  * - Task-oriented: Guides user through the process
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -208,6 +208,15 @@ export default function NewPayrollRunPage() {
     { enabled: !!tenantId }
   );
 
+  // Memoized callbacks to prevent infinite loops in PaymentFrequencyStep
+  const handlePaymentFrequencyChange = useCallback((freq: 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY') => {
+    form.setValue('paymentFrequency', freq);
+  }, [form]);
+
+  const handleClosureSequenceChange = useCallback((seq: number | null) => {
+    form.setValue('closureSequence', seq);
+  }, [form]);
+
   // Wizard steps
   const wizardSteps: WizardStep[] = [
     // Step 1: Payment Frequency Selection
@@ -220,8 +229,8 @@ export default function NewPayrollRunPage() {
           periodEnd={periodEnd}
           paymentFrequency={formValues.paymentFrequency}
           closureSequence={formValues.closureSequence ?? null}
-          onPaymentFrequencyChange={(freq) => form.setValue('paymentFrequency', freq)}
-          onClosureSequenceChange={(seq) => form.setValue('closureSequence', seq)}
+          onPaymentFrequencyChange={handlePaymentFrequencyChange}
+          onClosureSequenceChange={handleClosureSequenceChange}
         />
       ),
     },

@@ -16,10 +16,9 @@
  * - Error prevention: Validates closure sequence based on frequency
  */
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Calendar, Clock, AlertCircle, Info } from 'lucide-react';
@@ -124,18 +123,15 @@ export function PaymentFrequencyStep({
       <div className="space-y-4">
         <Label className="text-base font-semibold">Fréquence de paiement</Label>
 
-        <RadioGroup
-          value={paymentFrequency}
-          onValueChange={(value) => onPaymentFrequencyChange(value as PaymentFrequency)}
-          className="grid gap-4"
-        >
+        <div className="grid gap-4">
           {frequencies.map((freq) => {
             const Icon = freq.icon;
             const isSelected = paymentFrequency === freq.value;
 
             return (
-              <label
+              <div
                 key={freq.value}
+                onClick={() => onPaymentFrequencyChange(freq.value)}
                 className={`
                   relative flex cursor-pointer rounded-lg border-2 p-4 transition-all
                   ${isSelected
@@ -144,8 +140,6 @@ export function PaymentFrequencyStep({
                   }
                 `}
               >
-                <RadioGroupItem value={freq.value} className="sr-only" />
-
                 <div className="flex flex-1 items-start gap-4">
                   {/* Icon */}
                   <div className={`
@@ -171,10 +165,10 @@ export function PaymentFrequencyStep({
                     </div>
                   )}
                 </div>
-              </label>
+              </div>
             );
           })}
-        </RadioGroup>
+        </div>
       </div>
 
       {/* Closure Sequence Selection (only for WEEKLY and BIWEEKLY) */}
