@@ -23,6 +23,10 @@ export const payrollRuns = pgTable('payroll_runs', {
   // Country for tax/contribution rules
   countryCode: text('country_code').notNull().references(() => countries.code),
 
+  // Payment frequency and closure tracking (for daily/weekly/biweekly workers)
+  paymentFrequency: text('payment_frequency').notNull().default('MONTHLY'), // DAILY, WEEKLY, BIWEEKLY, MONTHLY
+  closureSequence: integer('closure_sequence'), // 1-4 for WEEKLY, 1-2 for BIWEEKLY, NULL for MONTHLY
+
   // Status tracking (draft, calculating, calculated, approved, paid, failed)
   status: text('status').notNull().default('draft'),
 

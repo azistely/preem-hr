@@ -40,8 +40,10 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type RunStatus = 'draft' | 'calculating' | 'calculated' | 'approved' | 'paid' | 'failed';
+type PaymentFrequency = 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY' | 'all';
 
 const statusConfig: Record<RunStatus, { label: string; variant: any; icon: any }> = {
   draft: { label: 'Brouillon', variant: 'secondary', icon: Clock },
@@ -55,6 +57,7 @@ const statusConfig: Record<RunStatus, { label: string; variant: any; icon: any }
 export default function PayrollRunsPage() {
   const router = useRouter();
   const [selectedStatus, setSelectedStatus] = useState<RunStatus | 'all'>('all');
+  const [selectedFrequency, setSelectedFrequency] = useState<PaymentFrequency>('all');
 
   // Get authenticated user from auth context
   const { data: user } = api.auth.me.useQuery();
@@ -70,6 +73,12 @@ export default function PayrollRunsPage() {
     enabled: !!tenantId, // Only run query when tenantId is available
   });
 
+  // Filter runs by payment frequency (client-side for now)
+  const filteredRuns = runs?.filter(run => {
+    if (selectedFrequency === 'all') return true;
+    return run.paymentFrequency === selectedFrequency;
+  });
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR').format(Math.round(amount));
   };
@@ -82,6 +91,17 @@ export default function PayrollRunsPage() {
     router.push(`/payroll/runs/${runId}`);
   };
 
+  // Get page title based on selected frequency
+  const getPageTitle = () => {
+    switch (selectedFrequency) {
+      case 'MONTHLY': return 'Paies Mensuelles';
+      case 'WEEKLY': return 'Paies Hebdomadaires';
+      case 'BIWEEKLY': return 'Paies Quinzaine';
+      case 'DAILY': return 'Paies Journalières';
+      default: return 'Toutes les Paies';
+    }
+  };
+
   return (
     <div className="container mx-auto py-8 px-4">
       {/* Header */}
@@ -89,7 +109,7 @@ export default function PayrollRunsPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <Calendar className="h-8 w-8" />
-            Paies Mensuelles
+            {getPageTitle()}
           </h1>
           <p className="text-muted-foreground text-lg mt-2">
             Gérez vos cycles de paie et traitez les salaires
@@ -101,7 +121,53 @@ export default function PayrollRunsPage() {
         </Button>
       </div>
 
-      {/* Stats Cards */}
+      {/* Payment Frequency Tabs */}
+      <Tabs value={selectedFrequency} onValueChange={(value) => setSelectedFrequency(value as PaymentFrequency)} className="mb-6">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="all">
+            Toutes
+            {runs && (
+              <Badge variant="secondary" className="ml-2">
+                {runs.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="MONTHLY">
+            Mensuelles
+            {runs && (
+              <Badge variant="secondary" className="ml-2">
+                {runs.filter(r => r.paymentFrequency === 'MONTHLY').length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="WEEKLY">
+            Hebdo.
+            {runs && (
+              <Badge variant="secondary" className="ml-2">
+                {runs.filter(r => r.paymentFrequency === 'WEEKLY').length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="BIWEEKLY">
+            Quinzaine
+            {runs && (
+              <Badge variant="secondary" className="ml-2">
+                {runs.filter(r => r.paymentFrequency === 'BIWEEKLY').length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="DAILY">
+            Journalières
+            {runs && (
+              <Badge variant="secondary" className="ml-2">
+                {runs.filter(r => r.paymentFrequency === 'DAILY').length}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Stats Cards - Use filtered runs for statistics */}
       <div className="grid gap-4 md:grid-cols-3 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -110,14 +176,16 @@ export default function PayrollRunsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {runs?.filter(r => {
+              {filteredRuns?.filter(r => {
                 const start = new Date(r.periodStart);
                 const now = new Date();
                 return start.getMonth() === now.getMonth() &&
                        start.getFullYear() === now.getFullYear();
               }).length || 0}
             </div>
-            <p className="text-xs text-muted-foreground">Paies actives</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedFrequency === 'all' ? 'Toutes fréquences' : 'Cette fréquence'}
+            </p>
           </CardContent>
         </Card>
 
@@ -128,7 +196,7 @@ export default function PayrollRunsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {runs?.reduce((acc, r) => acc + (r.employeeCount || 0), 0) || 0}
+              {filteredRuns?.reduce((acc, r) => acc + (r.employeeCount || 0), 0) || 0}
             </div>
             <p className="text-xs text-muted-foreground">Employés traités</p>
           </CardContent>
@@ -141,7 +209,7 @@ export default function PayrollRunsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {runs?.filter(r => r.status === 'draft' || r.status === 'calculating').length || 0}
+              {filteredRuns?.filter(r => r.status === 'draft' || r.status === 'calculating').length || 0}
             </div>
             <p className="text-xs text-muted-foreground">À traiter</p>
           </CardContent>
@@ -195,11 +263,12 @@ export default function PayrollRunsPage() {
                 <Skeleton key={i} className="h-16 w-full" />
               ))}
             </div>
-          ) : runs && runs.length > 0 ? (
+          ) : filteredRuns && filteredRuns.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Période</TableHead>
+                  <TableHead>Fréquence</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead>Employés</TableHead>
                   <TableHead>Total Brut</TableHead>
@@ -209,7 +278,7 @@ export default function PayrollRunsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runs.map((run) => {
+                {filteredRuns.map((run) => {
                   const StatusIcon = statusConfig[run.status as RunStatus]?.icon || Clock;
                   return (
                     <TableRow key={run.id} className="cursor-pointer hover:bg-muted/50">
@@ -220,6 +289,21 @@ export default function PayrollRunsPage() {
                         <div className="text-sm text-muted-foreground">
                           {format(new Date(run.periodStart), 'dd MMM', { locale: fr })} -{' '}
                           {format(new Date(run.periodEnd), 'dd MMM yyyy', { locale: fr })}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant="outline" className="w-fit">
+                            {run.paymentFrequency === 'MONTHLY' && 'Mensuel'}
+                            {run.paymentFrequency === 'WEEKLY' && 'Hebdo.'}
+                            {run.paymentFrequency === 'BIWEEKLY' && 'Quinzaine'}
+                            {run.paymentFrequency === 'DAILY' && 'Journalier'}
+                          </Badge>
+                          {run.closureSequence && (run.paymentFrequency === 'WEEKLY' || run.paymentFrequency === 'BIWEEKLY') && (
+                            <span className="text-xs text-muted-foreground">
+                              {run.paymentFrequency === 'WEEKLY' ? `Sem. ${run.closureSequence}` : `Q${run.closureSequence}`}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>

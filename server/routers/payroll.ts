@@ -82,6 +82,8 @@ const createPayrollRunInputSchema = z.object({
   paymentDate: z.date(),
   name: z.string().optional(),
   createdBy: z.string().uuid(),
+  paymentFrequency: z.enum(['MONTHLY', 'WEEKLY', 'BIWEEKLY', 'DAILY']).default('MONTHLY'),
+  closureSequence: z.number().int().min(1).max(4).optional(),
 });
 
 const calculatePayrollRunInputSchema = z.object({

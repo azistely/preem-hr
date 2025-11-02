@@ -31,6 +31,8 @@ export interface CreatePayrollRunInput {
   paymentDate: Date;
   name?: string;
   createdBy: string;
+  paymentFrequency?: 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY';
+  closureSequence?: number;
 }
 
 export interface CalculatePayrollRunInput {
@@ -131,6 +133,8 @@ export async function createPayrollRun(
       countryCode: input.countryCode,
       status: 'draft',
       createdBy: input.createdBy,
+      paymentFrequency: input.paymentFrequency || 'MONTHLY',
+      closureSequence: input.closureSequence ?? null,
     } as any) // Type assertion needed due to Drizzle date field typing
     .returning();
 

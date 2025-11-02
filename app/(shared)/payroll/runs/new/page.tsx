@@ -28,9 +28,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Wizard, WizardStep } from '@/components/wizard/wizard';
 import { EmployeePreviewStep } from './components/employee-preview-step';
+import { PaymentFrequencyStep, PaymentFrequency, validatePaymentFrequency } from './components/payment-frequency-step';
 
 // Form validation schema
 const formSchema = z.object({
@@ -39,6 +41,8 @@ const formSchema = z.object({
   periodEnd: z.string().min(1, { message: 'Date de fin requise' }),
   paymentDate: z.string().min(1, { message: 'Date de paiement requise' }),
   name: z.string().optional(),
+  paymentFrequency: z.enum(['MONTHLY', 'WEEKLY', 'BIWEEKLY', 'DAILY']).default('MONTHLY'),
+  closureSequence: z.number().int().min(1).max(4).nullable().optional(),
 }).refine(
   (data) => {
     // Compare as strings (YYYY-MM-DD format sorts correctly)
@@ -50,7 +54,9 @@ const formSchema = z.object({
   }
 );
 
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.infer<typeof formSchema> & {
+  paymentFrequency: 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY';
+};
 
 export default function NewPayrollRunPage() {
   const router = useRouter();
@@ -74,13 +80,15 @@ export default function NewPayrollRunPage() {
   const nextMonthStart = addMonths(currentMonthStart, 1);
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(formSchema) as any, // Type cast due to Zod .default() creating optional types
     defaultValues: {
       countryCode: tenant?.countryCode || 'CI',
       periodStart: format(currentMonthStart, 'yyyy-MM-dd'),
       periodEnd: format(currentMonthEnd, 'yyyy-MM-dd'),
       paymentDate: format(addMonths(nextMonthStart, 0).setDate(5), 'yyyy-MM-dd'),
       name: `Paie ${format(currentMonthStart, 'MMMM yyyy', { locale: fr })}`,
+      paymentFrequency: 'MONTHLY' as const,
+      closureSequence: null,
     },
   });
 
@@ -175,6 +183,8 @@ export default function NewPayrollRunPage() {
         paymentDate: parseISO(values.paymentDate),
         name: values.name || undefined,
         createdBy: userId,
+        paymentFrequency: values.paymentFrequency,
+        closureSequence: values.closureSequence ?? undefined,
       });
     } catch (err) {
       console.error('Failed to create payroll run:', err);
@@ -198,9 +208,25 @@ export default function NewPayrollRunPage() {
     { enabled: !!tenantId }
   );
 
-  // Wizard steps (removed period selection - it's auto-calculated)
+  // Wizard steps
   const wizardSteps: WizardStep[] = [
-    // Step 1: Employee Preview & Validation (with period editor)
+    // Step 1: Payment Frequency Selection
+    {
+      title: 'Fréquence de paiement',
+      description: 'Sélectionnez la fréquence de paiement pour cette paie',
+      content: (
+        <PaymentFrequencyStep
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          paymentFrequency={formValues.paymentFrequency}
+          closureSequence={formValues.closureSequence ?? null}
+          onPaymentFrequencyChange={(freq) => form.setValue('paymentFrequency', freq)}
+          onClosureSequenceChange={(seq) => form.setValue('closureSequence', seq)}
+        />
+      ),
+    },
+
+    // Step 2: Employee Preview & Validation (with period editor)
     {
       title: 'Vérifiez les employés',
       description: 'Assurez-vous que tous les employés journaliers ont leurs heures saisies',
@@ -309,52 +335,55 @@ export default function NewPayrollRunPage() {
                   </div>
 
                   {/* Manual Date Selection */}
-                  <Form {...form}>
+                  <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="periodStart"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Date de début</FormLabel>
-                            <FormControl>
-                              <Input type="date" {...field} className="min-h-[48px]" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
+                      <div className="space-y-2">
+                        <Label htmlFor="periodStart">Date de début</Label>
+                        <Input
+                          id="periodStart"
+                          type="date"
+                          {...form.register('periodStart')}
+                          className="min-h-[48px]"
+                        />
+                        {form.formState.errors.periodStart && (
+                          <p className="text-sm text-destructive">
+                            {form.formState.errors.periodStart.message}
+                          </p>
                         )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="periodEnd"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Date de fin</FormLabel>
-                            <FormControl>
-                              <Input type="date" {...field} className="min-h-[48px]" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="periodEnd">Date de fin</Label>
+                        <Input
+                          id="periodEnd"
+                          type="date"
+                          {...form.register('periodEnd')}
+                          className="min-h-[48px]"
+                        />
+                        {form.formState.errors.periodEnd && (
+                          <p className="text-sm text-destructive">
+                            {form.formState.errors.periodEnd.message}
+                          </p>
                         )}
-                      />
+                      </div>
                     </div>
-                    <FormField
-                      control={form.control}
-                      name="paymentDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Date de paiement</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} className="min-h-[48px]" />
-                          </FormControl>
-                          <FormDescription>
-                            Date à laquelle les salaires seront versés aux employés
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentDate">Date de paiement</Label>
+                      <Input
+                        id="paymentDate"
+                        type="date"
+                        {...form.register('paymentDate')}
+                        className="min-h-[48px]"
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Date à laquelle les salaires seront versés aux employés
+                      </p>
+                      {form.formState.errors.paymentDate && (
+                        <p className="text-sm text-destructive">
+                          {form.formState.errors.paymentDate.message}
+                        </p>
                       )}
-                    />
-                  </Form>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -369,7 +398,7 @@ export default function NewPayrollRunPage() {
       ),
     },
 
-    // Step 2: Confirmation
+    // Step 3: Confirmation
     {
       title: 'Confirmation',
       description: 'Vérifiez les informations avant de créer la paie',
@@ -385,6 +414,15 @@ export default function NewPayrollRunPage() {
                   <dt className="text-muted-foreground">Pays</dt>
                   <dd className="font-semibold">
                     {availableCountries?.find(c => c.code === formValues.countryCode)?.name || formValues.countryCode}
+                  </dd>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b">
+                  <dt className="text-muted-foreground">Fréquence de paiement</dt>
+                  <dd className="font-semibold">
+                    {formValues.paymentFrequency === 'MONTHLY' && 'Mensuel'}
+                    {formValues.paymentFrequency === 'WEEKLY' && `Hebdomadaire - Semaine ${formValues.closureSequence}`}
+                    {formValues.paymentFrequency === 'BIWEEKLY' && `Quinzaine ${formValues.closureSequence}`}
+                    {formValues.paymentFrequency === 'DAILY' && 'Journalier'}
                   </dd>
                 </div>
                 <div className="flex justify-between items-center py-2 border-b">
