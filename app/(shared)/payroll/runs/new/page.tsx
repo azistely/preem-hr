@@ -85,7 +85,7 @@ export default function NewPayrollRunPage() {
       countryCode: tenant?.countryCode || 'CI',
       periodStart: format(currentMonthStart, 'yyyy-MM-dd'),
       periodEnd: format(currentMonthEnd, 'yyyy-MM-dd'),
-      paymentDate: format(addMonths(nextMonthStart, 0).setDate(5), 'yyyy-MM-dd'),
+      paymentDate: format(currentMonthEnd, 'yyyy-MM-dd'), // Default to end of period
       name: `Paie ${format(currentMonthStart, 'MMMM yyyy', { locale: fr })}`,
       paymentFrequency: 'MONTHLY' as const,
       closureSequence: null,
@@ -114,7 +114,7 @@ export default function NewPayrollRunPage() {
     const end = endOfMonth(new Date());
     form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
     form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
-    form.setValue('paymentDate', format(addMonths(start, 1).setDate(5), 'yyyy-MM-dd'));
+    form.setValue('paymentDate', format(end, 'yyyy-MM-dd')); // Payment at end of period
     form.setValue('name', `Paie ${format(start, 'MMMM yyyy', { locale: fr })}`);
   };
 
@@ -123,7 +123,7 @@ export default function NewPayrollRunPage() {
     const end = endOfMonth(addMonths(new Date(), -1));
     form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
     form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
-    form.setValue('paymentDate', format(addMonths(start, 1).setDate(5), 'yyyy-MM-dd'));
+    form.setValue('paymentDate', format(end, 'yyyy-MM-dd')); // Payment at end of period
     form.setValue('name', `Paie ${format(start, 'MMMM yyyy', { locale: fr })}`);
   };
 
@@ -132,7 +132,7 @@ export default function NewPayrollRunPage() {
     const end = endOfWeek(new Date(), { weekStartsOn: 1 }); // Sunday
     form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
     form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
-    form.setValue('paymentDate', format(addDays(end, 2), 'yyyy-MM-dd')); // Payment 2 days after period end
+    form.setValue('paymentDate', format(end, 'yyyy-MM-dd')); // Payment at end of period
     form.setValue('name', `Paie semaine du ${format(start, 'd MMM', { locale: fr })}`);
   };
 
@@ -142,7 +142,7 @@ export default function NewPayrollRunPage() {
     const end = endOfWeek(lastWeekDate, { weekStartsOn: 1 });
     form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
     form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
-    form.setValue('paymentDate', format(addDays(end, 2), 'yyyy-MM-dd'));
+    form.setValue('paymentDate', format(end, 'yyyy-MM-dd')); // Payment at end of period
     form.setValue('name', `Paie semaine du ${format(start, 'd MMM', { locale: fr })}`);
   };
 
@@ -152,7 +152,7 @@ export default function NewPayrollRunPage() {
     const end = endOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
     form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
     form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
-    form.setValue('paymentDate', format(addDays(end, 2), 'yyyy-MM-dd'));
+    form.setValue('paymentDate', format(end, 'yyyy-MM-dd')); // Payment at end of period
     form.setValue('name', `Paie 2 semaines du ${format(start, 'd MMM', { locale: fr })}`);
   };
 
@@ -215,6 +215,65 @@ export default function NewPayrollRunPage() {
 
   const handleClosureSequenceChange = useCallback((seq: number | null) => {
     form.setValue('closureSequence', seq);
+
+    // Automatically adjust period dates based on closure sequence
+    const paymentFrequency = form.getValues('paymentFrequency');
+    const currentPeriodStart = parseISO(form.getValues('periodStart'));
+
+    if (!seq) return;
+
+    if (paymentFrequency === 'WEEKLY') {
+      // Calculate week dates based on sequence (1-4)
+      // Week 1: 1-7, Week 2: 8-14, Week 3: 15-21, Week 4: 22-end of month
+      const month = currentPeriodStart.getMonth();
+      const year = currentPeriodStart.getFullYear();
+
+      let startDay: number, endDay: number;
+      if (seq === 1) {
+        startDay = 1;
+        endDay = 7;
+      } else if (seq === 2) {
+        startDay = 8;
+        endDay = 14;
+      } else if (seq === 3) {
+        startDay = 15;
+        endDay = 21;
+      } else {
+        // Week 4: 22 to end of month
+        startDay = 22;
+        endDay = endOfMonth(new Date(year, month)).getDate();
+      }
+
+      const start = new Date(year, month, startDay);
+      const end = new Date(year, month, endDay);
+
+      form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
+      form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
+      form.setValue('paymentDate', format(end, 'yyyy-MM-dd')); // Payment at end of period
+      form.setValue('name', `Paie Hebdomadaire - Semaine ${seq} ${format(start, 'MMMM yyyy', { locale: fr })}`);
+    } else if (paymentFrequency === 'BIWEEKLY') {
+      // Calculate quinzaine dates
+      // Quinzaine 1: 1-15, Quinzaine 2: 16-end of month
+      const month = currentPeriodStart.getMonth();
+      const year = currentPeriodStart.getFullYear();
+
+      let startDay: number, endDay: number;
+      if (seq === 1) {
+        startDay = 1;
+        endDay = 15;
+      } else {
+        startDay = 16;
+        endDay = endOfMonth(new Date(year, month)).getDate();
+      }
+
+      const start = new Date(year, month, startDay);
+      const end = new Date(year, month, endDay);
+
+      form.setValue('periodStart', format(start, 'yyyy-MM-dd'));
+      form.setValue('periodEnd', format(end, 'yyyy-MM-dd'));
+      form.setValue('paymentDate', format(end, 'yyyy-MM-dd')); // Payment at end of period
+      form.setValue('name', `Paie Quinzaine ${seq} - ${format(start, 'MMMM yyyy', { locale: fr })}`);
+    }
   }, [form]);
 
   // Wizard steps
@@ -402,6 +461,8 @@ export default function NewPayrollRunPage() {
           <EmployeePreviewStep
             periodStart={periodStart}
             periodEnd={periodEnd}
+            paymentFrequency={formValues.paymentFrequency}
+            closureSequence={formValues.closureSequence ?? null}
           />
         </div>
       ),
