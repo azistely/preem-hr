@@ -1880,42 +1880,35 @@ export const geofenceConfigurationsRelations = relations(geofenceConfigurations,
 // ============================================================================
 
 export const employmentContracts = pgTable("employment_contracts", {
+	// IMPORTANT: Column order MUST match database for Drizzle inserts to work
+	// Database column order (from migrations):
+	// id, tenant_id, employee_id, contract_type, start_date, end_date, renewal_count,
+	// is_active, created_at, contract_number, termination_date, termination_reason,
+	// original_contract_id, replaces_contract_id, cdd_reason, cdd_total_duration_months,
+	// signed_date, contract_file_url, notes, updated_at, created_by, cddti_task_description
+
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeId: uuid("employee_id").notNull(),
-
-	// Contract basics
 	contractType: varchar("contract_type", { length: 50 }).notNull(),
-	contractNumber: varchar("contract_number", { length: 50 }),
 	startDate: date("start_date").notNull(),
 	endDate: date("end_date"),
-
-	// Renewal tracking
 	renewalCount: integer("renewal_count").default(0).notNull(),
 	isActive: boolean("is_active").default(true).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	contractNumber: varchar("contract_number", { length: 50 }),
 	terminationDate: date("termination_date"),
 	terminationReason: varchar("termination_reason", { length: 255 }),
-
-	// Contract lineage
 	originalContractId: uuid("original_contract_id"),
 	replacesContractId: uuid("replaces_contract_id"),
-
-	// CDD specific
 	cddReason: varchar("cdd_reason", { length: 255 }),
 	cddTotalDurationMonths: integer("cdd_total_duration_months"),
-
-	// CDDTI specific (journaliers - daily workers with indefinite term)
-	cddtiTaskDescription: text("cddti_task_description"), // Required by Article 4 Convention Collective
-
-	// Document management
 	signedDate: date("signed_date"),
 	contractFileUrl: text("contract_file_url"),
 	notes: text(),
-
-	// Audit
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	createdBy: uuid("created_by"),
+	cddtiTaskDescription: text("cddti_task_description"), // Required by Article 4 Convention Collective
 }, (table) => [
 	index("idx_contracts_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops"), table.isActive.asc().nullsLast().op("bool_ops")),
 	index("idx_contracts_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
