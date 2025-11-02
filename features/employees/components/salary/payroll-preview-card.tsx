@@ -63,7 +63,8 @@ export function PayrollPreviewCard({
     if (newComponents.length === 0) return;
 
     // Calculate new salary preview
-    // All salary amounts are stored as monthly, so always use 'MONTHLY' for the backend
+    // For CDDTI workers, components are stored in hourly amounts
+    // Backend will calculate based on paymentFrequency and contractType
     calculateNewPreviewMutation.mutate({
       context: 'salary_edit',
       employeeId,
@@ -73,7 +74,7 @@ export function PayrollPreviewCard({
         amount: c.amount,
         sourceType: c.sourceType as 'standard' | 'template',
       })),
-      rateType: 'MONTHLY',
+      contractType: contractType as any,
       isExpat, // For ITS employer tax calculation
     });
 
@@ -88,7 +89,7 @@ export function PayrollPreviewCard({
           amount: c.amount,
           sourceType: (c.sourceType || 'standard') as 'standard' | 'template',
         })),
-        rateType: 'MONTHLY',
+        contractType: contractType as any,
         isExpat, // For ITS employer tax calculation
       }, {
         onSuccess: (currentResult) => {

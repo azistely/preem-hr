@@ -520,9 +520,9 @@ export const payrollRouter = createTRPCRouter({
       const periodStart = new Date(previewDate.getFullYear(), previewDate.getMonth(), 1);
       const periodEnd = new Date(previewDate.getFullYear(), previewDate.getMonth() + 1, 0);
 
-      // Get weeklyHoursRegime and paymentFrequency
-      const weeklyHoursRegime = existingEmployee?.weeklyHoursRegime || '40h';
-      const paymentFrequency = existingEmployee?.paymentFrequency || 'MONTHLY';
+      // Get weeklyHoursRegime and paymentFrequency from input (for hiring) or existing employee
+      const weeklyHoursRegime = input.weeklyHoursRegime || existingEmployee?.weeklyHoursRegime || '40h';
+      const paymentFrequency = input.paymentFrequency || existingEmployee?.paymentFrequency || 'MONTHLY';
 
       // Calculate hours/days based on payment frequency and weekly hours regime
       // Extract numeric hours from regime (e.g., '40h' → 40)
