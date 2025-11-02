@@ -235,22 +235,7 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
 
       {/* Salary Preview */}
       <div>
-        <h3 className="font-semibold mb-3">
-          {rateType === 'MONTHLY'
-            ? 'Aperçu de la paie mensuelle'
-            : 'Aperçu de la paie (mois type)'}
-        </h3>
-
-        {rateType !== 'MONTHLY' && (
-          <Alert className="mb-3">
-            <AlertDescription>
-              <strong>Travailleur {rateType === 'DAILY' ? 'journalier' : 'horaire'}:</strong>{' '}
-              Cet aperçu est basé sur un mois type de{' '}
-              {rateType === 'DAILY' ? '30 jours' : '240 heures (30 jours × 8h)'}.{' '}
-              Le salaire réel variera selon les jours/heures effectivement travaillés.
-            </AlertDescription>
-          </Alert>
-        )}
+        <h3 className="font-semibold mb-3">Aperçu de la paie</h3>
 
         {calculatePreviewMutation.isPending ? (
           <div className="flex items-center justify-center p-8 bg-muted/50 rounded-lg">
