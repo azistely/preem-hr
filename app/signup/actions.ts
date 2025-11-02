@@ -120,14 +120,24 @@ export async function signup(formData: FormData): Promise<SignupResult> {
 
     console.error('[Signup] Error:', error);
 
-    // Extract meaningful error message
-    let errorMessage = 'Une erreur s\'est produite';
-    if (error?.message) {
-      if (error.message.includes('déjà')) {
-        errorMessage = 'Un compte avec cet email existe déjà';
-      } else if (error.message.includes('email')) {
-        errorMessage = error.message;
-      }
+    // ✅ IMPROVED: User-friendly error messages for low digital literacy users
+    let errorMessage = 'Une erreur s\'est produite. Veuillez réessayer.';
+
+    // Check error message for common scenarios
+    const errorMsg = error?.message?.toLowerCase() || '';
+
+    if (errorMsg.includes('already registered') || errorMsg.includes('already exists') || errorMsg.includes('déjà')) {
+      errorMessage = '📧 Cet email est déjà utilisé. Vous avez déjà un compte ? Essayez de vous connecter.';
+    } else if (errorMsg.includes('invalid email') || errorMsg.includes('email invalide')) {
+      errorMessage = '📧 L\'adresse email n\'est pas valide. Vérifiez qu\'elle contient @ et un domaine (ex: nom@exemple.com)';
+    } else if (errorMsg.includes('weak password') || errorMsg.includes('mot de passe') || errorMsg.includes('password')) {
+      errorMessage = '🔒 Le mot de passe est trop faible. Utilisez au moins 8 caractères avec des lettres et des chiffres.';
+    } else if (errorMsg.includes('network') || errorMsg.includes('fetch') || errorMsg.includes('timeout')) {
+      errorMessage = '📡 Problème de connexion internet. Vérifiez votre connexion et réessayez.';
+    } else if (errorMsg.includes('rate limit') || errorMsg.includes('tentatives')) {
+      errorMessage = '⏸️ Trop de tentatives. Attendez quelques minutes avant de réessayer.';
+    } else if (errorMsg.includes('tenant') || errorMsg.includes('entreprise')) {
+      errorMessage = '🏢 Erreur lors de la création de votre entreprise. Contactez le support si le problème persiste.';
     }
 
     return {
