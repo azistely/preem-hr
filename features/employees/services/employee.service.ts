@@ -50,7 +50,7 @@ export interface CreateEmployeeInput {
 
   // Employment
   hireDate: Date;
-  contractType?: 'CDI' | 'CDD' | 'STAGE';
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE';
   contractEndDate?: Date;
   cddReason?: 'REMPLACEMENT' | 'SURCROIT_ACTIVITE' | 'SAISONNIER' | 'PROJET' | 'AUTRE';
 
@@ -140,7 +140,7 @@ export interface UpdateEmployeeInput {
   emergencyContactName?: string;
 
   // Contract & CDDTI fields (Daily Workers Phase 1-3)
-  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'STAGE';
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE';
   hireDate?: Date;
   contractStartDate?: Date;
   contractEndDate?: Date;

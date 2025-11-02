@@ -45,6 +45,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { CoefficientSelector } from '@/components/employees/coefficient-selector';
 import { RateTypeSelector } from '@/components/employees/rate-type-selector';
+import { ContractTypeSelector } from '@/components/employees/contract-type-selector';
+import type { ContractType } from '@/components/employees/contract-type-selector';
 import { toast } from 'sonner';
 
 // Schema for creating a new position
@@ -103,6 +105,31 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
 
   return (
     <div className="space-y-6">
+      <FormField
+        control={form.control}
+        name="contractType"
+        render={({ field }) => (
+          <FormItem>
+            <FormControl>
+              <ContractTypeSelector
+                value={(field.value as ContractType) || 'CDI'}
+                onChange={(value: ContractType) => {
+                  field.onChange(value);
+                  // Auto-set rate type to HOURLY when CDDTI is selected
+                  if (value === 'CDDTI') {
+                    form.setValue('rateType', 'HOURLY');
+                  } else if (form.getValues('rateType') === 'HOURLY' && (value as string) !== 'CDDTI') {
+                    // Reset to MONTHLY if switching away from CDDTI
+                    form.setValue('rateType', 'MONTHLY');
+                  }
+                }}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
       <FormField
         control={form.control}
         name="hireDate"

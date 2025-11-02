@@ -75,7 +75,7 @@ const createEmployeeSchema = z.object({
 
   // Employment
   hireDate: z.date(),
-  contractType: z.enum(['CDI', 'CDD', 'STAGE']).default('CDI'),
+  contractType: z.enum(['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE']).default('CDI'),
   contractEndDate: z.date().optional(),
   cddReason: z.enum(['REMPLACEMENT', 'SURCROIT_ACTIVITE', 'SAISONNIER', 'PROJET', 'AUTRE']).optional(),
 

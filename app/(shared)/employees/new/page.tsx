@@ -72,6 +72,7 @@ const createEmployeeSchema = z.object({
 
   // Step 3: Employment info
   hireDate: z.date(),
+  contractType: z.enum(['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE']).optional().default('CDI'),
   positionId: z.string().min(1, 'Le poste est requis'),
   coefficient: z.number().int().min(90).max(1000).optional().default(100),
   rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional().default('MONTHLY'),
@@ -183,6 +184,7 @@ export default function NewEmployeePage() {
       emergencyContactName: '',
       // Step 3: Employment
       hireDate: new Date(),
+      contractType: 'CDI',
       positionId: '',
       coefficient: 100,
       rateType: 'MONTHLY',
@@ -260,7 +262,7 @@ export default function NewEmployeePage() {
         isValid = true; // All personnel record fields are optional
         break;
       case 3: // Employment Info
-        isValid = await form.trigger(['hireDate', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
+        isValid = await form.trigger(['hireDate', 'contractType', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
 
         // Update selected location ID to fetch transport minimum
         if (isValid) {
@@ -289,11 +291,29 @@ export default function NewEmployeePage() {
           // Calculate salaire catégoriel (Code 11 only)
           // This is the base that must meet the coefficient minimum
           const salaireCategoriel = baseComponents['11'] || baseSalary || 0;
+          const contractType = form.getValues('contractType') || 'CDI';
+          const rateType = form.getValues('rateType') || 'MONTHLY';
 
           // Validation 1: Check salaire catégoriel meets category minimum wage
           const countryMinimumWage = 75000; // TODO: Get from tenant/countries table
-          // Round to avoid floating-point precision errors
-          const requiredMinimum = Math.round(countryMinimumWage * (coefficient / 100));
+
+          // For CDDTI (hourly), convert minimum to hourly rate
+          let requiredMinimum: number;
+          let rateLabel: string;
+
+          if (contractType === 'CDDTI' || rateType === 'HOURLY') {
+            // Hourly SMIG = Monthly SMIG / 30 / 8
+            requiredMinimum = Math.round(countryMinimumWage * (coefficient / 100) / 30 / 8);
+            rateLabel = 'FCFA/heure';
+          } else if (rateType === 'DAILY') {
+            // Daily SMIG = Monthly SMIG / 30
+            requiredMinimum = Math.round(countryMinimumWage * (coefficient / 100) / 30);
+            rateLabel = 'FCFA/jour';
+          } else {
+            // Monthly (default)
+            requiredMinimum = Math.round(countryMinimumWage * (coefficient / 100));
+            rateLabel = 'FCFA/mois';
+          }
 
           if (salaireCategoriel < requiredMinimum) {
             form.setError('baseSalary', {
@@ -315,21 +335,35 @@ export default function NewEmployeePage() {
             isValid = false;
           } else if (transportComponent && cityTransportMinimum !== null && cityName) {
             // Validate against city-specific minimum from database
-            if (transportComponent.amount < cityTransportMinimum) {
+            // For CDDTI/HOURLY, convert monthly minimum to hourly
+            let transportMinimum = cityTransportMinimum;
+            if (contractType === 'CDDTI' || rateType === 'HOURLY') {
+              transportMinimum = Math.round(cityTransportMinimum / 30 / 8);
+            } else if (rateType === 'DAILY') {
+              transportMinimum = Math.round(cityTransportMinimum / 30);
+            }
+
+            if (transportComponent.amount < transportMinimum) {
               form.setError('components', {
                 type: 'manual',
-                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum pour ${cityName} (${cityTransportMinimum.toLocaleString('fr-FR')} FCFA).`,
+                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} ${rateLabel}) est inférieure au minimum pour ${cityName} (${transportMinimum.toLocaleString('fr-FR')} ${rateLabel}).`,
               });
               isValid = false;
             }
           } else if (transportComponent && !cityTransportMinimum) {
             // Fallback validation if city data not yet loaded
             // This should rarely happen since location is selected in step 3
-            const fallbackMinimum = 20000;
+            let fallbackMinimum = 20000;
+            if (contractType === 'CDDTI' || rateType === 'HOURLY') {
+              fallbackMinimum = Math.round(20000 / 30 / 8);
+            } else if (rateType === 'DAILY') {
+              fallbackMinimum = Math.round(20000 / 30);
+            }
+
             if (transportComponent.amount < fallbackMinimum) {
               form.setError('components', {
                 type: 'manual',
-                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (${fallbackMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville.`,
+                message: `La prime de transport (${transportComponent.amount.toLocaleString('fr-FR')} ${rateLabel}) est inférieure au minimum légal (${fallbackMinimum.toLocaleString('fr-FR')} ${rateLabel}). Le minimum varie selon la ville.`,
               });
               isValid = false;
             }
