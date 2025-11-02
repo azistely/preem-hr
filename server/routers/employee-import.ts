@@ -15,7 +15,7 @@ import { TRPCError } from '@trpc/server';
 import { parseEmployeeFile, detectDuplicates, type ParseError } from '@/lib/employee-import/parser';
 import { db } from '@/lib/db';
 import { employees, employeeSalaries, positions, assignments } from '@/lib/db/schema';
-import { timeOffBalances, timeOffPolicies, benefitPlans, employeeBenefitEnrollments } from '@/drizzle/schema';
+import { timeOffBalances, timeOffPolicies, benefitPlans, employeeBenefitEnrollments, employmentContracts } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { createClient } from '@supabase/supabase-js';
 
@@ -538,6 +538,7 @@ export const employeeImportRouter = createTRPCRouter({
               categoricalSalary: row.categoricalSalary || null,
               salaryPremium: row.salaryPremium || null,
               initialLeaveBalance: row.initialLeaveBalance || null,
+              paymentFrequency: row.paymentFrequency || 'MONTHLY', // NEW: Payment frequency from import
               countryCode: 'CI', // Default to Côte d'Ivoire
               status: 'active',
               createdBy: userId,
@@ -546,6 +547,67 @@ export const employeeImportRouter = createTRPCRouter({
 
             const [employee] = await tx.insert(employees).values(employeeData).returning();
             created.push(employee);
+
+            // ===================================================================
+            // Create employment contract record (NORMALIZED ARCHITECTURE)
+            // ===================================================================
+            console.log(`[IMPORT] Creating employment contract for ${employee.employeeNumber}`);
+
+            const contractType = row.contractType || 'CDI';
+            const contractData: typeof employmentContracts.$inferInsert = {
+              tenantId,
+              employeeId: employee.id,
+              contractType: contractType,
+              contractNumber: `${row.employeeNumber}-001`, // Auto-generate contract number
+              startDate: parseDateSafely(row.hireDate, 'hireDate (contract start)'),
+              endDate: null, // Will set below for CDD/INTERIM/STAGE
+              renewalCount: 0,
+              isActive: true,
+              signedDate: parseDateSafely(row.hireDate, 'hireDate (contract signed)'),
+              notes: `Imported from ${input.fileId.split('/').pop()}`,
+              createdBy: userId,
+            };
+
+            // Set end date for fixed-term contracts
+            if (['CDD', 'INTERIM', 'STAGE'].includes(contractType)) {
+              if (row.terminationDate) {
+                contractData.endDate = parseDateSafelyOrNull(row.terminationDate, 'terminationDate (contract end)');
+              } else {
+                // Default to 12 months from hire date if not provided
+                const hireDate = new Date(parseDateSafely(row.hireDate, 'hireDate'));
+                hireDate.setFullYear(hireDate.getFullYear() + 1);
+                contractData.endDate = hireDate.toISOString().split('T')[0];
+                console.warn(`[IMPORT] ${contractType} contract missing end date - using hire_date + 12 months: ${contractData.endDate}`);
+              }
+            }
+
+            // Set CDD reason if applicable
+            if (contractType === 'CDD') {
+              contractData.cddReason = row.cddReason || 'Imported from legacy system - reason not specified';
+            }
+
+            // Set CDDTI task description if applicable (required by DB constraint)
+            if (contractType === 'CDDTI') {
+              // Use employee's job details (Fonction + Métier) as task description
+              const jobDetails = [
+                row.jobTitle && `Fonction: ${row.jobTitle}`,
+                row.profession && `Métier: ${row.profession}`,
+                row.establishment && `Établissement: ${row.establishment}`,
+                row.service && `Service: ${row.service}`,
+              ].filter(Boolean).join(' | ');
+
+              contractData.cddtiTaskDescription = row.cddtiTaskDescription || jobDetails || 'Tâche non spécifiée - voir fonction et métier de l\'employé';
+            }
+
+            const [contract] = await tx.insert(employmentContracts).values(contractData).returning();
+            console.log(`[IMPORT] Created contract ${contract.id} for employee ${employee.employeeNumber}`);
+
+            // Update employee with current_contract_id FK
+            await tx.update(employees)
+              .set({ currentContractId: contract.id })
+              .where(eq(employees.id, employee.id));
+
+            console.log(`[IMPORT] Set current_contract_id for employee ${employee.employeeNumber}`);
 
             // Create assignment record if position was created/found
             if (positionId) {
@@ -709,7 +771,7 @@ export const employeeImportRouter = createTRPCRouter({
                 employeeId: employee.id,
                 baseSalary: totalSalary.toString(),
                 currency: 'XOF',
-                payFrequency: 'monthly',
+                payFrequency: (row.paymentFrequency || 'MONTHLY').toLowerCase(), // Use imported payment frequency
                 components: components as any, // JSONB array
                 effectiveFrom: parseDateSafely(row.hireDate, 'hireDate (salary effectiveFrom)'),
                 effectiveTo: parseDateSafelyOrNull(row.terminationDate, 'terminationDate (salary effectiveTo)'),

@@ -42,9 +42,10 @@ export const SAGE_TO_PREEM_MAPPING: Record<string, string> = {
   'Nombre d\'enfants à charge': 'dependentChildren', // Alternative spelling
   'Nbr Part': 'fiscalParts',
 
-  // Employment (7 fields)
+  // Employment (8 fields - added payment frequency)
   'Date d\'embauche': 'hireDate',
   'Nature du contrat': 'contractType',
+  'Fréquence de paiement': 'paymentFrequency',
   'Fonction': 'jobTitle',
   'Métier': 'profession',
   'Type Emploi': 'employmentClassification',
@@ -99,6 +100,7 @@ export const REQUIRED_FIELDS = [
   'Contact',
   'Date d\'embauche',
   'Nature du contrat',
+  'Fréquence de paiement',
   'Fonction',
   'Situation Familiale',
   'Nombre d\'enfants à charge',
@@ -178,14 +180,14 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
     }
     const parsed = parseDate(val);
     if (!parsed) {
-      return { valid: false, message: 'Format de date invalide (utilisez JJ/MM/AAAA)' };
+      return { valid: false, message: 'Format de date invalide. Écrivez comme ceci: JJ/MM/AAAA (exemple: 15/03/2020)' };
     }
     const now = new Date();
     if (parsed > now) {
       return { valid: false, message: 'Date d\'embauche ne peut pas être dans le futur' };
     }
     if (parsed < new Date('1950-01-01')) {
-      return { valid: false, message: 'Date d\'embauche trop ancienne' };
+      return { valid: false, message: 'Date d\'embauche trop ancienne (avant 1950). Vérifiez l\'année.' };
     }
     return { valid: true };
   },
@@ -205,7 +207,7 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
     if (!val) return { valid: true }; // Optional
     const cleaned = String(val).replace(/[\s-]/g, '');
     if (cleaned.length > 0 && cleaned.length < 5) {
-      return { valid: false, message: 'N° CMU incomplet' };
+      return { valid: false, message: 'N° CMU incomplet (doit avoir au moins 5 chiffres). Exemple: CMU123456' };
     }
     return { valid: true };
   },
@@ -240,10 +242,10 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
       return { valid: false, message: 'Salaire doit être un nombre positif' };
     }
     if (num < 50000) {
-      return { valid: false, message: 'Salaire semble trop faible (minimum SMIG: 75,000 FCFA)' };
+      return { valid: false, message: 'Salaire semble trop faible (minimum SMIG en Côte d\'Ivoire: 75,000 FCFA)' };
     }
     if (num > 50000000) {
-      return { valid: false, message: 'Salaire semble trop élevé' };
+      return { valid: false, message: 'Salaire semble trop élevé (supérieur à 50 millions FCFA). Vérifiez le montant.' };
     }
     return { valid: true };
   },
@@ -269,6 +271,35 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
   'Prime de transport': (val: any) => {
     // Alias for 'Indemnité de transport'
     return FIELD_VALIDATORS['Indemnité de transport'](val);
+  },
+
+  'Fréquence de paiement': (val: string) => {
+    if (!val) {
+      return { valid: false, message: 'Fréquence de paiement requise' };
+    }
+    const normalized = val.trim().toUpperCase();
+    const validValues = [
+      'MONTHLY', 'MENSUEL',
+      'WEEKLY', 'HEBDOMADAIRE', 'HEBDO',
+      'BIWEEKLY', 'QUINZAINE', 'BIHEBDO',
+      'DAILY', 'JOURNALIER',
+    ];
+    if (!validValues.includes(normalized)) {
+      return { valid: false, message: 'Fréquence invalide. Écrivez: MENSUEL, HEBDOMADAIRE, QUINZAINE, ou JOURNALIER (ou MONTHLY, WEEKLY, BIWEEKLY, DAILY en anglais)' };
+    }
+    return { valid: true };
+  },
+
+  'Nature du contrat': (val: string) => {
+    if (!val) {
+      return { valid: false, message: 'Nature du contrat requise' };
+    }
+    const normalized = val.trim().toUpperCase();
+    const validTypes = ['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE', 'PERMANENT', 'FIXE', 'INTÉRIM', 'TEMPORAIRE', 'STAGIAIRE', 'TACHE', 'TÂCHE'];
+    if (!validTypes.includes(normalized)) {
+      return { valid: false, message: 'Type de contrat invalide. Écrivez: CDI (permanent), CDD (durée déterminée), CDDTI (tâche imprécise), INTERIM (intérim), ou STAGE (stage)' };
+    }
+    return { valid: true };
   },
 };
 
@@ -360,6 +391,9 @@ export const FIELD_TRANSFORMERS: Record<string, (value: any) => any> = {
       'PERMANENT': 'CDI',
       'CDD': 'CDD',
       'FIXE': 'CDD',
+      'CDDTI': 'CDDTI',
+      'TACHE': 'CDDTI',
+      'TÂCHE': 'CDDTI',
       'INTERIM': 'INTERIM',
       'INTÉRIM': 'INTERIM',
       'TEMPORAIRE': 'INTERIM',
@@ -367,6 +401,24 @@ export const FIELD_TRANSFORMERS: Record<string, (value: any) => any> = {
       'STAGIAIRE': 'STAGE',
     };
     return map[normalized] || normalized;
+  },
+
+  'Fréquence de paiement': (val: string) => {
+    if (!val) return 'MONTHLY'; // Default to monthly
+    const normalized = val.trim().toUpperCase();
+    const map: Record<string, string> = {
+      'MONTHLY': 'MONTHLY',
+      'MENSUEL': 'MONTHLY',
+      'WEEKLY': 'WEEKLY',
+      'HEBDOMADAIRE': 'WEEKLY',
+      'HEBDO': 'WEEKLY',
+      'BIWEEKLY': 'BIWEEKLY',
+      'QUINZAINE': 'BIWEEKLY',
+      'BIHEBDO': 'BIWEEKLY',
+      'DAILY': 'DAILY',
+      'JOURNALIER': 'DAILY',
+    };
+    return map[normalized] || 'MONTHLY';
   },
 
   'Date de naissance': (val: any) => {

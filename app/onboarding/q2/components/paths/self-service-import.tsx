@@ -428,21 +428,19 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
               {validationResult.errors.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="font-semibold text-red-900">
-                    Erreurs ({validationResult.errors.length})
+                    ❌ Erreurs à corriger ({validationResult.errors.length})
                   </h3>
-                  <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {validationResult.errors.slice(0, 10).map((error, i) => (
-                      <div key={i} className="text-sm p-2 bg-red-50 border border-red-200 rounded">
-                        <span className="font-medium">Ligne {error.row}:</span>{' '}
-                        {error.field && <span className="text-red-700">[{error.field}]</span>}{' '}
+                  <div className="text-xs text-red-700 mb-2">
+                    📝 Corrigez toutes les erreurs ci-dessous dans votre fichier Excel, puis ré-importez.
+                  </div>
+                  <div className="space-y-1 max-h-96 overflow-y-auto border border-red-200 rounded-lg p-3 bg-red-50/50">
+                    {validationResult.errors.map((error, i) => (
+                      <div key={i} className="text-sm p-2 bg-white border border-red-200 rounded shadow-sm">
+                        <span className="font-bold text-red-900">Ligne {error.row}:</span>{' '}
+                        {error.field && <span className="text-red-700 font-medium">[{error.field}]</span>}{' '}
                         {error.message}
                       </div>
                     ))}
-                    {validationResult.errors.length > 10 && (
-                      <div className="text-sm text-muted-foreground text-center py-2">
-                        +{validationResult.errors.length - 10} autres erreurs...
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -451,21 +449,19 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
               {validationResult.warnings.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="font-semibold text-orange-900">
-                    Avertissements ({validationResult.warnings.length})
+                    ⚠️ Avertissements ({validationResult.warnings.length})
                   </h3>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {validationResult.warnings.slice(0, 5).map((warning, i) => (
-                      <div key={i} className="text-sm p-2 bg-orange-50 border border-orange-200 rounded">
-                        <span className="font-medium">Ligne {warning.row}:</span>{' '}
+                  <div className="text-xs text-orange-700 mb-2">
+                    💡 Ces champs sont optionnels mais recommandés pour le registre du personnel.
+                  </div>
+                  <div className="space-y-1 max-h-64 overflow-y-auto border border-orange-200 rounded-lg p-3 bg-orange-50/30">
+                    {validationResult.warnings.map((warning, i) => (
+                      <div key={i} className="text-sm p-2 bg-white border border-orange-200 rounded">
+                        <span className="font-medium text-orange-900">Ligne {warning.row}:</span>{' '}
                         {warning.field && <span className="text-orange-700">[{warning.field}]</span>}{' '}
                         {warning.message}
                       </div>
                     ))}
-                    {validationResult.warnings.length > 5 && (
-                      <div className="text-sm text-muted-foreground text-center py-2">
-                        +{validationResult.warnings.length - 5} autres avertissements...
-                      </div>
-                    )}
                   </div>
                 </div>
               )}

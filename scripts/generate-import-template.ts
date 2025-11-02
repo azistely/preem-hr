@@ -37,9 +37,10 @@ const COLUMNS = [
   { header: 'Nombre d\'enfants à charge*', hint: 'Ex: 2', example1: '3', example2: '0', example3: '2' },
   { header: 'Nbr Part', hint: 'Auto-calculé si vide', example1: '4.5', example2: '1', example3: '3.5' },
 
-  // Section 5: Emploi (7 fields)
+  // Section 5: Emploi (8 fields - added payment frequency)
   { header: 'Date d\'embauche*', hint: 'JJ/MM/AAAA', example1: '01/01/2020', example2: '15/06/2023', example3: '01/09/2019' },
-  { header: 'Nature du contrat*', hint: 'CDI/CDD/INTERIM/STAGE', example1: 'CDI', example2: 'CDD', example3: 'CDI' },
+  { header: 'Nature du contrat*', hint: 'CDI/CDD/CDDTI/INTERIM/STAGE', example1: 'CDI', example2: 'CDD', example3: 'CDI' },
+  { header: 'Fréquence de paiement*', hint: 'MONTHLY/WEEKLY/BIWEEKLY/DAILY', example1: 'MONTHLY', example2: 'MONTHLY', example3: 'MONTHLY' },
   { header: 'Fonction*', hint: 'Ex: Responsable RH', example1: 'Directeur Général', example2: 'Assistante Administrative', example3: 'Directeur Financier' },
   { header: 'Métier', hint: 'Ex: Ressources Humaines', example1: 'Direction Générale', example2: 'Administration', example3: 'Finance et Comptabilité' },
   { header: 'Type Emploi', hint: 'Temps plein/Temps partiel/Occasionnel', example1: 'Temps plein', example2: 'Temps plein', example3: 'Temps plein' },
@@ -90,7 +91,8 @@ const INSTRUCTIONS = {
         'Situation Familiale - Pour les déductions fiscales',
         'Nombre d\'enfants à charge - Pour les déductions fiscales',
         'Date d\'embauche',
-        'Nature du contrat - CDI, CDD, INTERIM, ou STAGE',
+        'Nature du contrat - CDI, CDD, CDDTI, INTERIM, ou STAGE',
+        'Fréquence de paiement - MONTHLY, WEEKLY, BIWEEKLY, ou DAILY',
         'Fonction - Poste occupé',
         'Catégorie - Code CGECI (C, M1, 1A, 2B, etc.)',
         'N° CNPS - Numéro de sécurité sociale',

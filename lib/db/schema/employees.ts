@@ -118,6 +118,9 @@ export const employees = pgTable('employees', {
   categoryCode: varchar('category_code', { length: 10 }), // 'C', 'M1', '1A', '2B', etc.
   sectorCodeCgeci: varchar('sector_code_cgeci', { length: 50 }), // 'BTP', 'BANQUES', 'COMMERCE', etc.
 
+  // Contract Management (Normalized Architecture - FK to employment_contracts)
+  currentContractId: uuid('current_contract_id'), // References employment_contracts(id) - single source of truth for contract data
+
   // Lifecycle
   status: text('status').notNull().default('active'),
 
