@@ -46,12 +46,14 @@ interface SalaryHistoryEntry {
 interface SalaryHistoryTimelineProps {
   history: SalaryHistoryEntry[];
   rateType?: RateType | null;
+  contractType?: string;
   showAllInitially?: boolean;
 }
 
 export function SalaryHistoryTimeline({
   history,
   rateType,
+  contractType,
   showAllInitially = false,
 }: SalaryHistoryTimelineProps) {
   if (!history || history.length === 0) {
@@ -70,6 +72,9 @@ export function SalaryHistoryTimeline({
       ? parseFloat(entry.baseSalary)
       : entry.baseSalary;
 
+    // For CDDTI workers, all components are already stored in hourly format
+    const componentsAlreadyInRateType = contractType === 'CDDTI';
+
     // New components architecture (preferred)
     if (entry.components && entry.components.length > 0) {
       // Check if components include base salary codes (11, 12)
@@ -81,7 +86,9 @@ export function SalaryHistoryTimeline({
         // Components array includes base salary - use ONLY components total with rate conversion
         return entry.components.reduce((sum, component) => {
           // Base salary (code '11', '12') is already in correct rate type
-          if (component.code === '11' || component.code === '12' || component.code === '01') {
+          const isBaseSalary = component.code === '11' || component.code === '12' || component.code === '01';
+          // For CDDTI, all components are already in hourly format
+          if (isBaseSalary || componentsAlreadyInRateType) {
             return sum + (component.amount || 0);
           }
           // Convert other components from monthly to employee's rate type
@@ -92,6 +99,10 @@ export function SalaryHistoryTimeline({
         return (
           baseSalary +
           entry.components.reduce((sum, component) => {
+            // For CDDTI, components are already in hourly format
+            if (componentsAlreadyInRateType) {
+              return sum + (component.amount || 0);
+            }
             // Convert components from monthly to employee's rate type
             return sum + convertMonthlyAmountToRateType(component.amount || 0, rateType);
           }, 0)
@@ -263,11 +274,11 @@ export function SalaryHistoryTimeline({
                               {entry.components
                                 .filter(c => c.code !== '11' && c.code !== '12')
                                 .map((component, idx) => {
-                                  // Convert non-base components from monthly to employee's rate type
-                                  const displayAmount = convertMonthlyAmountToRateType(
-                                    component.amount,
-                                    rateType
-                                  );
+                                  // For CDDTI, components are already in hourly format
+                                  const componentsAlreadyInRateType = contractType === 'CDDTI';
+                                  const displayAmount = componentsAlreadyInRateType
+                                    ? component.amount
+                                    : convertMonthlyAmountToRateType(component.amount, rateType);
                                   return (
                                     <div key={idx}>
                                       <span className="text-muted-foreground">{component.name}:</span>

@@ -809,6 +809,7 @@ export default function EmployeeDetailPage() {
                 <SalaryHistoryTimeline
                   history={salaryHistory as any}
                   rateType={getEmployeeRateType()}
+                  contractType={(employee as any)?.contract?.contractType}
                 />
               ) : null}
             </>
