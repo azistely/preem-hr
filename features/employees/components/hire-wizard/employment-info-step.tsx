@@ -17,6 +17,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -383,6 +384,27 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
               Pour les travailleurs journaliers (CDDTI), précisez la fréquence de paiement et le régime horaire.
             </p>
           </div>
+
+          <FormField
+            control={form.control}
+            name="cddtiTaskDescription"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Description de la tâche *</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Ex: Manœuvre sur chantier, manutention de marchandises, travaux de nettoyage..."
+                    className="min-h-[100px]"
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Requis par l'Article 4 de la Convention Collective. Décrivez la nature des tâches à effectuer.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <FormField
             control={form.control}

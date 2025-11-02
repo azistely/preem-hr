@@ -79,6 +79,11 @@ const createEmployeeSchema = z.object({
   contractEndDate: z.date().optional(),
   cddReason: z.enum(['REMPLACEMENT', 'SURCROIT_ACTIVITE', 'SAISONNIER', 'PROJET', 'AUTRE']).optional(),
 
+  // CDDTI-specific fields
+  cddtiTaskDescription: z.string().optional(),
+  paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
+  weeklyHoursRegime: z.enum(['40h', '44h', '48h']).optional(),
+
   // Banking
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
@@ -149,6 +154,15 @@ const createEmployeeSchema = z.object({
 }, {
   message: 'La date d\'embauche doit être avant la date de fin de contrat',
   path: ['contractEndDate'],
+}).refine((data) => {
+  // CDDTI contracts require task description (Article 4 Convention Collective)
+  if (data.contractType === 'CDDTI' && !data.cddtiTaskDescription?.trim()) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'La description de la tâche est requise pour les contrats CDDTI (Article 4 Convention Collective)',
+  path: ['cddtiTaskDescription'],
 });
 
 const updateEmployeeSchema = z.object({

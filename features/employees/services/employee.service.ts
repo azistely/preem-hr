@@ -54,6 +54,11 @@ export interface CreateEmployeeInput {
   contractEndDate?: Date;
   cddReason?: 'REMPLACEMENT' | 'SURCROIT_ACTIVITE' | 'SAISONNIER' | 'PROJET' | 'AUTRE';
 
+  // CDDTI-specific fields
+  cddtiTaskDescription?: string;
+  paymentFrequency?: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+  weeklyHoursRegime?: '40h' | '44h' | '48h';
+
   // Banking
   bankName?: string;
   bankAccount?: string;
@@ -253,6 +258,9 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
         taxDependents: input.taxDependents || 0,
         coefficient: input.coefficient || 100,
         rateType: input.rateType || 'MONTHLY',
+        // CDDTI-specific fields
+        paymentFrequency: input.paymentFrequency || null,
+        weeklyHoursRegime: input.weeklyHoursRegime || null,
         // Personnel Record (Registre du Personnel) fields
         nationalityZone: input.nationalityZone || null,
         employeeType: input.employeeType || null,
@@ -287,6 +295,7 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
         cddTotalDurationMonths: contractType === 'CDD' && input.contractEndDate
           ? differenceInMonths(input.contractEndDate, input.hireDate)
           : null,
+        cddtiTaskDescription: contractType === 'CDDTI' ? (input.cddtiTaskDescription || null) : null,
         createdBy: input.createdBy,
       })
       .returning();

@@ -78,6 +78,7 @@ const createEmployeeSchema = z.object({
   rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional().default('MONTHLY'),
   primaryLocationId: z.string().min(1, 'Le site principal est requis'),
   // CDDTI-specific fields
+  cddtiTaskDescription: z.string().optional(),
   paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
   weeklyHoursRegime: z.enum(['40h', '44h', '48h']).optional().default('40h'),
 
@@ -92,6 +93,15 @@ const createEmployeeSchema = z.object({
   baseSalary: z.number().min(0, 'Le salaire de base doit être positif').optional(),
   baseComponents: z.record(z.string(), z.number()).optional(),
   components: z.array(componentSchema).optional().default([]),
+}).refine((data) => {
+  // CDDTI contracts require task description (Article 4 Convention Collective)
+  if (data.contractType === 'CDDTI' && !data.cddtiTaskDescription?.trim()) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'La description de la tâche est requise pour les contrats CDDTI (Article 4 Convention Collective)',
+  path: ['cddtiTaskDescription'],
 });
 
 type FormData = z.infer<typeof createEmployeeSchema>;

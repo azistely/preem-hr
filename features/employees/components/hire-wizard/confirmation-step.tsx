@@ -153,6 +153,16 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
         <h3 className="font-semibold mb-3">Informations d'emploi</h3>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
+            <span className="text-muted-foreground">Type de contrat</span>
+            <span className="font-medium">
+              {contractType === 'CDI' && 'CDI'}
+              {contractType === 'CDD' && 'CDD'}
+              {contractType === 'CDDTI' && 'CDDTI (Journalier)'}
+              {contractType === 'INTERIM' && 'Intérimaire'}
+              {contractType === 'STAGE' && 'Stage'}
+            </span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-muted-foreground">Date d'embauche</span>
             <span className="font-medium">
               {format(values.hireDate, 'PPP', { locale: fr })}
@@ -162,6 +172,35 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
             <span className="text-muted-foreground">Poste</span>
             <span className="font-medium">Poste sélectionné</span>
           </div>
+          {contractType === 'CDDTI' && (
+            <>
+              {paymentFrequency && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Fréquence de paiement</span>
+                  <span className="font-medium">
+                    {paymentFrequency === 'DAILY' && 'Quotidien'}
+                    {paymentFrequency === 'WEEKLY' && 'Hebdomadaire'}
+                    {paymentFrequency === 'BIWEEKLY' && 'Bimensuel'}
+                    {paymentFrequency === 'MONTHLY' && 'Mensuel'}
+                  </span>
+                </div>
+              )}
+              {weeklyHoursRegime && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Régime horaire</span>
+                  <span className="font-medium">{weeklyHoursRegime}</span>
+                </div>
+              )}
+              {values.cddtiTaskDescription && (
+                <div className="flex flex-col space-y-1">
+                  <span className="text-muted-foreground">Description de la tâche</span>
+                  <p className="font-medium text-sm bg-muted p-3 rounded-md whitespace-pre-wrap">
+                    {values.cddtiTaskDescription}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
