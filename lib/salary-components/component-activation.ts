@@ -19,7 +19,7 @@ import { eq, and, or } from 'drizzle-orm';
 
 export interface ComponentActivationInput {
   code: string;
-  sourceType: 'standard' | 'template';
+  sourceType: 'standard' | 'template' | 'import';
   tenantId: string;
   countryCode: string;
   userId?: string;
@@ -74,8 +74,10 @@ export async function ensureComponentActivated(
 
   // Step 2: Component not activated - need to activate
   // Verify component exists in definitions or templates
-  if (sourceType === 'standard') {
+  if (sourceType === 'standard' || sourceType === 'import') {
     // Check salary_component_definitions
+    // For 'import' sourceType, treat it as 'standard' since imported components
+    // use the same standard component codes (11, 12, 22, etc.)
     const [definition] = await dbConn
       .select()
       .from(salaryComponentDefinitions)

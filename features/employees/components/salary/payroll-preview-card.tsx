@@ -72,7 +72,7 @@ export function PayrollPreviewCard({
         code: c.code,
         name: c.name,
         amount: c.amount,
-        sourceType: c.sourceType as 'standard' | 'template',
+        sourceType: c.sourceType as 'standard' | 'template' | 'import',
       })),
       contractType: contractType as any,
       isExpat, // For ITS employer tax calculation
@@ -87,7 +87,7 @@ export function PayrollPreviewCard({
           code: c.code,
           name: c.name,
           amount: c.amount,
-          sourceType: (c.sourceType || 'standard') as 'standard' | 'template',
+          sourceType: (c.sourceType || 'standard') as 'standard' | 'template' | 'import',
         })),
         contractType: contractType as any,
         isExpat, // For ITS employer tax calculation

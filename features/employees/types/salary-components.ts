@@ -81,7 +81,7 @@ export interface SalaryComponentInstance {
   name: string;
   amount: number;
   metadata?: ComponentMetadata;
-  sourceType: 'standard' | 'custom' | 'template';
+  sourceType: 'standard' | 'custom' | 'template' | 'import';
   sourceId?: string;
 }
 
@@ -213,7 +213,7 @@ export interface AssignComponentToEmployeeInput {
   componentCode: string;
   amount: number;
   effectiveDate: Date;
-  sourceType: 'standard' | 'custom' | 'template';
+  sourceType: 'standard' | 'custom' | 'template' | 'import';
   sourceId?: string;
 }
 

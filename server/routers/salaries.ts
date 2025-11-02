@@ -20,7 +20,7 @@ const componentSchema = z.object({
   name: z.string().min(1),
   amount: z.number().min(0),
   metadata: z.any().optional(),
-  sourceType: z.enum(['standard', 'custom', 'template']),
+  sourceType: z.enum(['standard', 'custom', 'template', 'import']),
   sourceId: z.string().optional(),
 });
 

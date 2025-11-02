@@ -89,7 +89,7 @@ const salaryChangeSchema = z.object({
     code: z.string(),
     name: z.string(),
     amount: z.number(),
-    sourceType: z.enum(['standard', 'custom', 'template']),
+    sourceType: z.enum(['standard', 'custom', 'template', 'import']),
     metadata: z.any().optional(),
     sourceId: z.string().optional(),
   })).min(1, 'Au moins un composant de salaire est requis'),

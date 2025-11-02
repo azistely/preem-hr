@@ -67,7 +67,7 @@ export interface ChangeSalaryInput {
     name: string;
     amount: number;
     metadata?: any;
-    sourceType: 'standard' | 'custom' | 'template';
+    sourceType: 'standard' | 'custom' | 'template' | 'import';
     sourceId?: string;
   }>;
   effectiveFrom: Date;

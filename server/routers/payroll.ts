@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import { createTRPCRouter, publicProcedure, protectedProcedure, employeeProcedure, hrManagerProcedure } from '../api/trpc';
 import { calculateGrossSalary } from '@/features/payroll/services/gross-calculation';
 import { calculatePayroll } from '@/features/payroll/services/payroll-calculation';
@@ -234,7 +235,7 @@ export const payrollRouter = createTRPCRouter({
               code: z.string(),
               name: z.string(),
               amount: z.number(),
-              sourceType: z.enum(['standard', 'template']).default('template'),
+              sourceType: z.enum(['standard', 'template', 'import']).default('template'),
             })
           )
           .optional(),
@@ -666,6 +667,257 @@ export const payrollRouter = createTRPCRouter({
         new Date()
       );
       return minimum;
+    }),
+
+  /**
+   * Get pay variables (bonuses/deductions) for employee in payroll run
+   * Returns earnings and deductions details from payroll line item
+   * Requires: HR Manager role
+   */
+  getEmployeePayVariables: hrManagerProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+        employeeId: z.string().uuid(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const lineItems = await db
+        .select({
+          earningsDetails: payrollLineItems.earningsDetails,
+          deductionsDetails: payrollLineItems.deductionsDetails,
+          bonuses: payrollLineItems.bonuses,
+        })
+        .from(payrollLineItems)
+        .where(
+          and(
+            eq(payrollLineItems.payrollRunId, input.runId),
+            eq(payrollLineItems.employeeId, input.employeeId),
+            eq(payrollLineItems.tenantId, ctx.user.tenantId)
+          )
+        )
+        .limit(1);
+
+      if (lineItems.length === 0) {
+        return {
+          earningsDetails: [],
+          deductionsDetails: [],
+          bonuses: '0',
+        };
+      }
+
+      return lineItems[0];
+    }),
+
+  /**
+   * Add pay variable (bonus/deduction/allowance) to employee for payroll run
+   * Updates the payroll line item with new earning or deduction
+   * Requires: HR Manager role
+   */
+  addPayVariable: hrManagerProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+        employeeId: z.string().uuid(),
+        category: z.enum(['bonus', 'allowance', 'deduction']),
+        description: z.string().min(1),
+        amount: z.number().positive(),
+        taxable: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      // Get existing line item
+      const existingLineItems = await db
+        .select({
+          id: payrollLineItems.id,
+          earningsDetails: payrollLineItems.earningsDetails,
+          deductionsDetails: payrollLineItems.deductionsDetails,
+          bonuses: payrollLineItems.bonuses,
+          grossSalary: payrollLineItems.grossSalary,
+          totalDeductions: payrollLineItems.totalDeductions,
+        })
+        .from(payrollLineItems)
+        .where(
+          and(
+            eq(payrollLineItems.payrollRunId, input.runId),
+            eq(payrollLineItems.employeeId, input.employeeId),
+            eq(payrollLineItems.tenantId, ctx.user.tenantId)
+          )
+        )
+        .limit(1);
+
+      if (existingLineItems.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Payroll line item not found',
+        });
+      }
+
+      const lineItem = existingLineItems[0];
+      const newVariable = {
+        description: input.description,
+        amount: input.amount,
+        taxable: input.taxable,
+        category: input.category,
+      };
+
+      let updatedEarnings = (lineItem.earningsDetails as any[]) || [];
+      let updatedDeductions = (lineItem.deductionsDetails as any[]) || [];
+      let updatedBonuses = parseFloat(lineItem.bonuses?.toString() || '0');
+      let updatedGrossSalary = parseFloat(lineItem.grossSalary?.toString() || '0');
+      let updatedTotalDeductions = parseFloat(lineItem.totalDeductions?.toString() || '0');
+
+      if (input.category === 'deduction') {
+        updatedDeductions = [...updatedDeductions, newVariable];
+        updatedTotalDeductions += input.amount;
+      } else {
+        updatedEarnings = [...updatedEarnings, newVariable];
+        if (input.category === 'bonus') {
+          updatedBonuses += input.amount;
+        }
+        updatedGrossSalary += input.amount;
+      }
+
+      // Update the line item
+      await db
+        .update(payrollLineItems)
+        .set({
+          earningsDetails: updatedEarnings,
+          deductionsDetails: updatedDeductions,
+          bonuses: updatedBonuses.toString(),
+          grossSalary: updatedGrossSalary.toString(),
+          totalDeductions: updatedTotalDeductions.toString(),
+          // Note: netSalary will be recalculated when payroll is finalized
+          updatedAt: new Date(),
+        })
+        .where(eq(payrollLineItems.id, lineItem.id));
+
+      return {
+        success: true,
+        variable: newVariable,
+      };
+    }),
+
+  /**
+   * Get employees grouped by review status for draft mode
+   *
+   * Returns employees with their review status (critical/warning/ready) for pre-calculation review.
+   * - Critical: Missing time entries, no salary data
+   * - Warning: Unapproved hours, pending adjustments
+   * - Ready: All data complete
+   * Requires: HR Manager role
+   *
+   * @example
+   * ```typescript
+   * const employees = await trpc.payroll.getDraftEmployeesGrouped.query({
+   *   runId: 'run-123',
+   * });
+   * // employees = [
+   * //   { id: '...', firstName: 'Kouadio', status: 'critical', statusMessage: '0 heures saisies' },
+   * //   { id: '...', firstName: 'Marie', status: 'warning', statusMessage: '32h · Manque 8h validation' },
+   * //   { id: '...', firstName: 'Koné', status: 'ready', statusMessage: 'Prêt' },
+   * // ]
+   * ```
+   */
+  getDraftEmployeesGrouped: hrManagerProcedure
+    .input(
+      z.object({
+        runId: z.string().uuid(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      // Get payroll run to determine period and filters
+      const run = await db.query.payrollRuns.findFirst({
+        where: eq(payrollRuns.id, input.runId),
+      });
+
+      if (!run) {
+        throw new Error('Payroll run not found');
+      }
+
+      // Get all active employees for this run's payment frequency
+      const runPaymentFreq = run.paymentFrequency || 'MONTHLY';
+      const paymentFrequencyFilter = runPaymentFreq === 'MONTHLY'
+        ? or(
+            eq(employees.paymentFrequency, 'MONTHLY'),
+            isNull(employees.paymentFrequency)
+          )
+        : eq(employees.paymentFrequency, runPaymentFreq);
+
+      const allEmployees = await db
+        .select({
+          id: employees.id,
+          firstName: employees.firstName,
+          lastName: employees.lastName,
+          employeeNumber: employees.employeeNumber,
+          paymentFrequency: employees.paymentFrequency,
+        })
+        .from(employees)
+        .where(
+          and(
+            eq(employees.tenantId, ctx.user.tenantId),
+            eq(employees.status, 'active'),
+            paymentFrequencyFilter
+          )
+        );
+
+      // For each employee, determine their review status
+      const employeesWithStatus = await Promise.all(
+        allEmployees.map(async (emp) => {
+          const empPaymentFreq = emp.paymentFrequency || 'MONTHLY';
+          let status: 'critical' | 'warning' | 'ready' = 'ready';
+          let statusMessage = 'Prêt';
+
+          // Non-monthly workers: check time entries
+          if (empPaymentFreq !== 'MONTHLY') {
+            // Check if employee has time entries in the period
+            const entries = await db
+              .select({
+                id: timeEntries.id,
+                status: timeEntries.status,
+                totalHours: timeEntries.totalHours,
+              })
+              .from(timeEntries)
+              .where(
+                and(
+                  eq(timeEntries.employeeId, emp.id),
+                  sql`${timeEntries.clockIn} >= ${run.periodStart}`,
+                  sql`${timeEntries.clockIn} < ${run.periodEnd}`
+                )
+              );
+
+            if (entries.length === 0) {
+              status = 'critical';
+              statusMessage = '0 heures saisies';
+            } else {
+              const approvedEntries = entries.filter((e) => e.status === 'approved');
+              const pendingEntries = entries.filter((e) => e.status === 'pending');
+              const totalHours = entries.reduce((sum, e) => sum + (parseFloat(e.totalHours?.toString() || '0')), 0);
+
+              if (pendingEntries.length > 0) {
+                const approvedHours = approvedEntries.reduce((sum, e) => sum + (parseFloat(e.totalHours?.toString() || '0')), 0);
+                const pendingHours = totalHours - approvedHours;
+                status = 'warning';
+                statusMessage = `${Math.round(approvedHours)}h · Manque ${Math.round(pendingHours)}h validation`;
+              } else {
+                statusMessage = `${Math.round(totalHours)}h approuvées`;
+              }
+            }
+          }
+
+          return {
+            id: emp.id,
+            firstName: emp.firstName,
+            lastName: emp.lastName,
+            employeeNumber: emp.employeeNumber,
+            status,
+            statusMessage,
+            paymentFrequency: empPaymentFreq,
+          };
+        })
+      );
+
+      return employeesWithStatus;
     }),
 
   /**
