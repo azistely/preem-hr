@@ -210,12 +210,23 @@ export async function calculatePayrollRun(
 
     // FIX: Use sql operator for direct SQL date comparison instead of Drizzle's lte()
     // Drizzle's relational query API has issues with date comparisons when dates are returned as strings
+    // CRITICAL: Filter employees by payment frequency to match the payroll run type
+    // For MONTHLY runs (or NULL which defaults to MONTHLY): include employees with MONTHLY frequency OR NULL
+    // For other frequencies: exact match only
+    const paymentFrequencyFilter = (!run.paymentFrequency || run.paymentFrequency === 'MONTHLY')
+      ? or(
+          eq(employees.paymentFrequency, 'MONTHLY'),
+          isNull(employees.paymentFrequency)
+        )
+      : eq(employees.paymentFrequency, run.paymentFrequency as string); // Type assertion safe here as we know it's not null
+
     const activeEmployees = await db
       .select()
       .from(employees)
       .where(
         and(
           eq(employees.tenantId, run.tenantId),
+          paymentFrequencyFilter, // FILTER BY PAYMENT FREQUENCY
           or(
             // Active employees hired before period end
             and(
