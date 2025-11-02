@@ -106,8 +106,26 @@ export async function changeSalary(input: ChangeSalaryInput) {
   const { calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
   const baseSalary = await calculateBaseSalaryTotal(input.components, countryCode);
 
+  // Get employee's active contract to check contract type
+  const { employmentContracts } = await import('@/drizzle/schema');
+  const [activeContract] = await db
+    .select({ contractType: employmentContracts.contractType })
+    .from(employmentContracts)
+    .where(
+      and(
+        eq(employmentContracts.employeeId, input.employeeId),
+        eq(employmentContracts.tenantId, input.tenantId),
+        eq(employmentContracts.isActive, true)
+      )
+    )
+    .limit(1);
+
   // Validate against country SMIG (rate-type aware)
-  const rateType = (employee.rateType || 'MONTHLY') as string;
+  // CDDTI workers are always hourly, regardless of rateType field
+  let rateType = (employee.rateType || 'MONTHLY') as string;
+  if (activeContract?.contractType === 'CDDTI') {
+    rateType = 'HOURLY';
+  }
 
   // Get country-specific monthly minimum wage
   const monthlyMinimumWage = await getMinimumWage(countryCode);
