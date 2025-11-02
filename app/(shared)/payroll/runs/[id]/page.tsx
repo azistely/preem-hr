@@ -59,6 +59,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { PayrollEmployeeRow } from '@/features/payroll/components/payroll-employee-row';
+import { EmployeePreviewStep } from '@/app/(shared)/payroll/runs/new/components/employee-preview-step';
 
 type RunStatus = 'draft' | 'calculating' | 'processing' | 'calculated' | 'approved' | 'paid' | 'failed';
 
@@ -658,6 +659,29 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
           </Button>
         )}
       </div>
+
+      {/* Draft Mode: Show Employee Preview */}
+      {status === 'draft' && (
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Employés qui seront inclus
+            </CardTitle>
+            <CardDescription>
+              Ces employés seront traités lorsque vous cliquerez sur "Calculer la Paie"
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EmployeePreviewStep
+              periodStart={new Date(run.periodStart)}
+              periodEnd={new Date(run.periodEnd)}
+              paymentFrequency={run.paymentFrequency as 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY'}
+              closureSequence={run.closureSequence}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Line Items Table */}
       <Card>
