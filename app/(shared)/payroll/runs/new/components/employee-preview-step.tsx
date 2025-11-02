@@ -13,21 +13,29 @@ import {
 } from '@/components/ui/collapsible';
 import { useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useRouter } from 'next/navigation';
 
 interface EmployeePreviewStepProps {
   periodStart: Date;
   periodEnd: Date;
+  paymentFrequency: 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY';
+  closureSequence: number | null;
 }
 
 export function EmployeePreviewStep({
   periodStart,
   periodEnd,
+  paymentFrequency,
+  closureSequence,
 }: EmployeePreviewStepProps) {
+  const router = useRouter();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
 
   const { data: preview, isLoading, refetch } = api.payroll.getEmployeePayrollPreview.useQuery({
     periodStart,
     periodEnd,
+    paymentFrequency,
+    closureSequence,
   });
 
   if (isLoading) {
@@ -138,7 +146,7 @@ export function EmployeePreviewStep({
           </AlertDescription>
           <div className="mt-4">
             <Button
-              onClick={() => setShowQuickEntry(true)}
+              onClick={() => router.push('/manager/time-tracking/manual-entry')}
               variant="outline"
               size="sm"
               className="min-h-[44px]"

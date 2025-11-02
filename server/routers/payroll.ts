@@ -691,10 +691,22 @@ export const payrollRouter = createTRPCRouter({
       z.object({
         periodStart: z.date(),
         periodEnd: z.date(),
+        paymentFrequency: z.enum(['MONTHLY', 'WEEKLY', 'BIWEEKLY', 'DAILY']),
+        closureSequence: z.number().int().min(1).max(4).nullable().optional(),
       })
     )
     .query(async ({ input, ctx }) => {
-      // Get all active employees for this tenant
+      // FILTER: Apply payment frequency filter using the same logic as run-calculation.ts
+      // For MONTHLY runs: include employees with MONTHLY frequency OR NULL (default to MONTHLY)
+      // For other frequencies: exact match only
+      const paymentFrequencyFilter = input.paymentFrequency === 'MONTHLY'
+        ? or(
+            eq(employees.paymentFrequency, 'MONTHLY'),
+            isNull(employees.paymentFrequency)
+          )
+        : eq(employees.paymentFrequency, input.paymentFrequency);
+
+      // Get all active employees for this tenant FILTERED by payment frequency
       const allEmployees = await db
         .select({
           id: employees.id,
@@ -708,7 +720,8 @@ export const payrollRouter = createTRPCRouter({
         .where(
           and(
             eq(employees.tenantId, ctx.user.tenantId),
-            eq(employees.status, 'active')
+            eq(employees.status, 'active'),
+            paymentFrequencyFilter // CRITICAL: Filter by payment frequency
           )
         );
 
