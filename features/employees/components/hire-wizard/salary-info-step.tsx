@@ -35,6 +35,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/ca
 import { Badge } from '@/components/ui/badge';
 import type { SalaryComponentTemplate, CustomSalaryComponent, SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { MinimumWageAlert } from '@/components/employees/minimum-wage-alert';
+import { TransportAllowanceAlert } from '@/components/employees/transport-allowance-alert';
 import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
 import { trpc } from '@/lib/trpc/client';
 
@@ -53,6 +54,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const components = form.watch('components') || [];
   const coefficient = form.watch('coefficient') || 100;
   const rateType = form.watch('rateType') || 'MONTHLY';
+  const primaryLocationId = form.watch('primaryLocationId');
 
   const countryCode = 'CI'; // TODO: Get from tenant context
   const monthlyMinimumWage = 75000; // TODO: Get from countries table
@@ -96,6 +98,10 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   // Calculate salaire catégoriel (Code 11 only) for coefficient minimum validation
   // This is the base that must meet the coefficient minimum wage requirement
   const salaireCategoriel = baseComponents['11'] || baseSalary || 0;
+
+  // Find transport component (Code 22) for validation
+  const transportComponent = components.find((c: SalaryComponentInstance) => c.code === '22');
+  const currentTransport = transportComponent?.amount || 0;
 
   /**
    * Calculate auto-calculated component amounts
@@ -593,6 +599,15 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
         countryMinimumWage={countryMinimumWage}
         countryCode={countryCode}
       />
+
+      {/* Transport Validation - Check transport against location minimum */}
+      {primaryLocationId && (
+        <TransportAllowanceAlert
+          locationId={primaryLocationId}
+          currentTransport={currentTransport}
+          rateType={rateType as 'HOURLY' | 'DAILY' | 'MONTHLY'}
+        />
+      )}
     </div>
   );
 }
