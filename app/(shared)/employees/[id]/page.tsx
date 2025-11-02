@@ -24,6 +24,7 @@ import {
   Briefcase,
   UserCircle,
   Heart,
+  FileText,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEmployee, useReactivateEmployee } from '@/features/employees/hooks/use-employees';
@@ -55,6 +56,7 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, ChevronDown } from 'lucide-react';
 import { DependentsManager } from '@/features/employees/components/dependents-manager';
 import { EmployeeBenefitsTab } from '@/components/employees/employee-benefits-tab';
+import { ContractInfoCard } from '@/components/contracts/contract-info-card';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -334,7 +336,7 @@ export default function EmployeeDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-6">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-7">
           <TabsTrigger value="overview" className="min-h-[44px]">
             <UserCircle className="mr-2 h-4 w-4" />
             Vue d'ensemble
@@ -342,6 +344,10 @@ export default function EmployeeDetailPage() {
           <TabsTrigger value="employment" className="min-h-[44px]">
             <Briefcase className="mr-2 h-4 w-4" />
             Emploi
+          </TabsTrigger>
+          <TabsTrigger value="contract" className="min-h-[44px]">
+            <FileText className="mr-2 h-4 w-4" />
+            Contrat
           </TabsTrigger>
           <TabsTrigger value="salary" className="min-h-[44px]">
             <DollarSign className="mr-2 h-4 w-4" />
@@ -617,6 +623,28 @@ export default function EmployeeDetailPage() {
           ) : assignmentHistory && assignmentHistory.length > 0 ? (
             <AssignmentHistoryTimeline assignments={assignmentHistory as any} />
           ) : null}
+        </TabsContent>
+
+        {/* Contract Tab */}
+        <TabsContent value="contract" className="space-y-6">
+          <ContractInfoCard
+            employeeId={employeeId}
+            contract={(employee as any)?.contract || null}
+          />
+
+          {/* Link to full contract management page */}
+          {(employee as any)?.contract && (
+            <Card>
+              <CardContent className="py-4">
+                <Link href={`/employees/${employeeId}/contracts`}>
+                  <Button variant="outline" className="w-full min-h-[44px]">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Gérer les contrats et renouvellements
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Salary Tab */}
