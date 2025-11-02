@@ -41,14 +41,6 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
   const weeklyHoursRegime = values.weeklyHoursRegime;
   const totalGross = baseSalaryTotal + componentTotal;
 
-  // Debug: Log what we're getting from form values
-  console.log('[CONFIRMATION STEP] Form values:', {
-    contractType,
-    rateType,
-    paymentFrequency,
-    weeklyHoursRegime,
-  });
-
   // Calculate preview when component mounts or when relevant values change
   useEffect(() => {
     const calculatePreview = async () => {
@@ -84,7 +76,7 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
           isExpat: values.employeeType === 'EXPAT',
         };
 
-        console.log('[CONFIRMATION STEP] Sending to backend:', mutationInput);
+        console.log('[CONFIRMATION STEP] Sending to backend:', JSON.stringify(mutationInput, null, 2));
 
         const result = await calculatePreviewMutation.mutateAsync(mutationInput);
 

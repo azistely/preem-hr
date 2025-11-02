@@ -79,12 +79,10 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       { enabled: !!countryCode }
     );
 
-  // Calculate total gross salary (base + components with rate conversion)
+  // Calculate total gross salary (base + components)
+  // Components are already stored in the correct rate type (hourly/daily/monthly)
   const componentTotal = components.reduce(
-    (sum: number, component: SalaryComponentInstance) => {
-      // Convert monthly components to employee's rate type
-      return sum + convertMonthlyAmountToRateType(component.amount, rateType as RateType);
-    },
+    (sum: number, component: SalaryComponentInstance) => sum + component.amount,
     0
   );
 
@@ -178,7 +176,15 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
     const code = 'code' in component ? component.code : `CUSTOM_${Date.now()}`;
 
     // Calculate final amount (auto-calculated for Code 21, or use suggested amount)
-    const finalAmount = calculateComponentAmount(component, suggestedAmount);
+    let finalAmount = calculateComponentAmount(component, suggestedAmount);
+
+    // For HOURLY rate type (CDDTI), convert monthly components to hourly
+    // Template amounts are monthly, but we store hourly for CDDTI workers
+    if (rateType === 'HOURLY') {
+      finalAmount = Math.round(finalAmount / 240); // 240 = 30 days × 8 hours
+    } else if (rateType === 'DAILY') {
+      finalAmount = Math.round(finalAmount / 30); // 30 days per month
+    }
 
     const newComponent: SalaryComponentInstance = {
       code,
@@ -515,10 +521,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                       </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        {formatCurrencyWithRate(
-                          convertMonthlyAmountToRateType(component.amount, rateType as RateType),
-                          rateType as RateType
-                        )}
+                        {formatCurrencyWithRate(component.amount, rateType as RateType)}
                       </p>
                     )}
                   </div>
