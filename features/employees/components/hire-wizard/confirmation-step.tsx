@@ -41,6 +41,14 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
   const weeklyHoursRegime = values.weeklyHoursRegime;
   const totalGross = baseSalaryTotal + componentTotal;
 
+  // Debug: Log what we're getting from form values
+  console.log('[CONFIRMATION STEP] Form values:', {
+    contractType,
+    rateType,
+    paymentFrequency,
+    weeklyHoursRegime,
+  });
+
   // Calculate preview when component mounts or when relevant values change
   useEffect(() => {
     const calculatePreview = async () => {
@@ -60,8 +68,8 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
           ? (baseComponents as Record<string, number>)
           : undefined;
 
-        const result = await calculatePreviewMutation.mutateAsync({
-          context: 'hiring',
+        const mutationInput = {
+          context: 'hiring' as const,
           baseSalary: previewBaseSalary,
           baseComponents: previewBaseComponents,
           rateType,
@@ -74,7 +82,11 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
           components: components.length > 0 ? components : undefined,
           // Map employeeType to isExpat boolean for ITS tax calculation (EXPAT = 10.4%, others = 1.2%)
           isExpat: values.employeeType === 'EXPAT',
-        });
+        };
+
+        console.log('[CONFIRMATION STEP] Sending to backend:', mutationInput);
+
+        const result = await calculatePreviewMutation.mutateAsync(mutationInput);
 
         setSalaryPreview(result.preview);
       } catch (error: any) {
