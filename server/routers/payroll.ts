@@ -239,11 +239,15 @@ export const payrollRouter = createTRPCRouter({
 
         // Employee details (required for hiring, optional for salary_edit/what_if)
         rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
-        contractType: z.enum(['CDI', 'CDD', 'STAGE']).optional(),
+        contractType: z.enum(['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE']).optional(),
         maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
         dependentChildren: z.number().min(0).max(10).optional(),
         hireDate: z.date().optional(),
         isExpat: z.boolean().optional(), // For ITS employer tax calculation (1.2% local, 10.4% expat)
+
+        // CDDTI-specific fields for payment frequency calculation
+        paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
+        weeklyHoursRegime: z.enum(['40h', '44h', '48h']).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

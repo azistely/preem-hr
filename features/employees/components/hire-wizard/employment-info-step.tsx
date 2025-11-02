@@ -47,6 +47,8 @@ import { CoefficientSelector } from '@/components/employees/coefficient-selector
 import { RateTypeSelector } from '@/components/employees/rate-type-selector';
 import { ContractTypeSelector } from '@/components/employees/contract-type-selector';
 import type { ContractType } from '@/components/employees/contract-type-selector';
+import { PaymentFrequencySelector } from '@/components/employees/payment-frequency-selector';
+import type { PaymentFrequency, WeeklyHoursRegime } from '@/components/employees/payment-frequency-selector';
 import { toast } from 'sonner';
 
 // Schema for creating a new position
@@ -361,6 +363,36 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
           </FormItem>
         )}
       />
+
+      {/* CDDTI-specific: Payment Frequency */}
+      {form.watch('contractType') === 'CDDTI' && (
+        <div className="space-y-6 p-6 border rounded-lg bg-muted/50">
+          <div className="space-y-2">
+            <h3 className="font-semibold text-lg">Configuration du contrat journalier</h3>
+            <p className="text-sm text-muted-foreground">
+              Pour les travailleurs journaliers (CDDTI), précisez la fréquence de paiement et le régime horaire.
+            </p>
+          </div>
+
+          <FormField
+            control={form.control}
+            name="paymentFrequency"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <PaymentFrequencySelector
+                    frequency={(field.value as PaymentFrequency) || 'WEEKLY'}
+                    weeklyHoursRegime={(form.watch('weeklyHoursRegime') as WeeklyHoursRegime) || '40h'}
+                    onFrequencyChange={(value) => field.onChange(value)}
+                    onWeeklyHoursChange={(value) => form.setValue('weeklyHoursRegime', value)}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+      )}
     </div>
   );
 }

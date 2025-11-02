@@ -77,6 +77,9 @@ const createEmployeeSchema = z.object({
   coefficient: z.number().int().min(90).max(1000).optional().default(100),
   rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional().default('MONTHLY'),
   primaryLocationId: z.string().min(1, 'Le site principal est requis'),
+  // CDDTI-specific fields
+  paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
+  weeklyHoursRegime: z.enum(['40h', '44h', '48h']).optional().default('40h'),
 
   // Step 4: Benefits enrollment
   benefitEnrollments: z.array(benefitEnrollmentSchema).optional().default([]),
@@ -189,6 +192,8 @@ export default function NewEmployeePage() {
       coefficient: 100,
       rateType: 'MONTHLY',
       primaryLocationId: '',
+      paymentFrequency: 'WEEKLY',
+      weeklyHoursRegime: '40h',
       // Step 4: Benefits
       benefitEnrollments: [],
       // Step 5: Banking

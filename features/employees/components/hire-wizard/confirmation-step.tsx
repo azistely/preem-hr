@@ -36,22 +36,9 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
     : (values.baseSalary || 0);
 
   const rateType = values.rateType || 'MONTHLY';
-
-  // For preview calculation, convert daily/hourly rates to estimated monthly
-  // This is ONLY for preview purposes - actual payroll uses real days/hours worked
-  // IMPORTANT: Use 30 days (not 22) to match backend validation logic in onboarding.ts
-  const getEstimatedMonthlySalary = () => {
-    if (rateType === 'DAILY') {
-      // Use 30 days to match backend SMIG validation (75,000 / 30 = 2,500/day)
-      return Math.round(baseSalaryTotal * 30);
-    } else if (rateType === 'HOURLY') {
-      // Standard month = 240 hours (30 days × 8 hours)
-      return Math.round(baseSalaryTotal * 240);
-    }
-    return baseSalaryTotal; // MONTHLY
-  };
-
-  const estimatedMonthlySalary = getEstimatedMonthlySalary();
+  const contractType = values.contractType || 'CDI';
+  const paymentFrequency = values.paymentFrequency;
+  const weeklyHoursRegime = values.weeklyHoursRegime;
   const totalGross = baseSalaryTotal + componentTotal;
 
   // Calculate preview when component mounts or when relevant values change
@@ -63,35 +50,24 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
           return;
         }
 
-        // For preview, we need to pass monthly amounts to get accurate deductions
-        // Convert base salary to monthly equivalent for daily/hourly workers
+        // Pass base salary or base components as-is (in their original rate type)
+        // Backend will handle conversion based on rateType, contractType, and paymentFrequency
         const previewBaseSalary = Object.keys(baseComponents).length === 0
-          ? estimatedMonthlySalary
+          ? baseSalaryTotal
           : undefined;
 
-        // For base components, convert to monthly if needed
-        // IMPORTANT: Use 30 days (not 22) to match backend validation
         const previewBaseComponents: Record<string, number> | undefined = Object.keys(baseComponents).length > 0
-          ? Object.fromEntries(
-              Object.entries(baseComponents).map(([code, amount]) => {
-                const numAmount = typeof amount === 'number' ? amount : 0;
-                return [
-                  code,
-                  rateType === 'DAILY'
-                    ? Math.round(numAmount * 30)
-                    : rateType === 'HOURLY'
-                    ? Math.round(numAmount * 240)
-                    : numAmount
-                ];
-              })
-            ) as Record<string, number>
+          ? (baseComponents as Record<string, number>)
           : undefined;
 
         const result = await calculatePreviewMutation.mutateAsync({
           context: 'hiring',
           baseSalary: previewBaseSalary,
           baseComponents: previewBaseComponents,
-          rateType: 'MONTHLY', // Always pass MONTHLY for preview calculation
+          rateType,
+          contractType,
+          paymentFrequency,
+          weeklyHoursRegime,
           hireDate: values.hireDate instanceof Date ? values.hireDate : new Date(values.hireDate),
           maritalStatus: values.maritalStatus || 'single',
           dependentChildren: values.taxDependents || 0,
@@ -107,7 +83,18 @@ export function ConfirmationStep({ form }: ConfirmationStepProps) {
     };
 
     calculatePreview();
-  }, [values.hireDate, baseSalaryTotal, componentTotal, rateType, components.length, values.taxDependents, values.employeeType]);
+  }, [
+    values.hireDate,
+    baseSalaryTotal,
+    componentTotal,
+    rateType,
+    contractType,
+    paymentFrequency,
+    weeklyHoursRegime,
+    components.length,
+    values.taxDependents,
+    values.employeeType,
+  ]);
 
   return (
     <div className="space-y-6">
