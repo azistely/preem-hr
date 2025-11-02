@@ -138,6 +138,54 @@ export const timeTrackingRouter = createTRPCRouter({
     }),
 
   /**
+   * Get time entries for employee (payroll review)
+   * Returns detailed time entries with status for draft review
+   * Requires: Manager role
+   */
+  getEmployeeEntries: managerProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid(),
+        startDate: z.date(),
+        endDate: z.date(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const conditions = [
+        eq(timeEntries.tenantId, ctx.user.tenantId),
+        eq(timeEntries.employeeId, input.employeeId),
+        gte(timeEntries.clockIn, input.startDate.toISOString()),
+        lte(timeEntries.clockIn, input.endDate.toISOString()),
+      ];
+
+      // Use manual join (TypeScript best practice)
+      const result = await db
+        .select({
+          id: timeEntries.id,
+          clockIn: timeEntries.clockIn,
+          clockOut: timeEntries.clockOut,
+          totalHours: timeEntries.totalHours,
+          status: timeEntries.status,
+          entrySource: timeEntries.entrySource,
+          entryType: timeEntries.entryType,
+          geofenceVerified: timeEntries.geofenceVerified,
+          clockInPhotoUrl: timeEntries.clockInPhotoUrl,
+          clockOutPhotoUrl: timeEntries.clockOutPhotoUrl,
+          overtimeBreakdown: timeEntries.overtimeBreakdown,
+          notes: timeEntries.notes,
+          approvedBy: timeEntries.approvedBy,
+          approvedAt: timeEntries.approvedAt,
+          rejectionReason: timeEntries.rejectionReason,
+          createdAt: timeEntries.createdAt,
+        })
+        .from(timeEntries)
+        .where(and(...conditions))
+        .orderBy(desc(timeEntries.clockIn));
+
+      return result;
+    }),
+
+  /**
    * Approve time entry
    * Requires: Manager role (managers approve team entries)
    */

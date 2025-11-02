@@ -60,6 +60,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { PayrollEmployeeRow } from '@/features/payroll/components/payroll-employee-row';
 import { EmployeePreviewStep } from '@/app/(shared)/payroll/runs/new/components/employee-preview-step';
+import { EmployeeListCard } from '@/features/payroll/components/review/draft/employee-list-card';
+import { EmployeeDetailSheet } from '@/features/payroll/components/review/employee-detail-sheet';
+import { EmployeeDetailContent } from '@/features/payroll/components/review/draft/employee-detail-content';
+import { DashboardSummaryCard } from '@/features/payroll/components/review/draft/dashboard-summary-card';
 
 type RunStatus = 'draft' | 'calculating' | 'processing' | 'calculated' | 'approved' | 'paid' | 'failed';
 
@@ -116,6 +120,12 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [previewPayslip, setPreviewPayslip] = useState<{ employeeId: string; employeeName: string; pdfUrl: string } | null>(null);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    employeeNumber: string;
+  } | null>(null);
 
   // Unwrap params promise (Next.js 15)
   const { id: runId } = use(params);
@@ -660,27 +670,43 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
         )}
       </div>
 
-      {/* Draft Mode: Show Employee Preview */}
+      {/* Draft Mode: Show Employee Review */}
       {status === 'draft' && (
-        <Card className="mb-6 border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Employés qui seront inclus
-            </CardTitle>
-            <CardDescription>
-              Ces employés seront traités lorsque vous cliquerez sur "Calculer la Paie"
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <EmployeePreviewStep
-              periodStart={new Date(run.periodStart)}
-              periodEnd={new Date(run.periodEnd)}
-              paymentFrequency={run.paymentFrequency as 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY'}
-              closureSequence={run.closureSequence}
-            />
-          </CardContent>
-        </Card>
+        <div className="space-y-6 mb-6">
+          {/* Dashboard Summary */}
+          <DashboardSummaryCard runId={runId} />
+
+          {/* Employee List */}
+          <EmployeeListCard
+            runId={runId}
+            onEmployeeClick={(employee) => {
+              setSelectedEmployee({
+                id: employee.id,
+                firstName: employee.firstName,
+                lastName: employee.lastName,
+                employeeNumber: employee.employeeNumber,
+              });
+            }}
+          />
+        </div>
+      )}
+
+      {/* Employee Detail Sheet (Draft Mode) */}
+      {selectedEmployee && (
+        <EmployeeDetailSheet
+          mode="draft"
+          employee={selectedEmployee}
+          open={!!selectedEmployee}
+          onClose={() => setSelectedEmployee(null)}
+        >
+          <EmployeeDetailContent
+            employeeId={selectedEmployee.id}
+            employeeName={`${selectedEmployee.firstName} ${selectedEmployee.lastName}`}
+            runId={runId}
+            periodStart={new Date(run.periodStart)}
+            periodEnd={new Date(run.periodEnd)}
+          />
+        </EmployeeDetailSheet>
       )}
 
       {/* Line Items Table */}
