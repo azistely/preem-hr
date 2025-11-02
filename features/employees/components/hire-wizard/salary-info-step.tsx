@@ -54,6 +54,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const components = form.watch('components') || [];
   const coefficient = form.watch('coefficient') || 100;
   const rateType = form.watch('rateType') || 'MONTHLY';
+  const contractType = form.watch('contractType') || 'CDI';
   const primaryLocationId = form.watch('primaryLocationId');
 
   const countryCode = 'CI'; // TODO: Get from tenant context
@@ -184,13 +185,12 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
     // Calculate final amount (auto-calculated for Code 21, or use suggested amount)
     let finalAmount = calculateComponentAmount(component, suggestedAmount);
 
-    // For HOURLY rate type (CDDTI), convert monthly components to hourly
+    // For CDDTI contracts, convert monthly components to hourly
     // Template amounts are monthly, but we store hourly for CDDTI workers
-    if (rateType === 'HOURLY') {
+    if (contractType === 'CDDTI') {
       finalAmount = Math.round(finalAmount / 240); // 240 = 30 days × 8 hours
-    } else if (rateType === 'DAILY') {
-      finalAmount = Math.round(finalAmount / 30); // 30 days per month
     }
+    // All other contract types (CDI, CDD, INTERIM, STAGE) store monthly amounts
 
     const newComponent: SalaryComponentInstance = {
       code,
@@ -605,7 +605,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
         <TransportAllowanceAlert
           locationId={primaryLocationId}
           currentTransport={currentTransport}
-          rateType={rateType as 'HOURLY' | 'DAILY' | 'MONTHLY'}
+          contractType={contractType}
         />
       )}
     </div>

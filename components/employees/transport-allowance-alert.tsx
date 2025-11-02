@@ -18,15 +18,15 @@ import { AlertTriangle, Info, CheckCircle2 } from 'lucide-react';
 
 interface TransportAllowanceAlertProps {
   locationId: string | null | undefined;
-  currentTransport: number; // In the employee's rate type (hourly/daily/monthly)
-  rateType: 'HOURLY' | 'DAILY' | 'MONTHLY';
+  currentTransport: number; // In the employee's rate type based on contract
+  contractType: string; // CDI, CDD, CDDTI, etc.
   className?: string;
 }
 
 export function TransportAllowanceAlert({
   locationId,
   currentTransport,
-  rateType,
+  contractType,
   className,
 }: TransportAllowanceAlertProps) {
   const [minimumTransport, setMinimumTransport] = useState<number>(0);
@@ -38,24 +38,24 @@ export function TransportAllowanceAlert({
     { enabled: !!locationId }
   );
 
-  // Convert location's monthly transport to employee's rate type
+  // Convert location's monthly transport to employee's rate type based on contract
+  // CDDTI = hourly, everything else = monthly
   useEffect(() => {
     if (location?.transportAllowance) {
       const monthlyTransport = parseFloat(location.transportAllowance.toString());
       let converted = monthlyTransport;
 
-      if (rateType === 'HOURLY') {
+      // CDDTI workers are paid hourly
+      if (contractType === 'CDDTI') {
         // Convert monthly to hourly: divide by 240 (30 days × 8 hours)
         converted = Math.round(monthlyTransport / 240);
-      } else if (rateType === 'DAILY') {
-        // Convert monthly to daily: divide by 30
-        converted = Math.round(monthlyTransport / 30);
       }
+      // All other contract types (CDI, CDD, INTERIM, STAGE) are monthly
 
       setMinimumTransport(converted);
       setLocationName(location.locationName || '');
     }
-  }, [location, rateType]);
+  }, [location, contractType]);
 
   // Format currency (West African CFA Franc)
   const formatCurrency = (amount: number) => {
@@ -66,14 +66,9 @@ export function TransportAllowanceAlert({
     }).format(amount) + ' FCFA';
   };
 
-  // Get rate label
+  // Get rate label based on contract type
   const getRateLabel = () => {
-    switch (rateType) {
-      case 'HOURLY': return '/heure';
-      case 'DAILY': return '/jour';
-      case 'MONTHLY': return '';
-      default: return '';
-    }
+    return contractType === 'CDDTI' ? '/heure' : '';
   };
 
   // Don't show if loading or no location
