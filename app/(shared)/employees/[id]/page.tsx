@@ -272,6 +272,8 @@ export default function EmployeeDetailPage() {
                   {(() => {
                     const rateType = getEmployeeRateType();
                     const baseSalary = parseFloat((employee as any).currentSalary.baseSalary);
+                    const contractType = (employee as any)?.contract?.contractType;
+                    const componentsAlreadyInRateType = contractType === 'CDDTI';
 
                     // Calculate gross salary with rate conversion
                     let grossSalary = 0;
@@ -286,7 +288,9 @@ export default function EmployeeDetailPage() {
                         // Components include base salary - use ONLY components total
                         grossSalary = (employee as any).currentSalary.components.reduce((sum: number, c: any) => {
                           // Base salary (code '11') is already in correct rate type
-                          if (c.code === '11' || c.code === '01') {
+                          const isBaseSalary = c.code === '11' || c.code === '01';
+                          // For CDDTI, all components are already in hourly format
+                          if (isBaseSalary || componentsAlreadyInRateType) {
                             return sum + (c.amount || 0);
                           }
                           // Convert other components from monthly to employee's rate type
@@ -295,6 +299,10 @@ export default function EmployeeDetailPage() {
                       } else {
                         // Legacy: components are only allowances, add to baseSalary
                         const componentTotal = (employee as any).currentSalary.components.reduce((sum: number, c: any) => {
+                          // For CDDTI, components are already in hourly format
+                          if (componentsAlreadyInRateType) {
+                            return sum + (c.amount || 0);
+                          }
                           return sum + convertMonthlyAmountToRateType(c.amount || 0, rateType);
                         }, 0);
                         grossSalary = baseSalary + componentTotal;
@@ -658,9 +666,15 @@ export default function EmployeeDetailPage() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {(employee as any).currentSalary.components.map((component: any, idx: number) => {
                           const rateType = getEmployeeRateType();
-                          // Base salary (code '11', '01') is already in correct rate type, others are monthly
+                          // Base salary (code '11', '01') is already in correct rate type
                           const isBaseSalary = component.code === '11' || component.code === '01';
-                          const displayAmount = isBaseSalary
+
+                          // For CDDTI workers, all components are already stored in hourly format
+                          // For other workers, non-base components are stored as monthly amounts
+                          const contractType = (employee as any)?.contract?.contractType;
+                          const componentsAlreadyInRateType = contractType === 'CDDTI';
+
+                          const displayAmount = (isBaseSalary || componentsAlreadyInRateType)
                             ? component.amount
                             : convertMonthlyAmountToRateType(component.amount, rateType);
 
@@ -687,6 +701,8 @@ export default function EmployeeDetailPage() {
                           {(() => {
                             const rateType = getEmployeeRateType();
                             const components = (employee as any).currentSalary.components;
+                            const contractType = (employee as any)?.contract?.contractType;
+                            const componentsAlreadyInRateType = contractType === 'CDDTI';
 
                             // Check if base salary (Code 11/01) is in components
                             const hasBaseSalaryInComponents = components.some(
@@ -698,7 +714,8 @@ export default function EmployeeDetailPage() {
                               (sum: number, c: any) => {
                                 // Base salary (code '11', '01') is already in correct rate type
                                 const isBaseSalary = c.code === '11' || c.code === '01';
-                                const componentAmount = isBaseSalary
+                                // For CDDTI, all components are already in hourly format
+                                const componentAmount = (isBaseSalary || componentsAlreadyInRateType)
                                   ? c.amount
                                   : convertMonthlyAmountToRateType(c.amount || 0, rateType);
 
