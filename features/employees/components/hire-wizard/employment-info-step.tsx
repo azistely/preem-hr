@@ -120,9 +120,19 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
                   // Auto-set rate type to HOURLY when CDDTI is selected
                   if (value === 'CDDTI') {
                     form.setValue('rateType', 'HOURLY');
+                    // Initialize payment frequency and weekly hours regime with defaults
+                    if (!form.getValues('paymentFrequency')) {
+                      form.setValue('paymentFrequency', 'WEEKLY');
+                    }
+                    if (!form.getValues('weeklyHoursRegime')) {
+                      form.setValue('weeklyHoursRegime', '40h');
+                    }
                   } else if (form.getValues('rateType') === 'HOURLY' && (value as string) !== 'CDDTI') {
                     // Reset to MONTHLY if switching away from CDDTI
                     form.setValue('rateType', 'MONTHLY');
+                    // Clear CDDTI-specific fields
+                    form.setValue('paymentFrequency', undefined);
+                    form.setValue('weeklyHoursRegime', undefined);
                   }
                 }}
               />
