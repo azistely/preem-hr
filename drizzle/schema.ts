@@ -102,7 +102,7 @@ export const tenants = pgTable("tenants", {
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'archived'::text])`),
 ]);
 
-export const users = pgTable("users", {
+export const users: any = pgTable("users", {
 	id: uuid().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeId: uuid("employee_id"),
@@ -2952,7 +2952,7 @@ export const employeeBenefitEnrollments = pgTable("employee_benefit_enrollments"
 	check("valid_termination_date", sql`(termination_date IS NULL) OR (termination_date >= effective_date)`),
 ]);
 
-export const employmentContracts = pgTable("employment_contracts", {
+export const employmentContracts: any = pgTable("employment_contracts", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeId: uuid("employee_id").notNull(),
@@ -3040,7 +3040,7 @@ export const employeeBenefitEnrollmentHistory = pgTable("employee_benefit_enroll
 	check("valid_change_type", sql`(change_type)::text = ANY ((ARRAY['enrolled'::character varying, 'modified'::character varying, 'terminated'::character varying, 'cost_changed'::character varying, 'dependent_added'::character varying, 'dependent_removed'::character varying, 'status_changed'::character varying])::text[])`),
 ]);
 
-export const employees = pgTable("employees", {
+export const employees: any = pgTable("employees", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
 	employeeNumber: text("employee_number").notNull(),

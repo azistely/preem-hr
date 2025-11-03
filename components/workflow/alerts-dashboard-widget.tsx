@@ -122,7 +122,12 @@ export function AlertsDashboardWidget() {
             {data.urgentAlerts.map((alert) => (
               <AlertItem
                 key={alert.id}
-                alert={alert}
+                alert={{
+                  ...alert,
+                  createdAt: new Date(alert.createdAt),
+                  updatedAt: new Date(alert.updatedAt),
+                  completedAt: alert.completedAt ? new Date(alert.completedAt) : null,
+                } as any}
                 onClick={() => handleAlertClick(alert.actionUrl)}
               />
             ))}
