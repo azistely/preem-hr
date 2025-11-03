@@ -54,13 +54,13 @@ const dateTypeConfig = {
 // ✅ SERVERLESS FIX: Configuration optimized for Vercel serverless functions
 // Key settings:
 // - prepare: false (required for Transaction pooler mode on port 6543)
-// - max: 1 (one connection per serverless function instance)
+// - max: 1 for production, 10 for development (to handle concurrent requests)
 // - idle_timeout: 20 (close idle connections after 20 seconds)
 // - connect_timeout: 10 (fail fast if connection takes too long)
 const postgresConfig = {
   ...dateTypeConfig,
   prepare: false, // Required for Transaction mode pooler
-  max: 1, // Single connection for serverless
+  max: process.env.NODE_ENV === 'production' ? 1 : 10, // Multiple connections for dev, single for serverless
   idle_timeout: 20, // Close idle connections after 20s
   connect_timeout: 10, // Timeout after 10s
   onnotice: () => {}, // Suppress notices

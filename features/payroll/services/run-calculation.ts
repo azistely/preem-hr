@@ -19,9 +19,11 @@ import {
   tenants,
   timeEntries,
 } from '@/lib/db/schema';
+import { employmentContracts } from '@/drizzle/schema';
 import { and, eq, lte, gte, or, isNotNull, isNull, sql, desc } from 'drizzle-orm';
 import { calculatePayrollV2 } from './payroll-calculation-v2';
 import type { PayrollRunSummary } from '../types';
+import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
 
 export interface CreatePayrollRunInput {
   tenantId: string;
@@ -37,6 +39,18 @@ export interface CreatePayrollRunInput {
 
 export interface CalculatePayrollRunInput {
   runId: string;
+}
+
+export interface RecalculateSingleEmployeeInput {
+  runId: string;
+  employeeId: string;
+  tenantId: string;
+}
+
+export interface RecalculateSingleEmployeeResult {
+  success: boolean;
+  before: { netSalary: number };
+  after: { netSalary: number };
 }
 
 /**
@@ -59,12 +73,15 @@ export async function createPayrollRun(
   }
 
   // Check if run already exists for this period (exact match or overlapping)
+  // Only check for conflicts with the same payment frequency
   const periodStartStr = input.periodStart.toISOString().split('T')[0];
   const periodEndStr = input.periodEnd.toISOString().split('T')[0];
 
   const existing = await db.query.payrollRuns.findFirst({
     where: and(
       eq(payrollRuns.tenantId, input.tenantId),
+      // Only check same payment frequency (MONTHLY runs don't conflict with WEEKLY runs)
+      input.paymentFrequency ? eq(payrollRuns.paymentFrequency, input.paymentFrequency) : undefined,
       or(
         // Exact match
         and(
@@ -110,8 +127,19 @@ export async function createPayrollRun(
     throw new Error('Aucun employé actif trouvé pour ce tenant');
   }
 
-  // Generate run number (simple format: PAY-YYYY-MM)
-  const runNumber = `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`;
+  // Generate run number with payment frequency to avoid conflicts
+  // Format: PAY-YYYY-MM for MONTHLY, PAY-YYYY-MM-W1/W2/W3/W4 for WEEKLY, PAY-YYYY-MM-Q1/Q2 for BIWEEKLY
+  let runNumber = `PAY-${input.periodStart.getFullYear()}-${String(input.periodStart.getMonth() + 1).padStart(2, '0')}`;
+
+  if (input.paymentFrequency === 'WEEKLY' && input.closureSequence) {
+    runNumber += `-W${input.closureSequence}`;
+  } else if (input.paymentFrequency === 'BIWEEKLY' && input.closureSequence) {
+    runNumber += `-Q${input.closureSequence}`;
+  } else if (input.paymentFrequency === 'DAILY') {
+    // For daily, use the specific date
+    runNumber = `PAY-${input.periodStart.toISOString().split('T')[0]}`;
+  }
+  // For MONTHLY, keep the simple format: PAY-YYYY-MM
 
   // Validate country has payroll config
   const { ruleLoader } = await import('./rule-loader');
@@ -285,6 +313,20 @@ export async function calculatePayrollRun(
           throw new Error('Aucun salaire trouvé pour cet employé');
         }
 
+        // Get current employment contract to check contract type
+        const currentContract = await db.query.employmentContracts.findFirst({
+          where: and(
+            eq(employmentContracts.employeeId, employee.id),
+            or(
+              isNull(employmentContracts.endDate),
+              sql`${employmentContracts.endDate} >= ${run.periodStart}`
+            )
+          ),
+          orderBy: desc(employmentContracts.startDate),
+        });
+
+        const contractType = currentContract?.contractType as 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | undefined;
+
         // Get family status from custom fields
         const hasFamily = (employee.customFields as any)?.hasFamily || false;
         const fiscalParts = (employee.customFields as any)?.fiscalParts || 1.0;
@@ -305,14 +347,15 @@ export async function calculatePayrollRun(
         // Extract base salary components (database-driven, multi-country)
         const { extractBaseSalaryAmounts, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
 
-        const salaryComponents = currentSalary.components as Array<{ code: string; amount: number }> || [];
+        const salaryComponents = (currentSalary.components || []) as SalaryComponentInstance[];
         const baseAmounts = await extractBaseSalaryAmounts(salaryComponents, tenant.countryCode);
         const totalBaseSalary = await calculateBaseSalaryTotal(salaryComponents, tenant.countryCode);
         const salaireCategoriel = await getSalaireCategoriel(salaryComponents, tenant.countryCode);
 
-        // Get employee rate type and calculate days worked for daily workers
+        // Get employee rate type and calculate days/hours worked for daily/hourly workers
         const rateType = (employee.rateType || 'MONTHLY') as 'MONTHLY' | 'DAILY' | 'HOURLY';
         let daysWorkedThisMonth: number | undefined = undefined;
+        let hoursWorkedThisMonth: number | undefined = undefined;
 
         if (rateType === 'DAILY') {
           // Query approved time entries for this employee in the payroll period
@@ -348,7 +391,42 @@ export async function calculatePayrollRun(
           }
         }
 
+        // CDDTI workers: Load total hours from time entries (regardless of rateType)
+        if (contractType === 'CDDTI') {
+          const entries = await db
+            .select()
+            .from(timeEntries)
+            .where(
+              and(
+                eq(timeEntries.employeeId, employee.id),
+                eq(timeEntries.tenantId, run.tenantId),
+                eq(timeEntries.status, 'approved'), // Only count approved entries
+                sql`${timeEntries.clockIn} >= ${run.periodStart}`,
+                sql`${timeEntries.clockIn} < ${run.periodEnd}`
+              )
+            );
+
+          // Sum total hours worked from all entries
+          hoursWorkedThisMonth = entries.reduce((total, entry) => {
+            const hours = entry.totalHours ? parseFloat(String(entry.totalHours)) : 0;
+            return total + hours;
+          }, 0);
+
+          console.log(`[PAYROLL DEBUG] CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${hoursWorkedThisMonth} hours worked, ${entries.length} time entries`);
+
+          // Skip CDDTI workers with 0 hours worked (no salary to pay)
+          if (hoursWorkedThisMonth === 0) {
+            console.log(`[PAYROLL DEBUG] Skipping CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): 0 hours worked`);
+            continue; // Skip to next employee
+          }
+        }
+
         // Calculate payroll using V2 (database-driven, multi-country)
+        // IMPORTANT: For CDDTI workers with component-based salary, pass baseSalary: 0
+        // to trigger component-based calculation path (not legacy field-based path)
+        // Component-based path correctly multiplies hourly rates by hours worked
+        const useComponentBasedCalculation = contractType === 'CDDTI' && salaryComponents.length > 0;
+
         const calculation = await calculatePayrollV2({
           employeeId: employee.id,
           tenantId: run.tenantId, // CRITICAL: Pass tenantId for template component lookup
@@ -356,22 +434,30 @@ export async function calculatePayrollRun(
           sectorCode: tenant.sectorCode || 'SERVICES', // Fallback to SERVICES if not set
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
-          baseSalary: totalBaseSalary, // Total of all base components
+          baseSalary: useComponentBasedCalculation ? 0 : totalBaseSalary, // Use 0 for CDDTI to trigger component-based path
           salaireCategoriel, // Code 11 (or equivalent)
           sursalaire: baseAmounts['12'], // Code 12 for CI (if present)
-          housingAllowance: breakdown.housingAllowance,
-          transportAllowance: breakdown.transportAllowance,
-          mealAllowance: breakdown.mealAllowance,
-          seniorityBonus: breakdown.seniorityBonus,
-          familyAllowance: breakdown.familyAllowance,
-          otherAllowances: breakdown.otherAllowances, // Include template components (TPT_*, PHONE, PERFORMANCE, etc.)
-          customComponents: breakdown.customComponents,
+          // For component-based calculation (CDDTI), set field-based allowances to 0 to avoid duplication
+          housingAllowance: useComponentBasedCalculation ? 0 : breakdown.housingAllowance,
+          transportAllowance: useComponentBasedCalculation ? 0 : breakdown.transportAllowance,
+          mealAllowance: useComponentBasedCalculation ? 0 : breakdown.mealAllowance,
+          seniorityBonus: useComponentBasedCalculation ? 0 : breakdown.seniorityBonus,
+          familyAllowance: useComponentBasedCalculation ? 0 : breakdown.familyAllowance,
+          otherAllowances: useComponentBasedCalculation ? [] : breakdown.otherAllowances, // Include template components (TPT_*, PHONE, PERFORMANCE, etc.)
+          // For CDDTI: Pass ALL salary components (not just custom) so they can be multiplied by hours
+          customComponents: useComponentBasedCalculation
+            ? salaryComponents.map(c => ({ ...c, name: c.name || 'Component', sourceType: 'standard' as const }))
+            : breakdown.customComponents,
           fiscalParts,
           hasFamily,
           hireDate: new Date(employee.hireDate),
           terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
           rateType, // CRITICAL: Pass rate type to calculation engine
+          contractType, // CRITICAL: Pass contract type for CDDTI detection
           daysWorkedThisMonth, // CRITICAL: Pass actual days worked for daily workers
+          hoursWorkedThisMonth, // CRITICAL: Pass actual hours worked for CDDTI workers
+          paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
+          weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
           // Dynamic CMU calculation (GAP-CMU-001)
           maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
           dependentChildren: employee.dependentChildren ?? undefined,
@@ -401,10 +487,15 @@ export async function calculatePayrollRun(
           // Time tracking
           daysWorked: String(calculation.daysWorked),
           daysAbsent: '0',
+          hoursWorked: hoursWorkedThisMonth ? String(hoursWorkedThisMonth) : '0',
           overtimeHours: {},
 
           // Gross calculation
           grossSalary: String(calculation.grossSalary),
+
+          // Detailed breakdowns (for CDDTI components like gratification, congés payés, précarité)
+          earningsDetails: calculation.earningsDetails || [],
+          deductionsDetails: calculation.deductionsDetails || [],
 
           // Deductions (both JSONB and dedicated columns for exports)
           taxDeductions: { its: calculation.its },
@@ -518,4 +609,254 @@ export async function calculatePayrollRun(
 
     throw error;
   }
+}
+
+/**
+ * Recalculate payroll for a single employee
+ *
+ * Reuses the same logic as bulk calculation to ensure consistency.
+ * This is called by the per-employee "Recalculer" button in the review screen.
+ *
+ * @param input - Recalculation parameters
+ * @returns Before/after net salary comparison
+ */
+export async function recalculateSingleEmployee(
+  input: RecalculateSingleEmployeeInput
+): Promise<RecalculateSingleEmployeeResult> {
+  // Get the run
+  const run = await db.query.payrollRuns.findFirst({
+    where: and(
+      eq(payrollRuns.id, input.runId),
+      eq(payrollRuns.tenantId, input.tenantId)
+    ),
+  });
+
+  if (!run) {
+    throw new Error('Payroll run not found');
+  }
+
+  // Get tenant
+  const tenant = await db.query.tenants.findFirst({
+    where: eq(tenants.id, input.tenantId),
+  });
+
+  if (!tenant) {
+    throw new Error('Tenant not found');
+  }
+
+  // Get employee
+  const employee = await db.query.employees.findFirst({
+    where: and(
+      eq(employees.id, input.employeeId),
+      eq(employees.tenantId, input.tenantId)
+    ),
+  });
+
+  if (!employee) {
+    throw new Error('Employee not found');
+  }
+
+  // Get current line item
+  const [currentLineItem] = await db
+    .select()
+    .from(payrollLineItems)
+    .where(
+      and(
+        eq(payrollLineItems.payrollRunId, input.runId),
+        eq(payrollLineItems.employeeId, input.employeeId)
+      )
+    )
+    .limit(1);
+
+  if (!currentLineItem) {
+    throw new Error('Line item not found');
+  }
+
+  const beforeNetSalary = Number(currentLineItem.netSalary);
+
+  // Get current employment contract
+  const currentContract = await db.query.employmentContracts.findFirst({
+    where: and(
+      eq(employmentContracts.employeeId, employee.id),
+      or(
+        isNull(employmentContracts.endDate),
+        sql`${employmentContracts.endDate} >= ${run.periodStart}`
+      )
+    ),
+    orderBy: desc(employmentContracts.startDate),
+  });
+
+  const contractType = currentContract?.contractType as 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | undefined;
+
+  // Get current salary
+  const salaries = await db
+    .select()
+    .from(employeeSalaries)
+    .where(
+      and(
+        eq(employeeSalaries.employeeId, employee.id),
+        sql`${employeeSalaries.effectiveFrom} <= ${run.periodEnd}`,
+        or(
+          isNull(employeeSalaries.effectiveTo),
+          sql`${employeeSalaries.effectiveTo} >= ${run.periodStart}`
+        )
+      )
+    )
+    .orderBy(desc(employeeSalaries.effectiveFrom));
+
+  const currentSalary = salaries[0];
+
+  if (!currentSalary) {
+    throw new Error('No salary found for employee');
+  }
+
+  // Get family status
+  const hasFamily = (employee.customFields as any)?.hasFamily || false;
+  const fiscalParts = (employee.customFields as any)?.fiscalParts || 1.0;
+
+  // Get period key
+  const periodDate = new Date(run.periodStart);
+  const periodKey = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}-01`;
+
+  // Get components breakdown
+  const { getEmployeeSalaryComponentsForPeriod } = await import('@/lib/salary-components/component-reader');
+  const breakdown = await getEmployeeSalaryComponentsForPeriod(
+    currentSalary as any,
+    employee.id,
+    periodKey,
+    run.tenantId
+  );
+
+  // Extract base salary components
+  const { extractBaseSalaryAmounts, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
+  const salaryComponents = (currentSalary.components || []) as SalaryComponentInstance[];
+  const baseAmounts = await extractBaseSalaryAmounts(salaryComponents, tenant.countryCode);
+  const totalBaseSalary = await calculateBaseSalaryTotal(salaryComponents, tenant.countryCode);
+  const salaireCategoriel = await getSalaireCategoriel(salaryComponents, tenant.countryCode);
+
+  // Get rate type and load hours/days
+  const rateType = (employee.rateType || 'MONTHLY') as 'MONTHLY' | 'DAILY' | 'HOURLY';
+  let daysWorkedThisMonth: number | undefined = undefined;
+  let hoursWorkedThisMonth: number | undefined = undefined;
+
+  if (rateType === 'DAILY') {
+    const entries = await db
+      .select()
+      .from(timeEntries)
+      .where(
+        and(
+          eq(timeEntries.employeeId, employee.id),
+          eq(timeEntries.tenantId, input.tenantId),
+          eq(timeEntries.status, 'approved'),
+          sql`${timeEntries.clockIn} >= ${run.periodStart}`,
+          sql`${timeEntries.clockIn} < ${run.periodEnd}`
+        )
+      );
+
+    const uniqueDays = new Set(
+      entries.map(entry => {
+        const date = new Date(entry.clockIn);
+        return date.toISOString().split('T')[0];
+      })
+    );
+    daysWorkedThisMonth = uniqueDays.size;
+  }
+
+  if (contractType === 'CDDTI') {
+    const entries = await db
+      .select()
+      .from(timeEntries)
+      .where(
+        and(
+          eq(timeEntries.employeeId, employee.id),
+          eq(timeEntries.tenantId, input.tenantId),
+          eq(timeEntries.status, 'approved'),
+          sql`${timeEntries.clockIn} >= ${run.periodStart}`,
+          sql`${timeEntries.clockIn} < ${run.periodEnd}`
+        )
+      );
+
+    hoursWorkedThisMonth = entries.reduce((total, entry) => {
+      const hours = entry.totalHours ? parseFloat(String(entry.totalHours)) : 0;
+      return total + hours;
+    }, 0);
+  }
+
+  // Calculate payroll
+  // IMPORTANT: For CDDTI workers with component-based salary, pass baseSalary: 0
+  // to trigger component-based calculation path (not legacy field-based path)
+  // Component-based path correctly multiplies hourly rates by hours worked
+  const useComponentBasedCalculation = contractType === 'CDDTI' && salaryComponents.length > 0;
+
+  console.log('[RECALCULATE DEBUG] CDDTI detection:', {
+    contractType,
+    salaryComponentsCount: salaryComponents.length,
+    useComponentBasedCalculation,
+    hoursWorkedThisMonth,
+    components: salaryComponents,
+  });
+
+  const calculation = await calculatePayrollV2({
+    employeeId: employee.id,
+    tenantId: run.tenantId,
+    countryCode: tenant.countryCode,
+    sectorCode: tenant.genericSectorCode || tenant.sectorCode || 'SERVICES',
+    periodStart: new Date(run.periodStart),
+    periodEnd: new Date(run.periodEnd),
+    baseSalary: useComponentBasedCalculation ? 0 : totalBaseSalary, // Use 0 for CDDTI to trigger component-based path
+    salaireCategoriel,
+    sursalaire: baseAmounts['12'],
+    // For component-based calculation (CDDTI), set field-based allowances to 0 to avoid duplication
+    housingAllowance: useComponentBasedCalculation ? 0 : breakdown.housingAllowance,
+    transportAllowance: useComponentBasedCalculation ? 0 : breakdown.transportAllowance,
+    mealAllowance: useComponentBasedCalculation ? 0 : breakdown.mealAllowance,
+    seniorityBonus: useComponentBasedCalculation ? 0 : breakdown.seniorityBonus,
+    familyAllowance: useComponentBasedCalculation ? 0 : breakdown.familyAllowance,
+    otherAllowances: useComponentBasedCalculation ? [] : breakdown.otherAllowances,
+    // For CDDTI: Pass ALL salary components (not just custom) so they can be multiplied by hours
+    customComponents: useComponentBasedCalculation
+      ? salaryComponents.map(c => ({ ...c, name: c.name || 'Component', sourceType: 'standard' as const }))
+      : breakdown.customComponents,
+    fiscalParts,
+    hasFamily,
+    hireDate: new Date(employee.hireDate),
+    terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
+    rateType,
+    contractType,
+    daysWorkedThisMonth,
+    hoursWorkedThisMonth,
+    paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
+    weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
+    maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+    dependentChildren: employee.dependentChildren ?? undefined,
+  });
+
+  // Update line item
+  await db
+    .update(payrollLineItems)
+    .set({
+      baseSalary: String(calculation.baseSalary),
+      daysWorked: String(calculation.daysWorked),
+      hoursWorked: hoursWorkedThisMonth ? String(hoursWorkedThisMonth) : '0',
+      grossSalary: String(calculation.grossSalary),
+      netSalary: String(calculation.netSalary),
+      totalDeductions: String(calculation.totalDeductions),
+      totalEmployerCost: String(calculation.employerCost),
+      employerCost: String(calculation.employerCost),
+      cnpsEmployee: String(calculation.cnpsEmployee),
+      cmuEmployee: String(calculation.cmuEmployee),
+      its: String(calculation.its),
+      cnpsEmployer: String(calculation.cnpsEmployer),
+      cmuEmployer: String(calculation.cmuEmployer),
+      earningsDetails: calculation.earningsDetails || [],
+      deductionsDetails: calculation.deductionsDetails || [],
+      updatedAt: new Date(),
+    })
+    .where(eq(payrollLineItems.id, currentLineItem.id));
+
+  return {
+    success: true,
+    before: { netSalary: beforeNetSalary },
+    after: { netSalary: calculation.netSalary },
+  };
 }

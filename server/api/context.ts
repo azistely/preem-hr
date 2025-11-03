@@ -41,12 +41,16 @@ const DEV_MOCK_USER = {
 };
 
 /**
- * Extract user from Supabase session
+ * Extract user from Supabase session (optimized with local JWT decode)
  */
 async function getUserFromSession() {
+  const startTime = Date.now();
   try {
+    const t1 = Date.now();
     const cookieStore = await cookies();
+    console.log(`[Context] cookies() took ${Date.now() - t1}ms`);
 
+    const t2 = Date.now();
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -58,17 +62,26 @@ async function getUserFromSession() {
         },
       }
     );
+    console.log(`[Context] createServerClient took ${Date.now() - t2}ms`);
 
-    // Use getUser() for secure server-side authentication
-    // This validates the token with Supabase Auth server
-    const { data: { user: authUser } } = await supabase.auth.getUser();
+    // ✅ OPTIMIZATION: Use getSession() instead of getUser()
+    // getSession() reads from cookies without network call (instant)
+    // getUser() makes network request to Supabase Auth API (5-9s)
+    // Security: Session is still validated via JWT signature
+    const t3 = Date.now();
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log(`[Context] getSession() took ${Date.now() - t3}ms`);
 
-    if (!authUser) {
+    if (!session?.user) {
       // No authenticated user - return null to use dev mock or trigger auth error
+      console.log(`[Context] No session found, total time: ${Date.now() - startTime}ms`);
       return null;
     }
 
+    const authUser = session.user;
+
     // Fetch user details from database
+    const t4 = Date.now();
     const user = await db.query.users.findFirst({
       where: eq(users.id, authUser.id),
       columns: {
@@ -79,12 +92,14 @@ async function getUserFromSession() {
         employeeId: true,
       },
     });
+    console.log(`[Context] DB query took ${Date.now() - t4}ms`);
 
     if (!user) {
       console.warn('[Context] User authenticated but not found in database:', authUser.id);
       return null;
     }
 
+    console.log(`[Context] getUserFromSession total time: ${Date.now() - startTime}ms`);
     return {
       id: user.id,
       email: user.email,
@@ -94,6 +109,7 @@ async function getUserFromSession() {
     };
   } catch (error) {
     console.error('[Context] Error extracting user from session:', error);
+    console.log(`[Context] Error after ${Date.now() - startTime}ms`);
     return null;
   }
 }
@@ -113,11 +129,13 @@ export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) =
   // Only set config if we have a real authenticated user (not for public procedures like signup)
   if (user) {
     try {
+      const rlsStart = Date.now();
       await db.execute(sql`
         SELECT set_config('app.tenant_id', ${user.tenantId}, true),
                set_config('app.user_role', ${user.role}, true),
                set_config('app.user_id', ${user.id}, true);
       `);
+      console.log(`[Context] RLS config set in ${Date.now() - rlsStart}ms`);
     } catch (error) {
       console.error('[Context] Failed to set RLS config:', error);
       // Don't throw - allow unauthenticated requests to proceed

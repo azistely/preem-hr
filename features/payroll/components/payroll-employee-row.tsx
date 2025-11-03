@@ -267,24 +267,34 @@ export function PayrollEmployeeRow({
                         <span className="font-medium">{formatCurrency(item.baseSalary)} FCFA</span>
                       </div>
 
-                      {/* Allowances */}
-                      {Object.entries(allowances).map(([key, value]) => {
-                        if (value > 0) {
-                          const labels: Record<string, string> = {
-                            housing: 'Indemnité de logement',
-                            transport: 'Indemnité de transport',
-                            meal: 'Indemnité de repas',
-                            seniority: 'Prime d\'ancienneté',
-                            family: 'Allocations familiales',
-                          };
-                          return (
-                            <div key={key} className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">{labels[key] || key}</span>
-                              <span className="font-medium">{formatCurrency(value)} FCFA</span>
-                            </div>
-                          );
-                        }
-                      })}
+                      {/* Earnings Details (CDDTI components: gratification, congés payés, précarité) */}
+                      {earningsDetails.length > 0 ? (
+                        earningsDetails.map((earning: any, idx: number) => (
+                          <div key={idx} className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">{earning.name || earning.label}</span>
+                            <span className="font-medium">{formatCurrency(earning.amount)} FCFA</span>
+                          </div>
+                        ))
+                      ) : (
+                        /* Legacy: Show allowances from allowances JSONB field */
+                        Object.entries(allowances).map(([key, value]) => {
+                          if (value > 0) {
+                            const labels: Record<string, string> = {
+                              housing: 'Indemnité de logement',
+                              transport: 'Indemnité de transport',
+                              meal: 'Indemnité de repas',
+                              seniority: 'Prime d\'ancienneté',
+                              family: 'Allocations familiales',
+                            };
+                            return (
+                              <div key={key} className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{labels[key] || key}</span>
+                                <span className="font-medium">{formatCurrency(value)} FCFA</span>
+                              </div>
+                            );
+                          }
+                        })
+                      )}
 
                       <Separator />
 

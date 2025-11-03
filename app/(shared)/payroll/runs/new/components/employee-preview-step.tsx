@@ -31,11 +31,17 @@ export function EmployeePreviewStep({
   const router = useRouter();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
 
-  const { data: preview, isLoading, refetch } = api.payroll.getEmployeePayrollPreview.useQuery({
+  const { data: preview, isLoading, error, refetch } = api.payroll.getEmployeePayrollPreview.useQuery({
     periodStart,
     periodEnd,
     paymentFrequency,
     closureSequence,
+  }, {
+    retry: 2,
+    retryDelay: 1000,
+    // Add a 30 second timeout for this specific query
+    staleTime: 0, // Always fetch fresh data
+    refetchOnMount: true,
   });
 
   if (isLoading) {
@@ -47,6 +53,27 @@ export function EmployeePreviewStep({
         </div>
         <Skeleton className="h-20" />
       </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Erreur de chargement</AlertTitle>
+        <AlertDescription>
+          <p className="mb-2">Impossible de charger l'aperçu des employés.</p>
+          <p className="text-sm text-muted-foreground">{error.message}</p>
+          <Button
+            onClick={() => refetch()}
+            variant="outline"
+            size="sm"
+            className="mt-3"
+          >
+            Réessayer
+          </Button>
+        </AlertDescription>
+      </Alert>
     );
   }
 

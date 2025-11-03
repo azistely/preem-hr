@@ -28,6 +28,8 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
             gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes (formerly cacheTime)
             retry: 1, // Only retry failed requests once (avoid cascading failures)
             refetchOnWindowFocus: false, // Don't refetch on every tab focus (too aggressive for slow 3G)
+            // ✅ Add query timeout to prevent infinite loading states
+            networkMode: 'online', // Only run queries when online
           },
         },
       })

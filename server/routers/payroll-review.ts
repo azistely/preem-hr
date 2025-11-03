@@ -24,7 +24,7 @@ import {
   payrollValidationIssues,
 } from '@/drizzle/schema';
 import { eq, and, desc, sql, between, isNull, or } from 'drizzle-orm';
-import { calculatePayrollV2 } from '@/features/payroll/services/payroll-calculation-v2';
+import { recalculateSingleEmployee } from '@/features/payroll/services/run-calculation';
 
 // ========================================
 // Type Definitions
@@ -412,106 +412,21 @@ export const payrollReviewRouter = createTRPCRouter({
 
   /**
    * Recalculate single employee
+   *
+   * Uses shared recalculateSingleEmployee() function from run-calculation service
+   * to avoid code duplication and ensure consistent calculation logic
    */
   recalculateEmployee: hrManagerProcedure
     .input(recalculateEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       const { runId, employeeId } = input;
 
-      // Get run details
-      const [run] = await db
-        .select()
-        .from(payrollRuns)
-        .where(
-          and(
-            eq(payrollRuns.id, runId),
-            eq(payrollRuns.tenantId, ctx.user.tenantId)
-          )
-        )
-        .limit(1);
-
-      if (!run) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Paie introuvable',
-        });
-      }
-
-      // Get employee and current line item
-      const [employee] = await db
-        .select()
-        .from(employees)
-        .where(
-          and(
-            eq(employees.id, employeeId),
-            eq(employees.tenantId, ctx.user.tenantId)
-          )
-        )
-        .limit(1);
-
-      if (!employee) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Employé introuvable',
-        });
-      }
-
-      // Get current line item for this employee
-      const [currentLineItem] = await db
-        .select()
-        .from(payrollLineItems)
-        .where(
-          and(
-            eq(payrollLineItems.payrollRunId, runId),
-            eq(payrollLineItems.employeeId, employeeId)
-          )
-        )
-        .limit(1);
-
-      if (!currentLineItem) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Ligne de paie introuvable',
-        });
-      }
-
-      // Recalculate using payroll calculation service
-      const result = await calculatePayrollV2({
+      // Use shared calculation function
+      return await recalculateSingleEmployee({
+        runId,
         employeeId,
-        countryCode: run.countryCode,
-        periodStart: new Date(run.periodStart),
-        periodEnd: new Date(run.periodEnd),
-        baseSalary: Number(currentLineItem.baseSalary || 75000),
-        fiscalParts: Number(employee.fiscalParts || 1.0),
+        tenantId: ctx.user.tenantId,
       });
-
-      // Update line item
-      await db
-        .update(payrollLineItems)
-        .set({
-          baseSalary: String(result.baseSalary),
-          grossSalary: String(result.grossSalary),
-          netSalary: String(result.netSalary),
-          totalDeductions: String(result.totalDeductions),
-          employerCost: String(result.employerCost),
-          cnpsEmployee: String(result.cnpsEmployee),
-          cmuEmployee: String(result.cmuEmployee),
-          its: String(result.its),
-          cnpsEmployer: String(result.cnpsEmployer),
-          cmuEmployer: String(result.cmuEmployer),
-          updatedAt: new Date(),
-        })
-        .where(eq(payrollLineItems.id, currentLineItem.id));
-
-      return {
-        success: true,
-        before: {
-          netSalary: Number(currentLineItem.netSalary),
-        },
-        after: {
-          netSalary: result.netSalary,
-        },
-      };
     }),
 
   /**

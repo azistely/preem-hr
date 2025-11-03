@@ -198,12 +198,13 @@ export default function NewPayrollRunPage() {
   const periodEnd = formValues.periodEnd ? parseISO(formValues.periodEnd) : currentMonthEnd;
   const paymentDate = formValues.paymentDate ? parseISO(formValues.paymentDate) : new Date();
 
-  // Check for existing run
+  // Check for existing run (only check same payment frequency)
   const { data: existingRun } = api.payroll.checkExistingRun.useQuery(
     {
       tenantId: tenantId!,
       periodStart,
       periodEnd,
+      paymentFrequency: formValues.paymentFrequency,
     },
     { enabled: !!tenantId }
   );

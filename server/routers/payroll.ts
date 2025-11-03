@@ -21,8 +21,8 @@ import {
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
 import { payrollRuns, payrollLineItems, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions } from '@/lib/db/schema';
-import { salaryComponentTemplates } from '@/drizzle/schema';
-import { eq, and, lte, gte, or, isNull, asc, desc, sql } from 'drizzle-orm';
+import { salaryComponentTemplates, taxSystems } from '@/drizzle/schema';
+import { eq, and, lte, gte, or, isNull, asc, desc, sql, inArray } from 'drizzle-orm';
 import { ruleLoader } from '@/features/payroll/services/rule-loader';
 
 // Export services
@@ -948,6 +948,12 @@ export const payrollRouter = createTRPCRouter({
       })
     )
     .query(async ({ input, ctx }) => {
+      console.log('🔍 [getEmployeePayrollPreview] START:', {
+        tenantId: ctx.user.tenantId,
+        periodStart: input.periodStart,
+        periodEnd: input.periodEnd,
+        paymentFrequency: input.paymentFrequency,
+      });
       // FILTER: Apply payment frequency filter using the same logic as run-calculation.ts
       // For MONTHLY runs: include employees with MONTHLY frequency OR NULL (default to MONTHLY)
       // For other frequencies: exact match only
@@ -999,6 +1005,7 @@ export const payrollRouter = createTRPCRouter({
       ];
 
       // Check time entries for non-monthly workers
+      // OPTIMIZATION: Use a single query with GROUP BY instead of looping through each employee
       const missingTimeEntries: Array<{
         id: string;
         firstName: string;
@@ -1007,32 +1014,42 @@ export const payrollRouter = createTRPCRouter({
         paymentFrequency: string;
       }> = [];
 
-      for (const worker of nonMonthlyWorkers) {
-        const entries = await db
-          .select({ id: timeEntries.id })
+      if (nonMonthlyWorkers.length > 0) {
+        // Get all employee IDs that HAVE approved time entries in this period
+        const employeeIdsWithEntries = await db
+          .selectDistinct({ employeeId: timeEntries.employeeId })
           .from(timeEntries)
           .where(
             and(
-              eq(timeEntries.employeeId, worker.id),
+              inArray(
+                timeEntries.employeeId,
+                nonMonthlyWorkers.map(w => w.id)
+              ),
               eq(timeEntries.status, 'approved'),
               sql`${timeEntries.clockIn} >= ${input.periodStart.toISOString()}`,
               sql`${timeEntries.clockIn} < ${input.periodEnd.toISOString()}`
             )
-          )
-          .limit(1); // We only need to know if at least one exists
+          );
 
-        if (entries.length === 0) {
-          missingTimeEntries.push({
-            id: worker.id,
-            firstName: worker.firstName,
-            lastName: worker.lastName,
-            employeeNumber: worker.employeeNumber,
-            paymentFrequency: worker.paymentFrequency || 'MONTHLY',
-          });
+        const employeeIdsWithEntriesSet = new Set(
+          employeeIdsWithEntries.map(e => e.employeeId)
+        );
+
+        // Workers without time entries are those NOT in the set
+        for (const worker of nonMonthlyWorkers) {
+          if (!employeeIdsWithEntriesSet.has(worker.id)) {
+            missingTimeEntries.push({
+              id: worker.id,
+              firstName: worker.firstName,
+              lastName: worker.lastName,
+              employeeNumber: worker.employeeNumber,
+              paymentFrequency: worker.paymentFrequency || 'MONTHLY',
+            });
+          }
         }
       }
 
-      return {
+      const response = {
         monthlyWorkers: {
           count: monthlyWorkers.length,
           employees: monthlyWorkers,
@@ -1055,6 +1072,15 @@ export const payrollRouter = createTRPCRouter({
         },
         totalEmployees: allEmployees.length,
       };
+
+      console.log('✅ [getEmployeePayrollPreview] COMPLETE:', {
+        totalEmployees: response.totalEmployees,
+        monthlyCount: response.monthlyWorkers.count,
+        nonMonthlyCount: response.nonMonthlyWorkers.count,
+        missingTimeEntries: response.nonMonthlyWorkers.missingTimeEntries.length,
+      });
+
+      return response;
     }),
 
   /**
@@ -1069,6 +1095,7 @@ export const payrollRouter = createTRPCRouter({
         tenantId: z.string().uuid(),
         periodStart: z.date(),
         periodEnd: z.date(),
+        paymentFrequency: z.enum(['MONTHLY', 'WEEKLY', 'BIWEEKLY', 'DAILY']).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -1078,6 +1105,8 @@ export const payrollRouter = createTRPCRouter({
       const existing = await db.query.payrollRuns.findFirst({
         where: and(
           eq(payrollRuns.tenantId, input.tenantId),
+          // Only check for conflicts with same payment frequency
+          input.paymentFrequency ? eq(payrollRuns.paymentFrequency, input.paymentFrequency) : undefined,
           or(
             // Exact match
             and(
@@ -1391,30 +1420,39 @@ export const payrollRouter = createTRPCRouter({
    */
   getAvailableCountries: publicProcedure
     .query(async () => {
-      // Load countries with active payroll configuration
+      // Query only countries that have tax systems configured
+      // This avoids errors for countries without complete payroll config
+      const countriesWithTaxSystems = await db
+        .selectDistinct({ countryCode: taxSystems.countryCode })
+        .from(taxSystems);
+
+      const configuredCountryCodes = countriesWithTaxSystems.map(c => c.countryCode);
+
+      // If no countries configured, return empty array
+      if (configuredCountryCodes.length === 0) {
+        return [];
+      }
+
+      // Load country details for countries with payroll config
       const allCountries = await db.query.countries.findMany({
-        where: (countries, { eq }) => eq(countries.isActive, true),
+        where: (countries, { eq, inArray: inArrayFn, and }) => and(
+          eq(countries.isActive, true),
+          inArrayFn(countries.code, configuredCountryCodes)
+        ),
         orderBy: (countries, { asc }) => [asc(countries.code)],
       });
 
-      // Validate each country has payroll config
-      const countriesWithConfig = [];
-      for (const country of allCountries) {
-        try {
-          await ruleLoader.getCountryConfig(country.code);
-          const countryName = country.name as { fr: string; en?: string };
-          countriesWithConfig.push({
-            code: country.code,
-            name: countryName.fr,
-            nameEn: countryName.en,
-            currency: country.currencyCode,
-            isActive: country.isActive,
-          });
-        } catch (error) {
-          // Skip countries without payroll config
-          console.error(`Country ${country.code} has no valid payroll config:`, error);
-        }
-      }
+      // Map to response format
+      const countriesWithConfig = allCountries.map(country => {
+        const countryName = country.name as { fr: string; en?: string };
+        return {
+          code: country.code,
+          name: countryName.fr,
+          nameEn: countryName.en,
+          currency: country.currencyCode,
+          isActive: country.isActive,
+        };
+      });
 
       return countriesWithConfig;
     }),
