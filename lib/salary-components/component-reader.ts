@@ -114,8 +114,11 @@ function readFromComponents(
   // For metadata-driven processing, see ComponentProcessor.processComponent()
   for (const component of components) {
     switch (component.code) {
-      case '11': // Base salary
-        breakdown.baseSalary = component.amount;
+      case '11': // Salaire catégoriel (categorical/minimum salary)
+      case '12': // Sursalaire (premium above minimum) - part of base salary in CI
+        // ✅ FIX: Both code 11 and 12 are base salary components
+        // Base salary = Salaire catégoriel (11) + Sursalaire (12)
+        breakdown.baseSalary += component.amount;
         break;
 
       case '21': // Seniority bonus

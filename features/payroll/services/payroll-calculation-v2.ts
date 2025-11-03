@@ -961,6 +961,17 @@ export async function calculatePayrollV2(
     } else {
       // Component-based approach: Use totalGrossFromComponents
       grossSalary = totalGrossFromComponents;
+
+      // Calculate actual days in period
+      const periodStart = new Date(input.periodStart);
+      const periodEnd = new Date(input.periodEnd);
+      const daysInPeriod = Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      // For CDDTI workers, show hours worked instead of days
+      const daysWorked = input.contractType === 'CDDTI' && input.hoursWorkedThisMonth
+        ? Math.round(input.hoursWorkedThisMonth / 8) // Convert hours to equivalent days for display
+        : daysInPeriod;
+
       // Create a minimal grossCalc for backward compatibility
       grossCalc = {
         totalGross: totalGrossFromComponents,
@@ -969,9 +980,9 @@ export async function calculatePayrollV2(
         allowances: totalGrossFromComponents - (input.baseSalary || 0),
         overtimePay: 0,
         bonuses: input.bonuses || 0,
-        daysWorked: 30,
-        daysInPeriod: 30,
-        prorationFactor: 1.0,
+        daysWorked,
+        daysInPeriod,
+        prorationFactor: daysWorked / daysInPeriod,
         breakdown: {
           base: input.baseSalary || 0,
           allowances: totalGrossFromComponents - (input.baseSalary || 0),
@@ -1286,7 +1297,7 @@ export async function calculatePayrollV2(
   // ========================================
   // STEP 6: Build Detailed Breakdowns
   // ========================================
-  const earningsDetails = buildEarningsDetails(grossCalc, input);
+  const earningsDetails = buildEarningsDetails(grossCalc, input, processedComponents);
   const deductionsDetails = buildDeductionsDetails(
     cnpsEmployee,
     cmuEmployee,
@@ -1301,6 +1312,26 @@ export async function calculatePayrollV2(
   // ========================================
   // Return Complete Result
   // ========================================
+
+  // Calculate actual base salary from components (for component-based calculations)
+  // For CDDTI and component-based approaches where input.baseSalary is 0,
+  // we need to extract the actual base salary from processed components
+  let actualBaseSalary = input.baseSalary;
+
+  if (input.baseSalary === 0 && processedComponents.length > 0) {
+    // Extract base salary components (code 11, 12, or components that contribute to salaire catégoriel)
+    const baseComponents = processedComponents.filter(c =>
+      c.code === '11' ||
+      c.code === '12' ||
+      c.includeInSalaireCategoriel === true
+    );
+
+    if (baseComponents.length > 0) {
+      actualBaseSalary = baseComponents.reduce((sum, c) => sum + c.originalAmount, 0);
+      console.log(`[PAYROLL RESULT] Calculated actual base salary from components: ${actualBaseSalary.toLocaleString('fr-FR')} FCFA`);
+    }
+  }
+
   return {
     // Employee info
     employeeId: input.employeeId,
@@ -1308,7 +1339,7 @@ export async function calculatePayrollV2(
     periodEnd: input.periodEnd,
 
     // Earnings
-    baseSalary: input.baseSalary,
+    baseSalary: actualBaseSalary, // Use calculated base salary instead of input
     proratedBaseSalary: grossCalc.proratedSalary,
     allowances: grossCalc.allowances,
     overtimePay: grossCalc.overtimePay,
@@ -1774,15 +1805,32 @@ function calculateSocialSecurityContributions(
 
 /**
  * Build earnings details array
+ *
+ * For component-based calculation (CDDTI), uses processedComponents.
+ * For field-based calculation (legacy), uses input allowances.
  */
-function buildEarningsDetails(grossCalc: any, input: PayrollCalculationInputV2) {
-  const details = [
-    {
-      type: 'base_salary',
-      description: 'Salaire de base',
-      amount: grossCalc.proratedSalary,
-    },
-  ];
+function buildEarningsDetails(grossCalc: any, input: PayrollCalculationInputV2, processedComponents: any[]) {
+  const details: any[] = [];
+
+  // If we have processed components (CDDTI), use them directly
+  if (processedComponents && processedComponents.length > 0) {
+    processedComponents.forEach(comp => {
+      details.push({
+        type: comp.code || 'component',
+        name: comp.name,
+        description: comp.name,
+        amount: comp.originalAmount, // Use originalAmount (already includes hours multiplication for CDDTI)
+      });
+    });
+    return details;
+  }
+
+  // Legacy: field-based calculation
+  details.push({
+    type: 'base_salary',
+    description: 'Salaire de base',
+    amount: grossCalc.proratedSalary,
+  });
 
   // Add individual allowance components
   if (input.housingAllowance && input.housingAllowance > 0) {
