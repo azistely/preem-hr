@@ -1027,7 +1027,7 @@ export async function calculatePayrollV2(
     // JOURNALIER: Use prorated deductions
     // Use hardcoded rates for Côte d'Ivoire (simplification for now)
     const cnpsRate = 0.0367; // 3.67% CNPS employee
-    const cmuFixed = 1000; // 1000 FCFA CMU
+    const cmuFixed = 0; // IMPORTANT: Journaliers (DAILY workers) are NOT subject to CMU
 
     const proratedDeductions = calculateProratedDeductions(
       journalierGrossResult.totalBrut,
@@ -1037,12 +1037,12 @@ export async function calculatePayrollV2(
     );
 
     cnpsEmployee = proratedDeductions.cnpsEmployee;
-    cmuEmployee = proratedDeductions.cmu;
+    cmuEmployee = 0; // No CMU for journaliers (DAILY workers)
 
     // Employer contributions (not prorated - always on brutBase)
     const cnpsEmployerRate = 0.0767; // 7.67% CNPS employer
     cnpsEmployer = Math.round(journalierGrossResult.brutBase * cnpsEmployerRate);
-    cmuEmployer = 0; // No employer CMU in CI
+    cmuEmployer = 0; // No CMU for journaliers (neither employee nor employer)
 
     contributionDetails = [
       {
@@ -1054,14 +1054,7 @@ export async function calculatePayrollV2(
         prorated: true,
         prorata: proratedDeductions.prorata,
       },
-      {
-        type: 'health',
-        paidBy: 'employee',
-        amount: cmuEmployee,
-        fixedAmount: cmuFixed,
-        prorated: true,
-        prorata: proratedDeductions.prorata,
-      },
+      // CMU removed for journaliers - not applicable
       {
         type: 'pension',
         paidBy: 'employer',
@@ -1091,6 +1084,7 @@ export async function calculatePayrollV2(
         maritalStatus: input.maritalStatus,
         dependentChildren: input.dependentChildren,
         countryCode: input.countryCode,
+        contractType: input.contractType, // For CMU exemption (CDDTI, journaliers)
       }
     );
 
@@ -1559,6 +1553,7 @@ function calculateSocialSecurityContributions(
     maritalStatus?: 'single' | 'married' | 'divorced' | 'widowed';
     dependentChildren?: number;
     countryCode?: string; // To determine if dynamic CMU applies
+    contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'; // To determine CMU exemption
   }
 ) {
   console.log('[DEBUG SS START]', { cnpsBase, brutImposable, hasFamily: options.hasFamily, numContributions: contributions.length });
@@ -1764,7 +1759,10 @@ function calculateSocialSecurityContributions(
   }
 
   // Apply dynamic CMU calculation for Côte d'Ivoire (GAP-CMU-001)
-  if (options.countryCode === 'CI' && options.maritalStatus !== undefined && options.dependentChildren !== undefined) {
+  // IMPORTANT: CDDTI workers are NOT subject to CMU (neither employee nor employer)
+  const isCDDTI = options.contractType === 'CDDTI';
+
+  if (options.countryCode === 'CI' && !isCDDTI && options.maritalStatus !== undefined && options.dependentChildren !== undefined) {
     const dynamicCMU = calculateCMU(options.maritalStatus, options.dependentChildren);
 
     // Override CMU values with dynamic calculation
@@ -1791,6 +1789,10 @@ function calculateSocialSecurityContributions(
     });
 
     console.log('[CMU DYNAMIC] Applied dynamic CMU:', { cmuEmployee, cmuEmployer, totalPersons: dynamicCMU.totalPersons });
+  } else if (isCDDTI) {
+    console.log('[CMU] CDDTI worker - CMU exempted (employee and employer)');
+    cmuEmployee = 0;
+    cmuEmployer = 0;
   }
 
   console.log('[DEBUG FINAL] Contribution totals:', { cnpsEmployee, cnpsEmployer, cmuEmployee, cmuEmployer });
