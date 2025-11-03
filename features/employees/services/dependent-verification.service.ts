@@ -126,8 +126,8 @@ export async function getVerifiedDependents(
       if (dep.relationship === 'spouse') {
         // Spouse always requires document (marriage certificate)
         // No age-based auto-verification
-        const hasValidDocument = dep.isVerified &&
-                                 dep.documentType &&
+        const hasValidDocument = !!dep.isVerified &&
+                                 !!dep.documentType &&
                                  isDocumentValid(dep.documentExpiryDate);
 
         return {
@@ -139,8 +139,8 @@ export async function getVerifiedDependents(
           relationship: dep.relationship as 'child' | 'spouse' | 'other',
           isVerified: hasValidDocument,
           requiresDocument: true,
-          eligibleForFiscalParts: hasValidDocument && dep.eligibleForFiscalParts,
-          eligibleForCmu: hasValidDocument && dep.eligibleForCmu,
+          eligibleForFiscalParts: hasValidDocument && !!dep.eligibleForFiscalParts,
+          eligibleForCmu: hasValidDocument && !!dep.eligibleForCmu,
           documentType: dep.documentType,
           documentNumber: dep.documentNumber,
           documentExpiryDate: dep.documentExpiryDate,
@@ -171,8 +171,8 @@ export async function getVerifiedDependents(
         }
 
         // Over 21: Requires valid document (school certificate)
-        const hasValidDocument = dep.isVerified &&
-                                 dep.documentType &&
+        const hasValidDocument = !!dep.isVerified &&
+                                 !!dep.documentType &&
                                  isDocumentValid(dep.documentExpiryDate);
 
         return {
@@ -184,8 +184,8 @@ export async function getVerifiedDependents(
           relationship: dep.relationship as 'child' | 'spouse' | 'other',
           isVerified: hasValidDocument,
           requiresDocument: true,
-          eligibleForFiscalParts: hasValidDocument && dep.eligibleForFiscalParts,
-          eligibleForCmu: hasValidDocument && dep.eligibleForCmu,
+          eligibleForFiscalParts: hasValidDocument && !!dep.eligibleForFiscalParts,
+          eligibleForCmu: hasValidDocument && !!dep.eligibleForCmu,
           documentType: dep.documentType,
           documentNumber: dep.documentNumber,
           documentExpiryDate: dep.documentExpiryDate,
@@ -194,8 +194,8 @@ export async function getVerifiedDependents(
       }
 
       // OTHER RELATIONSHIP: Requires valid document
-      const hasValidDocument = dep.isVerified &&
-                               dep.documentType &&
+      const hasValidDocument = !!dep.isVerified &&
+                               !!dep.documentType &&
                                isDocumentValid(dep.documentExpiryDate);
 
       return {
@@ -207,8 +207,8 @@ export async function getVerifiedDependents(
         relationship: dep.relationship as 'child' | 'spouse' | 'other',
         isVerified: hasValidDocument,
         requiresDocument: true,
-        eligibleForFiscalParts: hasValidDocument && dep.eligibleForFiscalParts,
-        eligibleForCmu: hasValidDocument && dep.eligibleForCmu,
+        eligibleForFiscalParts: hasValidDocument && !!dep.eligibleForFiscalParts,
+        eligibleForCmu: hasValidDocument && !!dep.eligibleForCmu,
         documentType: dep.documentType,
         documentNumber: dep.documentNumber,
         documentExpiryDate: dep.documentExpiryDate,
@@ -392,7 +392,7 @@ export async function getDependentsWithExpiringDocuments(
       dateOfBirth: dep.dateOfBirth,
       age: calculateAge(dep.dateOfBirth),
       relationship: dep.relationship as 'child' | 'spouse' | 'other',
-      isVerified: dep.isVerified,
+      isVerified: !!dep.isVerified,
       requiresDocument: dep.requiresDocument,
       eligibleForFiscalParts: dep.eligibleForFiscalParts,
       eligibleForCmu: dep.eligibleForCmu,
@@ -475,7 +475,7 @@ export async function getAllDependents(
     dateOfBirth: dep.dateOfBirth,
     age: calculateAge(dep.dateOfBirth),
     relationship: dep.relationship as 'child' | 'spouse' | 'other',
-    isVerified: dep.isVerified,
+    isVerified: !!dep.isVerified,
     requiresDocument: dep.requiresDocument,
     eligibleForFiscalParts: dep.eligibleForFiscalParts,
     eligibleForCmu: dep.eligibleForCmu,

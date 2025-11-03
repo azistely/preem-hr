@@ -61,10 +61,8 @@ export async function createBulkAdjustment(input: CreateBulkAdjustmentInput) {
       name: input.name,
       description: input.description,
       adjustmentType: input.adjustmentType === 'percentage' ? 'percentage' : 'flat',
-      adjustmentValue: input.adjustmentType === 'fixed_amount' ? input.adjustmentValue?.toString() : null,
-      adjustmentPercentage: input.adjustmentType === 'percentage' ? input.adjustmentValue?.toString() : null,
+      adjustmentValue: input.adjustmentValue?.toString() || null,
       effectiveFrom: input.effectiveFrom.toISOString().split('T')[0],
-      reason: input.description || 'Ajustement en masse',
       status: 'draft',
       createdBy: input.createdBy,
     })
@@ -135,7 +133,7 @@ export async function calculateAffectedEmployees(
     let newSalary = currentSalary;
 
     if (adjustment.adjustmentType === 'percentage') {
-      const percentage = parseFloat(adjustment.adjustmentPercentage || '0');
+      const percentage = parseFloat(adjustment.adjustmentValue || '0');
       newSalary = currentSalary * (1 + percentage / 100);
     } else if (adjustment.adjustmentType === 'flat') {
       const amount = parseFloat(adjustment.adjustmentValue || '0');
@@ -212,17 +210,16 @@ export async function processBulkAdjustment(input: ProcessBulkAdjustmentInput) {
       .set({
         status: 'approved',
         approvedBy: processedBy,
-        approvedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(bulkSalaryAdjustments.id, adjustmentId));
 
     // Create adjustment items
     const itemsToInsert = preview.items.map(item => ({
-      bulkAdjustmentId: adjustmentId,
+      adjustmentId: adjustmentId,
       employeeId: item.employeeId,
       currentSalary: item.currentSalary.toString(),
-      proposedSalary: item.newSalary.toString(),
+      newSalary: item.newSalary.toString(),
       adjustmentAmount: item.adjustmentAmount.toString(),
       status: 'pending' as const,
     }));
@@ -245,7 +242,7 @@ export async function processBulkAdjustment(input: ProcessBulkAdjustmentInput) {
             })
             .where(
               and(
-                eq(bulkAdjustmentItems.bulkAdjustmentId, adjustmentId),
+                eq(bulkAdjustmentItems.adjustmentId, adjustmentId),
                 eq(bulkAdjustmentItems.employeeId, item.employeeId)
               )
             );
@@ -279,7 +276,7 @@ export async function processBulkAdjustment(input: ProcessBulkAdjustmentInput) {
           })
           .where(
             and(
-              eq(bulkAdjustmentItems.bulkAdjustmentId, adjustmentId),
+              eq(bulkAdjustmentItems.adjustmentId, adjustmentId),
               eq(bulkAdjustmentItems.employeeId, item.employeeId)
             )
           );
@@ -294,7 +291,7 @@ export async function processBulkAdjustment(input: ProcessBulkAdjustmentInput) {
           })
           .where(
             and(
-              eq(bulkAdjustmentItems.bulkAdjustmentId, adjustmentId),
+              eq(bulkAdjustmentItems.adjustmentId, adjustmentId),
               eq(bulkAdjustmentItems.employeeId, item.employeeId)
             )
           );
@@ -309,8 +306,7 @@ export async function processBulkAdjustment(input: ProcessBulkAdjustmentInput) {
       .update(bulkSalaryAdjustments)
       .set({
         status: finalStatus,
-        executedAt: new Date().toISOString(),
-        executedBy: processedBy,
+        processedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(bulkSalaryAdjustments.id, adjustmentId));
@@ -348,7 +344,7 @@ export async function getBulkAdjustmentStatus(adjustmentId: string, tenantId: st
   const items = await db
     .select()
     .from(bulkAdjustmentItems)
-    .where(eq(bulkAdjustmentItems.bulkAdjustmentId, adjustmentId));
+    .where(eq(bulkAdjustmentItems.adjustmentId, adjustmentId));
 
   return {
     adjustment,
