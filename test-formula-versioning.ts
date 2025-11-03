@@ -13,7 +13,7 @@
  */
 
 import { db } from './lib/db';
-import { customSalaryComponents } from './drizzle/schema';
+import { salaryComponentTemplates } from './drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import {
   createFormulaVersion,
@@ -52,7 +52,7 @@ async function runTests() {
     };
 
     const [component] = await db
-      .insert(customSalaryComponents)
+      .insert(salaryComponentTemplates)
       .values({
         tenantId: TEST_TENANT_ID,
         countryCode: 'CI',
@@ -98,9 +98,9 @@ async function runTests() {
     };
 
     await db
-      .update(customSalaryComponents)
+      .update(salaryComponentTemplates)
       .set({ metadata: updatedMetadata })
-      .where(eq(customSalaryComponents.id, component.id));
+      .where(eq(salaryComponentTemplates.id, component.id));
 
     const version2 = await createFormulaVersion({
       componentId: component.id,
@@ -131,9 +131,9 @@ async function runTests() {
     };
 
     await db
-      .update(customSalaryComponents)
+      .update(salaryComponentTemplates)
       .set({ metadata: updatedMetadata2 })
-      .where(eq(customSalaryComponents.id, component.id));
+      .where(eq(salaryComponentTemplates.id, component.id));
 
     const version3 = await createFormulaVersion({
       componentId: component.id,
@@ -213,9 +213,9 @@ async function runTests() {
     console.log('Test 7: Cleanup (soft delete component)...');
 
     await db
-      .update(customSalaryComponents)
+      .update(salaryComponentTemplates)
       .set({ isActive: false })
-      .where(eq(customSalaryComponents.id, component.id));
+      .where(eq(salaryComponentTemplates.id, component.id));
 
     console.log(`✅ Component soft deleted\n`);
 

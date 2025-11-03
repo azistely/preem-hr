@@ -58,7 +58,6 @@ export const alertsRouter = createTRPCRouter({
         limit,
         offset,
         with: {
-          // @ts-expect-error - Relations not yet defined in schema
           employee: {
             columns: {
               id: true,
@@ -110,7 +109,6 @@ export const alertsRouter = createTRPCRouter({
       const alert = await ctx.db.query.alerts.findFirst({
         where: and(eq(alerts.id, input.id), eq(alerts.assigneeId, ctx.user.id)),
         with: {
-          // @ts-expect-error - Relations not yet defined in schema
           employee: {
             columns: {
               id: true,
@@ -310,7 +308,6 @@ export const alertsRouter = createTRPCRouter({
       orderBy: [desc(alerts.dueDate)],
       limit: 5,
       with: {
-        // @ts-expect-error - Relations not yet defined in schema
         employee: {
           columns: {
             id: true,

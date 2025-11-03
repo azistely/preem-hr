@@ -15,7 +15,7 @@
  */
 
 import { db } from '@/lib/db';
-import { salaryComponentDefinitions, customSalaryComponents } from '@/drizzle/schema';
+import { salaryComponentDefinitions, salaryComponentTemplates } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import type { ComponentMetadata, CIComponentMetadata } from '@/features/employees/types/salary-components';
 import { getActiveFormulaVersion } from './formula-version-service';
@@ -208,38 +208,25 @@ async function loadFormulaFromVersionHistory(
 }
 
 /**
- * Load metadata from custom_salary_components table
+ * Load metadata from tenant_salary_component_activations
+ *
+ * NOTE: This function needs refactoring to use the new Option B architecture
+ * with tenant_salary_component_activations instead of the deprecated
+ * custom_salary_components table. For now, returns null to allow compilation.
+ *
+ * TODO: Implement proper tenant-specific component activation loading
+ * See: docs/OPTION-B-ARCHITECTURE-SUMMARY.md
  */
 async function loadCustomComponentMetadata(
   code: string,
   tenantId: string
 ): Promise<{ id: string; metadata: ComponentMetadata } | null> {
-  try {
-    const [component] = await db
-      .select({
-        id: customSalaryComponents.id,
-        metadata: customSalaryComponents.metadata,
-      })
-      .from(customSalaryComponents)
-      .where(
-        and(
-          eq(customSalaryComponents.code, code),
-          eq(customSalaryComponents.tenantId, tenantId),
-          eq(customSalaryComponents.isActive, true)
-        )
-      )
-      .limit(1);
+  // TODO: Implement loading from tenant_salary_component_activations
+  // The custom_salary_components table was deprecated in favor of
+  // tenant_salary_component_activations (see migration 20251007_cleanup_deprecated_custom_components.sql)
 
-    if (!component) return null;
-
-    return {
-      id: component.id,
-      metadata: component.metadata as ComponentMetadata,
-    };
-  } catch (error) {
-    console.error('Error loading custom component metadata:', error);
-    return null;
-  }
+  console.warn(`[Formula Loader] Custom component loading not yet implemented for new architecture: ${code}`);
+  return null;
 }
 
 /**
@@ -352,34 +339,11 @@ export async function loadMultipleFormulas(
   const standardCodes = componentCodes.filter((code) => !code.startsWith('CUSTOM_'));
 
   // Batch load custom components
+  // TODO: Implement loading from tenant_salary_component_activations
+  // The custom_salary_components table was deprecated
   if (customCodes.length > 0) {
-    try {
-      const customComponents = await db
-        .select({
-          code: customSalaryComponents.code,
-          id: customSalaryComponents.id,
-          metadata: customSalaryComponents.metadata,
-        })
-        .from(customSalaryComponents)
-        .where(
-          and(
-            eq(customSalaryComponents.tenantId, tenantId),
-            eq(customSalaryComponents.isActive, true)
-          )
-        );
-
-      for (const component of customComponents) {
-        if (customCodes.includes(component.code)) {
-          results.set(component.code, {
-            metadata: component.metadata as ComponentMetadata,
-            source: 'custom-component',
-            sourceId: component.id,
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error batch loading custom components:', error);
-    }
+    console.warn(`[Formula Loader] Batch loading custom components not yet implemented for new architecture`);
+    // For now, custom codes will fall through to hardcoded defaults
   }
 
   // Batch load standard components

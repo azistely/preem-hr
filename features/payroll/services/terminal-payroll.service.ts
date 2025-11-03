@@ -158,16 +158,16 @@ export async function calculateTerminalPayroll(
     housingAllowance,
     transportAllowance,
     mealAllowance,
-    terminationDate: termination.terminationDate,
+    terminationDate: new Date(termination.terminationDate),
     hireDate: employee.hireDate,
     sectorCode: tenant.sectorCode || 'SERVICES', // Use tenant's sector code (uppercase to match database)
     // Dynamic CMU calculation (GAP-CMU-001)
     maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
     dependentChildren: employee.dependentChildren ?? undefined,
-  } as PayrollCalculationInputV2);
+  });
 
   // 8. Calculate terminal payments
-  const severanceAmount = parseFloat(termination.severanceAmount);
+  const severanceAmount = parseFloat(termination.severanceAmount || '0');
   const vacationPayoutAmount = parseFloat(termination.vacationPayoutAmount || '0');
 
   // Notice period payment (if payment in lieu)
@@ -179,8 +179,8 @@ export async function calculateTerminalPayroll(
   // - 30% for < 1 year
   // - 35% for 1-5 years
   // - 40% for 5+ years
-  const yearsOfService = parseFloat(termination.yearsOfService);
-  const averageSalary = parseFloat(termination.averageSalary12m);
+  const yearsOfService = parseFloat(termination.yearsOfService || '0');
+  const averageSalary = parseFloat(termination.averageSalary12M || '0');
 
   let legalMinimumSeverance = 0;
   if (yearsOfService < 1) {

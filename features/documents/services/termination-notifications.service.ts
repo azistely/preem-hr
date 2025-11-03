@@ -102,7 +102,7 @@ export async function sendTerminationNotification(input: SendTerminationNotifica
     documents.finalPayslip = {
       url: termination.finalPayslipUrl,
       generatedAt: termination.finalPayslipGeneratedAt || new Date().toISOString(),
-      netAmount: parseFloat(termination.severanceAmount) + parseFloat(termination.vacationPayoutAmount || '0'),
+      netAmount: parseFloat(termination.severanceAmount || '0') + parseFloat(termination.vacationPayoutAmount || '0'),
     };
   }
 

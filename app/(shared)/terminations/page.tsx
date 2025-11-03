@@ -371,11 +371,11 @@ export default function TerminationsPage() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">Indemnité</p>
-                      <p className="font-medium">{parseFloat(termination.severanceAmount).toLocaleString()} FCFA</p>
+                      <p className="font-medium">{termination.severanceAmount ? parseFloat(termination.severanceAmount).toLocaleString() : '0'} FCFA</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Ancienneté</p>
-                      <p className="font-medium">{parseFloat(termination.yearsOfService).toFixed(1)} ans</p>
+                      <p className="font-medium">{termination.yearsOfService ? parseFloat(termination.yearsOfService).toFixed(1) : '0'} ans</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Taux indemnité</p>

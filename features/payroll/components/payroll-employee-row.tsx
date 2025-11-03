@@ -24,12 +24,18 @@ import {
   Download,
   Eye,
   Loader2,
+  RefreshCw,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  Bot,
 } from 'lucide-react';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { OvertimeBreakdownCard } from '@/features/payroll/components/review/calculated';
 
 interface PayrollEmployeeRowProps {
   item: any; // Line item from payroll run
@@ -37,9 +43,15 @@ interface PayrollEmployeeRowProps {
   onToggle: () => void;
   formatCurrency: (amount: number | string) => string;
   status: string;
+  runId?: string; // Add runId for overtime breakdown
+  verificationStatus?: 'verified' | 'flagged' | 'unverified' | 'auto_ok'; // Verification status
   onPreviewPayslip?: (employeeId: string, employeeName: string) => void;
   onDownloadPayslip?: (employeeId: string, employeeName: string) => void;
   isGeneratingPayslip?: boolean;
+  onRecalculateEmployee?: (employeeId: string) => Promise<void>;
+  isRecalculating?: boolean;
+  onMarkVerified?: (employeeId: string) => Promise<void>;
+  isMarkingVerified?: boolean;
 }
 
 export function PayrollEmployeeRow({
@@ -48,11 +60,37 @@ export function PayrollEmployeeRow({
   onToggle,
   formatCurrency,
   status,
+  runId,
+  verificationStatus,
   onPreviewPayslip,
   onDownloadPayslip,
   isGeneratingPayslip = false,
+  onRecalculateEmployee,
+  isRecalculating = false,
+  onMarkVerified,
+  isMarkingVerified = false,
 }: PayrollEmployeeRowProps) {
   const router = useRouter();
+
+  // Get verification status icon and color
+  const getVerificationBadge = () => {
+    if (!verificationStatus || status !== 'calculated' && status !== 'processing') {
+      return null;
+    }
+
+    switch (verificationStatus) {
+      case 'verified':
+        return <span title="Vérifié"><CheckCircle className="h-4 w-4 text-green-600" /></span>;
+      case 'flagged':
+        return <span title="Alerte"><AlertTriangle className="h-4 w-4 text-orange-600" /></span>;
+      case 'unverified':
+        return <span title="Non vérifié"><XCircle className="h-4 w-4 text-gray-400" /></span>;
+      case 'auto_ok':
+        return <span title="Auto-vérifié"><Bot className="h-4 w-4 text-blue-600" /></span>;
+      default:
+        return null;
+    }
+  };
 
   // Parse JSONB fields
   const allowances = item.allowances as Record<string, number> || {};
@@ -74,6 +112,7 @@ export function PayrollEmployeeRow({
       <TableRow className="cursor-pointer hover:bg-muted/50" onClick={onToggle}>
         <TableCell>
           <div className="flex items-center gap-2">
+            {getVerificationBadge()}
             {isExpanded ? (
               <ChevronUp className="h-4 w-4 text-muted-foreground" />
             ) : (
@@ -166,6 +205,53 @@ export function PayrollEmployeeRow({
                   <Edit className="h-4 w-4" />
                   Modifier le Salaire
                 </Button>
+
+                {/* Recalculate Button (only for calculated/processing status) */}
+                {(status === 'calculated' || status === 'processing') && onRecalculateEmployee && (
+                  <Button
+                    onClick={() => onRecalculateEmployee(item.employeeId)}
+                    disabled={isRecalculating}
+                    variant="outline"
+                    className="gap-2 min-h-[44px]"
+                  >
+                    {isRecalculating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Recalcul...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4" />
+                        Recalculer Cet Employé
+                      </>
+                    )}
+                  </Button>
+                )}
+
+                {/* Mark Verified Button (only for calculated/processing and not already verified) */}
+                {(status === 'calculated' || status === 'processing') &&
+                 onMarkVerified &&
+                 verificationStatus !== 'verified' &&
+                 verificationStatus !== 'auto_ok' && (
+                  <Button
+                    onClick={() => onMarkVerified(item.employeeId)}
+                    disabled={isMarkingVerified}
+                    variant="default"
+                    className="gap-2 min-h-[44px]"
+                  >
+                    {isMarkingVerified ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Vérification...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        Marquer comme vérifié
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -294,8 +380,18 @@ export function PayrollEmployeeRow({
                     </CardContent>
                 </Card>
 
-                {/* Time Tracking & Time Off (Placeholder for future integration) */}
-                <Card>
+                {/* Time Tracking & Time Off with Overtime Breakdown */}
+                {runId ? (
+                  <OvertimeBreakdownCard
+                    runId={runId}
+                    employeeId={item.employeeId}
+                    employeeName={item.employeeName || 'Employé'}
+                    daysWorked={item.daysWorked || 0}
+                    daysAbsent={item.daysAbsent || 0}
+                    formatCurrency={formatCurrency}
+                  />
+                ) : (
+                  <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Temps de Travail et Congés</CardTitle>
                     </CardHeader>
@@ -320,12 +416,12 @@ export function PayrollEmployeeRow({
                         </div>
                       )}
 
-                      {/* TODO: Add time tracking entries and time off requests */}
                       <div className="text-sm text-muted-foreground pt-2">
                         Les détails de pointage et congés seront affichés ici
                       </div>
                     </CardContent>
-                </Card>
+                  </Card>
+                )}
               </div>
             </div>
           </TableCell>

@@ -7,6 +7,7 @@
 import { createTRPCRouter } from '../api/trpc';
 import { authRouter } from './auth';
 import { payrollRouter } from './payroll';
+import { payrollReviewRouter } from './payroll-review';
 import { tenantRouter } from './tenant';
 import { employeesRouter } from './employees';
 import { positionsRouter } from './positions';
@@ -68,6 +69,7 @@ export const appRouter = createTRPCRouter({
   employeeImport: employeeImportRouter,
   contracts: contractsRouter,
   payroll: payrollRouter,
+  payrollReview: payrollReviewRouter,
   tenant: tenantRouter,
   employees: employeesRouter,
   positions: positionsRouter,

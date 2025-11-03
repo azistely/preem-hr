@@ -64,6 +64,7 @@ import { EmployeeListCard } from '@/features/payroll/components/review/draft/emp
 import { EmployeeDetailSheet } from '@/features/payroll/components/review/employee-detail-sheet';
 import { EmployeeDetailContent } from '@/features/payroll/components/review/draft/employee-detail-content';
 import { DashboardSummaryCard } from '@/features/payroll/components/review/draft/dashboard-summary-card';
+import { CalculatedReviewEnhancements } from './components/calculated-review-enhancements';
 
 type RunStatus = 'draft' | 'calculating' | 'processing' | 'calculated' | 'approved' | 'paid' | 'failed';
 
@@ -120,6 +121,8 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [previewPayslip, setPreviewPayslip] = useState<{ employeeId: string; employeeName: string; pdfUrl: string } | null>(null);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
+  const [recalculatingEmployeeId, setRecalculatingEmployeeId] = useState<string | null>(null);
+  const [verifyingEmployeeId, setVerifyingEmployeeId] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<{
     id: string;
     firstName: string;
@@ -138,6 +141,12 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const { data: run, isLoading, refetch } = api.payroll.getRun.useQuery({
     runId,
   });
+
+  // Load verification statuses for calculated/processing runs
+  const { data: verificationStatuses, refetch: refetchVerificationStatuses } = api.payrollReview.getVerificationStatus.useQuery(
+    { runId },
+    { enabled: !!run && (run.status === 'calculated' || run.status === 'processing') }
+  );
 
   // Load available exports dynamically
   const { data: availableExports, isLoading: isLoadingExports } = api.payroll.getAvailableExports.useQuery({
@@ -186,6 +195,7 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const exportBankTransfer = api.payroll.exportBankTransfer.useMutation();
   const generatePayslip = api.payroll.generatePayslip.useMutation();
   const generateBulkPayslips = api.payroll.generateBulkPayslips.useMutation();
+  const recalculateEmployee = api.payrollReview.recalculateEmployee.useMutation();
 
   const formatCurrency = (amount: number | string) => {
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -353,6 +363,55 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
       URL.revokeObjectURL(previewPayslip.pdfUrl);
     }
     setPreviewPayslip(null);
+  };
+
+  // Recalculate individual employee
+  const handleRecalculateEmployee = async (employeeId: string) => {
+    if (!run) return;
+
+    try {
+      setRecalculatingEmployeeId(employeeId);
+      const result = await recalculateEmployee.mutateAsync({
+        runId: run.id,
+        employeeId,
+      });
+
+      // Refetch the run to get updated data
+      await refetch();
+
+      // Show success message
+      alert(`✅ Recalculé - ${result.before.netSalary} FCFA → ${result.after.netSalary} FCFA`);
+    } catch (error: any) {
+      alert(`Erreur lors du recalcul: ${error.message}`);
+    } finally {
+      setRecalculatingEmployeeId(null);
+    }
+  };
+
+  // Mark individual employee as verified
+  const markVerifiedMutation = api.payrollReview.markEmployeeVerified.useMutation({
+    onSuccess: async () => {
+      await refetch();
+      await refetchVerificationStatuses();
+      setVerifyingEmployeeId(null);
+    },
+  });
+
+  const handleMarkVerifiedEmployee = async (employeeId: string) => {
+    if (!user?.id || !run) return;
+
+    try {
+      setVerifyingEmployeeId(employeeId);
+      await markVerifiedMutation.mutateAsync({
+        runId: run.id,
+        employeeId,
+        verifiedBy: user.id,
+      });
+    } catch (error: any) {
+      alert(`Erreur lors de la vérification: ${error.message}`);
+    } finally {
+      setVerifyingEmployeeId(null);
+    }
   };
 
   if (isLoading) {
@@ -709,6 +768,23 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
         </EmployeeDetailSheet>
       )}
 
+      {/* Calculated/Processing Mode: Show Review Enhancements */}
+      {(status === 'calculated' || status === 'processing') && (
+        <div className="mb-8">
+          <CalculatedReviewEnhancements
+            runId={runId}
+            userId={userId}
+            status={status}
+            totalEmployees={run.employeeCount || 0}
+            totalNet={run.totalNet ? Number(run.totalNet) : undefined}
+            onViewEmployeeDetails={(employeeId) => {
+              setExpandedEmployeeId(expandedEmployeeId === employeeId ? null : employeeId);
+            }}
+            onApprove={handleApprove}
+          />
+        </div>
+      )}
+
       {/* Line Items Table */}
       <Card>
         <CardHeader>
@@ -736,19 +812,31 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {run.lineItems.map((item) => (
-                  <PayrollEmployeeRow
-                    key={item.id}
-                    item={item}
-                    isExpanded={expandedEmployeeId === item.employeeId}
-                    onToggle={() => setExpandedEmployeeId(expandedEmployeeId === item.employeeId ? null : item.employeeId)}
-                    formatCurrency={formatCurrency}
-                    status={status}
-                    onPreviewPayslip={handlePreviewPayslip}
-                    onDownloadPayslip={handleDownloadPayslip}
-                    isGeneratingPayslip={generatePayslip.isPending}
-                  />
-                ))}
+                {run.lineItems.map((item) => {
+                  const verificationStatus = verificationStatuses?.find(
+                    (v) => v.employeeId === item.employeeId
+                  )?.status as 'verified' | 'flagged' | 'unverified' | 'auto_ok' | undefined;
+
+                  return (
+                    <PayrollEmployeeRow
+                      key={item.id}
+                      item={item}
+                      isExpanded={expandedEmployeeId === item.employeeId}
+                      onToggle={() => setExpandedEmployeeId(expandedEmployeeId === item.employeeId ? null : item.employeeId)}
+                      formatCurrency={formatCurrency}
+                      status={status}
+                      runId={run.id}
+                      verificationStatus={verificationStatus}
+                      onPreviewPayslip={handlePreviewPayslip}
+                      onDownloadPayslip={handleDownloadPayslip}
+                      isGeneratingPayslip={generatePayslip.isPending}
+                      onRecalculateEmployee={handleRecalculateEmployee}
+                      isRecalculating={recalculatingEmployeeId === item.employeeId}
+                      onMarkVerified={handleMarkVerifiedEmployee}
+                      isMarkingVerified={verifyingEmployeeId === item.employeeId}
+                    />
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (

@@ -45,7 +45,6 @@ export const alertEscalationFunction = inngest.createFunction(
       const alert = await db.query.alerts.findFirst({
         where: and(eq(alerts.id, alertId), eq(alerts.tenantId, tenantId)),
         with: {
-          // @ts-expect-error - Relations not yet defined in schema
           assignee: true,
           employee: true,
         },

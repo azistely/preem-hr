@@ -90,7 +90,6 @@ export const dashboardRouter = router({
       where: eq(payrollLineItems.employeeId, employee.id),
       orderBy: [desc(payrollLineItems.createdAt)],
       with: {
-          // @ts-expect-error - Relations not yet defined in schema
         payrollRun: true,
       },
     });
@@ -209,7 +208,6 @@ export const dashboardRouter = router({
         eq(timeOffRequests.status, 'pending')
       ),
       with: {
-          // @ts-expect-error - Relations not yet defined in schema
         employee: true,
       },
       limit: 10,
@@ -440,7 +438,6 @@ export const dashboardRouter = router({
         orderBy: [desc(payrollLineItems.createdAt)],
         limit: input.limit,
         with: {
-          // @ts-expect-error - Relations not yet defined in schema
           payrollRun: true,
         },
       });
@@ -476,7 +473,6 @@ export const dashboardRouter = router({
         eq(timeOffRequests.status, 'pending')
       ),
       with: {
-          // @ts-expect-error - Relations not yet defined in schema
         employee: true,
       },
       orderBy: [desc(timeOffRequests.createdAt)],

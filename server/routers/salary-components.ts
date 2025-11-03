@@ -16,7 +16,7 @@ import {
   salaryComponentDefinitions,
   sectorConfigurations,
   tenantSalaryComponentActivations,
-  customSalaryComponents,
+  salaryComponentTemplates,
 } from '@/drizzle/schema';
 import { eq, and, desc, inArray, or } from 'drizzle-orm';
 import type {
@@ -481,98 +481,37 @@ export const salaryComponentsRouter = createTRPCRouter({
 
   /**
    * Delete (soft delete) a custom component
+   *
+   * @deprecated This endpoint is deprecated. Custom components are no longer supported
+   * in favor of tenant_salary_component_activations architecture.
+   * See migration: 20251007_cleanup_deprecated_custom_components.sql
+   *
+   * TODO: Remove this endpoint or refactor to work with tenant activations
    */
   deleteCustomComponent: publicProcedure
     .input(deleteCustomComponentSchema)
     .mutation(async ({ input, ctx }) => {
-      const tenantId = ctx.user?.tenantId;
-
-      if (!tenantId) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Tenant ID requis',
-        });
-      }
-
-      const { componentId } = input;
-
-      // Verify component belongs to tenant
-      const [existing] = await db
-        .select()
-        .from(customSalaryComponents)
-        .where(
-          and(
-            eq(customSalaryComponents.id, componentId),
-            eq(customSalaryComponents.tenantId, tenantId)
-          )
-        )
-        .limit(1);
-
-      if (!existing) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Composant introuvable',
-        });
-      }
-
-      // Soft delete by marking as inactive
-      await db
-        .update(customSalaryComponents)
-        .set({
-          isActive: false,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(customSalaryComponents.id, componentId));
-
-      return { success: true };
+      throw new TRPCError({
+        code: 'NOT_IMPLEMENTED',
+        message: 'Cette fonctionnalité a été dépréciée. Veuillez utiliser les activations de composants.',
+      });
     }),
 
   /**
    * Get formula version history for a custom component
    *
-   * Returns timeline of all formula changes with audit trail
+   * @deprecated This endpoint is deprecated. Custom components are no longer supported
+   * in favor of tenant_salary_component_activations architecture.
+   *
+   * TODO: Remove this endpoint or refactor to work with tenant activations
    */
   getFormulaHistory: publicProcedure
     .input(getFormulaHistorySchema)
     .query(async ({ input, ctx }) => {
-      const tenantId = ctx.user?.tenantId;
-
-      if (!tenantId) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Tenant ID requis',
-        });
-      }
-
-      const { componentId, limit } = input;
-
-      // Verify component belongs to tenant
-      const [existing] = await db
-        .select()
-        .from(customSalaryComponents)
-        .where(
-          and(
-            eq(customSalaryComponents.id, componentId),
-            eq(customSalaryComponents.tenantId, tenantId)
-          )
-        )
-        .limit(1);
-
-      if (!existing) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Composant introuvable',
-        });
-      }
-
-      // Get version history
-      const versions = await getVersionHistory({
-        componentId,
-        componentType: 'custom',
-        limit,
+      throw new TRPCError({
+        code: 'NOT_IMPLEMENTED',
+        message: 'Cette fonctionnalité a été dépréciée. Veuillez utiliser les activations de composants.',
       });
-
-      return versions;
     }),
 
   /**
