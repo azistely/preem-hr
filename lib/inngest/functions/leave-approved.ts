@@ -75,7 +75,16 @@ export const leaveApprovedFunction = inngest.createFunction(
 
     // Step 2: Calculate unpaid leave deduction
     const deduction = await step.run('calculate-deduction', async () => {
-      const baseSalary = employee.currentSalary!.baseSalary;
+      // currentSalary can be an array from relations
+      const currentSalary = Array.isArray(employee.currentSalary)
+        ? employee.currentSalary[0]
+        : employee.currentSalary;
+
+      if (!currentSalary) {
+        throw new Error(`No active salary found for employee ${employeeId}`);
+      }
+
+      const baseSalary = currentSalary.baseSalary;
 
       // Assumption: 22 working days per month (standard for West Africa)
       const dailyRate = baseSalary / 22;
@@ -98,7 +107,7 @@ export const leaveApprovedFunction = inngest.createFunction(
           eventType: 'unpaid_leave',
           employeeId,
           eventDate: new Date(startDate),
-          amountCalculated: -deduction.deductionAmount, // Negative amount (deduction)
+          amountCalculated: -(deduction.deductionAmount as number), // Negative amount (deduction)
           isProrated: true,
           workingDays: 22,
           daysWorked: 22 - days,
@@ -137,7 +146,7 @@ export const leaveApprovedFunction = inngest.createFunction(
           type: 'unpaid_leave_deduction',
           severity: 'info',
           message: `Déduction pour congé sans solde ajoutée pour ${employeeName} (${days}j - ${Math.round(
-            deduction.deductionAmount
+            deduction.deductionAmount as number
           ).toLocaleString('fr-FR')} FCFA)`,
           assigneeId: hrManager.id,
           employeeId,

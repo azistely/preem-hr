@@ -170,7 +170,7 @@ export async function processBulkSalaryUpdate(operationId: string) {
         operationType: 'salary_update',
         successCount,
         errorCount,
-        duration: Date.now() - (operation.startedAt?.getTime() || Date.now()),
+        duration: Date.now() - (operation.startedAt ? new Date(operation.startedAt).getTime() : Date.now()),
         tenantId: operation.tenantId,
         metadata: {
           userId: operation.startedBy,

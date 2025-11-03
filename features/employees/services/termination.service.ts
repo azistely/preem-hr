@@ -55,7 +55,7 @@ export async function createTermination(input: CreateTerminationInput) {
       noticePeriodDays: input.noticePeriodDays,
       severanceAmount: input.severanceAmount.toString(),
       vacationPayoutAmount: input.vacationPayoutAmount?.toString() || '0',
-      averageSalary12m: input.averageSalary12m.toString(),
+      averageSalary12M: input.averageSalary12m.toString(),
       yearsOfService: input.yearsOfService.toString(),
       severanceRate: input.severanceRate,
       status: 'pending',

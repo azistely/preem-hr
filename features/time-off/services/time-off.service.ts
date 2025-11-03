@@ -102,7 +102,9 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
     throw new TimeOffError('Employé non trouvé', 'EMPLOYEE_NOT_FOUND');
   }
 
-  const countryCode = employee.tenant?.countryCode || 'CI';
+  // tenant can be an array from relations
+  const tenant = Array.isArray(employee.tenant) ? employee.tenant[0] : employee.tenant;
+  const countryCode = tenant?.countryCode || 'CI';
 
   // Validate dates
   if (isAfter(startDate, endDate)) {

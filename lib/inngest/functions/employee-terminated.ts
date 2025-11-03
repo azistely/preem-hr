@@ -87,12 +87,16 @@ export const employeeTerminatedFunction = inngest.createFunction(
       const daysWorked = getDaysWorkedUntil(monthStart, terminationDateObj);
       const prorationPercentage = (daysWorked / totalWorkingDays) * 100;
 
-      // Get current salary
-      if (!employee.currentSalary) {
+      // Get current salary (currentSalary can be an array from relations)
+      const currentSalary = Array.isArray(employee.currentSalary)
+        ? employee.currentSalary[0]
+        : employee.currentSalary;
+
+      if (!currentSalary) {
         throw new Error(`No active salary found for employee ${employeeId}`);
       }
 
-      const baseSalary = employee.currentSalary.baseSalary;
+      const baseSalary = currentSalary.baseSalary;
       const proratedSalary = (baseSalary / totalWorkingDays) * daysWorked;
 
       // TODO: Calculate vacation payout (requires vacation balance data)

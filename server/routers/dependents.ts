@@ -314,7 +314,7 @@ export const dependentsRouter = createTRPCRouter({
 
         // Auto-calculate isVerified based on relationship and document data
         const isVerified = calculateIsVerified(
-          mergedData.relationship,
+          mergedData.relationship as 'child' | 'spouse' | 'other',
           mergedData.dateOfBirth,
           mergedData.documentType,
           mergedData.documentNumber,
