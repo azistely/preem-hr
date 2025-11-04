@@ -757,6 +757,7 @@ export async function calculatePayrollV2(
         weeklyHoursRegime: input.weeklyHoursRegime || '40h',
         contractType: input.contractType || 'CDD',
         dailyTransportRate,
+        presenceDays: input.daysWorkedThisMonth, // ✅ Pass actual presence days for transport
         saturdayHours: input.saturdayHours,
         sundayHours: input.sundayHours,
         nightHours: input.nightHours,

@@ -37,6 +37,7 @@ export interface DailyWorkersGrossInput {
 
   // Transport allowance
   dailyTransportRate?: number; // FCFA per day (from tenant)
+  presenceDays?: number;       // IMPORTANT: Actual days present (for transport), NOT equivalent days (hours ÷ 8)
 
   // Overtime configuration
   saturdayHours?: number;   // Hours worked on Saturday
@@ -161,8 +162,25 @@ export function calculateDailyWorkersGross(
   // ========================================
   // STEP 5: Calculate transport allowance
   // ========================================
+  // ✅ IMPORTANT: Use actual presence days (if provided) instead of equivalent days
+  // Per user feedback (2025-11-03): "Les jours sont uniquement utilisés pour l'indemnité de transport.
+  // Et pour les jours, dès lors que le salarié est arrivé sur site, il a droit à 1 jour d'indemnité
+  // de transport, même s'il n'a travaillé qu'une heure."
+  //
+  // Translation: Transport is based on presence days (1 day on site = 1 full transport),
+  // NOT equivalent days (hours ÷ 8)
   const equivalentDays = calculateEquivalentDays(input.hoursWorked);
-  const transportAllowance = Math.round((input.dailyTransportRate || 0) * equivalentDays);
+  const daysForTransport = input.presenceDays !== undefined ? input.presenceDays : equivalentDays;
+  const transportAllowance = Math.round((input.dailyTransportRate || 0) * daysForTransport);
+
+  console.log('[DAILY WORKERS] Transport calculation:', {
+    hoursWorked: input.hoursWorked,
+    equivalentDays, // For ITS/deductions prorata
+    presenceDays: input.presenceDays,
+    daysForTransport,
+    dailyRate: input.dailyTransportRate || 0,
+    transportAllowance,
+  });
 
   // ========================================
   // STEP 6: Calculate total

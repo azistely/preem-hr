@@ -412,7 +412,18 @@ export async function calculatePayrollRun(
             return total + hours;
           }, 0);
 
-          console.log(`[PAYROLL DEBUG] CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${hoursWorkedThisMonth} hours worked, ${entries.length} time entries`);
+          // ✅ IMPORTANT: Calculate presence days for transport allowance
+          // Per user feedback (2025-11-03): Transport is based on presence days, NOT hours
+          // Rule: 1 day on site = 1 full transport allowance, even if only 1 hour worked
+          const uniqueDays = new Set(
+            entries.map(entry => {
+              const date = new Date(entry.clockIn);
+              return date.toISOString().split('T')[0]; // Get YYYY-MM-DD
+            })
+          );
+          daysWorkedThisMonth = uniqueDays.size;
+
+          console.log(`[PAYROLL DEBUG] CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${hoursWorkedThisMonth} hours worked, ${daysWorkedThisMonth} days present, ${entries.length} time entries`);
 
           // Skip CDDTI workers with 0 hours worked (no salary to pay)
           if (hoursWorkedThisMonth === 0) {
@@ -780,6 +791,17 @@ export async function recalculateSingleEmployee(
       const hours = entry.totalHours ? parseFloat(String(entry.totalHours)) : 0;
       return total + hours;
     }, 0);
+
+    // ✅ IMPORTANT: Calculate presence days for transport allowance
+    // Per user feedback (2025-11-03): Transport is based on presence days, NOT hours
+    // Rule: 1 day on site = 1 full transport allowance, even if only 1 hour worked
+    const uniqueDays = new Set(
+      entries.map(entry => {
+        const date = new Date(entry.clockIn);
+        return date.toISOString().split('T')[0]; // Get YYYY-MM-DD
+      })
+    );
+    daysWorkedThisMonth = uniqueDays.size;
   }
 
   // Calculate payroll
