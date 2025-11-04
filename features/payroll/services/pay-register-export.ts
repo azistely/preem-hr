@@ -42,9 +42,9 @@ export interface PayRegisterEmployeeData {
   bonuses?: number;
 
   // CDDTI-specific components (daily workers)
-  gratification?: number; // 3.33%
-  congesPayes?: number; // 10%
-  indemnitePrecarite?: number; // 3% for CDDTI
+  gratification?: number; // 6.25% - Prime annuelle de 75%
+  congesPayes?: number; // 10.15% - Provision 2.2 jours/mois
+  indemnitePrecarite?: number; // 3% of (base + grat + congés)
 
   grossSalary: number;
 

@@ -41,17 +41,17 @@ describe('Daily Workers Payroll Calculation', () => {
       expect(result.overtimeGross1).toBe(0);
       expect(result.overtimeGross2).toBe(0);
 
-      // Verify CDDTI components
-      expect(result.gratification).toBeCloseTo(432, 0); // 3.33% of 12,981
-      expect(result.congesPayes).toBeCloseTo(1_298, 0); // 10% of 12,981
-      expect(result.indemnitPrecarite).toBeCloseTo(389, 0); // 3% of 12,981
+      // Verify CDDTI components (corrected rates from official doc)
+      expect(result.gratification).toBeCloseTo(811, 0); // 6.25% of 12,981
+      expect(result.congesPayes).toBeCloseTo(1_400, 0); // 10.15% of (12,981 + 811)
+      expect(result.indemnitPrecarite).toBeCloseTo(456, 0); // 3% of (12,981 + 811 + 1,400)
 
       // Verify transport (500 × 3.75 days)
       expect(result.equivalentDays).toBe(3.75);
       expect(result.transportAllowance).toBe(1_875);
 
       // Verify total
-      const expectedTotal = 12_981 + 432 + 1_298 + 389 + 1_875;
+      const expectedTotal = 12_981 + 811 + 1_400 + 456 + 1_875;
       expect(result.totalBrut).toBeCloseTo(expectedTotal, 0);
     });
 
@@ -210,9 +210,17 @@ describe('Daily Workers Payroll Calculation', () => {
 
       const brutBase = result.brutBase;
 
+      // Note: Calculations are compounded per official formulas
+      // Gratification is calculated on brutBase
       expect(result.gratification).toBeCloseTo(brutBase * 0.05, 0);
-      expect(result.congesPayes).toBeCloseTo(brutBase * 0.12, 0);
-      expect(result.indemnitPrecarite).toBeCloseTo(brutBase * 0.05, 0);
+
+      // Congés payés includes gratification in base
+      const expectedConges = (brutBase + result.gratification) * 0.12;
+      expect(result.congesPayes).toBeCloseTo(expectedConges, 0);
+
+      // Précarité includes full subtotal (base + grat + congés)
+      const expectedPrecarite = (brutBase + result.gratification + result.congesPayes) * 0.05;
+      expect(result.indemnitPrecarite).toBeCloseTo(expectedPrecarite, 0);
     });
 
     it('generates correct component list', () => {
@@ -255,7 +263,7 @@ describe('Daily Workers Payroll Calculation', () => {
       expect(result.prorata).toBeCloseTo(0.125, 3);
     });
 
-    it('does not prorate CMU (fixed monthly amount)', () => {
+    it('prorates CMU based on days worked', () => {
       const result = calculateProratedDeductions(
         12_981,
         3.75,
@@ -263,8 +271,9 @@ describe('Daily Workers Payroll Calculation', () => {
         1_000
       );
 
-      // CMU is fixed, not prorated (per HR clarification)
-      expect(result.cmu).toBe(1_000);
+      // CMU is prorated: 1,000 × (3.75 / 30) = 125 FCFA
+      const expectedCMU = Math.round(1_000 * (3.75 / 30));
+      expect(result.cmu).toBe(expectedCMU);
     });
 
     it('returns 0 CMU if no days worked', () => {
@@ -294,6 +303,69 @@ describe('Daily Workers Payroll Calculation', () => {
   });
 
   describe('calculateDailyITS', () => {
+    /**
+     * CRITICAL TEST: Verifies fix for GAP-ITS-JOUR-001
+     * Tests the official guide example (guide_paie_journaliers_cote_ivoire.md lines 268-315)
+     */
+    it('matches official guide example with family deduction (GAP-ITS-JOUR-001)', () => {
+      // Official Côte d'Ivoire 2024 tax brackets (guide lines 220-227)
+      const monthlyBrackets = [
+        { min: 0, max: 75_000, rate: 0.00 },
+        { min: 75_000, max: 240_000, rate: 0.16 },
+        { min: 240_000, max: 800_000, rate: 0.21 },
+        { min: 800_000, max: 2_400_000, rate: 0.24 },
+        { min: 2_400_000, max: 8_000_000, rate: 0.28 },
+        { min: 8_000_000, max: null, rate: 0.32 },
+      ];
+
+      // Official family deductions (guide lines 248-259)
+      const familyDeductions = [
+        { fiscalParts: 1.0, deductionAmount: 0 },
+        { fiscalParts: 1.5, deductionAmount: 5_500 },
+        { fiscalParts: 2.0, deductionAmount: 11_000 },
+        { fiscalParts: 2.5, deductionAmount: 16_500 },
+        { fiscalParts: 3.0, deductionAmount: 22_000 },
+        { fiscalParts: 3.5, deductionAmount: 27_500 },
+        { fiscalParts: 4.0, deductionAmount: 33_000 },
+        { fiscalParts: 4.5, deductionAmount: 38_500 },
+        { fiscalParts: 5.0, deductionAmount: 44_000 },
+      ];
+
+      // Guide example (lines 268-315):
+      // - M. TRAZIE, célibataire avec 3 enfants (3 parts)
+      // - 10 days of work
+      // - 10,000 FCFA/day
+      const totalBrut = 100_000; // 10,000 × 10 days
+      const equivalentDays = 10;
+      const fiscalParts = 3.0;
+
+      const its = calculateDailyITS(
+        totalBrut,
+        equivalentDays,
+        fiscalParts,
+        monthlyBrackets,
+        familyDeductions
+      );
+
+      // Guide calculation (lines 272-315):
+      // Step 1: Calculate daily tax
+      // - Tranche 1 (0-2,500): 2,500 × 0% = 0
+      // - Tranche 2 (2,501-8,000): (8,000 - 2,500) × 16% = 880 FCFA
+      // - Tranche 3 (8,001-10,000): (10,000 - 8,000) × 21% = 420 FCFA
+      // - Daily tax = 1,300 FCFA
+      // - Gross tax for 10 days = 13,000 FCFA
+      //
+      // Step 2: Family deduction for 3 parts
+      // - Monthly deduction: 22,000 FCFA
+      // - Daily deduction: 22,000 ÷ 30 = 733 FCFA/day
+      // - Total deduction: 733 × 10 = 7,330 FCFA
+      //
+      // Step 3: Net ITS
+      // - 13,000 - 7,330 = 5,670 FCFA ✅
+
+      expect(its).toBe(5_670); // EXACT match to guide
+    });
+
     it('calculates daily ITS using daily brackets', () => {
       // Example monthly brackets (Côte d'Ivoire)
       const monthlyBrackets = [
@@ -314,7 +386,8 @@ describe('Daily Workers Payroll Calculation', () => {
         12_981,
         3.75,
         1.0,
-        monthlyBrackets
+        monthlyBrackets,
+        [] // No family deductions
       );
 
       // Verify it's in the expected range
@@ -322,18 +395,26 @@ describe('Daily Workers Payroll Calculation', () => {
       expect(its).toBeLessThan(1_000); // Should be small for this example
     });
 
-    it('applies fiscal parts correctly', () => {
+    it('applies family deductions correctly (subtraction, not division)', () => {
       const monthlyBrackets = [
-        { min: 0, max: 50_000, rate: 0 },
-        { min: 50_000, max: 130_000, rate: 0.10 },
-        { min: 130_000, max: null, rate: 0.20 },
+        { min: 0, max: 75_000, rate: 0 },
+        { min: 75_000, max: 240_000, rate: 0.16 },
+        { min: 240_000, max: null, rate: 0.21 },
       ];
 
-      const taxSingle = calculateDailyITS(100_000, 10, 1.0, monthlyBrackets);
-      const taxMarried = calculateDailyITS(100_000, 10, 2.0, monthlyBrackets);
+      // Family deductions for testing
+      const familyDeductions = [
+        { fiscalParts: 1.0, deductionAmount: 0 },
+        { fiscalParts: 2.0, deductionAmount: 11_000 },
+      ];
+
+      const taxSingle = calculateDailyITS(100_000, 10, 1.0, monthlyBrackets, familyDeductions);
+      const taxMarried = calculateDailyITS(100_000, 10, 2.0, monthlyBrackets, familyDeductions);
 
       // Married (2.0 parts) should pay less tax
+      // The difference should be close to (11,000 / 30) × 10 days = 3,667 FCFA
       expect(taxMarried).toBeLessThan(taxSingle);
+      expect(taxSingle - taxMarried).toBeCloseTo(3_667, -2); // Within 100 FCFA
     });
 
     it('returns 0 for no days worked', () => {
@@ -342,7 +423,7 @@ describe('Daily Workers Payroll Calculation', () => {
         { min: 50_000, max: null, rate: 0.10 },
       ];
 
-      const its = calculateDailyITS(0, 0, 1.0, monthlyBrackets);
+      const its = calculateDailyITS(0, 0, 1.0, monthlyBrackets, []);
       expect(its).toBe(0);
     });
 
@@ -359,7 +440,8 @@ describe('Daily Workers Payroll Calculation', () => {
         300_000, // 300k for 10 days = 30k/day (high rate)
         10,
         1.0,
-        monthlyBrackets
+        monthlyBrackets,
+        [] // No family deductions
       );
 
       expect(its).toBeGreaterThan(0);
@@ -403,11 +485,16 @@ describe('Daily Workers Payroll Calculation', () => {
         { min: 50_000, max: 130_000, rate: 0.10 },
       ];
 
+      const familyDeductions = [
+        { fiscalParts: 1.0, deductionAmount: 0 },
+      ];
+
       const its = calculateDailyITS(
         gross.brutBase, // Use brutBase for ITS (before CDDTI components)
         gross.equivalentDays,
         1.0,
-        monthlyBrackets
+        monthlyBrackets,
+        familyDeductions
       );
 
       // Verify components exist

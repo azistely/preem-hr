@@ -67,7 +67,7 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   // Daily workers support (Phase 2)
   paymentFrequency?: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; // Orthogonal to contract type
   weeklyHoursRegime?: '40h' | '44h' | '48h' | '52h' | '56h'; // For hourly divisor and OT threshold
-  employeeType?: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE'; // For contribution employeur (uses existing field)
+  employeeType?: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE'; // For contribution employeur + ITS employer rate
   contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'; // For CDDTI-specific components
   saturdayHours?: number; // Hours worked on Saturday (1.40× multiplier)
   sundayHours?: number; // Hours worked on Sunday/holiday (1.40× multiplier)
@@ -84,8 +84,9 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   // Preview mode (for hiring flow before component activation)
   isPreview?: boolean; // If true, use safe defaults for unknown components
 
-  // ITS employer tax calculation
-  isExpat?: boolean; // If true, apply 10.4% ITS employer rate; otherwise 1.2% for local personnel
+  // @deprecated Use employeeType instead (GAP-ITS-JOUR-002)
+  // ITS employer tax calculation - kept for backward compatibility, maps to employeeType
+  isExpat?: boolean; // If true, maps to employeeType='EXPAT'; otherwise employeeType='LOCAL'
 }
 
 /**
@@ -652,29 +653,40 @@ export async function calculatePayrollV2(
     console.log('[CDDTI COMPONENTS] Adding CDDTI-specific components');
 
     // Calculate brut base (total gross before CDDTI components)
-    const brutBase = totalGrossFromComponents;
+    // ⚠️ CRITICAL: Exclude transport from brutBase per official document
+    // Transport is added AFTER calculating CDDTI components, not included in the base
+    // Official doc structure: Base (3,464) → +Grat (216) → +Congés (376) → +Précarité (121) = Salaire Brut (4,177)
+    // Then SEPARATELY: +Transport (1,154) = Total (5,331)
+    const transportCodes = ['22', 'TPT_TRANSPORT_CI', 'TRANSPORT'];
+    const brutBase = processedComponents
+      .filter((c) => !transportCodes.includes(c.code))
+      .reduce((sum, c) => sum + c.originalAmount, 0);
 
-    // CDDTI-specific rates
-    const gratificationRate = 0.0333; // 3.33% (1/30 for unpaid leave)
-    const congesPayesRate = 0.10; // 10% (paid leave provision)
+    // CDDTI-specific rates (derived from official formulas)
+    // Source: SALAIRE TYPE JOURNALIER NOUVEAU 2023.txt
+    // Gratification: (Monthly × 0.75) / (12 × 173.33) = Hourly × 0.0625
+    // Congés payés: (Base + Grat) × 8 × 2.2 / 173.33 = (Base + Grat) × 0.10153
+    // Précarité: (Base + Grat + Congés) × 3%
+    const gratificationRate = 0.0625; // 6.25% - Prime de 75% répartie sur l'année
+    const congesPayesRate = 0.10153; // 10.153% - Provision 2.2 jours/mois
     const indemnitePrecariteRate = 0.03; // 3% (CDDTI only)
 
     // Calculate CDDTI component amounts
     const gratification = Math.round(brutBase * gratificationRate);
-    const congesPayes = Math.round((brutBase + gratification) * congesPayesRate); // On brut + gratification
-    const indemnitPrecarite = Math.round(brutBase * indemnitePrecariteRate);
+    const congesPayes = Math.round((brutBase + gratification) * congesPayesRate);
+    const indemnitPrecarite = Math.round((brutBase + gratification + congesPayes) * indemnitePrecariteRate);
 
     console.log(`[CDDTI COMPONENTS] Brut base: ${brutBase.toLocaleString('fr-FR')} FCFA`);
-    console.log(`[CDDTI COMPONENTS] Gratification (3.33%): ${gratification.toLocaleString('fr-FR')} FCFA`);
-    console.log(`[CDDTI COMPONENTS] Congés payés (10%): ${congesPayes.toLocaleString('fr-FR')} FCFA`);
-    console.log(`[CDDTI COMPONENTS] Indemnité de précarité (3%): ${indemnitPrecarite.toLocaleString('fr-FR')} FCFA`);
+    console.log(`[CDDTI COMPONENTS] Gratification (6.25%): ${gratification.toLocaleString('fr-FR')} FCFA`);
+    console.log(`[CDDTI COMPONENTS] Congés payés (10.15%): ${congesPayes.toLocaleString('fr-FR')} FCFA`);
+    console.log(`[CDDTI COMPONENTS] Indemnité de précarité (3% of ${(brutBase + gratification + congesPayes).toLocaleString('fr-FR')}): ${indemnitPrecarite.toLocaleString('fr-FR')} FCFA`);
 
     // Add to allComponents (which will be processed later)
     // Use database component codes: GRAT_JOUR, CONGE_JOUR, PREC_JOUR
     allComponents.push(
       {
         code: 'GRAT_JOUR',
-        name: 'Gratification congés non pris',
+        name: 'Prime de gratification',
         amount: gratification,
         sourceType: 'standard',
       },
@@ -1163,8 +1175,8 @@ export async function calculatePayrollV2(
   let taxResult: any;
   let taxProrationFactor = 1.0;
 
-  if (isJournalierEmployee && journalierGrossResult) {
-    // JOURNALIER: Use daily ITS calculation
+  if (isJournalierEmployee) {
+    // JOURNALIER: Use daily ITS calculation (for both legacy and component-based approaches)
     const fiscalParts = input.fiscalParts || 1.0;
 
     // Convert TaxBracket[] to expected format
@@ -1174,24 +1186,34 @@ export async function calculatePayrollV2(
       rate: bracket.rate,
     }));
 
+    // Convert FamilyDeductionRule[] to expected format
+    const familyDeductions = config.familyDeductions.map(rule => ({
+      fiscalParts: Number(rule.fiscalParts),
+      deductionAmount: Number(rule.deductionAmount),
+    }));
+
+    // Use brutBase from journalierGrossResult if available, otherwise use brutImposableFromComponents
+    const taxBase = journalierGrossResult ? journalierGrossResult.brutBase : brutImposableFromComponents;
+
     const dailyITS = calculateDailyITS(
-      journalierGrossResult.brutBase, // Tax on brutBase (before CDDTI components)
+      taxBase, // Tax on brutBase (before CDDTI components for legacy, or brut imposable for component-based)
       journalierEquivalentDays,
       fiscalParts,
-      monthlyBrackets
+      monthlyBrackets,
+      familyDeductions // ✅ Pass family deductions (GAP-ITS-JOUR-003)
     );
 
     taxResult = {
       monthlyTax: dailyITS,
-      taxableIncome: journalierGrossResult.brutBase - employeeContributionsForTax,
-      grossSalary: journalierGrossResult.brutBase,
+      taxableIncome: taxBase - employeeContributionsForTax,
+      grossSalary: taxBase,
       employeeContributions: employeeContributionsForTax,
       fiscalParts,
       brackets: [], // Not applicable for daily calculation
     };
 
     console.log('[JOURNALIER TAX] Daily ITS:');
-    console.log(`  Brut Base: ${journalierGrossResult.brutBase.toLocaleString('fr-FR')} FCFA`);
+    console.log(`  Tax Base: ${taxBase.toLocaleString('fr-FR')} FCFA`);
     console.log(`  Equivalent Days: ${journalierEquivalentDays}`);
     console.log(`  Fiscal Parts: ${fiscalParts}`);
     console.log(`  Daily ITS: ${dailyITS.toLocaleString('fr-FR')} FCFA`);
@@ -1281,11 +1303,14 @@ export async function calculatePayrollV2(
   // ========================================
   // STEP 5: Calculate Other Taxes (FDFP, ITS, etc.)
   // ========================================
+  // Determine employee type (prioritize employeeType, fallback to isExpat for backward compatibility)
+  const employeeType = input.employeeType || (input.isExpat ? 'EXPAT' : 'LOCAL');
+
   const { employerTaxes, employeeTaxes, otherTaxesDetails } = calculateOtherTaxes(
     grossSalary,
     taxResult.taxableIncome,
     config.otherTaxes,
-    input.isExpat ?? false // Pass employee expat status for ITS calculation
+    employeeType // Pass employee type for ITS calculation (GAP-ITS-JOUR-002)
   );
 
   // ========================================
@@ -1295,13 +1320,14 @@ export async function calculatePayrollV2(
 
   if (isJournalierEmployee && journalierGrossResult) {
     // JOURNALIER: Add contribution employeur (ITS Employeur)
-    const employeeType = input.employeeType || 'LOCAL';
+    // Use the same employeeType we determined earlier (consistent with GAP-ITS-JOUR-002)
+    const journalierEmployeeType = input.employeeType || (input.isExpat ? 'EXPAT' : 'LOCAL');
     employerContributionEmployeur = calculateContributionEmployeur(
       journalierGrossResult.brutBase,
-      employeeType
+      journalierEmployeeType
     );
 
-    console.log('[JOURNALIER EMPLOYER COSTS] Contribution Employeur:', employerContributionEmployeur.toLocaleString('fr-FR'), 'FCFA');
+    console.log('[JOURNALIER EMPLOYER COSTS] Contribution Employeur:', employerContributionEmployeur.toLocaleString('fr-FR'), 'FCFA', `(${journalierEmployeeType})`);
   }
 
   const totalEmployerContributions = cnpsEmployer + cmuEmployer + employerTaxes + employerContributionEmployeur;
@@ -1429,20 +1455,29 @@ export async function calculatePayrollV2(
 /**
  * Calculate other taxes (FDFP, ITS, etc.) from database config
  * Filters ITS taxes based on employee type (local vs expat)
+ *
+ * @param grossSalary - Total gross salary
+ * @param taxableGross - Taxable gross (after exemptions)
+ * @param otherTaxes - Other tax rules from database
+ * @param employeeType - Employee classification (LOCAL, EXPAT, DETACHE, STAGIAIRE)
  */
 function calculateOtherTaxes(
   grossSalary: number,
   taxableGross: number,
   otherTaxes: any[],
-  isExpat: boolean = false
+  employeeType: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE' = 'LOCAL'
 ) {
   let employerTaxes = 0;
   let employeeTaxes = 0;
   const details: any[] = [];
 
+  // Map employeeType to database format (lowercase)
+  const employeeTypeDb = employeeType === 'EXPAT' ? 'expat' : 'local';
+
   // DEBUG: Log ITS filtering
   console.log('🔍 [ITS DEBUG] calculateOtherTaxes called:', {
-    isExpat,
+    employeeType,
+    employeeTypeDb,
     taxesCount: otherTaxes.length,
     itsTaxes: otherTaxes.filter(t => t.code?.includes('its_employer')).map(t => ({
       code: t.code,
@@ -1453,14 +1488,13 @@ function calculateOtherTaxes(
   for (const tax of otherTaxes) {
     // Filter ITS taxes based on employee type
     if (tax.appliesToEmployeeType) {
-      const employeeType = isExpat ? 'expat' : 'local';
       console.log('🔍 [ITS DEBUG] Checking tax:', {
         code: tax.code,
         appliesToEmployeeType: tax.appliesToEmployeeType,
-        employeeType,
-        willSkip: tax.appliesToEmployeeType !== employeeType
+        employeeTypeDb,
+        willSkip: tax.appliesToEmployeeType !== employeeTypeDb
       });
-      if (tax.appliesToEmployeeType !== employeeType) {
+      if (tax.appliesToEmployeeType !== employeeTypeDb) {
         // Skip this tax - it doesn't apply to this employee type
         continue;
       }
@@ -1962,25 +1996,21 @@ function buildDeductionsDetails(
   return [
     {
       type: 'cnps_employee',
-      description: cnpsEmployeeContrib?.rate
-        ? `${taxSystem.retirementContributionLabel.fr} (${formatRate(cnpsEmployeeContrib.rate)}%)${getProratedSuffix(cnpsEmployeeContrib)}`
+      description: cnpsEmployeeContrib?.prorated
+        ? `${taxSystem.retirementContributionLabel.fr}${getProratedSuffix(cnpsEmployeeContrib)}`
         : taxSystem.retirementContributionLabel.fr,
       amount: cnpsEmployee,
     },
     {
       type: 'cmu_employee',
-      description: cmuEmployeeContrib?.prorated && cmuEmployeeContrib?.fixedAmount
-        ? `${taxSystem.healthContributionLabel.fr} (${cmuEmployeeContrib.fixedAmount.toLocaleString('fr-FR')} FCFA)${getProratedSuffix(cmuEmployeeContrib)}`
-        : cmuEmployeeContrib?.rate
-        ? `${taxSystem.healthContributionLabel.fr} (${formatRate(cmuEmployeeContrib.rate)}%)`
-        : cmuEmployee > 0
-        ? `${taxSystem.healthContributionLabel.fr} (${cmuEmployee.toLocaleString('fr-FR')} FCFA)`
+      description: cmuEmployeeContrib?.prorated
+        ? `${taxSystem.healthContributionLabel.fr}${getProratedSuffix(cmuEmployeeContrib)}`
         : taxSystem.healthContributionLabel.fr,
       amount: cmuEmployee,
     },
     {
       type: 'its',
-      description: `${taxSystem.incomeTaxLabel.fr} (${fiscalParts} part${fiscalParts > 1 ? 's' : ''})`,
+      description: taxSystem.incomeTaxLabel.fr,
       amount: tax,
     },
   ];

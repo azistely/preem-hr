@@ -84,9 +84,9 @@ export interface PayslipData {
 
   // CDDTI-specific fields (Phase 5)
   isCDDTI?: boolean;
-  gratification?: number; // 3.33%
-  congesPayes?: number; // 10%
-  indemnitePrecarite?: number; // 3% for CDDTI only
+  gratification?: number; // 6.25% - Prime annuelle de 75% répartie sur l'année
+  congesPayes?: number; // 10.15% - Provision de 2.2 jours/mois
+  indemnitePrecarite?: number; // 3% of (base + gratification + congés)
   hoursWorked?: number; // Total hours for daily workers
   timeEntriesSummary?: {
     regularHours: number;
@@ -461,13 +461,13 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => (
           </Text>
           {data.gratification && data.gratification > 0 && (
             <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Gratification (3,33%) :</Text>
+              <Text style={styles.highlightLabel}>Gratification (6,25%) :</Text>
               <Text style={styles.highlightValue}>{formatCurrency(data.gratification)}</Text>
             </View>
           )}
           {data.congesPayes && data.congesPayes > 0 && (
             <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Congés payés (10%) :</Text>
+              <Text style={styles.highlightLabel}>Congés payés (10,15%) :</Text>
               <Text style={styles.highlightValue}>{formatCurrency(data.congesPayes)}</Text>
             </View>
           )}

@@ -31,9 +31,9 @@ export interface DailyWorkersGrossInput {
   contractType: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE';
 
   // Rates for CDDTI-specific components
-  gratificationRate?: number; // Default: 3.33% (unpaid leave provision)
-  congesPayesRate?: number;   // Default: 10% (paid leave provision)
-  indemnitePrecariteRate?: number; // Default: 3% (CDDTI only)
+  gratificationRate?: number; // Default: 6.25% (75% annual bonus / 12 months)
+  congesPayesRate?: number;   // Default: 10.15% (2.2 days/month provision)
+  indemnitePrecariteRate?: number; // Default: 3% of (base + grat + congés)
 
   // Transport allowance
   dailyTransportRate?: number; // FCFA per day (from tenant)
@@ -61,9 +61,9 @@ export interface DailyWorkersGrossResult {
   brutBase: number;
 
   // CDDTI-specific components
-  gratification: number;          // 3.33% of brutBase
-  congesPayes: number;            // 10% of brutBase
-  indemnitPrecarite: number;      // 3% of brutBase (CDDTI only)
+  gratification: number;          // 6.25% of brutBase - Prime annuelle de 75%
+  congesPayes: number;            // 10.15% of (brutBase + gratification) - Provision 2.2 jours/mois
+  indemnitPrecarite: number;      // 3% of (brutBase + gratification + congesPayes) - CDDTI only
 
   // Transport
   transportAllowance: number;     // dailyRate × equivalentDays
@@ -110,11 +110,11 @@ export interface DailyWorkersGrossResult {
  * // Result:
  * // - hourlyRate: 432.7 FCFA
  * // - regularGross: 12,981 FCFA (30h × 432.7)
- * // - gratification: 432 FCFA (3.33%)
- * // - congesPayes: 1,298 FCFA (10%)
- * // - indemnitPrecarite: 389 FCFA (3%)
+ * // - gratification: 811 FCFA (6.25% of 12,981)
+ * // - congesPayes: 1,400 FCFA (10.15% of 13,792)
+ * // - indemnitPrecarite: 456 FCFA (3% of 15,192)
  * // - transport: 1,875 FCFA (500 × 3.75 days)
- * // - totalBrut: 16,975 FCFA
+ * // - totalBrut: 17,523 FCFA
  * ```
  */
 export function calculateDailyWorkersGross(
@@ -149,14 +149,19 @@ export function calculateDailyWorkersGross(
   // ========================================
   // STEP 4: Add CDDTI-specific components
   // ========================================
-  const gratificationRate = input.gratificationRate ?? 0.0333; // 3.33% (1/30 for unpaid leave)
-  const congesPayesRate = input.congesPayesRate ?? 0.10; // 10% (paid leave provision)
+  // CDDTI-specific rates (derived from official formulas)
+  // Source: SALAIRE TYPE JOURNALIER NOUVEAU 2023.txt
+  // Gratification: (Monthly × 0.75) / (12 × 173.33) = Hourly × 0.0625
+  // Congés payés: (Base + Grat) × 8 × 2.2 / 173.33 = (Base + Grat) × 0.10153
+  // Précarité: (Base + Grat + Congés) × 3%
+  const gratificationRate = input.gratificationRate ?? 0.0625; // 6.25% - Prime annuelle de 75% répartie sur l'année
+  const congesPayesRate = input.congesPayesRate ?? 0.10153; // 10.153% - Provision de 2.2 jours/mois
   const indemnitePrecariteRate = input.indemnitePrecariteRate ?? 0.03; // 3% (CDDTI only)
 
   const gratification = Math.round(brutBase * gratificationRate);
-  const congesPayes = Math.round(brutBase * congesPayesRate);
+  const congesPayes = Math.round((brutBase + gratification) * congesPayesRate);
   const indemnitPrecarite = input.contractType === 'CDDTI'
-    ? Math.round(brutBase * indemnitePrecariteRate)
+    ? Math.round((brutBase + gratification + congesPayes) * indemnitePrecariteRate)
     : 0;
 
   // ========================================
@@ -252,11 +257,11 @@ export function calculateDailyWorkersGross(
     });
   }
 
-  // Gratification (unpaid leave provision)
+  // Gratification (75% annual bonus spread over 12 months)
   if (gratification > 0) {
     components.push({
       code: '31',
-      name: 'Gratification congés non pris',
+      name: 'Prime de gratification',
       amount: gratification,
       sourceType: 'standard',
     });
@@ -372,36 +377,43 @@ export function calculateProratedDeductions(
  * Daily workers use daily tax brackets instead of monthly brackets.
  * Daily brackets = Monthly brackets ÷ 30
  *
+ * Per guide_paie_journaliers_cote_ivoire.md (lines 229-315):
+ * - Calculate daily tax using progressive brackets
+ * - Apply FIXED family deduction (subtract, not divide)
+ * - Family deduction = (monthly deduction ÷ 30) × days worked
+ *
  * @param totalBrut - Total gross salary for period
  * @param equivalentDays - Days worked (hours ÷ 8)
  * @param fiscalParts - Fiscal parts (1.0, 1.5, 2.0, etc.)
  * @param monthlyBrackets - Monthly tax brackets from database
+ * @param familyDeductions - Family deduction rules from database (monthly amounts)
  * @returns Total ITS for the period
  *
  * @example
  * ```typescript
- * // Monthly bracket: 0-50,000 = 0%, 50,001-130,000 = 10%, etc.
- * // Daily bracket: 0-1,667 = 0%, 1,668-4,333 = 10%, etc.
- *
+ * // Guide example (lines 268-315): 10,000 FCFA/day, 10 days, 3 fiscal parts
  * const its = calculateDailyITS(
- *   12981,  // Total brut
- *   3.75,   // Equivalent days
- *   1.0,    // Fiscal parts
- *   monthlyBrackets
+ *   100000,  // Total brut (10,000 × 10 days)
+ *   10,      // Equivalent days
+ *   3.0,     // Fiscal parts
+ *   monthlyBrackets,
+ *   familyDeductions
  * );
  *
  * // Calculation:
- * // 1. Daily gross = 12,981 / 3.75 = 3,462 FCFA/day
- * // 2. Apply daily brackets to 3,462 FCFA
- * // 3. Daily tax = X FCFA
- * // 4. Total ITS = X × 3.75 days
+ * // 1. Daily gross = 100,000 / 10 = 10,000 FCFA/day
+ * // 2. Apply daily brackets → 1,300 FCFA/day tax
+ * // 3. Gross tax = 1,300 × 10 = 13,000 FCFA
+ * // 4. Family deduction = 733 FCFA/day × 10 = 7,330 FCFA (for 3 parts)
+ * // 5. Net ITS = 13,000 - 7,330 = 5,670 FCFA ✅
  * ```
  */
 export function calculateDailyITS(
   totalBrut: number,
   equivalentDays: number,
   fiscalParts: number,
-  monthlyBrackets: Array<{ min: number; max: number | null; rate: number }>
+  monthlyBrackets: Array<{ min: number; max: number | null; rate: number }>,
+  familyDeductions: Array<{ fiscalParts: number; deductionAmount: number }> = []
 ): number {
   if (equivalentDays === 0) return 0;
 
@@ -415,12 +427,9 @@ export function calculateDailyITS(
   // Calculate daily gross
   const dailyGross = totalBrut / equivalentDays;
 
-  // Apply fiscal parts deduction
-  const taxableDaily = dailyGross; // Fiscal parts are applied in bracket calculation
-
-  // Calculate daily tax
+  // Calculate daily tax using progressive brackets
   let dailyTax = 0;
-  let remainingIncome = taxableDaily;
+  let remainingIncome = dailyGross;
 
   for (const bracket of dailyBrackets) {
     if (remainingIncome <= 0) break;
@@ -433,11 +442,49 @@ export function calculateDailyITS(
     remainingIncome -= taxableInBracket;
   }
 
-  // Apply fiscal parts reduction
-  dailyTax = dailyTax / fiscalParts;
+  // Calculate gross tax for the period
+  const grossTax = Math.round(dailyTax * equivalentDays);
 
-  // Total ITS = daily tax × equivalent days
-  const totalITS = Math.round(dailyTax * equivalentDays);
+  // Get family deduction (FIXED amount, not division!)
+  // Per guide lines 248-259: Monthly deductions range from 0 to 44,000 FCFA
+  // Daily deduction = monthly deduction ÷ 30 (round first, then multiply)
+  const monthlyDeduction = getFamilyDeduction(fiscalParts, familyDeductions);
+  const dailyDeduction = Math.round(monthlyDeduction / 30); // Round daily rate first (guide practice)
+  const totalDeduction = dailyDeduction * equivalentDays;
 
-  return Math.max(0, totalITS);
+  // Subtract family deduction from gross tax (guide line 313)
+  const netITS = Math.max(0, grossTax - totalDeduction);
+
+  console.log('[DAILY ITS CALCULATION]', {
+    totalBrut,
+    equivalentDays,
+    dailyGross: dailyGross.toFixed(2),
+    dailyTax: dailyTax.toFixed(2),
+    grossTax,
+    fiscalParts,
+    monthlyDeduction,
+    dailyDeduction: dailyDeduction.toFixed(2),
+    totalDeduction,
+    netITS,
+  });
+
+  return netITS;
+}
+
+/**
+ * Get family deduction amount from rules
+ *
+ * @param fiscalParts - Fiscal parts (1.0, 1.5, 2.0, etc.)
+ * @param familyDeductions - Family deduction rules from database
+ * @returns Monthly deduction amount in FCFA
+ */
+function getFamilyDeduction(
+  fiscalParts: number,
+  familyDeductions: Array<{ fiscalParts: number; deductionAmount: number }>
+): number {
+  const rule = familyDeductions.find(
+    r => Number(r.fiscalParts) === fiscalParts
+  );
+
+  return rule ? Number(rule.deductionAmount) : 0;
 }
