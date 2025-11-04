@@ -1074,37 +1074,69 @@ export function SalaryChangeWizard({
                     )}
 
                     {/* Payment Frequency Equivalents */}
-                    {paymentFrequency !== 'MONTHLY' && componentTotal > 0 && (
-                      <Alert>
-                        <Calculator className="h-4 w-4" />
-                        <AlertDescription>
-                          <strong>💡 Équivalences pour paie {getPaymentFrequencyLabel(paymentFrequency)}:</strong>
-                          <div className="mt-2 space-y-1 text-sm">
-                            {paymentFrequency === 'WEEKLY' && (
-                              <>
-                                <div>Semaine (40h): ~{formatCurrencyUtil((componentTotal / 30) * 7)} FCFA</div>
-                                <div>Mois (4.33 semaines): {formatCurrencyUtil(componentTotal)} FCFA</div>
-                              </>
-                            )}
-                            {paymentFrequency === 'BIWEEKLY' && (
-                              <>
-                                <div>Quinzaine (15 jours): ~{formatCurrencyUtil((componentTotal / 30) * 15)} FCFA</div>
-                                <div>Mois (2 quinzaines): {formatCurrencyUtil(componentTotal)} FCFA</div>
-                              </>
-                            )}
-                            {paymentFrequency === 'DAILY' && (
-                              <>
-                                <div>Jour (8h): ~{formatCurrencyUtil(componentTotal / 30)} FCFA</div>
-                                <div>Mois (30 jours): {formatCurrencyUtil(componentTotal)} FCFA</div>
-                              </>
-                            )}
-                          </div>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            Basé sur le salaire mensuel équivalent. Le montant réel dépendra des heures travaillées.
-                          </p>
-                        </AlertDescription>
-                      </Alert>
-                    )}
+                    {paymentFrequency !== 'MONTHLY' && componentTotal > 0 && (() => {
+                      // For CDDTI workers, transport is DAILY and needs special handling
+                      const transportComponent = components.find(c => c.code === '22');
+                      const transportAmount = transportComponent?.amount || 0;
+                      const nonTransportTotal = componentTotal - transportAmount;
+
+                      // For CDDTI: non-transport components are hourly rates
+                      // For weekly: calculate based on hours worked
+                      // Transport: calculate based on days present
+                      const weeklyHours = getWeeklyHours(weeklyHoursRegime);
+
+                      let weeklyAmount = 0;
+                      let biweeklyAmount = 0;
+                      let dailyAmount = 0;
+
+                      if (contractType === 'CDDTI') {
+                        // Hourly components: multiply by weekly hours
+                        // Transport: multiply by ~5 working days/week
+                        weeklyAmount = (nonTransportTotal * weeklyHours) + (transportAmount * 5);
+                        biweeklyAmount = weeklyAmount * 2;
+                        // Daily assumes 8 hours + 1 day transport
+                        dailyAmount = (nonTransportTotal * 8) + transportAmount;
+                      } else {
+                        // For other contracts, use simple monthly division
+                        weeklyAmount = (componentTotal / 30) * 7;
+                        biweeklyAmount = (componentTotal / 30) * 15;
+                        dailyAmount = componentTotal / 30;
+                      }
+
+                      return (
+                        <Alert>
+                          <Calculator className="h-4 w-4" />
+                          <AlertDescription>
+                            <strong>💡 Équivalences pour paie {getPaymentFrequencyLabel(paymentFrequency)}:</strong>
+                            <div className="mt-2 space-y-1 text-sm">
+                              {paymentFrequency === 'WEEKLY' && (
+                                <>
+                                  <div>Semaine ({contractType === 'CDDTI' ? `${weeklyHours}h + 5 jours présence` : '40h'}): ~{formatCurrencyUtil(weeklyAmount)} FCFA</div>
+                                  <div>Mois ({contractType === 'CDDTI' ? '4.33 semaines' : '4.33 semaines'}): ~{formatCurrencyUtil(weeklyAmount * 4.33)} FCFA</div>
+                                </>
+                              )}
+                              {paymentFrequency === 'BIWEEKLY' && (
+                                <>
+                                  <div>Quinzaine ({contractType === 'CDDTI' ? `${weeklyHours * 2}h + 10 jours présence` : '15 jours'}): ~{formatCurrencyUtil(biweeklyAmount)} FCFA</div>
+                                  <div>Mois (2 quinzaines): ~{formatCurrencyUtil(biweeklyAmount * 2)} FCFA</div>
+                                </>
+                              )}
+                              {paymentFrequency === 'DAILY' && (
+                                <>
+                                  <div>Jour ({contractType === 'CDDTI' ? '8h + 1 jour présence' : '8h'}): ~{formatCurrencyUtil(dailyAmount)} FCFA</div>
+                                  <div>Mois (30 jours): ~{formatCurrencyUtil(dailyAmount * 30)} FCFA</div>
+                                </>
+                              )}
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              {contractType === 'CDDTI'
+                                ? 'Basé sur les taux horaires et journaliers. Le montant réel dépendra des heures et jours travaillés.'
+                                : 'Basé sur le salaire mensuel équivalent. Le montant réel dépendra des heures travaillées.'}
+                            </p>
+                          </AlertDescription>
+                        </Alert>
+                      );
+                    })()}
 
                     {/* Weekly Hours Regime Context */}
                     {paymentFrequency !== 'MONTHLY' && weeklyHoursRegime && (
