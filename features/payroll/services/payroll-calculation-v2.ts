@@ -452,17 +452,20 @@ export async function calculatePayrollV2(
           const transportFromComponent = allComponents.find(c => c.code === '22')?.amount || 0;
           let totalTransport = transportFromComponent || (input.transportAllowance || 0);
 
-          // For HOURLY rate type (CDDTI), convert hourly rate to monthly equivalent
+          // ✅ IMPORTANT: For CDDTI workers, transport is DAILY (not hourly)
+          // Per user feedback (2025-11-03): "Les jours sont uniquement utilisés pour l'indemnité de transport"
+          // Transport must be multiplied by working days per month (~22 days), NOT hours
           if (input.rateType === 'HOURLY' && totalTransport > 0) {
-            // Calculate monthly hours: (weeklyHours × 52) / 12
-            const weeklyHours = input.weeklyHoursRegime === '40h' ? 40 :
-                                input.weeklyHoursRegime === '44h' ? 44 :
-                                input.weeklyHoursRegime === '48h' ? 48 :
-                                input.weeklyHoursRegime === '52h' ? 52 :
-                                input.weeklyHoursRegime === '56h' ? 56 : 40; // Default 40h
-            const monthlyHours = (weeklyHours * 52) / 12;
-            // Convert hourly rate to monthly equivalent
-            totalTransport = Math.round(totalTransport * monthlyHours);
+            // For CDDTI (HOURLY rate type), transport is stored as DAILY rate
+            // Convert daily rate to monthly equivalent: dailyRate × ~22 working days/month
+            const monthlyWorkingDays = 22;
+            totalTransport = Math.round(totalTransport * monthlyWorkingDays);
+
+            console.log('[TRANSPORT VALIDATION] CDDTI transport conversion:', {
+              dailyRate: transportFromComponent || (input.transportAllowance || 0),
+              monthlyWorkingDays,
+              monthlyEquivalent: totalTransport,
+            });
           }
 
           // Validate transport meets minimum (only for MONTHLY workers)
@@ -472,11 +475,12 @@ export async function calculatePayrollV2(
 
           if (!isNonMonthlyWorker && totalTransport < cityMinimum.monthlyMinimum) {
             const cityName = cityMinimum.displayName?.fr || cityMinimum.cityName;
-            // Display different message for hourly vs monthly
+            // Display different message for CDDTI (HOURLY rate type, but transport is DAILY) vs monthly
             if (input.rateType === 'HOURLY') {
-              const hourlyRate = transportFromComponent || (input.transportAllowance || 0);
+              // For CDDTI: transport is DAILY rate (not hourly)
+              const dailyRate = transportFromComponent || (input.transportAllowance || 0);
               throw new Error(
-                `L'indemnité de transport (${hourlyRate.toLocaleString('fr-FR')} FCFA/h = ${totalTransport.toLocaleString('fr-FR')} FCFA/mois) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
+                `L'indemnité de transport (${dailyRate.toLocaleString('fr-FR')} FCFA/jour = ${totalTransport.toLocaleString('fr-FR')} FCFA/mois) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
               );
             } else {
               throw new Error(
