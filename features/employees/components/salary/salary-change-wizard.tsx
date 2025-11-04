@@ -383,10 +383,25 @@ export function SalaryChangeWizard({
           setTransportValidationError(null);
         }
       }
+    } else if (transportComponent && (employeeData as any)?.primaryLocationId) {
+      // Transport component exists but location data not loaded yet
+      // Show info message that validation will run when location data loads
+      setTransportValidationError(null); // Will be validated when transportMinData loads
+    } else if (transportComponent && !(employeeData as any)?.primaryLocationId) {
+      // Transport component exists but employee has no location assigned
+      // This is a data quality issue - employee should have a location
+      const transportAmount = transportComponent.amount;
+
+      if (contractType === 'CDDTI') {
+        setTransportValidationError(
+          `⚠️ Impossible de valider: L'employé n'a pas de lieu de travail assigné. Veuillez assigner un lieu de travail pour valider le minimum de transport (varie selon la ville: Abidjan 1,000 FCFA/jour, Bouaké 800 FCFA/jour, autres villes 667 FCFA/jour).`
+        );
+      } else {
+        setTransportValidationError(
+          `⚠️ Impossible de valider: L'employé n'a pas de lieu de travail assigné. Veuillez assigner un lieu de travail pour valider le minimum de transport (varie selon la ville: Abidjan 30,000 FCFA, Bouaké 24,000 FCFA, autres villes 20,000 FCFA).`
+        );
+      }
     } else {
-      // No validation if city transport minimum data is not available
-      // The minimum varies by city (30,000 for Abidjan, 24,000 for Bouaké, 20,000 for smaller cities)
-      // We cannot validate without knowing the employee's location
       setTransportValidationError(null);
     }
   }, [components, componentTotal, employeeData, minWageData, transportMinData, contractType, weeklyHoursRegime]);
