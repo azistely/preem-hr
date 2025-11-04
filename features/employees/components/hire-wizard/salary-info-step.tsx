@@ -593,16 +593,64 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       {/* Total Gross Salary */}
       {totalGross > 0 && (
         <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
-          <div className="flex items-center justify-between">
-            <span className="font-medium">Salaire brut total</span>
-            <span className="text-2xl font-bold text-primary">
-              {formatCurrencyWithRate(totalGross, rateType as RateType)}
-            </span>
-          </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Salaire de base: {formatCurrencyWithRate(baseSalaryTotal, rateType as RateType)}
-            {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrencyWithRate(componentTotal, rateType as RateType)}`}
-          </div>
+          {contractType === 'CDDTI' ? (
+            // For CDDTI: Show breakdown by rate type (can't meaningfully add hourly + daily)
+            <div className="space-y-2">
+              <div className="font-medium text-sm text-muted-foreground">Composantes du salaire:</div>
+
+              {/* Hourly components */}
+              {(() => {
+                const transportComp = components.find((c: SalaryComponentInstance) => c.code === '22' || c.code === 'TPT_TRANSPORT_CI');
+                const hourlyTotal = baseSalaryTotal + componentTotal - (transportComp?.amount || 0);
+
+                if (hourlyTotal > 0) {
+                  return (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Taux horaire</span>
+                      <span className="text-lg font-semibold text-primary">
+                        {formatCurrencyWithRate(hourlyTotal, 'HOURLY')}
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Daily components (transport) */}
+              {(() => {
+                const transportComp = components.find((c: SalaryComponentInstance) => c.code === '22' || c.code === 'TPT_TRANSPORT_CI');
+                if (transportComp) {
+                  return (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Indemnité de transport</span>
+                      <span className="text-lg font-semibold text-primary">
+                        {formatCurrencyWithRate(transportComp.amount, 'DAILY')}
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              <p className="text-xs text-muted-foreground mt-2">
+                Le montant réel dépendra des heures et jours travaillés.
+              </p>
+            </div>
+          ) : (
+            // For other contracts: Show total as before
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Salaire brut total</span>
+                <span className="text-2xl font-bold text-primary">
+                  {formatCurrencyWithRate(totalGross, rateType as RateType)}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                Salaire de base: {formatCurrencyWithRate(baseSalaryTotal, rateType as RateType)}
+                {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrencyWithRate(componentTotal, rateType as RateType)}`}
+              </div>
+            </>
+          )}
         </div>
       )}
 
