@@ -266,6 +266,20 @@ export function SalaryChangeWizard({
   const paymentFrequency = ((employeeData as any)?.paymentFrequency || 'MONTHLY') as PaymentFrequency;
   const weeklyHoursRegime = (employeeData as any)?.weeklyHoursRegime || '40h';
 
+  /**
+   * Get unit label for component based on contract type
+   * IMPORTANT: For CDDTI employees, transport (code 22) is DAILY, other components are HOURLY
+   */
+  const getComponentUnitLabel = (componentCode: string): string => {
+    if (contractType !== 'CDDTI') {
+      return 'FCFA/mois'; // CDI, CDD, etc. - all monthly
+    }
+
+    // CDDTI: Transport is daily, others are hourly
+    const isTransportComponent = componentCode === '22' || componentCode === 'TPT_TRANSPORT_CI';
+    return isTransportComponent ? 'FCFA/jour' : 'FCFA/heure';
+  };
+
   // Calculate base salary total from all base components
   const baseSalary = components
     .filter(c => baseSalaryCodes.includes(c.code))
@@ -348,14 +362,13 @@ export function SalaryChangeWizard({
       const transportAmount = transportComponent.amount;
 
       if (contractType === 'CDDTI') {
-        // For CDDTI: validate hourly rate against hourly minimum
-        const weeklyHours = getWeeklyHours(weeklyHoursRegime);
-        const monthlyHours = (weeklyHours * 52) / 12;
-        const hourlyTransportMinimum = Math.round(cityTransportMinimum / monthlyHours);
+        // ✅ IMPORTANT: For CDDTI, transport is DAILY (not hourly)
+        // Convert monthly minimum to daily: monthly ÷ 30 days
+        const dailyTransportMinimum = Math.round(cityTransportMinimum / 30);
 
-        if (Math.round(transportAmount) < hourlyTransportMinimum) {
+        if (Math.round(transportAmount) < dailyTransportMinimum) {
           setTransportValidationError(
-            `La prime de transport (${Math.round(transportAmount).toLocaleString('fr-FR')} FCFA/h) est inférieure au minimum pour ${cityName} (${hourlyTransportMinimum.toLocaleString('fr-FR')} FCFA/h).`
+            `La prime de transport (${Math.round(transportAmount).toLocaleString('fr-FR')} FCFA/jour) est inférieure au minimum pour ${cityName} (${dailyTransportMinimum.toLocaleString('fr-FR')} FCFA/jour).`
           );
         } else {
           setTransportValidationError(null);
@@ -375,15 +388,13 @@ export function SalaryChangeWizard({
       const transportAmount = transportComponent.amount;
 
       if (contractType === 'CDDTI') {
-        // Hourly fallback minimum
-        const weeklyHours = getWeeklyHours(weeklyHoursRegime);
-        const monthlyHours = (weeklyHours * 52) / 12;
-        const fallbackMinimum = 20000;
-        const hourlyFallbackMinimum = Math.round(fallbackMinimum / monthlyHours);
+        // ✅ IMPORTANT: Daily fallback minimum for CDDTI
+        const fallbackMinimum = 20000; // Monthly
+        const dailyFallbackMinimum = Math.round(fallbackMinimum / 30);
 
-        if (Math.round(transportAmount) < hourlyFallbackMinimum) {
+        if (Math.round(transportAmount) < dailyFallbackMinimum) {
           setTransportValidationError(
-            `La prime de transport (${Math.round(transportAmount).toLocaleString('fr-FR')} FCFA/h) est inférieure au minimum légal (${hourlyFallbackMinimum.toLocaleString('fr-FR')} FCFA/h). Le minimum varie selon la ville.`
+            `La prime de transport (${Math.round(transportAmount).toLocaleString('fr-FR')} FCFA/jour) est inférieure au minimum légal (${dailyFallbackMinimum.toLocaleString('fr-FR')} FCFA/jour). Le minimum varie selon la ville.`
           );
         } else {
           setTransportValidationError(null);
@@ -736,7 +747,7 @@ export function SalaryChangeWizard({
                                 required={!componentDef.isOptional}
                               />
                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                                {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
+                                {getComponentUnitLabel(componentDef.code)}
                               </span>
                             </div>
                             <FormDescription className="mt-1">{componentDef.description.fr}</FormDescription>
@@ -776,7 +787,7 @@ export function SalaryChangeWizard({
                           className="min-h-[56px] text-2xl font-bold pr-28"
                         />
                         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg text-muted-foreground">
-                          {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
+                          {getComponentUnitLabel('11')}
                         </span>
                       </div>
                       <FormDescription className="mt-1">
@@ -992,7 +1003,7 @@ export function SalaryChangeWizard({
                                     </div>
                                   ) : (
                                     <p className="text-xs text-muted-foreground">
-                                      {formatCurrencyUtil(component.amount)} {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
+                                      {formatCurrencyUtil(component.amount)} {getComponentUnitLabel(component.code)}
                                     </p>
                                   )}
                                 </div>
