@@ -39,16 +39,17 @@ export function TransportAllowanceAlert({
   );
 
   // Convert location's monthly transport to employee's rate type based on contract
-  // CDDTI = hourly, everything else = monthly
+  // ✅ IMPORTANT: For CDDTI, transport is DAILY (not hourly)
   useEffect(() => {
     if (location?.transportAllowance) {
       const monthlyTransport = parseFloat(location.transportAllowance.toString());
       let converted = monthlyTransport;
 
-      // CDDTI workers are paid hourly
+      // CDDTI workers: transport is DAILY (not hourly)
+      // Per user feedback (2025-11-03): "Les jours sont uniquement utilisés pour l'indemnité de transport"
       if (contractType === 'CDDTI') {
-        // Convert monthly to hourly: divide by 240 (30 days × 8 hours)
-        converted = Math.round(monthlyTransport / 240);
+        // Convert monthly to daily: divide by 30 days
+        converted = Math.round(monthlyTransport / 30);
       }
       // All other contract types (CDI, CDD, INTERIM, STAGE) are monthly
 
@@ -67,8 +68,9 @@ export function TransportAllowanceAlert({
   };
 
   // Get rate label based on contract type
+  // ✅ IMPORTANT: For CDDTI, transport is DAILY (not hourly)
   const getRateLabel = () => {
-    return contractType === 'CDDTI' ? '/heure' : '';
+    return contractType === 'CDDTI' ? '/jour' : '';
   };
 
   // Don't show if loading or no location

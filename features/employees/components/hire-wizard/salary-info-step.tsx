@@ -105,6 +105,20 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const currentTransport = transportComponent?.amount || 0;
 
   /**
+   * Get display unit for component based on contract type
+   * IMPORTANT: For CDDTI employees, transport (code 22) is DAILY, other components are HOURLY
+   */
+  const getComponentDisplayUnit = (componentCode: string): RateType => {
+    if (contractType === 'CDDTI') {
+      // For CDDTI: Transport is daily, others follow employee rate type (HOURLY)
+      const isTransport = componentCode === '22' || componentCode === 'TPT_TRANSPORT_CI';
+      return isTransport ? 'DAILY' : rateType as RateType;
+    }
+    // For other contracts: all components follow employee rate type
+    return rateType as RateType;
+  };
+
+  /**
    * Calculate auto-calculated component amounts
    * Handles various calculation types: seniority, percentage, overtime, etc.
    */
@@ -527,7 +541,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                       </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        {formatCurrencyWithRate(component.amount, rateType as RateType)}
+                        {formatCurrencyWithRate(component.amount, getComponentDisplayUnit(component.code))}
                       </p>
                     )}
                   </div>
