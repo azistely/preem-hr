@@ -383,35 +383,10 @@ export function SalaryChangeWizard({
           setTransportValidationError(null);
         }
       }
-    } else if (transportComponent && !cityTransportMinimum) {
-      // Fallback validation if city data not yet loaded
-      const transportAmount = transportComponent.amount;
-
-      if (contractType === 'CDDTI') {
-        // ✅ IMPORTANT: Daily fallback minimum for CDDTI
-        const fallbackMinimum = 20000; // Monthly
-        const dailyFallbackMinimum = Math.round(fallbackMinimum / 30);
-
-        if (Math.round(transportAmount) < dailyFallbackMinimum) {
-          setTransportValidationError(
-            `La prime de transport (${Math.round(transportAmount).toLocaleString('fr-FR')} FCFA/jour) est inférieure au minimum légal (${dailyFallbackMinimum.toLocaleString('fr-FR')} FCFA/jour). Le minimum varie selon la ville.`
-          );
-        } else {
-          setTransportValidationError(null);
-        }
-      } else {
-        // Monthly fallback minimum
-        const fallbackMinimum = 20000;
-
-        if (transportAmount < fallbackMinimum) {
-          setTransportValidationError(
-            `La prime de transport (${transportAmount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal (${fallbackMinimum.toLocaleString('fr-FR')} FCFA). Le minimum varie selon la ville.`
-          );
-        } else {
-          setTransportValidationError(null);
-        }
-      }
     } else {
+      // No validation if city transport minimum data is not available
+      // The minimum varies by city (30,000 for Abidjan, 24,000 for Bouaké, 20,000 for smaller cities)
+      // We cannot validate without knowing the employee's location
       setTransportValidationError(null);
     }
   }, [components, componentTotal, employeeData, minWageData, transportMinData, contractType, weeklyHoursRegime]);
