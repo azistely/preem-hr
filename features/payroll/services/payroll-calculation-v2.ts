@@ -176,14 +176,32 @@ function convertAllowancesToComponents(
 
   // Custom components (if provided)
   if (input.customComponents && input.customComponents.length > 0) {
-    // For HOURLY workers, multiply component amounts by hours worked
+    // For HOURLY workers (CDDTI), multiply component amounts by hours worked
+    // ✅ EXCEPTION: Transport (code 22) is DAILY, multiply by presence days (not hours)
     if (input.rateType === 'HOURLY' && input.hoursWorkedThisMonth) {
-      const multipliedComponents = input.customComponents.map(comp => ({
-        ...comp,
-        amount: Math.round(comp.amount * input.hoursWorkedThisMonth!),
-      }));
+      const multipliedComponents = input.customComponents.map(comp => {
+        // ✅ IMPORTANT: Transport is based on presence days, NOT hours
+        // Per user feedback (2025-11-03): "Les jours sont uniquement utilisés pour l'indemnité de transport"
+        const isTransport = comp.code === '22' || comp.code === 'TPT_TRANSPORT_CI';
+
+        if (isTransport && input.daysWorkedThisMonth !== undefined) {
+          // Transport: multiply daily rate × presence days
+          const transportAmount = Math.round(comp.amount * input.daysWorkedThisMonth);
+          console.log(`[TRANSPORT COMPONENT] ${comp.code}: ${comp.amount} FCFA/jour × ${input.daysWorkedThisMonth} days = ${transportAmount} FCFA`);
+          return {
+            ...comp,
+            amount: transportAmount,
+          };
+        } else {
+          // Other components: multiply hourly rate × hours worked
+          return {
+            ...comp,
+            amount: Math.round(comp.amount * input.hoursWorkedThisMonth!),
+          };
+        }
+      });
       components.push(...multipliedComponents);
-      console.log(`[HOURLY COMPONENTS] Multiplied ${input.customComponents.length} components by ${input.hoursWorkedThisMonth} hours`);
+      console.log(`[HOURLY COMPONENTS] Multiplied ${input.customComponents.length} components (${input.hoursWorkedThisMonth} hours, ${input.daysWorkedThisMonth || 0} days)`);
     } else {
       components.push(...input.customComponents);
     }
