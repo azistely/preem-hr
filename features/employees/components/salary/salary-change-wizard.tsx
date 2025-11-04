@@ -1022,49 +1022,8 @@ export function SalaryChangeWizard({
                     )}
                   </div>
 
-                  {/* Total Gross Salary with validation */}
+                  {/* Validation Messages */}
                   <div className="space-y-3">
-                    <div className="bg-muted/50 p-4 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">
-                          {paymentFrequency === 'WEEKLY' ? 'Salaire mensuel équivalent (paie hebdomadaire)' :
-                           paymentFrequency === 'BIWEEKLY' ? 'Salaire mensuel équivalent (paie bimensuelle)' :
-                           paymentFrequency === 'DAILY' ? 'Salaire mensuel équivalent (paie journalière)' :
-                           'Salaire brut mensuel'}
-                        </span>
-                        <span className="text-2xl font-bold text-primary">
-                          {(() => {
-                            // For CDDTI workers, calculate monthly equivalent based on full month
-                            if (contractType === 'CDDTI' && paymentFrequency !== 'MONTHLY') {
-                              const transportComponent = components.find(c => c.code === '22');
-                              const transportAmount = transportComponent?.amount || 0;
-                              const nonTransportTotal = componentTotal - transportAmount;
-
-                              // Monthly hours for the regime
-                              const weeklyHours = getWeeklyHours(weeklyHoursRegime);
-                              const monthlyHours = (weeklyHours * 52) / 12; // ~173.33 for 40h regime
-
-                              // Monthly working days (~22 days)
-                              const monthlyWorkingDays = 22;
-
-                              // Monthly equivalent = (hourly rate × monthly hours) + (daily rate × monthly days)
-                              const monthlyEquivalent = (nonTransportTotal * monthlyHours) + (transportAmount * monthlyWorkingDays);
-
-                              return formatCurrencyUtil(Math.round(monthlyEquivalent)) + ' FCFA';
-                            }
-
-                            // For other contracts, use componentTotal as-is
-                            return formatCurrencyUtil(componentTotal) + ' FCFA';
-                          })()}
-                        </span>
-                      </div>
-                      {validationResult?.minimumWage && (
-                        <p className="text-xs text-muted-foreground">
-                          SMIG minimum: {formatCurrencyUtil(validationResult.minimumWage)} FCFA
-                        </p>
-                      )}
-                    </div>
-
                     {/* SMIG validation - only show after user has interacted */}
                     {baseSalaryTouched && validationResult && !validationResult.isValid && (
                       <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive rounded-md">
