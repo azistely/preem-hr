@@ -1405,17 +1405,37 @@ export async function calculatePayrollV2(
   // ========================================
   let employerContributionEmployeur = 0;
 
-  if (isJournalierEmployee && journalierGrossResult) {
+  if (isJournalierEmployee) {
     // JOURNALIER: Add contribution employeur (ITS Employeur via Article 146)
     // Article 146: LOCAL/DETACHE/STAGIAIRE = 2.8%, EXPAT = 12%
     // (Regular employees use Article 175: LOCAL = 1.2%, EXPAT = 10.4%)
     const journalierEmployeeType = input.employeeType || (input.isExpat ? 'EXPAT' : 'LOCAL');
+
+    // Determine the base for ITS calculation
+    // - Legacy path: use journalierGrossResult.brutBase
+    // - Component-based path: use brutImposableFromComponents (taxable gross)
+    const itsBase = journalierGrossResult
+      ? journalierGrossResult.brutBase
+      : brutImposableFromComponents;
+
     employerContributionEmployeur = calculateContributionEmployeur(
-      journalierGrossResult.brutBase,
+      itsBase,
       journalierEmployeeType
     );
 
     console.log('[JOURNALIER EMPLOYER COSTS] ITS Employeur (Article 146):', employerContributionEmployeur.toLocaleString('fr-FR'), 'FCFA', `(${journalierEmployeeType}: ${journalierEmployeeType === 'EXPAT' ? '12%' : '2.8%'})`);
+    console.log('[JOURNALIER EMPLOYER COSTS] Base used:', itsBase.toLocaleString('fr-FR'), 'FCFA', journalierGrossResult ? '(legacy brutBase)' : '(component brutImposable)');
+
+    // Add to otherTaxesDetails so UI can display it (GAP-ITS-JOUR-002)
+    const itsRate = journalierEmployeeType === 'EXPAT' ? 0.12 : 0.028;
+    otherTaxesDetails.push({
+      code: `its_employer_${journalierEmployeeType.toLowerCase()}_journalier`,
+      name: 'ITS Employeur (Art. 146)',
+      amount: Math.round(employerContributionEmployeur),
+      rate: itsRate,
+      base: itsBase,
+      paidBy: 'employer',
+    });
   }
 
   const totalEmployerContributions = cnpsEmployer + cmuEmployer + employerTaxes + employerContributionEmployeur;
