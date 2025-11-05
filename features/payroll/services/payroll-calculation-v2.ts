@@ -1472,6 +1472,7 @@ export async function calculatePayrollV2(
     overtimePay: grossCalc.overtimePay,
     bonuses: grossCalc.bonuses,
     grossSalary,
+    brutImposable: brutImposableFromComponents, // Taxable gross (for AT/PF cumulative ceiling)
 
     // Employee Deductions
     cnpsEmployee,

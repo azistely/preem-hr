@@ -200,6 +200,7 @@ export function calculatePayroll(
     overtimePay: grossCalc.overtimePay,
     bonuses: grossCalc.bonuses,
     grossSalary,
+    brutImposable: grossSalary, // For old calculation, brut imposable = gross salary (no component-level tracking)
 
     // Employee Deductions
     cnpsEmployee,

@@ -503,6 +503,7 @@ export async function calculatePayrollRun(
 
           // Gross calculation
           grossSalary: String(calculation.grossSalary),
+          brutImposable: String(calculation.brutImposable),
 
           // Detailed breakdowns (for CDDTI components like gratification, congés payés, précarité)
           earningsDetails: calculation.earningsDetails || [],

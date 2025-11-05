@@ -195,6 +195,7 @@ export interface PayrollCalculationResult {
   overtimePay: number;
   bonuses: number;
   grossSalary: number;
+  brutImposable: number; // Taxable gross (for AT/PF cumulative ceiling)
 
   // Employee Deductions
   cnpsEmployee: number;
