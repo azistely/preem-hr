@@ -1738,6 +1738,8 @@ function calculateSocialSecurityContributions(
     const isATorPF = code.includes('accident') || code.includes('family') || code.includes('familial') || code.includes('pf');
     const isCDDTI = options.contractType === 'CDDTI';
 
+    console.log(`[AT/PF CHECK] ${contrib.code}: isATorPF=${isATorPF}, isCDDTI=${isCDDTI}, condition=${isATorPF && isCDDTI}`);
+
     if (isATorPF && isCDDTI) {
       // CDDTI workers: Use brut_imposable with cumulative ceiling
       const ceiling = 75000;
@@ -1890,6 +1892,14 @@ function calculateSocialSecurityContributions(
     const employeeAmount = Math.round(calculationBase * employeeRate);
     const employerAmount = Math.round(calculationBase * employerRate);
 
+    // Log AT/PF calculations
+    if (isATorPF) {
+      console.log(
+        `[AT/PF CALC] ${contrib.code}: base=${calculationBase}, ` +
+        `employerRate=${employerRate}, employerAmount=${employerAmount}`
+      );
+    }
+
     // Extract display name (French label)
     const displayName = typeof contrib.name === 'object' && contrib.name !== null
       ? (contrib.name.fr || contrib.name.en || contrib.code)
@@ -1933,6 +1943,10 @@ function calculateSocialSecurityContributions(
              code.includes('work_accident') || code.includes('accident') || code.includes('at') ||
              code.includes('maternity') || code.includes('maternite')) {
       // These are typically employer-only, but add both just in case
+      console.log(
+        `[CNPS AGGREGATION] Adding ${contrib.code} to cnpsEmployer: ` +
+        `employerAmount=${employerAmount}, cnpsEmployer before=${cnpsEmployer}, after=${cnpsEmployer + employerAmount}`
+      );
       cnpsEmployee += employeeAmount;
       cnpsEmployer += employerAmount;
     }

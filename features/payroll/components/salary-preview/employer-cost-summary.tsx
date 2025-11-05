@@ -58,16 +58,6 @@ export function EmployerCostSummary({
               <div key={contrib.code} className="flex justify-between items-center">
                 <div>
                   <div className="font-medium">{contrib.name}</div>
-                  {contrib.rate && (
-                    <div className="text-xs text-muted-foreground">
-                      {formatPercentage(contrib.rate)} du salaire
-                    </div>
-                  )}
-                  {!contrib.rate && contrib.base && (
-                    <div className="text-xs text-muted-foreground">
-                      Base: {formatCurrency(contrib.base)}
-                    </div>
-                  )}
                 </div>
                 <div className="font-semibold">{formatCurrency(contrib.amount)}</div>
               </div>
@@ -78,9 +68,6 @@ export function EmployerCostSummary({
               <div key={tax.code} className="flex justify-between items-center">
                 <div>
                   <div className="font-medium">{tax.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatPercentage(tax.rate)} du salaire
-                  </div>
                 </div>
                 <div className="font-semibold">{formatCurrency(tax.amount)}</div>
               </div>
@@ -110,7 +97,7 @@ export function EmployerCostSummary({
               <div>
                 <div className="font-medium">CNPS (employeur)</div>
                 <div className="text-xs text-muted-foreground">
-                  Retraite + Allocations + AT (16,45%)
+                  Retraite + Allocations + AT
                 </div>
               </div>
               <div className="font-semibold">{formatCurrency(cnps)}</div>
@@ -121,7 +108,7 @@ export function EmployerCostSummary({
               <div>
                 <div className="font-medium">CMU (employeur)</div>
                 <div className="text-xs text-muted-foreground">
-                  Part employeur (500-4,000 FCFA)
+                  Part employeur
                 </div>
               </div>
               <div className="font-semibold">{formatCurrency(cmu)}</div>

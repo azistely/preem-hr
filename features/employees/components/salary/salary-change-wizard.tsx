@@ -356,6 +356,7 @@ export function SalaryChangeWizard({
     // Validation 2: Transport minimum (Code 22)
     const transportComponent = components.find((c: any) => c.code === '22');
     const cityTransportMinimum = transportMinData?.monthlyMinimum ? Number(transportMinData.monthlyMinimum) : null;
+    const cityTransportDailyRate = transportMinData?.dailyRate ? Number(transportMinData.dailyRate) : null;
     const cityName = transportMinData?.city;
 
     if (transportComponent) {
@@ -365,8 +366,8 @@ export function SalaryChangeWizard({
       if ((employeeData as any)?.primaryLocationId && cityTransportMinimum !== null && cityName) {
         if (contractType === 'CDDTI') {
           // ✅ IMPORTANT: For CDDTI, transport is DAILY (not hourly)
-          // Convert monthly minimum to daily: monthly ÷ 30 days
-          const dailyTransportMinimum = Math.round(cityTransportMinimum / 30);
+          // Use correct daily rate from database (÷26 working days, not ÷30)
+          const dailyTransportMinimum = cityTransportDailyRate ? Math.round(cityTransportDailyRate) : Math.round(cityTransportMinimum / 26);
 
           if (Math.round(transportAmount) < dailyTransportMinimum) {
             setTransportValidationError(
@@ -657,9 +658,9 @@ export function SalaryChangeWizard({
                       <AlertDescription>
                         <strong>CDDTI - Calcul automatique:</strong>
                         <ul className="mt-2 space-y-1 text-sm">
-                          <li>✓ Gratification (3.33%) - calculée sur brut de base</li>
-                          <li>✓ Congés payés (10%) - calculée sur brut + gratification</li>
-                          <li>✓ Indemnité de précarité (3%) - calculée sur total brut</li>
+                          <li>✓ Gratification (6.25%) - prime annuelle de 75% répartie sur l'année</li>
+                          <li>✓ Congés payés (10.15%) - provision de 2.2 jours/mois</li>
+                          <li>✓ Indemnité de précarité (3%) - calculée sur base + gratification + congés</li>
                         </ul>
                         <p className="mt-2 text-xs text-muted-foreground">
                           Ces montants varient chaque paie selon les heures travaillées.

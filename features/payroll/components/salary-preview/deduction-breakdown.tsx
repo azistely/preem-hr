@@ -79,11 +79,6 @@ export function DeductionBreakdown({
               <div key={contrib.code} className="flex justify-between items-center">
                 <div>
                   <div className="font-medium">{contrib.name}</div>
-                  {contrib.rate && (
-                    <div className="text-xs text-muted-foreground">
-                      {formatPercentage(contrib.rate)} du salaire imposable
-                    </div>
-                  )}
                 </div>
                 <div className="text-right">
                   <div className="font-semibold">- {formatCurrency(contrib.amount)}</div>
@@ -109,7 +104,7 @@ export function DeductionBreakdown({
               <div>
                 <div className="font-medium">CNPS</div>
                 <div className="text-xs text-muted-foreground">
-                  Retraite + Allocations familiales (6,3%)
+                  Retraite + Allocations familiales
                 </div>
               </div>
               <div className="text-right">
@@ -122,7 +117,7 @@ export function DeductionBreakdown({
               <div>
                 <div className="font-medium">CMU</div>
                 <div className="text-xs text-muted-foreground">
-                  Couverture maladie (1,000 FCFA/pers)
+                  Couverture maladie
                 </div>
               </div>
               <div className="text-right">
@@ -135,7 +130,7 @@ export function DeductionBreakdown({
               <div>
                 <div className="font-medium">ITS</div>
                 <div className="text-xs text-muted-foreground">
-                  Impôt sur le salaire (selon barème)
+                  Impôt sur le salaire
                 </div>
               </div>
               <div className="text-right">

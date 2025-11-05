@@ -158,6 +158,7 @@ export default function NewEmployeePage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cityTransportMinimum, setCityTransportMinimum] = useState<number | null>(null);
+  const [cityTransportDailyRate, setCityTransportDailyRate] = useState<number | null>(null);
   const [cityName, setCityName] = useState<string | null>(null);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const createEmployee = useCreateEmployee();
@@ -172,6 +173,7 @@ export default function NewEmployeePage() {
   useEffect(() => {
     if (transportMinData) {
       setCityTransportMinimum(Number(transportMinData.monthlyMinimum));
+      setCityTransportDailyRate(Number(transportMinData.dailyRate));
       setCityName(transportMinData.city);
     }
   }, [transportMinData]);
@@ -348,14 +350,16 @@ export default function NewEmployeePage() {
               message: `La prime de transport est obligatoire. Ajoutez la prime de transport (Code 22) en cliquant sur "Ajouter" ci-dessus.`,
             });
             isValid = false;
-          } else if (transportComponent && cityTransportMinimum !== null && cityName) {
+          } else if (transportComponent && cityTransportMinimum !== null && cityTransportDailyRate !== null && cityName) {
             // Validate against city-specific minimum from database
-            // For CDDTI/HOURLY, convert monthly minimum to hourly
+            // Use correct daily rate (÷26 working days) from database
             let transportMinimum = cityTransportMinimum;
             if (contractType === 'CDDTI' || rateType === 'HOURLY') {
-              transportMinimum = Math.round(cityTransportMinimum / 30 / 8);
+              // Hourly rate: daily rate ÷ 8 hours
+              transportMinimum = Math.round(cityTransportDailyRate / 8);
             } else if (rateType === 'DAILY') {
-              transportMinimum = Math.round(cityTransportMinimum / 30);
+              // Daily rate: use database value (already ÷26)
+              transportMinimum = Math.round(cityTransportDailyRate);
             }
 
             if (transportComponent.amount < transportMinimum) {
@@ -368,11 +372,14 @@ export default function NewEmployeePage() {
           } else if (transportComponent && !cityTransportMinimum) {
             // Fallback validation if city data not yet loaded
             // This should rarely happen since location is selected in step 3
+            // Use correct ÷26 working days calculation
             let fallbackMinimum = 20000;
             if (contractType === 'CDDTI' || rateType === 'HOURLY') {
-              fallbackMinimum = Math.round(20000 / 30 / 8);
+              // Hourly: (20,000 ÷ 26 days) ÷ 8 hours = ~96 F/H
+              fallbackMinimum = Math.round(20000 / 26 / 8);
             } else if (rateType === 'DAILY') {
-              fallbackMinimum = Math.round(20000 / 30);
+              // Daily: 20,000 ÷ 26 days = ~769 F/day
+              fallbackMinimum = Math.round(20000 / 26);
             }
 
             if (transportComponent.amount < fallbackMinimum) {
