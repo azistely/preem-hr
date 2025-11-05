@@ -1732,16 +1732,17 @@ function calculateSocialSecurityContributions(
     // Determine calculation base based on contribution type
     let calculationBase = cnpsBase; // Default to CNPS base
 
-    // IMPORTANT: AT (Accident de Travail) and PF (Prestations Familiales) use brut_imposable
-    // with special cumulative ceiling rules for CDDTI workers
+    // IMPORTANT: AT (Accident de Travail) and PF (Prestations Familiales) base depends on contract type:
+    // - CDDTI workers: Override to use brut_imposable with cumulative monthly ceiling
+    // - Regular employees: Follow database config (salaire_categoriel with 75,000 cap)
     const isATorPF = code.includes('accident') || code.includes('family') || code.includes('familial') || code.includes('pf');
+    const isCDDTI = options.contractType === 'CDDTI';
 
-    if (isATorPF || contrib.calculationBase === 'brut_imposable') {
-      // Use brut imposable (taxable gross) as base
-      // For CDDTI: Apply cumulative monthly ceiling of 75,000 FCFA
+    if (isATorPF && isCDDTI) {
+      // CDDTI workers: Use brut_imposable with cumulative ceiling
       const ceiling = 75000;
 
-      if (options.contractType === 'CDDTI' && options.cumulativeBrutImposable !== undefined) {
+      if (options.cumulativeBrutImposable !== undefined) {
         // CDDTI: Prorated ceiling based on cumulative brut imposable this month
         const remainingCeiling = Math.max(0, ceiling - options.cumulativeBrutImposable);
         calculationBase = Math.min(brutImposable, remainingCeiling);
@@ -1753,12 +1754,18 @@ function calculateSocialSecurityContributions(
           `Base ${calculationBase.toLocaleString('fr-FR')}`
         );
       } else {
-        // Regular: Simple monthly cap at 75,000 FCFA
+        // CDDTI without cumulative tracking: simple cap
         calculationBase = Math.min(brutImposable, ceiling);
       }
+    } else if (contrib.calculationBase === 'brut_imposable') {
+      // Explicit brut_imposable in database (non-AT/PF or other contributions)
+      calculationBase = Math.min(
+        brutImposable,
+        contrib.ceilingAmount ? Number(contrib.ceilingAmount) : Infinity
+      );
     } else if (contrib.calculationBase === 'salaire_categoriel') {
       // For salaire_categoriel: use Code 11 (salaire catégoriel), capped at ceiling
-      // NOTE: This is legacy/deprecated - AT and PF should use brut_imposable
+      // Used for regular employees' AT and PF (database config: salaire_categoriel with 75,000 cap)
       if (options.salaireCategoriel) {
         calculationBase = Math.min(
           options.salaireCategoriel,
