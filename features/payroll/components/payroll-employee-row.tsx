@@ -148,6 +148,21 @@ export function PayrollEmployeeRow({
         <TableCell className="text-right font-semibold">
           {item.netSalary ? `${formatCurrency(item.netSalary)} FCFA` : '-'}
         </TableCell>
+        {/* Employer Costs */}
+        <TableCell>
+          {item.cnpsEmployer ? `${formatCurrency(item.cnpsEmployer)} FCFA` : '-'}
+        </TableCell>
+        <TableCell>
+          {(() => {
+            const fdfpTotal = otherTaxesDetails
+              .filter((tax: any) => tax.code?.toLowerCase().includes('fdfp'))
+              .reduce((sum: number, tax: any) => sum + (tax.amount || 0), 0);
+            return fdfpTotal > 0 ? `${formatCurrency(fdfpTotal)} FCFA` : '-';
+          })()}
+        </TableCell>
+        <TableCell className="text-right font-semibold">
+          {item.totalEmployerCost ? `${formatCurrency(item.totalEmployerCost)} FCFA` : '-'}
+        </TableCell>
         {(status === 'approved' || status === 'paid') && (
           <TableCell className="text-right">
             <div className="flex items-center justify-end gap-2">
@@ -194,7 +209,7 @@ export function PayrollEmployeeRow({
       {/* Detailed Breakdown (Expanded) */}
       {isExpanded && (
         <TableRow>
-          <TableCell colSpan={status === 'approved' || status === 'paid' ? 9 : 8} className="bg-muted/30 p-6">
+          <TableCell colSpan={status === 'approved' || status === 'paid' ? 12 : 11} className="bg-muted/30 p-6">
             <div className="space-y-6">
               {/* Action Buttons */}
               <div className="flex gap-3 flex-wrap">
