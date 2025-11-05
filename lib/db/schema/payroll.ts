@@ -115,6 +115,10 @@ export const payrollLineItems = pgTable('payroll_line_items', {
   otherTaxesDetails: jsonb('other_taxes_details').notNull().default('[]'),
   // Example: [{"code": "fdfp_tap", "name": "TAP (FDFP)", "amount": 526, "rate": 0.004}]
 
+  // Contribution details (detailed breakdown of CNPS/CMU for UI display: Pension, AT, PF, etc.)
+  contributionDetails: jsonb('contribution_details').notNull().default('[]'),
+  // Example: [{"code": "pension", "name": "Retraite", "amount": 574, "paidBy": "employer", "rate": 0.077, "base": 7450}]
+
   totalEmployerCost: numeric('total_employer_cost', { precision: 15, scale: 2 }).notNull(),
   employerCost: numeric('employer_cost', { precision: 15, scale: 2 }),
 

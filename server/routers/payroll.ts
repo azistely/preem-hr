@@ -1234,6 +1234,7 @@ export const payrollRouter = createTRPCRouter({
           // Detailed breakdowns
           earningsDetails: payrollLineItems.earningsDetails,
           deductionsDetails: payrollLineItems.deductionsDetails,
+          contributionDetails: payrollLineItems.contributionDetails, // Social security breakdown (Pension, AT, PF)
           // Other taxes (FDFP, ITS employer)
           totalOtherTaxes: payrollLineItems.totalOtherTaxes,
           otherTaxesDetails: payrollLineItems.otherTaxesDetails,

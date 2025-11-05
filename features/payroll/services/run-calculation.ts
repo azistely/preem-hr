@@ -539,6 +539,9 @@ export async function calculatePayrollRun(
           totalOtherTaxes: String(calculation.otherTaxesEmployer || 0),
           otherTaxesDetails: calculation.otherTaxesDetails || [],
 
+          // Contribution details (Pension, AT, PF breakdown for UI display)
+          contributionDetails: calculation.contributionDetails || [],
+
           // Payment details
           paymentMethod: 'bank_transfer',
           bankAccount: employee.bankAccount,

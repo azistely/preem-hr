@@ -100,6 +100,7 @@ export function PayrollEmployeeRow({
   const taxDeductions = item.taxDeductions as Record<string, number> || {};
   const employerContributions = item.employerContributions as Record<string, number> || {};
   const otherTaxesDetails = item.otherTaxesDetails as any[] || [];
+  const contributionDetails = item.contributionDetails as any[] || [];
 
   const handleEditSalary = () => {
     // Navigate to salary edit page (direct route for salary changes)
@@ -358,18 +359,32 @@ export function PayrollEmployeeRow({
                       <CardTitle className="text-base">Charges Patronales</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      {/* Employer Contributions */}
-                      {item.cnpsEmployer > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">CNPS Employeur</span>
-                          <span className="font-medium">{formatCurrency(item.cnpsEmployer)} FCFA</span>
-                        </div>
-                      )}
-                      {item.cmuEmployer > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">CMU Employeur</span>
-                          <span className="font-medium">{formatCurrency(item.cmuEmployer)} FCFA</span>
-                        </div>
+                      {/* Employer Contributions - Detailed Breakdown */}
+                      {contributionDetails.length > 0 ? (
+                        contributionDetails
+                          .filter((contrib: any) => contrib.paidBy === 'employer' && contrib.amount > 0)
+                          .map((contrib: any, idx: number) => (
+                            <div key={idx} className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">{contrib.name}</span>
+                              <span className="font-medium">{formatCurrency(contrib.amount)} FCFA</span>
+                            </div>
+                          ))
+                      ) : (
+                        /* Fallback: Show aggregated CNPS/CMU if no detailed breakdown available */
+                        <>
+                          {item.cnpsEmployer > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">CNPS Employeur</span>
+                              <span className="font-medium">{formatCurrency(item.cnpsEmployer)} FCFA</span>
+                            </div>
+                          )}
+                          {item.cmuEmployer > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">CMU Employeur</span>
+                              <span className="font-medium">{formatCurrency(item.cmuEmployer)} FCFA</span>
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {/* Other Taxes (FDFP, ITS Employer) */}
