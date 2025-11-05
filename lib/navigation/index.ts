@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
-// Employee Navigation (SIMPLIFIED - 6 items total)
+// Employee Navigation (SIMPLIFIED - 7 items total)
 export const employeeMobileSections: NavSection[] = [
   {
     title: "",
@@ -58,6 +58,7 @@ export const employeeMobileSections: NavSection[] = [
     title: "Mon Travail",
     items: [
       { icon: Clock, label: "Pointage", href: "/time-tracking" },
+      { icon: CalendarClock, label: "Mon Planning", href: "/employee/my-schedule" },
       { icon: Calendar, label: "Demander congé", href: "/time-off" },
     ],
   },
@@ -86,6 +87,7 @@ export const employeeDesktopSections: NavSection[] = [
     title: "Mon Travail",
     items: [
       { icon: Clock, label: "Pointage", href: "/time-tracking" },
+      { icon: CalendarClock, label: "Mon Planning", href: "/employee/my-schedule" },
       { icon: Calendar, label: "Demander congé", href: "/time-off" },
     ],
   },
@@ -103,7 +105,7 @@ export const employeeDesktopSections: NavSection[] = [
   },
 ];
 
-// Manager Navigation (SIMPLIFIED - 7 items total)
+// Manager Navigation (SIMPLIFIED - 8 items total)
 export const managerMobileSections: NavSection[] = [
   {
     title: "",
@@ -117,6 +119,7 @@ export const managerMobileSections: NavSection[] = [
       { icon: Users, label: "Liste équipe", href: "/manager/team" },
       { icon: Clock, label: "Pointages", href: "/manager/time-tracking" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
+      { icon: CalendarClock, label: "Planning des Quarts", href: "/manager/shift-planning" },
     ],
   },
   {
@@ -146,6 +149,7 @@ export const managerDesktopSections: NavSection[] = [
       { icon: Users, label: "Liste équipe", href: "/manager/team" },
       { icon: Clock, label: "Pointages", href: "/manager/time-tracking" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
+      { icon: CalendarClock, label: "Planning des Quarts", href: "/manager/shift-planning" },
     ],
   },
   {
@@ -162,7 +166,7 @@ export const managerDesktopSections: NavSection[] = [
   },
 ];
 
-// HR Manager Navigation (STREAMLINED - 11 visible + 7 collapsible)
+// HR Manager Navigation (STREAMLINED - 12 visible + 7 collapsible)
 // HCI-COMPLIANT: Consolidated automation into single task-oriented entry point
 export const hrManagerMobileSections: NavSection[] = [
   {
@@ -195,6 +199,7 @@ export const hrManagerMobileSections: NavSection[] = [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
+      { icon: Calendar, label: "Planning des Quarts", href: "/hr/shift-planning" },
       { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },
     ],
   },
@@ -284,6 +289,7 @@ export const hrManagerDesktopSections: NavSection[] = [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
+      { icon: Calendar, label: "Planning des Quarts", href: "/hr/shift-planning" },
       { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },
     ],
   },

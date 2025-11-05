@@ -27,6 +27,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/employee/payslips': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/profile': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/profile/edit': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/employee/my-schedule': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
 
   // Manager routes
   '/manager/dashboard': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
@@ -34,6 +35,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/manager/time-tracking': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/time-off/approvals': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/reports/overtime': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/shift-planning': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
 
   // Admin dashboard (HR Manager+)
   '/admin/dashboard': ['hr_manager', 'tenant_admin', 'super_admin'],
@@ -53,6 +55,9 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   // Admin employee management (HR Manager+)
   '/admin/employees/import-export': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/benefits': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // HR-specific routes (HR Manager+)
+  '/hr/shift-planning': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // Automation Hub (HR Manager+)
   '/automation': ['hr_manager', 'tenant_admin', 'super_admin'],

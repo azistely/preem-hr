@@ -47,6 +47,7 @@ import { dependentsRouter } from './dependents';
 import { benefitsRouter } from './benefits';
 import { employeeImportRouter } from './employee-import';
 import { contractsRouter } from './contracts';
+import { shiftPlanningRouter } from './shift-planning';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -91,6 +92,7 @@ export const appRouter = createTRPCRouter({
   publicHolidays: publicHolidaysRouter,
   geofencing: geofencingRouter,
   onboarding: onboardingRouter,
+  shiftPlanning: shiftPlanningRouter,
 });
 
 // Export type definition of API
