@@ -133,18 +133,6 @@ export function PayrollEmployeeRow({
         <TableCell>
           {item.grossSalary ? `${formatCurrency(item.grossSalary)} FCFA` : '-'}
         </TableCell>
-        <TableCell>
-          {item.cnpsEmployee ? `-${formatCurrency(item.cnpsEmployee)} FCFA` : '-'}
-        </TableCell>
-        <TableCell>
-          {item.cmuEmployee ? `-${formatCurrency(item.cmuEmployee)} FCFA` : '-'}
-        </TableCell>
-        <TableCell>
-          {item.its ? `-${formatCurrency(item.its)} FCFA` : '-'}
-        </TableCell>
-        <TableCell>
-          {item.totalDeductions ? `-${formatCurrency(item.totalDeductions)} FCFA` : '-'}
-        </TableCell>
         <TableCell className="text-right font-semibold">
           {item.netSalary ? `${formatCurrency(item.netSalary)} FCFA` : '-'}
         </TableCell>
@@ -158,6 +146,17 @@ export function PayrollEmployeeRow({
               .filter((tax: any) => tax.code?.toLowerCase().includes('fdfp'))
               .reduce((sum: number, tax: any) => sum + (tax.amount || 0), 0);
             return fdfpTotal > 0 ? `${formatCurrency(fdfpTotal)} FCFA` : '-';
+          })()}
+        </TableCell>
+        <TableCell>
+          {item.cmuEmployer ? `${formatCurrency(item.cmuEmployer)} FCFA` : '-'}
+        </TableCell>
+        <TableCell>
+          {(() => {
+            const itsEmployeur = otherTaxesDetails
+              .filter((tax: any) => tax.code?.toLowerCase().includes('its') && tax.code?.toLowerCase().includes('employer'))
+              .reduce((sum: number, tax: any) => sum + (tax.amount || 0), 0);
+            return itsEmployeur > 0 ? `${formatCurrency(itsEmployeur)} FCFA` : '-';
           })()}
         </TableCell>
         <TableCell className="text-right font-semibold">
@@ -209,7 +208,7 @@ export function PayrollEmployeeRow({
       {/* Detailed Breakdown (Expanded) */}
       {isExpanded && (
         <TableRow>
-          <TableCell colSpan={status === 'approved' || status === 'paid' ? 12 : 11} className="bg-muted/30 p-6">
+          <TableCell colSpan={status === 'approved' || status === 'paid' ? 10 : 9} className="bg-muted/30 p-6">
             <div className="space-y-6">
               {/* Action Buttons */}
               <div className="flex gap-3 flex-wrap">

@@ -801,13 +801,11 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
                   <TableHead>Employé</TableHead>
                   <TableHead>Salaire Base</TableHead>
                   <TableHead>Brut</TableHead>
-                  <TableHead>CNPS</TableHead>
-                  <TableHead>CMU</TableHead>
-                  <TableHead>ITS</TableHead>
-                  <TableHead>Total Déductions</TableHead>
                   <TableHead className="text-right">Net à Payer</TableHead>
                   <TableHead>CNPS Employeur</TableHead>
                   <TableHead>FDFP</TableHead>
+                  <TableHead>CMU</TableHead>
+                  <TableHead>ITS</TableHead>
                   <TableHead className="text-right">Coût Total</TableHead>
                   {(status === 'approved' || status === 'paid') && (
                     <TableHead className="text-right">Actions</TableHead>
