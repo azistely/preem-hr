@@ -22,8 +22,8 @@ import { loadPayrollConfig, ProgressiveMonthlyTaxStrategy } from '@/features/pay
 import { calculateBankingSeniorityBonus } from '@/features/conventions/services/banking-convention.service';
 import { ruleLoader } from './rule-loader';
 import { db } from '@/lib/db';
-import { employeeSiteAssignments, locations, employees, tenants } from '@/lib/db/schema';
-import { and, eq, gte, lte } from 'drizzle-orm';
+import { employeeSiteAssignments, locations, employees, tenants, payrollRuns, payrollLineItems } from '@/lib/db/schema';
+import { and, eq, gte, lte, lt } from 'drizzle-orm';
 import { ComponentProcessor, componentDefinitionCache } from '@/lib/salary-components';
 import {
   isJournalier,
@@ -83,6 +83,9 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
 
   // Preview mode (for hiring flow before component activation)
   isPreview?: boolean; // If true, use safe defaults for unknown components
+
+  // Cumulative brut imposable for CDDTI AT/PF ceiling (75,000 FCFA/month)
+  cumulativeBrutImposableThisMonth?: number; // Sum of brut_imposable from previous approved runs in same month
 
   // @deprecated Use employeeType instead (GAP-ITS-JOUR-002)
   // ITS employer tax calculation - kept for backward compatibility, maps to employeeType
@@ -369,6 +372,66 @@ async function calculateLocationBasedAllowances(
       totalHazardPay: 0,
     };
   }
+}
+
+/**
+ * Query cumulative brut imposable from previous approved payroll runs in the same month
+ *
+ * Used for CDDTI workers to enforce 75,000 FCFA cumulative monthly ceiling on AT/PF contributions.
+ *
+ * @param employeeId - Employee UUID
+ * @param currentPeriodStart - Start date of current payroll period
+ * @returns Cumulative brut imposable from previous approved runs in same month
+ *
+ * @example
+ * ```typescript
+ * // Week 3 of January for CDDTI worker
+ * const cumulative = await queryCumulativeBrutImposable(
+ *   'employee-uuid',
+ *   new Date('2025-01-15')
+ * );
+ * // Returns sum of brut_imposable from Week 1 + Week 2 (approved runs only)
+ * ```
+ */
+async function queryCumulativeBrutImposable(
+  employeeId: string,
+  currentPeriodStart: Date
+): Promise<number> {
+  // Get first day of the month
+  const monthStart = new Date(currentPeriodStart);
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  // Query previous approved payroll runs in the same month (before current period)
+  const previousRuns = await db
+    .select({
+      brutImposable: payrollLineItems.brutImposable,
+    })
+    .from(payrollLineItems)
+    .innerJoin(
+      payrollRuns,
+      eq(payrollLineItems.payrollRunId, payrollRuns.id)
+    )
+    .where(
+      and(
+        eq(payrollLineItems.employeeId, employeeId),
+        gte(payrollRuns.periodStart, monthStart.toISOString()),
+        lt(payrollRuns.periodStart, currentPeriodStart.toISOString()),
+        eq(payrollRuns.status, 'approved') // Only count approved runs
+      )
+    );
+
+  const cumulative = previousRuns.reduce(
+    (sum, run) => sum + Number(run.brutImposable || 0),
+    0
+  );
+
+  console.log(
+    `[CDDTI CUMULATIVE] Employee ${employeeId}, month ${monthStart.toISOString().slice(0, 7)}: ` +
+    `${previousRuns.length} previous approved runs, cumulative = ${cumulative.toLocaleString('fr-FR')} FCFA`
+  );
+
+  return cumulative;
 }
 
 /**
@@ -1045,6 +1108,28 @@ export async function calculatePayrollV2(
   }
 
   // ========================================
+  // STEP 1.5: Query Cumulative Brut Imposable for CDDTI Workers
+  // ========================================
+  // For CDDTI journaliers with multiple payroll runs per month, we need to track
+  // cumulative brut imposable to enforce the 75,000 FCFA ceiling on AT/PF contributions.
+  let cumulativeBrutImposable = input.cumulativeBrutImposableThisMonth;
+
+  // Auto-query if not provided (and not preview mode)
+  if (
+    cumulativeBrutImposable === undefined &&
+    input.contractType === 'CDDTI' &&
+    input.employeeId !== 'preview'
+  ) {
+    cumulativeBrutImposable = await queryCumulativeBrutImposable(
+      input.employeeId,
+      input.periodStart
+    );
+  } else if (input.contractType !== 'CDDTI') {
+    // Not CDDTI, no cumulative tracking needed
+    cumulativeBrutImposable = undefined;
+  }
+
+  // ========================================
   // STEP 2: Calculate Social Security Contributions (Metadata-Driven Bases)
   // ========================================
 
@@ -1116,6 +1201,7 @@ export async function calculatePayrollV2(
         dependentChildren: input.dependentChildren,
         countryCode: input.countryCode,
         contractType: input.contractType, // For CMU exemption (CDDTI, journaliers)
+        cumulativeBrutImposable, // ← For CDDTI AT/PF ceiling (75,000 FCFA/month)
       }
     );
 
@@ -1310,7 +1396,8 @@ export async function calculatePayrollV2(
     grossSalary,
     taxResult.taxableIncome,
     config.otherTaxes,
-    employeeType // Pass employee type for ITS calculation (GAP-ITS-JOUR-002)
+    employeeType, // Pass employee type for ITS calculation (GAP-ITS-JOUR-002)
+    isJournalierEmployee // Skip ITS for journaliers (they use Article 146, not Article 175)
   );
 
   // ========================================
@@ -1319,15 +1406,16 @@ export async function calculatePayrollV2(
   let employerContributionEmployeur = 0;
 
   if (isJournalierEmployee && journalierGrossResult) {
-    // JOURNALIER: Add contribution employeur (ITS Employeur)
-    // Use the same employeeType we determined earlier (consistent with GAP-ITS-JOUR-002)
+    // JOURNALIER: Add contribution employeur (ITS Employeur via Article 146)
+    // Article 146: LOCAL/DETACHE/STAGIAIRE = 2.8%, EXPAT = 12%
+    // (Regular employees use Article 175: LOCAL = 1.2%, EXPAT = 10.4%)
     const journalierEmployeeType = input.employeeType || (input.isExpat ? 'EXPAT' : 'LOCAL');
     employerContributionEmployeur = calculateContributionEmployeur(
       journalierGrossResult.brutBase,
       journalierEmployeeType
     );
 
-    console.log('[JOURNALIER EMPLOYER COSTS] Contribution Employeur:', employerContributionEmployeur.toLocaleString('fr-FR'), 'FCFA', `(${journalierEmployeeType})`);
+    console.log('[JOURNALIER EMPLOYER COSTS] ITS Employeur (Article 146):', employerContributionEmployeur.toLocaleString('fr-FR'), 'FCFA', `(${journalierEmployeeType}: ${journalierEmployeeType === 'EXPAT' ? '12%' : '2.8%'})`);
   }
 
   const totalEmployerContributions = cnpsEmployer + cmuEmployer + employerTaxes + employerContributionEmployeur;
@@ -1460,12 +1548,14 @@ export async function calculatePayrollV2(
  * @param taxableGross - Taxable gross (after exemptions)
  * @param otherTaxes - Other tax rules from database
  * @param employeeType - Employee classification (LOCAL, EXPAT, DETACHE, STAGIAIRE)
+ * @param skipITSEmployer - If true, skip ITS employer taxes (for journaliers who use Article 146)
  */
 function calculateOtherTaxes(
   grossSalary: number,
   taxableGross: number,
   otherTaxes: any[],
-  employeeType: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE' = 'LOCAL'
+  employeeType: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE' = 'LOCAL',
+  skipITSEmployer: boolean = false
 ) {
   let employerTaxes = 0;
   let employeeTaxes = 0;
@@ -1486,6 +1576,15 @@ function calculateOtherTaxes(
   });
 
   for (const tax of otherTaxes) {
+    // Skip ITS employer taxes for journaliers (they use Article 146 via calculateContributionEmployeur)
+    if (skipITSEmployer && tax.code?.includes('its_employer')) {
+      console.log('🔍 [ITS SKIP] Skipping database ITS for journalier:', {
+        code: tax.code,
+        reason: 'Journaliers use Article 146 (2.8%/12%) not Article 175 (1.2%/10.4%)'
+      });
+      continue;
+    }
+
     // Filter ITS taxes based on employee type
     if (tax.appliesToEmployeeType) {
       console.log('🔍 [ITS DEBUG] Checking tax:', {
@@ -1607,6 +1706,7 @@ function calculateSocialSecurityContributions(
     dependentChildren?: number;
     countryCode?: string; // To determine if dynamic CMU applies
     contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'; // To determine CMU exemption
+    cumulativeBrutImposable?: number; // For CDDTI AT/PF ceiling (75,000 FCFA/month)
   }
 ) {
   console.log('[DEBUG SS START]', { cnpsBase, brutImposable, hasFamily: options.hasFamily, numContributions: contributions.length });
@@ -1631,9 +1731,33 @@ function calculateSocialSecurityContributions(
     // Determine calculation base based on contribution type
     let calculationBase = cnpsBase; // Default to CNPS base
 
-    if (contrib.calculationBase === 'salaire_categoriel') {
+    // IMPORTANT: AT (Accident de Travail) and PF (Prestations Familiales) use brut_imposable
+    // with special cumulative ceiling rules for CDDTI workers
+    const isATorPF = code.includes('accident') || code.includes('family') || code.includes('familial') || code.includes('pf');
+
+    if (isATorPF || contrib.calculationBase === 'brut_imposable') {
+      // Use brut imposable (taxable gross) as base
+      // For CDDTI: Apply cumulative monthly ceiling of 75,000 FCFA
+      const ceiling = 75000;
+
+      if (options.contractType === 'CDDTI' && options.cumulativeBrutImposable !== undefined) {
+        // CDDTI: Prorated ceiling based on cumulative brut imposable this month
+        const remainingCeiling = Math.max(0, ceiling - options.cumulativeBrutImposable);
+        calculationBase = Math.min(brutImposable, remainingCeiling);
+
+        console.log(
+          `[CDDTI AT/PF] ${contrib.code}: Cumulative ${options.cumulativeBrutImposable.toLocaleString('fr-FR')}, ` +
+          `Remaining ${remainingCeiling.toLocaleString('fr-FR')}, ` +
+          `Current ${brutImposable.toLocaleString('fr-FR')}, ` +
+          `Base ${calculationBase.toLocaleString('fr-FR')}`
+        );
+      } else {
+        // Regular: Simple monthly cap at 75,000 FCFA
+        calculationBase = Math.min(brutImposable, ceiling);
+      }
+    } else if (contrib.calculationBase === 'salaire_categoriel') {
       // For salaire_categoriel: use Code 11 (salaire catégoriel), capped at ceiling
-      // This is used for family benefits and work accident in Côte d'Ivoire
+      // NOTE: This is legacy/deprecated - AT and PF should use brut_imposable
       if (options.salaireCategoriel) {
         calculationBase = Math.min(
           options.salaireCategoriel,

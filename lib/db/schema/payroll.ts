@@ -87,6 +87,7 @@ export const payrollLineItems = pgTable('payroll_line_items', {
   overtimePay: numeric('overtime_pay', { precision: 15, scale: 2 }).default('0'),
   bonuses: numeric('bonuses', { precision: 15, scale: 2 }).default('0'),
   grossSalary: numeric('gross_salary', { precision: 15, scale: 2 }).notNull(),
+  brutImposable: numeric('brut_imposable', { precision: 15, scale: 2 }), // Taxable gross (for cumulative AT/PF ceiling)
   earningsDetails: jsonb('earnings_details').notNull().default('[]'),
 
   // Deductions
