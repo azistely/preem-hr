@@ -93,9 +93,13 @@ export interface SalaryComponentInstance {
 export interface CalculationRule {
   type: 'fixed' | 'percentage' | 'auto-calculated';
   baseAmount?: number;
-  rate?: number;
-  cap?: number;
+  rate?: number; // Used for simple percentage calculations (e.g., old seniority: 2% per year)
+  cap?: number; // Maximum rate (e.g., 25% for seniority)
   value?: number;
+  // Enhanced seniority calculation fields (Prime d'ancienneté)
+  baseRate?: number; // Starting rate (e.g., 2% at year 2)
+  incrementPerYear?: number; // Annual increase (e.g., 1% per year)
+  minimumYears?: number; // Minimum years of service required (e.g., 2 years = 24 months)
 }
 
 export type ComponentMetadata =

@@ -5,7 +5,7 @@
  * Single source of truth: components array (no individual allowance fields)
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import {
   FormControl,
@@ -53,24 +53,19 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const baseComponents = form.watch('baseComponents') || {};
   const components = form.watch('components') || [];
   const coefficient = form.watch('coefficient') || 100;
-  const rateType = form.watch('rateType') || 'MONTHLY';
+  const sector = form.watch('sector');
+  const category = form.watch('category');
+  const rateType = 'MONTHLY'; // Hard-coded to MONTHLY - all inputs are monthly by default
   const contractType = form.watch('contractType') || 'CDI';
   const primaryLocationId = form.watch('primaryLocationId');
+  const weeklyHoursRegime = form.watch('weeklyHoursRegime') || '40h';
 
   const countryCode = 'CI'; // TODO: Get from tenant context
   const monthlyMinimumWage = 75000; // TODO: Get from countries table
 
-  // Convert minimum wage based on rate type
-  let countryMinimumWage = monthlyMinimumWage;
-  let rateLabel = 'mensuel';
-
-  if (rateType === 'DAILY') {
-    countryMinimumWage = Math.round(monthlyMinimumWage / 30);
-    rateLabel = 'journalier';
-  } else if (rateType === 'HOURLY') {
-    countryMinimumWage = Math.round(monthlyMinimumWage / (30 * 8));
-    rateLabel = 'horaire';
-  }
+  // All inputs are monthly - no conversion needed
+  const countryMinimumWage = monthlyMinimumWage;
+  const rateLabel = 'mensuel';
 
   const { data: templates, isLoading: loadingTemplates } = useComponentTemplates(countryCode, !showAllTemplates);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
@@ -82,8 +77,75 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       { enabled: !!countryCode }
     );
 
+  // Query actual minimum wage from database (sector-specific)
+  const { data: categoryData } = trpc.cgeci.getCategoryMinimumWage.useQuery(
+    {
+      countryCode,
+      sectorCode: sector || '',
+      categoryCode: category || '',
+    },
+    { enabled: !!countryCode && !!sector && !!category }
+  );
+
+  // Use database minimum if available (sector-specific), otherwise calculate from SMIG
+  const categoryMinimumWage = categoryData?.actualMinimumWage
+    ? parseFloat(categoryData.actualMinimumWage)
+    : Math.round(monthlyMinimumWage * (coefficient / 100));
+
+  // Query city transport minimum for pre-filling
+  const { data: cityTransportMinimum } = trpc.locations.getTransportMinimum.useQuery(
+    { locationId: primaryLocationId },
+    { enabled: !!primaryLocationId }
+  );
+
+  // Pre-fill salaire catégoriel (Code 11) with calculated minimum
+  useEffect(() => {
+    // Only pre-fill if base salary components are loaded
+    if (!baseSalaryDefinitions || baseSalaryDefinitions.length === 0) {
+      return;
+    }
+
+    const hasCode11 = baseSalaryDefinitions.some((def) => def.code === '11');
+    if (!hasCode11) {
+      return;
+    }
+
+    // Check if Code 11 is empty
+    const currentValue = baseComponents['11'];
+    if (!currentValue || currentValue === 0) {
+      // Pre-fill with calculated minimum based on coefficient
+      form.setValue('baseComponents.11', categoryMinimumWage, { shouldValidate: false });
+    }
+  }, [categoryMinimumWage, baseComponents, baseSalaryDefinitions, form]);
+
+  // Pre-fill transport component (Code 22) with city minimum
+  useEffect(() => {
+    if (cityTransportMinimum && cityTransportMinimum.monthlyMinimum) {
+      const hasTransport = components.some(
+        (c: SalaryComponentInstance) =>
+          c.code === '22' ||
+          c.code === 'TPT_TRANSPORT_CI' ||
+          c.code.toLowerCase().includes('transport')
+      );
+
+      if (!hasTransport) {
+        const transportAmount = typeof cityTransportMinimum.monthlyMinimum === 'number'
+          ? cityTransportMinimum.monthlyMinimum
+          : parseFloat(String(cityTransportMinimum.monthlyMinimum));
+
+        const transportComponent: SalaryComponentInstance = {
+          code: '22',
+          name: 'Indemnité de Transport',
+          amount: transportAmount,
+          sourceType: 'standard',
+        };
+        form.setValue('components', [...components, transportComponent], { shouldValidate: false });
+      }
+    }
+  }, [cityTransportMinimum, components, form]);
+
   // Calculate total gross salary (base + components)
-  // Components are already stored in the correct rate type (hourly/daily/monthly)
+  // ALL components are now stored as MONTHLY amounts
   const componentTotal = components.reduce(
     (sum: number, component: SalaryComponentInstance) => sum + component.amount,
     0
@@ -106,16 +168,11 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
 
   /**
    * Get display unit for component based on contract type
-   * IMPORTANT: For CDDTI employees, transport (code 22) is DAILY, other components are HOURLY
+   * All components are now stored as MONTHLY and displayed as MONTHLY
    */
   const getComponentDisplayUnit = (componentCode: string): RateType => {
-    if (contractType === 'CDDTI') {
-      // For CDDTI: Transport is daily, others follow employee rate type (HOURLY)
-      const isTransport = componentCode === '22' || componentCode === 'TPT_TRANSPORT_CI';
-      return isTransport ? 'DAILY' : rateType as RateType;
-    }
-    // For other contracts: all components follow employee rate type
-    return rateType as RateType;
+    // All components are stored and displayed as monthly
+    return 'MONTHLY';
   };
 
   /**
@@ -199,12 +256,9 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
     // Calculate final amount (auto-calculated for Code 21, or use suggested amount)
     let finalAmount = calculateComponentAmount(component, suggestedAmount);
 
-    // For CDDTI contracts, convert monthly components to hourly
-    // Template amounts are monthly, but we store hourly for CDDTI workers
-    if (contractType === 'CDDTI') {
-      finalAmount = Math.round(finalAmount / 240); // 240 = 30 days × 8 hours
-    }
-    // All other contract types (CDI, CDD, INTERIM, STAGE) store monthly amounts
+    // ALL contract types now store monthly amounts
+    // For CDDTI, conversion to hourly/daily happens in payroll-calculation-v2.ts
+    // This ensures HR enters and sees monthly values (e.g., 75,000 salary, 30,000 transport)
 
     const newComponent: SalaryComponentInstance = {
       code,
@@ -265,16 +319,12 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
 
   return (
     <div className="space-y-6">
-      {/* Rate Type Information */}
-      {rateType !== 'MONTHLY' && (
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Travailleur {rateType === 'DAILY' ? 'journalier' : 'horaire'}:</strong> Le salaire de base est le taux {rateLabel}.
-            Les indemnités (transport, logement, etc.) sont des montants mensuels qui seront automatiquement proratés selon les jours/heures travaillés lors du calcul de la paie.
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* Monthly-Only Information */}
+      <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <span className="text-sm font-medium text-blue-900">
+          💡 Tous les montants sont mensuels
+        </span>
+      </div>
 
       {/* Base Salary Components (Dynamic based on country) */}
       {loadingBaseSalary ? (
@@ -325,12 +375,12 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       ) : (
         // Fallback to single baseSalary field if no base components configured
         <div>
-          <FormLabel>Salaire de base ({rateType === 'MONTHLY' ? 'mensuel' : rateType === 'DAILY' ? 'journalier' : 'horaire'}) *</FormLabel>
+          <FormLabel>Salaire de base (FCFA/mois) *</FormLabel>
           <FormControl>
             <Input
               type="number"
               min={countryMinimumWage}
-              step={rateType === 'HOURLY' ? 100 : 1000}
+              step={1000}
               placeholder={countryMinimumWage.toString()}
               value={baseSalary}
               onChange={(e) => handleUpdateBaseSalary(parseFloat(e.target.value) || 0)}
@@ -338,7 +388,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
             />
           </FormControl>
           <FormDescription>
-            Minimum {rateLabel}: {formatCurrency(countryMinimumWage)} (SMIG {rateType === 'DAILY' ? '÷ 30' : rateType === 'HOURLY' ? '÷ 240' : ''})
+            Minimum mensuel: {formatCurrency(countryMinimumWage)} (SMIG)
           </FormDescription>
           {form.formState.errors.baseSalary && (
             <p className="text-sm text-destructive mt-1">
@@ -446,7 +496,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                                   )}
                                 </div>
                                 <Badge variant={isAutoCalculated && calculatedAmount > 0 ? "default" : "outline"}>
-                                  {calculatedAmount.toLocaleString('fr-FR')} FCFA
+                                  {calculatedAmount.toLocaleString('fr-FR')} FCFA/mois
                                 </Badge>
                               </div>
                             </CardHeader>
@@ -593,63 +643,20 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       {/* Total Gross Salary */}
       {totalGross > 0 && (
         <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
-          {contractType === 'CDDTI' ? (
-            // For CDDTI: Show breakdown by rate type (can't meaningfully add hourly + daily)
-            <div className="space-y-2">
-              <div className="font-medium text-sm text-muted-foreground">Composantes du salaire:</div>
-
-              {/* Hourly components */}
-              {(() => {
-                const transportComp = components.find((c: SalaryComponentInstance) => c.code === '22' || c.code === 'TPT_TRANSPORT_CI');
-                const hourlyTotal = baseSalaryTotal + componentTotal - (transportComp?.amount || 0);
-
-                if (hourlyTotal > 0) {
-                  return (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Taux horaire</span>
-                      <span className="text-lg font-semibold text-primary">
-                        {formatCurrencyWithRate(hourlyTotal, 'HOURLY')}
-                      </span>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* Daily components (transport) */}
-              {(() => {
-                const transportComp = components.find((c: SalaryComponentInstance) => c.code === '22' || c.code === 'TPT_TRANSPORT_CI');
-                if (transportComp) {
-                  return (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Indemnité de transport</span>
-                      <span className="text-lg font-semibold text-primary">
-                        {formatCurrencyWithRate(transportComp.amount, 'DAILY')}
-                      </span>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              <p className="text-xs text-muted-foreground mt-2">
-                Le montant réel dépendra des heures et jours travaillés.
-              </p>
-            </div>
-          ) : (
-            // For other contracts: Show total as before
-            <>
-              <div className="flex items-center justify-between">
-                <span className="font-medium">Salaire brut total</span>
-                <span className="text-2xl font-bold text-primary">
-                  {formatCurrencyWithRate(totalGross, rateType as RateType)}
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground mt-2">
-                Salaire de base: {formatCurrencyWithRate(baseSalaryTotal, rateType as RateType)}
-                {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrencyWithRate(componentTotal, rateType as RateType)}`}
-              </div>
-            </>
+          <div className="flex items-center justify-between">
+            <span className="font-medium">Salaire brut total</span>
+            <span className="text-2xl font-bold text-primary">
+              {formatCurrencyWithRate(totalGross, 'MONTHLY')}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground mt-2">
+            Salaire de base: {formatCurrencyWithRate(baseSalaryTotal, 'MONTHLY')}
+            {components.length > 0 && ` + ${components.length} indemnité${components.length > 1 ? 's' : ''}: ${formatCurrencyWithRate(componentTotal, 'MONTHLY')}`}
+          </div>
+          {contractType === 'CDDTI' && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Pour les CDDTI, le montant réel dépendra des heures et jours travaillés lors du calcul de la paie.
+            </p>
           )}
         </div>
       )}

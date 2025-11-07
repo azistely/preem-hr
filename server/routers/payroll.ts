@@ -476,10 +476,16 @@ export const payrollRouter = createTRPCRouter({
               console.log(`[Salary Preview] Calculated ${template.name} as ${percentageRate * 100}% of ${salaireCategoriel}: ${calculatedAmount} FCFA`);
             } else if (calculationRule?.type === 'auto-calculated' && calculationRule?.rate && salaireCategoriel > 0) {
               // For auto-calculated components from templates table (e.g., seniority)
-              // Use the rate from metadata instead of the user-provided amount
-              const rate = calculationRule.rate; // e.g., 0.02 for 2%
-              calculatedAmount = Math.round(salaireCategoriel * rate);
-              console.log(`[Salary Preview] Auto-calculated ${template.name} using ${rate * 100}% of ${salaireCategoriel}: ${calculatedAmount} FCFA`);
+              // In hiring context: use the amount from the form (already calculated in salary-info-step)
+              // In other contexts: recalculate based on current salaireCategoriel
+              if (input.context === 'hiring') {
+                calculatedAmount = comp.amount; // Use stored value from hiring form
+                console.log(`[Salary Preview] Using stored ${template.name} from hiring form: ${calculatedAmount} FCFA`);
+              } else {
+                const rate = calculationRule.rate; // e.g., 0.02 for 2%
+                calculatedAmount = Math.round(salaireCategoriel * rate);
+                console.log(`[Salary Preview] Auto-calculated ${template.name} using ${rate * 100}% of ${salaireCategoriel}: ${calculatedAmount} FCFA`);
+              }
             }
 
             return {

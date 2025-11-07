@@ -38,8 +38,18 @@ export interface SeniorityCalculationResult {
  * Calculate seniority bonus (Prime d'ancienneté)
  *
  * Rules (CI):
- * - 2% of base salary per year of service (configurable via DB metadata)
+ * - Requires minimum 24 months (2 years) of service
+ * - Starts at 2% of base salary at year 2
+ * - Increases by 1% per year thereafter
  * - Maximum 25% (configurable via DB metadata)
+ * - Formula: Math.min(2 + (years - 2), 25)% where years >= 2
+ *
+ * Examples:
+ * - 0-23 months: 0%
+ * - 24-35 months (year 2): 2%
+ * - 36-47 months (year 3): 3%
+ * - 48-59 months (year 4): 4%
+ * - 300+ months (25+ years): 25% (capped)
  *
  * @param input Calculation parameters
  * @returns Calculation result with amount and details
@@ -61,8 +71,10 @@ export async function calculateSeniorityBonus(
   }
 
   // Extract calculation rules from metadata (with fallback defaults)
-  const ratePerYear = (effectiveMetadata?.calculationRule?.rate ?? 0.02); // Default 2%
-  const maxRate = (effectiveMetadata?.calculationRule?.cap ?? 0.25); // Default 25%
+  const baseRate = (effectiveMetadata?.calculationRule?.baseRate ?? 0.02); // Default 2% starting rate
+  const incrementPerYear = (effectiveMetadata?.calculationRule?.incrementPerYear ?? 0.01); // Default 1% increase per year
+  const maxRate = (effectiveMetadata?.calculationRule?.cap ?? 0.25); // Default 25% cap
+  const minimumYears = (effectiveMetadata?.calculationRule?.minimumYears ?? 2); // Default 2 years minimum
 
   // Calculate years of service
   const millisecondsPerYear = 1000 * 60 * 60 * 24 * 365.25;
@@ -70,8 +82,19 @@ export async function calculateSeniorityBonus(
     (currentDate.getTime() - hireDate.getTime()) / millisecondsPerYear
   );
 
-  // Calculate rate (uncapped)
-  const calculatedRate = yearsOfService * ratePerYear;
+  // Check eligibility (must have minimum years of service)
+  if (yearsOfService < minimumYears) {
+    return {
+      yearsOfService,
+      rate: 0,
+      amount: 0,
+      isCapped: false,
+    };
+  }
+
+  // Calculate rate: starts at baseRate (2%), increases by incrementPerYear (1%) each year
+  // Year 2 = 2%, Year 3 = 3%, Year 4 = 4%, etc.
+  const calculatedRate = baseRate + (yearsOfService - minimumYears) * incrementPerYear;
 
   // Apply cap
   const rate = Math.min(calculatedRate, maxRate);
@@ -229,8 +252,8 @@ export async function autoInjectCalculatedComponents(
     console.timeEnd('[Component Calculator] Seniority calculation');
     console.log(`[Component Calculator] Seniority calculated in ${Date.now() - seniorityStart}ms`);
 
-    // Only inject if employee has been there >= 1 year
-    if (seniorityCalc.yearsOfService >= 1) {
+    // Only inject if employee has been there >= 2 years (24 months)
+    if (seniorityCalc.yearsOfService >= 2) {
       console.time('[Component Calculator] Create seniority component');
       const createStart = Date.now();
       const seniorityComponent = await createSeniorityComponent(
@@ -295,12 +318,12 @@ export async function checkComponentEligibility(
   checks.push({
     componentCode: '21',
     componentName: "Prime d'ancienneté",
-    isEligible: seniorityCalc.yearsOfService >= 1,
+    isEligible: seniorityCalc.yearsOfService >= 2,
     reason:
-      seniorityCalc.yearsOfService >= 1
+      seniorityCalc.yearsOfService >= 2
         ? `${seniorityCalc.yearsOfService} années de service (${(seniorityCalc.rate * 100).toFixed(0)}%)`
-        : "Moins d'1 an de service",
-    suggestedAmount: seniorityCalc.yearsOfService >= 1 ? seniorityCalc.amount : 0,
+        : "Moins de 2 ans de service (minimum 24 mois requis)",
+    suggestedAmount: seniorityCalc.yearsOfService >= 2 ? seniorityCalc.amount : 0,
   });
 
   // Check family allowance eligibility

@@ -930,7 +930,14 @@ export async function calculatePayrollV2(
   } else if (rateType === 'HOURLY') {
     // Hourly workers: multiply hourly rate × hours worked
     const hoursWorked = input.hoursWorkedThisMonth || 0;
-    const standardMonthlyHours = 173.33; // 40h/week × 52 weeks ÷ 12 months
+
+    // Calculate monthly hours based on actual weekly regime (not fixed 173.33)
+    const weeklyHours = input.weeklyHoursRegime === '40h' ? 40 :
+                        input.weeklyHoursRegime === '44h' ? 44 :
+                        input.weeklyHoursRegime === '48h' ? 48 :
+                        input.weeklyHoursRegime === '52h' ? 52 :
+                        input.weeklyHoursRegime === '56h' ? 56 : 40;
+    const monthlyHoursDivisor = (weeklyHours * 52) / 12;
 
     // Base salary and salaireCategoriel are stored as HOURLY rates
     effectiveBaseSalary = input.baseSalary * hoursWorked;
@@ -940,20 +947,23 @@ export async function calculatePayrollV2(
 
     // Allowances are stored as MONTHLY amounts
     // Convert to hourly rate then multiply by hours worked
+    // ⚠️  DEPRECATED: These separate allowance parameters should be in customComponents instead
     if (effectiveTransportAllowance) {
-      effectiveTransportAllowance = (effectiveTransportAllowance / standardMonthlyHours) * hoursWorked;
+      // Transport: monthly / 26 working days, then × presence days
+      const dailyRate = effectiveTransportAllowance / 26;
+      effectiveTransportAllowance = Math.round(dailyRate * (input.daysWorkedThisMonth || 0));
     }
     if (effectiveHousingAllowance) {
-      effectiveHousingAllowance = (effectiveHousingAllowance / standardMonthlyHours) * hoursWorked;
+      effectiveHousingAllowance = (effectiveHousingAllowance / monthlyHoursDivisor) * hoursWorked;
     }
     if (effectiveMealAllowance) {
-      effectiveMealAllowance = (effectiveMealAllowance / standardMonthlyHours) * hoursWorked;
+      effectiveMealAllowance = (effectiveMealAllowance / monthlyHoursDivisor) * hoursWorked;
     }
     if (effectiveSeniorityBonus) {
-      effectiveSeniorityBonus = (effectiveSeniorityBonus / standardMonthlyHours) * hoursWorked;
+      effectiveSeniorityBonus = (effectiveSeniorityBonus / monthlyHoursDivisor) * hoursWorked;
     }
     if (effectiveFamilyAllowance) {
-      effectiveFamilyAllowance = (effectiveFamilyAllowance / standardMonthlyHours) * hoursWorked;
+      effectiveFamilyAllowance = (effectiveFamilyAllowance / monthlyHoursDivisor) * hoursWorked;
     }
   }
   // else: MONTHLY workers use values as-is
