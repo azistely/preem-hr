@@ -144,6 +144,48 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
     }
   }, [cityTransportMinimum, components, form]);
 
+  // Auto-inject Prime d'ancienneté (Code 21) for employees with 2+ years of service
+  useEffect(() => {
+    const hireDate = form.watch('hireDate');
+    if (!hireDate) return;
+
+    // Check if already has seniority component
+    const hasSeniority = components.some(
+      (c: SalaryComponentInstance) => c.code === '21'
+    );
+    if (hasSeniority) return;
+
+    // Need salaire catégoriel (Code 11) to calculate seniority
+    const salaireCategoriel = baseComponents['11'];
+    if (!salaireCategoriel || salaireCategoriel === 0) return;
+
+    // Calculate years of service
+    const hireDateObj = hireDate instanceof Date ? hireDate : new Date(hireDate);
+    const currentDate = new Date();
+    const millisecondsPerYear = 1000 * 60 * 60 * 24 * 365.25;
+    const yearsOfService = Math.floor(
+      (currentDate.getTime() - hireDateObj.getTime()) / millisecondsPerYear
+    );
+
+    // Only auto-add if eligible (>= 2 years)
+    if (yearsOfService >= 2) {
+      // Calculate Prime d'ancienneté: 2% base + 1% per year after year 2, max 25%
+      const baseRate = 0.02; // 2% starting at year 2
+      const incrementPerYear = 0.01; // +1% per year
+      const maxRate = 0.25; // 25% cap
+      const calculatedRate = Math.min(baseRate + (yearsOfService - 2) * incrementPerYear, maxRate);
+      const seniorityAmount = Math.round(salaireCategoriel * calculatedRate);
+
+      const seniorityComponent: SalaryComponentInstance = {
+        code: '21',
+        name: "Prime d'ancienneté",
+        amount: seniorityAmount,
+        sourceType: 'template',
+      };
+      form.setValue('components', [...components, seniorityComponent], { shouldValidate: false });
+    }
+  }, [form.watch('hireDate'), baseComponents, components, form]);
+
   // Calculate total gross salary (base + components)
   // ALL components are now stored as MONTHLY amounts
   const componentTotal = components.reduce(
