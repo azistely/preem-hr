@@ -371,7 +371,6 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
   const dependentChildren = watch('dependentChildren') || 0;
   const components = watch('components') || [];
   const baseComponentsData = watch('baseComponents') || {};
-  const rateType = (watch('rateType') || 'MONTHLY') as RateType;
   const contractType = watch('contractType');
   const category = watch('category');
   const fiscalParts = calculateFiscalParts(maritalStatus, dependentChildren);
@@ -649,12 +648,15 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Rémunération</h3>
 
-        {/* GAP-JOUR-003: Rate Type Selector */}
-        <input type="hidden" {...register('rateType')} value={rateType} />
-        <RateTypeSelector
-          value={rateType}
-          onChange={(newRateType) => setValue('rateType', newRateType as any, { shouldValidate: true })}
-        />
+        {/* Always use MONTHLY rate type */}
+        <input type="hidden" {...register('rateType')} value="MONTHLY" />
+
+        {/* Info badge */}
+        <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <span className="text-sm font-medium text-blue-900">
+            💡 Tous les montants sont mensuels
+          </span>
+        </div>
 
         {/* Base Salary Components (Dynamic based on country) */}
         {loadingBaseComponents ? (
@@ -662,11 +664,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
         ) : baseComponents && baseComponents.length > 0 ? (
           <div className="space-y-3 p-4 border rounded-lg bg-blue-50">
             <div>
-              <p className="font-medium">
-                {rateType === 'MONTHLY' && 'Salaire de base mensuel'}
-                {rateType === 'DAILY' && 'Tarif journalier de base'}
-                {rateType === 'HOURLY' && 'Tarif horaire de base'}
-              </p>
+              <p className="font-medium">Salaire de base mensuel</p>
               <p className="text-xs text-muted-foreground">
                 Composé de {baseComponents.length} élément{baseComponents.length > 1 ? 's' : ''}
               </p>
@@ -678,12 +676,12 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
                 label={component.label.fr}
                 type="number"
                 {...register(`baseComponents.${component.code}`, {
-                  setValueAs: (value) => value ? parseFloat(value) : (component.defaultValue || 0),
+                  setValueAs: (value) => value ? parseFloat(value) : (component.defaultValue || minimumWage || 0),
                 })}
                 error={errors.baseComponents?.[component.code]?.message}
-                suffix={rateType === 'MONTHLY' ? 'FCFA/mois' : rateType === 'DAILY' ? 'FCFA/jour' : 'FCFA/heure'}
+                suffix="FCFA/mois"
                 required={!component.isOptional}
-                helperText={component.description.fr}
+                helperText={component.code === '11' ? `Minimum: ${minimumWage.toLocaleString('fr-FR')} FCFA/mois` : component.description.fr}
               />
             ))}
 
@@ -693,7 +691,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Total tarif de base</span>
                   <span className="font-bold text-lg">
-                    {baseSalaryTotal.toLocaleString('fr-FR')} {rateType === 'MONTHLY' ? 'FCFA/mois' : rateType === 'DAILY' ? 'FCFA/jour' : 'FCFA/heure'}
+                    {baseSalaryTotal.toLocaleString('fr-FR')} FCFA/mois
                   </span>
                 </div>
               </div>
@@ -702,7 +700,7 @@ export function EmployeeFormV2({ defaultValues, onSubmit, isSubmitting = false }
         ) : (
           // Fallback to single baseSalary field if no base components configured
           <SalaryInput
-            rateType={rateType}
+            rateType="MONTHLY"
             value={watch('baseSalary')}
             onChange={(val) => setValue('baseSalary', val, { shouldValidate: true })}
             error={errors.baseSalary?.message}

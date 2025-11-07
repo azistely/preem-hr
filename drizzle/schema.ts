@@ -83,6 +83,7 @@ export const tenants = pgTable("tenants", {
 	sectorCode: varchar("sector_code", { length: 50 }).notNull(),
 	cgeciSectorCode: varchar("cgeci_sector_code", { length: 50 }),
 	genericSectorCode: varchar("generic_sector_code", { length: 50 }),
+	workAccidentRate: numeric("work_accident_rate", { precision: 5, scale:  4 }).default('0.0200'),
 	defaultDailyTransportRate: numeric("default_daily_transport_rate", { precision: 10, scale:  2 }).default('0'),
 }, (table) => [
 	index("idx_tenants_country").using("btree", table.countryCode.asc().nullsLast().op("text_ops")),

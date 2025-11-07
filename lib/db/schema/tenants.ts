@@ -22,6 +22,9 @@ export const tenants = pgTable('tenants', {
   // Generic sector (auto-derived from CGECI sector, used for work accident rates)
   genericSectorCode: varchar('generic_sector_code', { length: 50 }), // 'SERVICES', 'CONSTRUCTION', 'INDUSTRY', etc.
 
+  // Work accident rate (Taux d'accident du travail) provided by CNPS
+  workAccidentRate: numeric('work_accident_rate', { precision: 5, scale: 4 }).default('0.0200'), // 0.0000 to 0.1000 (0% to 10%)
+
   // Daily workers (journaliers) configuration
   defaultDailyTransportRate: numeric('default_daily_transport_rate', { precision: 10, scale: 2 }).default('0'), // Fixed FCFA per day
 

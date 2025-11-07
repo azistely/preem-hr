@@ -48,6 +48,7 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   tenantId?: string; // Required for tenant-specific component overrides
   fiscalParts?: number; // For tax deductions (1.0, 1.5, 2.0, etc.)
   sectorCode?: string; // For sector-specific contributions
+  workAccidentRate?: number; // CNPS-provided work accident rate (overrides sector-based rate)
   seniorityBonus?: number; // Seniority bonus from components
   familyAllowance?: number; // Family allowance from components
   salaireCategoriel?: number; // Code 11 - Base for CNPS Family/Accident (CI)
@@ -180,33 +181,52 @@ function convertAllowancesToComponents(
 
   // Custom components (if provided)
   if (input.customComponents && input.customComponents.length > 0) {
-    // For HOURLY workers (CDDTI), multiply component amounts by hours worked
-    // ✅ EXCEPTION: Transport (code 22) is DAILY, multiply by presence days (not hours)
-    if (input.rateType === 'HOURLY' && input.hoursWorkedThisMonth) {
+    // For CDDTI workers, convert MONTHLY stored values to period-based amounts
+    // ✅ NEW LOGIC: All values stored as MONTHLY, convert based on contract type
+    const isCDDTI = input.contractType === 'CDDTI';
+
+    if (isCDDTI && input.hoursWorkedThisMonth) {
       const multipliedComponents = input.customComponents.map(comp => {
         // ✅ IMPORTANT: Transport is based on presence days, NOT hours
         // Per user feedback (2025-11-03): "Les jours sont uniquement utilisés pour l'indemnité de transport"
-        const isTransport = comp.code === '22' || comp.code === 'TPT_TRANSPORT_CI';
+        const isTransport = comp.code === '22' || comp.code === 'TPT_TRANSPORT_CI' || comp.code.toLowerCase().includes('transport');
 
         if (isTransport && input.daysWorkedThisMonth !== undefined) {
-          // Transport: multiply daily rate × presence days
-          const transportAmount = Math.round(comp.amount * input.daysWorkedThisMonth);
-          console.log(`[TRANSPORT COMPONENT] ${comp.code}: ${comp.amount} FCFA/jour × ${input.daysWorkedThisMonth} days = ${transportAmount} FCFA`);
+          // Transport: convert MONTHLY → daily rate, then × presence days
+          // Monthly amount stored in DB (e.g., 30,000 FCFA/mois)
+          // Convert to daily: 30,000 / 26 = 1,154 FCFA/jour (26 working days/month)
+          // Multiply by days worked: 1,154 × 15 = 17,310 FCFA
+          const dailyRate = Math.round(comp.amount / 26);
+          const transportAmount = Math.round(dailyRate * input.daysWorkedThisMonth);
+          console.log(`[TRANSPORT COMPONENT] ${comp.code}: ${comp.amount} FCFA/mois → ${dailyRate} FCFA/jour × ${input.daysWorkedThisMonth} days = ${transportAmount} FCFA`);
           return {
             ...comp,
             amount: transportAmount,
           };
         } else {
-          // Other components: multiply hourly rate × hours worked
+          // Salary components: convert MONTHLY → hourly rate, then × hours worked
+          // Monthly amount stored in DB (e.g., 100,000 FCFA/mois)
+          // Convert to hourly: 100,000 / 173.33 = 577 FCFA/heure
+          // Multiply by hours worked: 577 × 120 = 69,240 FCFA
+          const weeklyHours = input.weeklyHoursRegime === '40h' ? 40 :
+                              input.weeklyHoursRegime === '44h' ? 44 :
+                              input.weeklyHoursRegime === '48h' ? 48 :
+                              input.weeklyHoursRegime === '52h' ? 52 :
+                              input.weeklyHoursRegime === '56h' ? 56 : 40;
+          const monthlyHoursDivisor = (weeklyHours * 52) / 12; // e.g., 173.33 for 40h
+          const hourlyRate = comp.amount / monthlyHoursDivisor;
+          const componentAmount = Math.round(hourlyRate * input.hoursWorkedThisMonth!);
+          console.log(`[SALARY COMPONENT] ${comp.code}: ${comp.amount} FCFA/mois → ${hourlyRate.toFixed(2)} FCFA/h × ${input.hoursWorkedThisMonth} hours = ${componentAmount} FCFA`);
           return {
             ...comp,
-            amount: Math.round(comp.amount * input.hoursWorkedThisMonth!),
+            amount: componentAmount,
           };
         }
       });
       components.push(...multipliedComponents);
-      console.log(`[HOURLY COMPONENTS] Multiplied ${input.customComponents.length} components (${input.hoursWorkedThisMonth} hours, ${input.daysWorkedThisMonth || 0} days)`);
+      console.log(`[CDDTI COMPONENTS] Converted ${input.customComponents.length} monthly components to period amounts (${input.hoursWorkedThisMonth} hours, ${input.daysWorkedThisMonth || 0} days)`);
     } else {
+      // Non-CDDTI workers: use monthly amounts as-is
       components.push(...input.customComponents);
     }
   }
@@ -532,20 +552,11 @@ export async function calculatePayrollV2(
           // Check transport allowance from both old field-based approach and new component-based approach
           // Transport component has code '22'
           const transportFromComponent = allComponents.find(c => c.code === '22')?.amount || 0;
-          let totalTransport = transportFromComponent || (input.transportAllowance || 0);
+          const totalTransport = transportFromComponent || (input.transportAllowance || 0);
 
-          // For HOURLY rate type (CDDTI), convert hourly rate to monthly equivalent
-          if (input.rateType === 'HOURLY' && totalTransport > 0) {
-            // Calculate monthly hours: (weeklyHours × 52) / 12
-            const weeklyHours = input.weeklyHoursRegime === '40h' ? 40 :
-                                input.weeklyHoursRegime === '44h' ? 44 :
-                                input.weeklyHoursRegime === '48h' ? 48 :
-                                input.weeklyHoursRegime === '52h' ? 52 :
-                                input.weeklyHoursRegime === '56h' ? 56 : 40; // Default 40h
-            const monthlyHours = (weeklyHours * 52) / 12;
-            // Convert hourly rate to monthly equivalent
-            totalTransport = Math.round(totalTransport * monthlyHours);
-          }
+          // ✅ NEW: Transport is always stored as MONTHLY amount now (no conversion needed)
+          // Example: totalTransport = 30,000 FCFA/mois (from DB)
+          //          cityMinimum.monthlyMinimum = 30,000 FCFA/mois (from rules)
 
           // Validate transport meets minimum (only for MONTHLY workers)
           const isNonMonthlyWorker =
@@ -554,17 +565,9 @@ export async function calculatePayrollV2(
 
           if (!isNonMonthlyWorker && totalTransport < cityMinimum.monthlyMinimum) {
             const cityName = cityMinimum.displayName?.fr || cityMinimum.cityName;
-            // Display different message for hourly vs monthly
-            if (input.rateType === 'HOURLY') {
-              const hourlyRate = transportFromComponent || (input.transportAllowance || 0);
-              throw new Error(
-                `L'indemnité de transport (${hourlyRate.toLocaleString('fr-FR')} FCFA/h = ${totalTransport.toLocaleString('fr-FR')} FCFA/mois) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
-              );
-            } else {
-              throw new Error(
-                `L'indemnité de transport (${totalTransport.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
-              );
-            }
+            throw new Error(
+              `L'indemnité de transport (${totalTransport.toLocaleString('fr-FR')} FCFA/mois) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA/mois). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
+            );
           } else if (isNonMonthlyWorker) {
             console.log(`[TRANSPORT VALIDATION] Skipping monthly minimum check for ${input.paymentFrequency} worker - prorated amount is valid`);
           }
@@ -904,12 +907,14 @@ export async function calculatePayrollV2(
     }
 
     // Allowances are stored as MONTHLY amounts
-    // Convert to daily rate (÷30) then multiply by days worked
+    // Convert to daily rate then multiply by days worked
     if (effectiveTransportAllowance) {
       const originalTransport = effectiveTransportAllowance;
-      effectiveTransportAllowance = (effectiveTransportAllowance / 30) * daysWorked;
+      // Transport: ÷26 (working days per month per CI labor law)
+      effectiveTransportAllowance = (effectiveTransportAllowance / 26) * daysWorked;
       console.log(`[DAILY WORKER PRORATION] Transport: ${originalTransport} (monthly) → ${effectiveTransportAllowance} (${daysWorked} days)`);
     }
+    // Other allowances: ÷30 (calendar days)
     if (effectiveHousingAllowance) {
       effectiveHousingAllowance = (effectiveHousingAllowance / 30) * daysWorked;
     }
@@ -991,19 +996,36 @@ export async function calculatePayrollV2(
   if (rateType === 'DAILY' && input.daysWorkedThisMonth) {
     console.log(`[DAILY WORKER PRORATION] Prorating ${proratedOtherAllowances.length} other allowances for ${input.daysWorkedThisMonth} days`);
     proratedOtherAllowances = proratedOtherAllowances.map(allowance => {
-      const proratedAmount = (allowance.amount / 30) * input.daysWorkedThisMonth!;
-      console.log(`[DAILY WORKER PRORATION] ${allowance.name}: ${allowance.amount} (monthly) → ${proratedAmount} (${input.daysWorkedThisMonth} days)`);
+      // Transport uses 26 working days, other allowances use 30 calendar days
+      const divisor = allowance.code.toLowerCase().includes('transport') ? 26 : 30;
+      const proratedAmount = (allowance.amount / divisor) * input.daysWorkedThisMonth!;
+      console.log(`[DAILY WORKER PRORATION] ${allowance.name}: ${allowance.amount} (monthly) → ${proratedAmount} (${input.daysWorkedThisMonth} days, divisor: ${divisor})`);
       return {
         ...allowance,
         amount: proratedAmount,
       };
     });
   } else if (rateType === 'HOURLY' && input.hoursWorkedThisMonth) {
-    const standardMonthlyHours = 173.33; // 40h/week × 52 weeks ÷ 12 months
-    proratedOtherAllowances = proratedOtherAllowances.map(allowance => ({
-      ...allowance,
-      amount: (allowance.amount / standardMonthlyHours) * input.hoursWorkedThisMonth!,
-    }));
+    // Calculate monthly hours based on actual weekly regime, not fixed 173.33
+    const weeklyHours = input.weeklyHoursRegime === '40h' ? 40 :
+                        input.weeklyHoursRegime === '44h' ? 44 :
+                        input.weeklyHoursRegime === '48h' ? 48 :
+                        input.weeklyHoursRegime === '52h' ? 52 :
+                        input.weeklyHoursRegime === '56h' ? 56 : 40;
+    const monthlyHoursDivisor = (weeklyHours * 52) / 12;
+
+    proratedOtherAllowances = proratedOtherAllowances.map(allowance => {
+      // Transport uses days (÷26), other components use monthly hours
+      if (allowance.code.toLowerCase().includes('transport')) {
+        const dailyRate = allowance.amount / 26;
+        const transportAmount = Math.round(dailyRate * (input.daysWorkedThisMonth || 0));
+        return { ...allowance, amount: transportAmount };
+      } else {
+        const hourlyRate = allowance.amount / monthlyHoursDivisor;
+        const componentAmount = Math.round(hourlyRate * input.hoursWorkedThisMonth!);
+        return { ...allowance, amount: componentAmount };
+      }
+    });
   }
 
   // Merge with location-based allowances
@@ -1194,6 +1216,7 @@ export async function calculatePayrollV2(
       config.sectorOverrides,
       {
         sectorCode: input.sectorCode || config.socialSecurityScheme.defaultSectorCode, // Use database default
+        workAccidentRate: input.workAccidentRate, // CNPS-provided rate (overrides sector-based rate)
         hasFamily: input.hasFamily || false,
         salaireCategoriel: salaireCategorielFromComponents, // ← Salaire catégoriel (Code 11) for accident/family
         // Dynamic CMU calculation (GAP-CMU-001)
@@ -1720,6 +1743,7 @@ function calculateSocialSecurityContributions(
   sectorOverrides: any[],
   options: {
     sectorCode: string;
+    workAccidentRate?: number; // CNPS-provided work accident rate (overrides sector-based rate)
     hasFamily: boolean;
     salaireCategoriel?: number; // Code 11 - For CNPS calculations
     // Dynamic CMU calculation (GAP-CMU-001)
@@ -1897,15 +1921,23 @@ function calculateSocialSecurityContributions(
     const employeeRate = contrib.employeeRate ? Number(contrib.employeeRate) : 0;
     let employerRate = contrib.employerRate ? Number(contrib.employerRate) : 0;
 
-    // Check for sector override
+    // Check for work accident rate override or sector override
     if (contrib.isVariableBySector) {
-      const override = sectorOverrides.find(
-        o =>
-          o.contributionTypeId === contrib.id &&
-          o.sectorCode === options.sectorCode
-      );
-      if (override) {
-        employerRate = Number(override.employerRate);
+      // PRIORITY 1: Use manual workAccidentRate if provided (from Q1 onboarding)
+      if (options.workAccidentRate !== undefined && isATorPF) {
+        employerRate = options.workAccidentRate;
+        console.log(`[WORK ACCIDENT] Using manual rate for ${contrib.code}: ${employerRate}`);
+      }
+      // PRIORITY 2: Use sector override from database
+      else {
+        const override = sectorOverrides.find(
+          o =>
+            o.contributionTypeId === contrib.id &&
+            o.sectorCode === options.sectorCode
+        );
+        if (override) {
+          employerRate = Number(override.employerRate);
+        }
       }
     }
 

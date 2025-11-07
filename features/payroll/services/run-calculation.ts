@@ -224,12 +224,13 @@ export async function calculatePayrollRun(
       .delete(payrollLineItems)
       .where(eq(payrollLineItems.payrollRunId, input.runId));
 
-    // Get tenant with sector information
+    // Get tenant with sector information and work accident rate
     const tenant = await db.query.tenants.findFirst({
       where: eq(tenants.id, run.tenantId),
       columns: {
         countryCode: true,
         sectorCode: true,
+        workAccidentRate: true,
       },
     });
 
@@ -477,6 +478,7 @@ export async function calculatePayrollRun(
           tenantId: run.tenantId, // CRITICAL: Pass tenantId for template component lookup
           countryCode: tenant.countryCode,
           sectorCode: tenant.sectorCode || 'SERVICES', // Fallback to SERVICES if not set
+          workAccidentRate: tenant.workAccidentRate ? Number(tenant.workAccidentRate) : undefined, // CNPS-provided rate
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
           baseSalary: useComponentBasedCalculation ? 0 : totalBaseSalary, // Use 0 for CDDTI to trigger component-based path
@@ -914,6 +916,7 @@ export async function recalculateSingleEmployee(
     tenantId: run.tenantId,
     countryCode: tenant.countryCode,
     sectorCode: tenant.genericSectorCode || tenant.sectorCode || 'SERVICES',
+    workAccidentRate: tenant.workAccidentRate ? Number(tenant.workAccidentRate) : undefined, // CNPS-provided rate
     periodStart: new Date(run.periodStart),
     periodEnd: new Date(run.periodEnd),
     baseSalary: useComponentBasedCalculation ? 0 : totalBaseSalary, // Use 0 for CDDTI to trigger component-based path

@@ -26,6 +26,7 @@ export interface SetCompanyInfoV2Input {
   legalName: string;
   industry: string;
   cgeciSectorCode: string; // CGECI sector code (e.g., 'BANQUES', 'BTP', 'COMMERCE')
+  workAccidentRate?: number; // Work accident rate (Taux d'accident du travail) from CNPS
   taxId?: string;
 }
 
@@ -116,6 +117,7 @@ export async function setCompanyInfoV2(input: SetCompanyInfoV2Input) {
       taxId: input.taxId || null,
       cgeciSectorCode: input.cgeciSectorCode, // CGECI sector (e.g., 'BANQUES', 'BTP')
       genericSectorCode: genericSectorCode, // Auto-derived (e.g., 'SERVICES', 'CONSTRUCTION')
+      workAccidentRate: input.workAccidentRate ? String(input.workAccidentRate) : undefined, // CNPS-provided rate
       settings: {
         ...currentSettings,
         cgeciSectorCode: input.cgeciSectorCode, // Store in settings for easy access

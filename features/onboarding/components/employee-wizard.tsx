@@ -173,20 +173,8 @@ export function EmployeeWizard({
       ? Number(selectedCat.actualMinimumWage)
       : minimumWage;
 
-    // Convert minimum wage based on rate type
-    const rateType = data.rateType || 'MONTHLY';
-    let requiredMinimum = monthlyMinimum;
-    let rateLabel = 'mensuel';
-
-    if (rateType === 'DAILY') {
-      // Daily rate = monthly / 30 days
-      requiredMinimum = Math.round(monthlyMinimum / 30);
-      rateLabel = 'journalier';
-    } else if (rateType === 'HOURLY') {
-      // Hourly rate = monthly / (30 days × 8 hours)
-      requiredMinimum = Math.round(monthlyMinimum / (30 * 8));
-      rateLabel = 'horaire';
-    }
+    // Always use monthly minimum (no more rate type conversions)
+    const requiredMinimum = monthlyMinimum;
 
     // Validate base salary (salaire catégoriel) only, not gross salary with allowances
     if (baseSalaryTotal < requiredMinimum) {
@@ -194,7 +182,7 @@ export function EmployeeWizard({
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['baseComponents'],
-        message: `Le salaire catégoriel ${rateLabel} doit être ≥ ${requiredMinimum.toLocaleString('fr-FR')} FCFA (minimum pour ${categoryLabel})`,
+        message: `Le salaire catégoriel doit être ≥ ${requiredMinimum.toLocaleString('fr-FR')} FCFA/mois (minimum pour ${categoryLabel})`,
       });
     }
 
@@ -211,29 +199,15 @@ export function EmployeeWizard({
         message: `L'indemnité de transport est obligatoire. Ajoutez une indemnité de transport.`,
       });
     } else if (cityTransportMinimum) {
-      // Validate transport >= city minimum (convert based on rate type)
-      const monthlyTransportMinimum = cityTransportMinimum.monthlyMinimum;
+      // Validate transport >= city minimum (always monthly)
+      const requiredTransportMinimum = cityTransportMinimum.monthlyMinimum;
       const cityName = cityTransportMinimum.displayName?.fr || cityTransportMinimum.cityName;
-
-      // Convert transport minimum based on rate type
-      let requiredTransportMinimum = monthlyTransportMinimum;
-      let transportRateLabel = 'mensuel';
-
-      if (rateType === 'DAILY') {
-        // Daily transport = monthly / 30 days
-        requiredTransportMinimum = Math.round(monthlyTransportMinimum / 30);
-        transportRateLabel = 'journalier';
-      } else if (rateType === 'HOURLY') {
-        // Hourly transport = monthly / (30 days × 8 hours)
-        requiredTransportMinimum = Math.round(monthlyTransportMinimum / (30 * 8));
-        transportRateLabel = 'horaire';
-      }
 
       if (transportComponent.amount < requiredTransportMinimum) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['components'],
-          message: `L'indemnité de transport ${transportRateLabel} (${transportComponent.amount.toLocaleString('fr-FR')} FCFA) est inférieure au minimum légal pour ${cityName} (${requiredTransportMinimum.toLocaleString('fr-FR')} FCFA minimum)`,
+          message: `L'indemnité de transport (${transportComponent.amount.toLocaleString('fr-FR')} FCFA/mois) est inférieure au minimum légal pour ${cityName} (${requiredTransportMinimum.toLocaleString('fr-FR')} FCFA/mois)`,
         });
       }
     }
@@ -258,7 +232,6 @@ export function EmployeeWizard({
   const dependentChildren = watch('dependentChildren') || 0;
   const components = watch('components') || [];
   const baseComponentsData = watch('baseComponents') || {};
-  const rateType = (watch('rateType') || 'MONTHLY') as RateType;
   const contractType = watch('contractType');
   const selectedCategory = watch('category');
   const primaryLocationId = watch('primaryLocationId');
@@ -287,21 +260,31 @@ export function EmployeeWizard({
     }
   }, [locations, primaryLocationId, setValue]);
 
-  // Get category-specific minimum wage
+  // Get category-specific minimum wage (always monthly)
   const selectedCategoryData = cgeciCategories?.find((cat) => cat.category === selectedCategory);
-  const monthlyMinimumWage = selectedCategoryData?.actualMinimumWage
+  const categoryMinimumWage = selectedCategoryData?.actualMinimumWage
     ? Number(selectedCategoryData.actualMinimumWage)
     : minimumWage;
 
-  // Convert minimum wage based on rate type for display and validation
-  const categoryMinimumWage = useMemo(() => {
-    if (rateType === 'DAILY') {
-      return Math.round(monthlyMinimumWage / 30);
-    } else if (rateType === 'HOURLY') {
-      return Math.round(monthlyMinimumWage / (30 * 8));
+  // Pre-fill base salary component (code 11 - Salaire Catégoriel) when category changes
+  useEffect(() => {
+    if (selectedCategory && categoryMinimumWage && baseComponentsData['11'] === undefined) {
+      setValue('baseComponents.11', categoryMinimumWage, { shouldValidate: false });
     }
-    return monthlyMinimumWage;
-  }, [monthlyMinimumWage, rateType]);
+  }, [selectedCategory, categoryMinimumWage, baseComponentsData, setValue]);
+
+  // Pre-fill transport component when location changes
+  useEffect(() => {
+    if (cityTransportMinimum && !components.find(c => c.code.toLowerCase().includes('transport') || c.code === 'IND_TRANSPORT')) {
+      const transportComponent = {
+        code: 'IND_TRANSPORT',
+        name: 'Indemnité de Transport',
+        amount: cityTransportMinimum.monthlyMinimum,
+        sourceType: 'standard' as const,
+      };
+      setValue('components', [...components, transportComponent], { shouldValidate: false });
+    }
+  }, [cityTransportMinimum, components, setValue]);
 
   // Component handlers for Step 5
   const [showTemplates, setShowTemplates] = useState(false);
@@ -603,20 +586,19 @@ export function EmployeeWizard({
       title: 'Rémunération',
       description: 'Salaire et indemnités',
       validate: async () => {
-        return await trigger(['baseComponents', 'baseSalary', 'rateType']);
+        return await trigger(['baseComponents', 'baseSalary']);
       },
       content: (
         <div className="space-y-4">
-          {/* Rate Type Selector */}
-          <input type="hidden" {...register('rateType')} value={rateType} />
-          <RateTypeSelector
-            value={rateType}
-            onChange={async (newRateType) => {
-              setValue('rateType', newRateType as any);
-              // Re-trigger validation for baseComponents since minimum wage changes with rate type
-              await trigger(['rateType', 'baseComponents']);
-            }}
-          />
+          {/* Always use MONTHLY rate type */}
+          <input type="hidden" {...register('rateType')} value="MONTHLY" />
+
+          {/* Info badge */}
+          <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <span className="text-sm font-medium text-blue-900">
+              💡 Tous les montants sont mensuels
+            </span>
+          </div>
 
           {/* Base Salary Components */}
           {loadingBaseComponents ? (
@@ -624,11 +606,7 @@ export function EmployeeWizard({
           ) : baseComponents && baseComponents.length > 0 ? (
             <Card className="p-4 space-y-3 bg-blue-50 border-blue-200">
               <div>
-                <p className="font-medium">
-                  {rateType === 'MONTHLY' && 'Salaire de base mensuel'}
-                  {rateType === 'DAILY' && 'Tarif journalier de base'}
-                  {rateType === 'HOURLY' && 'Tarif horaire de base'}
-                </p>
+                <p className="font-medium">Salaire de base mensuel</p>
                 <p className="text-xs text-muted-foreground">
                   Composé de {baseComponents.length} élément{baseComponents.length > 1 ? 's' : ''}
                 </p>
@@ -640,12 +618,12 @@ export function EmployeeWizard({
                   label={component.label.fr}
                   type="number"
                   {...register(`baseComponents.${component.code}`, {
-                    setValueAs: (value) => value ? parseFloat(value) : (component.defaultValue || 0),
+                    setValueAs: (value) => value ? parseFloat(value) : (component.defaultValue || categoryMinimumWage || 0),
                   })}
                   error={errors.baseComponents?.[component.code]?.message}
-                  suffix={rateType === 'MONTHLY' ? 'FCFA/mois' : rateType === 'DAILY' ? 'FCFA/jour' : 'FCFA/heure'}
+                  suffix="FCFA/mois"
                   required={!component.isOptional}
-                  helperText={component.description.fr}
+                  helperText={component.code === '11' && selectedCategoryData ? `Minimum pour ${selectedCategoryData.labelFr}: ${categoryMinimumWage.toLocaleString('fr-FR')} FCFA/mois` : component.description.fr}
                 />
               ))}
 
@@ -654,7 +632,7 @@ export function EmployeeWizard({
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Total tarif de base</span>
                     <span className="font-bold text-lg">
-                      {baseSalaryTotal.toLocaleString('fr-FR')} {rateType === 'MONTHLY' ? 'FCFA/mois' : rateType === 'DAILY' ? 'FCFA/jour' : 'FCFA/heure'}
+                      {baseSalaryTotal.toLocaleString('fr-FR')} FCFA/mois
                     </span>
                   </div>
                 </div>
@@ -667,9 +645,9 @@ export function EmployeeWizard({
             <p className="text-sm text-muted-foreground">
               {selectedCategoryData ? (
                 <>
-                  Le salaire catégoriel {rateType === 'MONTHLY' ? '(mensuel)' : rateType === 'DAILY' ? '(journalier)' : '(horaire)'} doit atteindre{' '}
+                  Le salaire catégoriel doit atteindre{' '}
                   <strong className="text-foreground">
-                    {categoryMinimumWage.toLocaleString('fr-FR')} FCFA{rateType === 'MONTHLY' ? '/mois' : rateType === 'DAILY' ? '/jour' : '/heure'}
+                    {categoryMinimumWage.toLocaleString('fr-FR')} FCFA/mois
                   </strong>{' '}
                   minimum pour la catégorie <strong className="text-foreground">{selectedCategoryData.labelFr}</strong>
                   {baseSalaryTotal < categoryMinimumWage && (
@@ -680,8 +658,8 @@ export function EmployeeWizard({
                 </>
               ) : (
                 <>
-                  Le salaire catégoriel {rateType === 'MONTHLY' ? '(mensuel)' : rateType === 'DAILY' ? '(journalier)' : '(horaire)'} doit atteindre{' '}
-                  {categoryMinimumWage.toLocaleString('fr-FR')} FCFA{rateType === 'MONTHLY' ? '/mois' : rateType === 'DAILY' ? '/jour' : '/heure'} minimum
+                  Le salaire catégoriel doit atteindre{' '}
+                  {categoryMinimumWage.toLocaleString('fr-FR')} FCFA/mois minimum
                   {selectedCategory && ' (sélectionnez une catégorie pour voir le minimum spécifique)'}
                 </>
               )}

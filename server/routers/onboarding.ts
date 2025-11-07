@@ -479,6 +479,7 @@ export const onboardingRouter = createTRPCRouter({
       legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
       industry: z.string().min(2, 'Le type d\'activité est requis'),
       cgeciSectorCode: z.string().min(1, 'Sélectionnez votre secteur d\'activité'),
+      workAccidentRate: z.number().min(0).max(1).optional(),
       taxId: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {

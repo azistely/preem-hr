@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { getWorkAccidentRate, type CGECISector } from '@/lib/cgeci/sector-mapping';
 
 // Location schema
 const locationSchema = z.object({
@@ -44,6 +45,7 @@ const companySetupSchema = z.object({
   legalName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
   industry: z.string().min(2, 'Le type d\'activité est requis'),
   cgeciSectorCode: z.string().min(1, 'Sélectionnez votre secteur d\'activité'),
+  workAccidentRate: z.coerce.number().min(0).max(1).optional(),
   taxId: z.string().optional(),
   // Locations (at least one required)
   locations: z.array(locationSchema).min(1, 'Ajoutez au moins un site/emplacement'),
@@ -95,6 +97,7 @@ export default function OnboardingQ1Page() {
       countryCode: 'CI', // Default to Côte d'Ivoire
       legalName: user?.companyName || '',
       cgeciSectorCode: '',
+      workAccidentRate: 0.02, // Default 2%
       locations: [],
     },
   });
@@ -113,6 +116,15 @@ export default function OnboardingQ1Page() {
     }
   }, [existingLocations, setValue]);
 
+  // Auto-fill work accident rate when CGECI sector changes
+  const cgeciSectorCode = watch('cgeciSectorCode');
+  useEffect(() => {
+    if (cgeciSectorCode) {
+      const rate = getWorkAccidentRate(cgeciSectorCode as CGECISector);
+      setValue('workAccidentRate', rate, { shouldValidate: false });
+    }
+  }, [cgeciSectorCode, setValue]);
+
   const locations = watch('locations') || [];
 
   const onSubmit = async (data: CompanySetupFormData) => {
@@ -123,6 +135,7 @@ export default function OnboardingQ1Page() {
         legalName: data.legalName,
         industry: data.industry,
         cgeciSectorCode: data.cgeciSectorCode,
+        workAccidentRate: data.workAccidentRate,
         taxId: data.taxId,
       });
 
@@ -277,6 +290,18 @@ export default function OnboardingQ1Page() {
               <option value="GENS_MAISON">🏠 Gens de Maison</option>
             </optgroup>
           </FormField>
+
+          {/* Work Accident Rate */}
+          <FormField
+            label="Taux d'accident du travail"
+            type="number"
+            step="0.0001"
+            min="0"
+            max="1"
+            {...register('workAccidentRate')}
+            error={errors.workAccidentRate?.message}
+            helperText={`Taux fourni par la CNPS (rempli automatiquement selon votre secteur: ${cgeciSectorCode ? (getWorkAccidentRate(cgeciSectorCode as CGECISector) * 100).toFixed(2) + '%' : '2%'})`}
+          />
 
           {/* Industry Detail */}
           <FormField
