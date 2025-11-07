@@ -122,6 +122,10 @@ export const payrollLineItems = pgTable('payroll_line_items', {
   totalEmployerCost: numeric('total_employer_cost', { precision: 15, scale: 2 }).notNull(),
   employerCost: numeric('employer_cost', { precision: 15, scale: 2 }),
 
+  // Calculation context (for auditability and exact reproduction)
+  calculationContext: jsonb('calculation_context').notNull().default('{}'),
+  // Stores all input parameters: employeeContext, employmentContext, salaryContext, timeContext, calculationMeta
+
   // Payment details
   paymentMethod: text('payment_method').notNull().default('bank_transfer'),
   bankAccount: text('bank_account'),

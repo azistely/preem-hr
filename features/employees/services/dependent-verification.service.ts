@@ -222,6 +222,10 @@ export async function getVerifiedDependents(
  * Get count of verified dependents for a specific purpose
  *
  * @param purpose - 'fiscal_parts' or 'cmu'
+ *
+ * Note: For fiscal_parts, only CHILDREN are counted (not spouse).
+ * The spouse is already included in the married base (2.0 parts).
+ * Only children add additional 0.5 parts each (max 4).
  */
 export async function getVerifiedDependentsCount(
   employeeId: string,
@@ -233,9 +237,13 @@ export async function getVerifiedDependentsCount(
 
   return verified.filter(dep => {
     if (purpose === 'fiscal_parts') {
-      return dep.eligibleForFiscalParts;
+      // For fiscal parts: Only count CHILDREN (spouse is in married base)
+      return dep.eligibleForFiscalParts && dep.relationship !== 'spouse';
     } else {
-      return dep.eligibleForCmu;
+      // For CMU: Only count CHILDREN (spouse is added by maritalStatus in CMU calculation)
+      // CMU formula: totalPersons = 1 (employee) + (married ? 1 : 0) + dependentChildren
+      // So dependentChildren should NOT include the spouse to avoid double-counting
+      return dep.eligibleForCmu && dep.relationship !== 'spouse';
     }
   }).length;
 }

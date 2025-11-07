@@ -22,8 +22,13 @@ import {
 import { employmentContracts } from '@/drizzle/schema';
 import { and, eq, lte, gte, or, isNotNull, isNull, sql, desc } from 'drizzle-orm';
 import { calculatePayrollV2 } from './payroll-calculation-v2';
+import {
+  calculateFiscalPartsFromDependents,
+  getVerifiedDependentsCount
+} from '@/features/employees/services/dependent-verification.service';
 import type { PayrollRunSummary } from '../types';
 import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
+import { buildCalculationContext } from '../types/calculation-context';
 
 export interface CreatePayrollRunInput {
   tenantId: string;
@@ -327,9 +332,38 @@ export async function calculatePayrollRun(
 
         const contractType = currentContract?.contractType as 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | undefined;
 
-        // Get family status from custom fields
+        // Calculate fiscal parts from marital status and verified dependents table
+        // This ensures consistent "personnes à charge" data source across ITS and CMU calculations
+        //
+        // Data sources (in priority order):
+        // 1. customFields.fiscalParts (manual override for special cases)
+        // 2. calculateFiscalPartsFromDependents() which queries:
+        //    - employees.marital_status (to determine base: 2.0 married, 1.5 single w/kids, 1.0 single)
+        //    - employee_dependents table (to count verified children eligible_for_fiscal_parts = true)
+        //
+        // Formula:
+        //   - Married: 2.0 base + 0.5 per verified child (max 4)
+        //   - Single with children: 1.5 base + 0.5 per verified child (max 4)
+        //   - Single without children: 1.0
+        //
+        // This replaces the previous approach which used employee.dependent_children (simple number field)
         const hasFamily = (employee.customFields as any)?.hasFamily || false;
-        const fiscalParts = (employee.customFields as any)?.fiscalParts || 1.0;
+        const fiscalParts = (employee.customFields as any)?.fiscalParts ||
+          await calculateFiscalPartsFromDependents(
+            employee.id,
+            run.tenantId,
+            new Date(run.periodEnd) // Calculate as of period end date
+          );
+
+        // Get verified dependents count for CMU calculation
+        // CMU uses the same dependents table source as fiscal parts for consistency
+        // This counts all verified dependents (children only, spouse added separately by marital status)
+        const verifiedCmuDependents = await getVerifiedDependentsCount(
+          employee.id,
+          run.tenantId,
+          'cmu',
+          new Date(run.periodEnd)
+        );
 
         // Convert period to YYYY-MM-01 format
         const periodDate = new Date(run.periodStart);
@@ -469,9 +503,10 @@ export async function calculatePayrollRun(
           hoursWorkedThisMonth, // CRITICAL: Pass actual hours worked for CDDTI workers
           paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
           weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
-          // Dynamic CMU calculation (GAP-CMU-001)
+          // Dynamic CMU calculation using verified dependents from employee_dependents table
+          // This ensures consistency with fiscal parts calculation (same "personnes à charge" source)
           maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
-          dependentChildren: employee.dependentChildren ?? undefined,
+          dependentChildren: verifiedCmuDependents, // Use verified dependents count from table
         });
 
         // Prepare line item data (using new schema structure)
@@ -541,6 +576,45 @@ export async function calculatePayrollRun(
 
           // Contribution details (Pension, AT, PF breakdown for UI display)
           contributionDetails: calculation.contributionDetails || [],
+
+          // Calculation context (for auditability and exact reproduction)
+          calculationContext: buildCalculationContext({
+            // Employee context
+            fiscalParts,
+            maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+            dependentChildren: verifiedCmuDependents,
+            hasFamily,
+
+            // Employment context
+            rateType,
+            contractType,
+            weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
+            paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
+            sectorCode: tenant.sectorCode || 'SERVICES',
+
+            // Salary context
+            salaireCategoriel,
+            sursalaire: baseAmounts['12'],
+            components: salaryComponents,
+            allowances: {
+              housing: breakdown.housingAllowance,
+              transport: breakdown.transportAllowance,
+              meal: breakdown.mealAllowance,
+              seniority: breakdown.seniorityBonus,
+              family: breakdown.familyAllowance,
+            },
+
+            // Time context
+            hireDate: new Date(employee.hireDate),
+            terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
+            periodStart: new Date(run.periodStart),
+            periodEnd: new Date(run.periodEnd),
+            daysWorkedThisMonth,
+            hoursWorkedThisMonth,
+
+            // Calculation meta
+            countryCode: tenant.countryCode,
+          }),
 
           // Payment details
           paymentMethod: 'bank_transfer',
@@ -725,9 +799,22 @@ export async function recalculateSingleEmployee(
     throw new Error('No salary found for employee');
   }
 
-  // Get family status
+  // Get family status (using verified dependents for consistency)
   const hasFamily = (employee.customFields as any)?.hasFamily || false;
-  const fiscalParts = (employee.customFields as any)?.fiscalParts || 1.0;
+  const fiscalParts = (employee.customFields as any)?.fiscalParts ||
+    await calculateFiscalPartsFromDependents(
+      employee.id,
+      run.tenantId,
+      new Date(run.periodEnd)
+    );
+
+  // Get verified dependents count for CMU calculation
+  const verifiedCmuDependents = await getVerifiedDependentsCount(
+    employee.id,
+    run.tenantId,
+    'cmu',
+    new Date(run.periodEnd)
+  );
 
   // Get period key
   const periodDate = new Date(run.periodStart);
@@ -854,7 +941,7 @@ export async function recalculateSingleEmployee(
     paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
     weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
     maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
-    dependentChildren: employee.dependentChildren ?? undefined,
+    dependentChildren: verifiedCmuDependents, // Use verified dependents from table
   });
 
   // Update line item
@@ -876,6 +963,43 @@ export async function recalculateSingleEmployee(
       cmuEmployer: String(calculation.cmuEmployer),
       earningsDetails: calculation.earningsDetails || [],
       deductionsDetails: calculation.deductionsDetails || [],
+      calculationContext: buildCalculationContext({
+        // Employee context
+        fiscalParts,
+        maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+        dependentChildren: verifiedCmuDependents,
+        hasFamily,
+
+        // Employment context
+        rateType,
+        contractType,
+        weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
+        paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
+        sectorCode: tenant.genericSectorCode || tenant.sectorCode || 'SERVICES',
+
+        // Salary context
+        salaireCategoriel,
+        sursalaire: baseAmounts['12'],
+        components: salaryComponents,
+        allowances: {
+          housing: breakdown.housingAllowance,
+          transport: breakdown.transportAllowance,
+          meal: breakdown.mealAllowance,
+          seniority: breakdown.seniorityBonus,
+          family: breakdown.familyAllowance,
+        },
+
+        // Time context
+        hireDate: new Date(employee.hireDate),
+        terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
+        periodStart: new Date(run.periodStart),
+        periodEnd: new Date(run.periodEnd),
+        daysWorkedThisMonth,
+        hoursWorkedThisMonth,
+
+        // Calculation meta
+        countryCode: tenant.countryCode,
+      }),
       updatedAt: new Date(),
     })
     .where(eq(payrollLineItems.id, currentLineItem.id));
