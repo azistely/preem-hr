@@ -38,7 +38,7 @@ const componentSchema = z.object({
   code: z.string().min(1),
   name: z.string().min(1),
   amount: z.number().min(0),
-  sourceType: z.enum(['standard', 'custom', 'calculated']).default('standard'),
+  sourceType: z.enum(['standard', 'custom', 'template', 'calculated', 'import']).default('standard'),
   metadata: z.record(z.any()).optional(),
 });
 

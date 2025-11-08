@@ -35,7 +35,7 @@ const componentSchema = z.object({
   code: z.string().min(1, 'Le code du composant est requis'),
   name: z.string().min(1, 'Le nom du composant est requis'),
   amount: z.number().min(0, 'Le montant doit être positif'),
-  sourceType: z.enum(['standard', 'custom', 'calculated']).default('standard'),
+  sourceType: z.enum(['standard', 'custom', 'template', 'calculated', 'import']).default('standard'),
   metadata: z.record(z.any()).optional(),
 });
 

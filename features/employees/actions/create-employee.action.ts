@@ -34,7 +34,7 @@ export interface CreateEmployeeWithComponentsInput {
     code: string;
     name: string;
     amount: number;
-    sourceType: 'standard' | 'custom' | 'calculated';
+    sourceType: 'standard' | 'custom' | 'template' | 'calculated' | 'import';
     metadata?: Record<string, any>;
   }>;
 
@@ -68,7 +68,7 @@ export async function buildEmployeeComponents(
       code: c.code,
       name: c.name,
       amount: c.amount,
-      sourceType: c.sourceType as 'standard' | 'custom' | 'calculated',
+      sourceType: c.sourceType as 'standard' | 'custom' | 'template' | 'calculated' | 'import',
       metadata: c.metadata,
     }));
   } else if (baseSalary > 0) {
@@ -78,7 +78,7 @@ export async function buildEmployeeComponents(
       code: c.code,
       name: c.name,
       amount: c.amount,
-      sourceType: c.sourceType as 'standard' | 'custom' | 'calculated',
+      sourceType: c.sourceType as 'standard' | 'custom' | 'template' | 'calculated' | 'import',
       metadata: c.metadata,
     }));
   }
