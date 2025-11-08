@@ -21,7 +21,7 @@ import { formatCurrency } from '@/features/employees/hooks/use-salary-validation
 import { formatCurrencyWithRate, convertMonthlyAmountToRateType } from '@/features/employees/utils/rate-type-labels';
 import type { RateType } from '@/features/employees/utils/rate-type-labels';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, CheckCircle, Plus, Sparkles, Info, Settings2, X, Edit2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Plus, Sparkles, Info, Settings2, X, Edit2, Search } from 'lucide-react';
 import { useComponentTemplates, useCustomComponents } from '@/features/employees/hooks/use-salary-components';
 import {
   Dialog,
@@ -33,11 +33,13 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { SalaryComponentTemplate, CustomSalaryComponent, SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { MinimumWageAlert } from '@/components/employees/minimum-wage-alert';
 import { TransportAllowanceAlert } from '@/components/employees/transport-allowance-alert';
 import { getSmartDefaults } from '@/lib/salary-components/metadata-builder';
 import { trpc } from '@/lib/trpc/client';
+import { CustomComponentWizard } from '@/features/employees/components/salary-components/CustomComponentWizard';
 
 interface SalaryInfoStepProps {
   form: UseFormReturn<any>;
@@ -47,7 +49,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const [showTemplates, setShowTemplates] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editAmount, setEditAmount] = useState<number>(0);
-  const [showAllTemplates, setShowAllTemplates] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const baseSalary = form.watch('baseSalary') || 0;
   const baseComponents = form.watch('baseComponents') || {};
@@ -67,7 +69,8 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
   const countryMinimumWage = monthlyMinimumWage;
   const rateLabel = 'mensuel';
 
-  const { data: templates, isLoading: loadingTemplates } = useComponentTemplates(countryCode, !showAllTemplates);
+  // Always load ALL components (popularOnly = false)
+  const { data: templates, isLoading: loadingTemplates } = useComponentTemplates(countryCode, false);
   const { data: customComponents, isLoading: loadingCustom } = useCustomComponents();
 
   // Load base salary components for this country
@@ -307,7 +310,7 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       name,
       amount: finalAmount,
       sourceType: 'standard',
-      metadata: getSmartDefaults(countryCode, code === '22' ? 'transport' : code === '23' ? 'housing' : code === '24' ? 'meal' : 'housing'),
+      // Don't include metadata - backend will load correct metadata from database
     };
 
     const currentComponents = form.getValues('components') || [];
@@ -358,6 +361,62 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
       setEditingIndex(null);
     }
   };
+
+  /**
+   * Filter templates and custom components based on search query
+   */
+  const filterComponents = <T extends SalaryComponentTemplate | CustomSalaryComponent>(
+    items: T[] | undefined,
+    query: string
+  ): T[] => {
+    if (!items) return [];
+    if (!query.trim()) return items;
+
+    const lowerQuery = query.toLowerCase();
+    return items.filter((item) => {
+      const name = typeof item.name === 'object' ? item.name.fr : item.name;
+      const description = item.description || '';
+      return (
+        name.toLowerCase().includes(lowerQuery) ||
+        description.toLowerCase().includes(lowerQuery) ||
+        item.code.toLowerCase().includes(lowerQuery)
+      );
+    });
+  };
+
+  /**
+   * Group templates by category
+   */
+  const groupByCategory = (items: SalaryComponentTemplate[]) => {
+    const groups: Record<string, SalaryComponentTemplate[]> = {};
+    items.forEach((item) => {
+      const cat = item.category || 'other';
+      if (!groups[cat]) {
+        groups[cat] = [];
+      }
+      groups[cat].push(item);
+    });
+    return groups;
+  };
+
+  /**
+   * Get category display info
+   */
+  const getCategoryInfo = (category: string) => {
+    const categoryMap: Record<string, { label: string; icon: typeof Sparkles }> = {
+      allowance: { label: 'Indemnités', icon: Sparkles },
+      bonus: { label: 'Primes', icon: Sparkles },
+      deduction: { label: 'Retenues', icon: AlertCircle },
+      benefit: { label: 'Avantages', icon: CheckCircle },
+      other: { label: 'Autres', icon: Info },
+    };
+    return categoryMap[category] || categoryMap.other;
+  };
+
+  // Filter and group templates
+  const filteredTemplates = filterComponents(templates, searchQuery);
+  const filteredCustom = filterComponents(customComponents, searchQuery);
+  const groupedTemplates = groupByCategory(filteredTemplates);
 
   return (
     <div className="space-y-6">
@@ -456,140 +515,179 @@ export function SalaryInfoStep({ form }: SalaryInfoStepProps) {
                 Ajouter
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Ajouter un composant salarial</DialogTitle>
                 <DialogDescription>
-                  Sélectionnez parmi les modèles {showAllTemplates ? '' : 'populaires ou '}ou vos composants personnalisés
+                  Parcourez les composants disponibles ou créez un composant sur mesure
                 </DialogDescription>
               </DialogHeader>
 
-              {/* Toggle to show all templates */}
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">
-                    {showAllTemplates
-                      ? `${templates?.length || 0} composants disponibles`
-                      : `${templates?.length || 0} composants populaires`}
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAllTemplates(!showAllTemplates)}
-                >
-                  {showAllTemplates ? 'Populaires uniquement' : 'Voir tous les composants'}
-                </Button>
-              </div>
+              <Tabs defaultValue="browse" className="mt-4">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="browse">Composants disponibles</TabsTrigger>
+                  <TabsTrigger value="create">Créer sur mesure</TabsTrigger>
+                </TabsList>
 
-              <div className="space-y-4 mt-4">
-                {/* Templates */}
-                {templates && templates.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-3 flex items-center gap-2">
-                      <Sparkles className="h-4 w-4" />
-                      {showAllTemplates ? 'Tous les composants' : 'Modèles populaires'}
-                    </h4>
-                    <div className="grid gap-2">
-                      {templates.map((template) => {
-                        const suggestedAmount = parseFloat(String(template.suggestedAmount || '10000'));
-                        const calculatedAmount = calculateComponentAmount(template, suggestedAmount);
+                {/* Tab 1: Browse existing components */}
+                <TabsContent value="browse" className="space-y-4">
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Rechercher un composant..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 min-h-[44px]"
+                    />
+                  </div>
 
-                        // Determine if auto-calculated and get hint text
-                        const metadata = template.metadata as any;
-                        const calculationRule = metadata?.calculationRule;
-                        const calcMethod = metadata?.calculationMethod || (template as any).calculationMethod;
-                        const isAutoCalculated = calculationRule?.type === 'auto-calculated' || calcMethod === 'percentage' || calcMethod === 'formula';
+                  {/* Component count */}
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Info className="h-4 w-4" />
+                    <span>
+                      {filteredTemplates.length + filteredCustom.length} composant(s) trouvé(s)
+                    </span>
+                  </div>
 
-                        let autoCalcHint = '';
-                        if (template.code === '21') {
-                          autoCalcHint = 'Calculé automatiquement selon l\'ancienneté';
-                        } else if (calcMethod === 'percentage') {
-                          autoCalcHint = 'Pourcentage du salaire catégoriel';
-                        } else if (calcMethod === 'formula') {
-                          autoCalcHint = 'Montant calculé selon la situation familiale';
-                        } else if (template.code === 'TPT_OVERTIME') {
-                          autoCalcHint = 'Calculé selon les heures travaillées';
-                        }
+                  {/* Templates grouped by category */}
+                  {Object.entries(groupedTemplates).length > 0 ? (
+                    <div className="space-y-6">
+                      {Object.entries(groupedTemplates).map(([category, categoryTemplates]) => {
+                        const categoryInfo = getCategoryInfo(category);
+                        const CategoryIcon = categoryInfo.icon;
 
                         return (
-                          <Card
-                            key={template.id}
-                            className="cursor-pointer hover:border-primary transition-colors"
-                            onClick={() => handleAddComponent(template, suggestedAmount)}
-                          >
-                            <CardHeader className="py-3">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <CardTitle className="text-sm">
-                                    {(template.name as Record<string, string>).fr}
-                                  </CardTitle>
-                                  {template.description && (
-                                    <CardDescription className="text-xs mt-1">
-                                      {template.description}
-                                    </CardDescription>
-                                  )}
-                                  {isAutoCalculated && autoCalcHint && (
-                                    <CardDescription className="text-xs mt-1 text-primary font-medium">
-                                      {autoCalcHint}
-                                    </CardDescription>
-                                  )}
-                                </div>
-                                <Badge variant={isAutoCalculated && calculatedAmount > 0 ? "default" : "outline"}>
-                                  {calculatedAmount.toLocaleString('fr-FR')} FCFA/mois
-                                </Badge>
-                              </div>
-                            </CardHeader>
-                          </Card>
+                          <div key={category}>
+                            <h4 className="font-semibold mb-3 flex items-center gap-2">
+                              <CategoryIcon className="h-4 w-4" />
+                              {categoryInfo.label}
+                            </h4>
+                            <div className="grid gap-2">
+                              {categoryTemplates.map((template) => {
+                                const suggestedAmount = parseFloat(String(template.suggestedAmount || '10000'));
+                                const calculatedAmount = calculateComponentAmount(template, suggestedAmount);
+
+                                // Determine if auto-calculated and get hint text
+                                const metadata = template.metadata as any;
+                                const calculationRule = metadata?.calculationRule;
+                                const calcMethod = metadata?.calculationMethod || (template as any).calculationMethod;
+                                const isAutoCalculated = calculationRule?.type === 'auto-calculated' || calcMethod === 'percentage' || calcMethod === 'formula';
+
+                                let autoCalcHint = '';
+                                if (template.code === '21') {
+                                  autoCalcHint = 'Calculé automatiquement selon l\'ancienneté';
+                                } else if (calcMethod === 'percentage') {
+                                  autoCalcHint = 'Pourcentage du salaire catégoriel';
+                                } else if (calcMethod === 'formula') {
+                                  autoCalcHint = 'Montant calculé selon la situation familiale';
+                                } else if (template.code === 'TPT_OVERTIME') {
+                                  autoCalcHint = 'Calculé selon les heures travaillées';
+                                }
+
+                                return (
+                                  <Card
+                                    key={template.id}
+                                    className="cursor-pointer hover:border-primary transition-colors"
+                                    onClick={() => handleAddComponent(template, suggestedAmount)}
+                                  >
+                                    <CardHeader className="py-3">
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <CardTitle className="text-sm">
+                                            {(template.name as Record<string, string>).fr}
+                                          </CardTitle>
+                                          {template.description && (
+                                            <CardDescription className="text-xs mt-1">
+                                              {template.description}
+                                            </CardDescription>
+                                          )}
+                                          {isAutoCalculated && autoCalcHint && (
+                                            <CardDescription className="text-xs mt-1 text-primary font-medium">
+                                              {autoCalcHint}
+                                            </CardDescription>
+                                          )}
+                                        </div>
+                                        <Badge variant={isAutoCalculated && calculatedAmount > 0 ? "default" : "outline"}>
+                                          {calculatedAmount.toLocaleString('fr-FR')} FCFA/mois
+                                        </Badge>
+                                      </div>
+                                    </CardHeader>
+                                  </Card>
+                                );
+                              })}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                  ) : null}
 
-                {/* Custom Components */}
-                {customComponents && customComponents.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-3 flex items-center gap-2">
-                      <Settings2 className="h-4 w-4" />
-                      Vos composants personnalisés
-                    </h4>
-                    <div className="grid gap-2">
-                      {customComponents
-                        .filter((c) => c.isActive)
-                        .map((component) => (
-                          <Card
-                            key={component.id}
-                            className="cursor-pointer hover:border-primary transition-colors"
-                            onClick={() => handleAddComponent(component, 10000)}
-                          >
-                            <CardHeader className="py-3">
-                              <CardTitle className="text-sm">{component.name}</CardTitle>
-                              {component.description && (
-                                <CardDescription className="text-xs mt-1">
-                                  {component.description}
-                                </CardDescription>
-                              )}
-                            </CardHeader>
-                          </Card>
-                        ))}
+                  {/* Custom Components */}
+                  {filteredCustom.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold mb-3 flex items-center gap-2">
+                        <Settings2 className="h-4 w-4" />
+                        Vos composants personnalisés
+                      </h4>
+                      <div className="grid gap-2">
+                        {filteredCustom
+                          .filter((c) => c.isActive)
+                          .map((component) => (
+                            <Card
+                              key={component.id}
+                              className="cursor-pointer hover:border-primary transition-colors"
+                              onClick={() => handleAddComponent(component, 10000)}
+                            >
+                              <CardHeader className="py-3">
+                                <CardTitle className="text-sm">{component.name}</CardTitle>
+                                {component.description && (
+                                  <CardDescription className="text-xs mt-1">
+                                    {component.description}
+                                  </CardDescription>
+                                )}
+                              </CardHeader>
+                            </Card>
+                          ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {(!templates || templates.length === 0) &&
-                  (!customComponents || customComponents.length === 0) && (
+                  {/* No results */}
+                  {filteredTemplates.length === 0 && filteredCustom.length === 0 && (
                     <Alert>
                       <Info className="h-4 w-4" />
                       <AlertDescription>
-                        Aucun modèle disponible. Vous pouvez créer des composants personnalisés dans
-                        les paramètres.
+                        {searchQuery
+                          ? `Aucun composant trouvé pour "${searchQuery}". Essayez un autre terme ou créez un composant sur mesure.`
+                          : 'Aucun composant disponible. Vous pouvez créer un composant sur mesure.'}
                       </AlertDescription>
                     </Alert>
                   )}
-              </div>
+                </TabsContent>
+
+                {/* Tab 2: Create custom component */}
+                <TabsContent value="create" className="mt-4">
+                  <CustomComponentWizard
+                    open={true}
+                    onClose={() => setShowTemplates(false)}
+                    onSuccess={(newComponent) => {
+                      // Add the newly created component to the form
+                      const componentInstance: SalaryComponentInstance = {
+                        code: newComponent.code,
+                        name: newComponent.name,
+                        amount: parseFloat(newComponent.defaultValue || '0'),
+                        sourceType: 'template', // Custom components are treated as templates
+                      };
+                      const currentComponents = form.getValues('components') || [];
+                      form.setValue('components', [...currentComponents, componentInstance], { shouldValidate: true });
+                      setShowTemplates(false);
+                    }}
+                    countryCode={countryCode}
+                    embeddedMode={true}
+                  />
+                </TabsContent>
+              </Tabs>
             </DialogContent>
           </Dialog>
         </div>

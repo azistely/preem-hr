@@ -32,6 +32,7 @@ export interface OtherTaxDetail {
 export interface SalaryPreviewData {
   // Calculated amounts
   grossSalary: number;
+  brutImposable: number; // Taxable gross (base for ITS calculation)
   netSalary: number;
   totalEmployerCost: number;
 

@@ -126,6 +126,10 @@ export function SalaryPreviewCard({
             <span className="font-semibold">{formatCurrency(preview.grossSalary, preview.countryCode)}</span>
           </div>
           <div className="flex justify-between">
+            <span className="text-muted-foreground">Brut imposable</span>
+            <span className="font-medium text-orange-700">{formatCurrency(preview.brutImposable, preview.countryCode)}</span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-muted-foreground">Retenues employé</span>
             <span className="font-semibold text-destructive">
               - {formatCurrency(preview.cnpsEmployee + preview.its + preview.cmuEmployee, preview.countryCode)}

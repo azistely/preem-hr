@@ -600,6 +600,7 @@ export const payrollRouter = createTRPCRouter({
       // Format response to match SalaryPreviewData type
       const previewData: any = {
         grossSalary: payrollResult.grossSalary,
+        brutImposable: payrollResult.brutImposable,
         netSalary: payrollResult.netSalary,
         totalEmployerCost: payrollResult.employerCost,
         cnpsEmployee: payrollResult.cnpsEmployee,
