@@ -387,6 +387,29 @@ export async function calculatePayrollRun(
         const totalBaseSalary = await calculateBaseSalaryTotal(salaryComponents, tenant.countryCode);
         const salaireCategoriel = await getSalaireCategoriel(salaryComponents, tenant.countryCode);
 
+        // Auto-calculate Prime d'ancienneté if not already in stored components
+        // This ensures employees receive seniority bonus even if component wasn't explicitly added
+        let effectiveSeniorityBonus = breakdown.seniorityBonus;
+
+        if (effectiveSeniorityBonus === 0 && salaireCategoriel > 0) {
+          // Calculate seniority bonus based on hire date and salaire catégoriel
+          const { calculateSeniorityBonus } = await import('@/lib/salary-components/component-calculator');
+
+          const seniorityCalc = await calculateSeniorityBonus({
+            baseSalary: salaireCategoriel,
+            hireDate: new Date(employee.hireDate),
+            currentDate: new Date(run.periodEnd),
+            tenantId: run.tenantId,
+            countryCode: tenant.countryCode,
+          });
+
+          effectiveSeniorityBonus = seniorityCalc.amount;
+
+          if (effectiveSeniorityBonus > 0) {
+            console.log(`[PAYROLL AUTO-CALC] Employee ${employee.id} (${employee.firstName} ${employee.lastName}): Auto-calculated Prime d'ancienneté = ${effectiveSeniorityBonus} FCFA (${seniorityCalc.yearsOfService} years, ${(seniorityCalc.rate * 100).toFixed(0)}%)`);
+          }
+        }
+
         // Get employee rate type and calculate days/hours worked for daily/hourly workers
         const rateType = (employee.rateType || 'MONTHLY') as 'MONTHLY' | 'DAILY' | 'HOURLY';
         let daysWorkedThisMonth: number | undefined = undefined;
@@ -488,7 +511,7 @@ export async function calculatePayrollRun(
           housingAllowance: useComponentBasedCalculation ? 0 : breakdown.housingAllowance,
           transportAllowance: useComponentBasedCalculation ? 0 : breakdown.transportAllowance,
           mealAllowance: useComponentBasedCalculation ? 0 : breakdown.mealAllowance,
-          seniorityBonus: useComponentBasedCalculation ? 0 : breakdown.seniorityBonus,
+          seniorityBonus: useComponentBasedCalculation ? 0 : effectiveSeniorityBonus, // Use auto-calculated value
           familyAllowance: useComponentBasedCalculation ? 0 : breakdown.familyAllowance,
           otherAllowances: useComponentBasedCalculation ? [] : breakdown.otherAllowances, // Include template components (TPT_*, PHONE, PERFORMANCE, etc.)
           // For CDDTI: Pass ALL salary components (not just custom) so they can be multiplied by hours
@@ -528,7 +551,7 @@ export async function calculatePayrollRun(
             housing: breakdown.housingAllowance,
             transport: breakdown.transportAllowance,
             meal: breakdown.mealAllowance,
-            seniority: breakdown.seniorityBonus,
+            seniority: effectiveSeniorityBonus, // Use auto-calculated value
             family: breakdown.familyAllowance,
           },
 
