@@ -21,7 +21,7 @@ import {
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
 import { payrollRuns, payrollLineItems, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions } from '@/lib/db/schema';
-import { salaryComponentTemplates, taxSystems } from '@/drizzle/schema';
+import { salaryComponentTemplates, taxSystems, timeOffRequests, timeOffBalances, timeOffPolicies } from '@/drizzle/schema';
 import { eq, and, lte, gte, or, isNull, asc, desc, sql, inArray } from 'drizzle-orm';
 import { ruleLoader } from '@/features/payroll/services/rule-loader';
 
@@ -167,6 +167,149 @@ async function calculateYTDCumuls(
     ytdTaxableNet,
     ytdNetPaid,
   };
+}
+
+/**
+ * Fetch absences/leave taken during a specific pay period
+ *
+ * Returns all approved time-off requests that overlap with the payroll period.
+ * Used for "Absences et congés" section in the payslip.
+ *
+ * @param employeeId - Employee UUID
+ * @param tenantId - Tenant UUID (for security filtering)
+ * @param periodStart - Start of payroll period
+ * @param periodEnd - End of payroll period
+ * @returns Array of absences during the period
+ */
+async function fetchAbsencesDuringPeriod(
+  employeeId: string,
+  tenantId: string,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<Array<{
+  type: string;
+  startDate: Date;
+  endDate: Date;
+  duration: number;
+  treatment: 'paid' | 'unpaid' | 'not_processed';
+  impact?: string;
+}>> {
+  const periodStartStr = periodStart.toISOString().split('T')[0];
+  const periodEndStr = periodEnd.toISOString().split('T')[0];
+
+  // Query time-off requests that overlap with the payroll period
+  // Using manual join to get policy details
+  const requests = await db
+    .select({
+      requestId: timeOffRequests.id,
+      startDate: timeOffRequests.startDate,
+      endDate: timeOffRequests.endDate,
+      totalDays: timeOffRequests.totalDays,
+      status: timeOffRequests.status,
+      policyName: timeOffPolicies.name,
+      policyType: timeOffPolicies.policyType,
+      isPaid: timeOffPolicies.isPaid,
+    })
+    .from(timeOffRequests)
+    .innerJoin(timeOffPolicies, eq(timeOffRequests.policyId, timeOffPolicies.id))
+    .where(
+      and(
+        eq(timeOffRequests.employeeId, employeeId),
+        eq(timeOffRequests.tenantId, tenantId),
+        eq(timeOffRequests.status, 'approved'),
+        // Overlap condition: request start <= period end AND request end >= period start
+        lte(timeOffRequests.startDate, periodEndStr),
+        gte(timeOffRequests.endDate, periodStartStr)
+      )
+    )
+    .orderBy(asc(timeOffRequests.startDate));
+
+  // Map to PayslipData format
+  return requests.map((request) => ({
+    type: request.policyName || 'Congé',
+    startDate: new Date(request.startDate),
+    endDate: new Date(request.endDate),
+    duration: parseFloat(request.totalDays?.toString() || '0'),
+    treatment: request.isPaid
+      ? 'paid'
+      : request.status === 'approved'
+      ? 'unpaid'
+      : 'not_processed',
+    impact: undefined, // Can be extended later if needed
+  }));
+}
+
+/**
+ * Fetch current leave balances for an employee
+ *
+ * Returns active leave balances grouped by policy type.
+ * Used for "Soldes de congés" section in the payslip.
+ *
+ * @param employeeId - Employee UUID
+ * @param tenantId - Tenant UUID (for security filtering)
+ * @returns Leave balances by policy type
+ */
+async function fetchLeaveBalances(
+  employeeId: string,
+  tenantId: string
+): Promise<{
+  paidLeave?: { total: number; used: number };
+  rtt?: { total: number; used: number };
+  sickLeave?: { total: number | 'unlimited'; used: number };
+  familyEvents?: { total: number | 'by_event'; used: number };
+}> {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Query active balances (where period hasn't ended yet)
+  const balances = await db
+    .select({
+      balanceId: timeOffBalances.id,
+      balance: timeOffBalances.balance,
+      used: timeOffBalances.used,
+      pending: timeOffBalances.pending,
+      policyType: timeOffPolicies.policyType,
+      policyName: timeOffPolicies.name,
+    })
+    .from(timeOffBalances)
+    .innerJoin(timeOffPolicies, eq(timeOffBalances.policyId, timeOffPolicies.id))
+    .where(
+      and(
+        eq(timeOffBalances.employeeId, employeeId),
+        eq(timeOffBalances.tenantId, tenantId),
+        gte(timeOffBalances.periodEnd, today) // Active balances only
+      )
+    );
+
+  // Group by policy type
+  const result: {
+    paidLeave?: { total: number; used: number };
+    rtt?: { total: number; used: number };
+    sickLeave?: { total: number | 'unlimited'; used: number };
+    familyEvents?: { total: number | 'by_event'; used: number };
+  } = {};
+
+  for (const balance of balances) {
+    const total = parseFloat(balance.balance?.toString() || '0') + parseFloat(balance.used?.toString() || '0');
+    const used = parseFloat(balance.used?.toString() || '0');
+
+    // Map policy types to payslip categories
+    // Common policy types: PAID_LEAVE, RTT, SICK_LEAVE, FAMILY_EVENT, etc.
+    const policyType = balance.policyType?.toUpperCase() || '';
+
+    if (policyType.includes('PAID') || policyType.includes('CONGE')) {
+      result.paidLeave = { total, used };
+    } else if (policyType.includes('RTT')) {
+      result.rtt = { total, used };
+    } else if (policyType.includes('SICK') || policyType.includes('MALADIE')) {
+      // Sick leave is typically unlimited in West African countries
+      result.sickLeave = { total: 'unlimited', used };
+    } else if (policyType.includes('FAMILY') || policyType.includes('FAMILIAL')) {
+      // Family events are typically "by event" (variable days based on event type)
+      result.familyEvents = { total: 'by_event', used };
+    }
+  }
+
+  return result;
 }
 
 // ========================================
@@ -1878,6 +2021,19 @@ export const payrollRouter = createTRPCRouter({
         new Date(run.periodEnd)
       );
 
+      // Fetch leave data
+      const absencesDuringPeriod = await fetchAbsencesDuringPeriod(
+        input.employeeId,
+        run.tenantId,
+        new Date(run.periodStart),
+        new Date(run.periodEnd)
+      );
+
+      const leaveBalances = await fetchLeaveBalances(
+        input.employeeId,
+        run.tenantId
+      );
+
       // Prepare payslip data
       const payslipData: PayslipData = {
         companyName: tenant?.name || 'Company',
@@ -1931,9 +2087,9 @@ export const payrollRouter = createTRPCRouter({
         ytdTaxableNet: ytdCumuls.ytdTaxableNet,
         ytdNetPaid: ytdCumuls.ytdNetPaid,
 
-        // Leave data (TODO: Implement when leave management system is built)
-        absencesDuringPeriod: undefined,
-        leaveBalances: undefined,
+        // Leave data
+        absencesDuringPeriod: absencesDuringPeriod.length > 0 ? absencesDuringPeriod : undefined,
+        leaveBalances: Object.keys(leaveBalances).length > 0 ? leaveBalances : undefined,
       };
 
       // Generate PDF (lazy load renderer)
@@ -2097,6 +2253,19 @@ export const payrollRouter = createTRPCRouter({
           });
         }
 
+        // Fetch leave data
+        const absencesDuringPeriod = await fetchAbsencesDuringPeriod(
+          lineItem.employeeId,
+          run.tenantId,
+          new Date(run.periodStart),
+          new Date(run.periodEnd)
+        );
+
+        const leaveBalances = await fetchLeaveBalances(
+          lineItem.employeeId,
+          run.tenantId
+        );
+
         const payslipData: PayslipData = {
           employeeName: lineItem.employeeName || '',
           employeeNumber: lineItem.employeeNumber || '',
@@ -2140,9 +2309,9 @@ export const payrollRouter = createTRPCRouter({
           components: components.length > 0 ? components : undefined,
           countryConfig,
 
-          // Leave data (TODO: Implement when leave management system is built)
-          absencesDuringPeriod: undefined,
-          leaveBalances: undefined,
+          // Leave data
+          absencesDuringPeriod: absencesDuringPeriod.length > 0 ? absencesDuringPeriod : undefined,
+          leaveBalances: Object.keys(leaveBalances).length > 0 ? leaveBalances : undefined,
         };
 
         // Generate PDF (lazy load renderer)
