@@ -7,6 +7,7 @@
  * Supports: Côte d'Ivoire, Sénégal, Burkina Faso
  */
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -69,6 +70,11 @@ interface CountryHomepageProps {
 
 export function CountryHomepage({ country, availableCountries }: CountryHomepageProps) {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleCountryChange = (countryCode: string) => {
     // Route to country-specific page
@@ -88,19 +94,21 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
             <PreemLogo size="default" />
           </Link>
           <div className="flex items-center gap-2 sm:gap-4">
-            {/* Country Selector - Now functional */}
-            <Select value={country.code} onValueChange={handleCountryChange}>
-              <SelectTrigger className="min-h-[44px] w-[140px] sm:w-[180px] border-preem-teal/30 hidden sm:flex">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {availableCountries.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>
-                    {c.flag} {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Country Selector - Only render on client to avoid hydration mismatch */}
+            {mounted && (
+              <Select value={country.code} onValueChange={handleCountryChange}>
+                <SelectTrigger className="min-h-[44px] w-[140px] sm:w-[180px] border-preem-teal/30 hidden sm:flex">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableCountries.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.flag} {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Link href="/login">
               <Button
                 variant="outline"
