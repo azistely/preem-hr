@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api } from '@/trpc/react';
 
 export interface CountryConfig {
   code: string;
@@ -72,9 +73,41 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
 
+  // Check if user is authenticated (same pattern as onboarding/page.tsx)
+  const { data: user, isLoading } = api.auth.me.useQuery();
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Redirect authenticated users to their dashboard
+  useEffect(() => {
+    if (isLoading || !user) return;
+
+    // If user is authenticated and onboarding complete, redirect to role-specific dashboard
+    if (user.onboardingComplete) {
+      const role = user.role || 'employee';
+
+      switch (role) {
+        case 'super_admin':
+        case 'tenant_admin':
+          router.push('/admin/settings/dashboard');
+          break;
+        case 'hr_manager':
+          router.push('/admin/dashboard');
+          break;
+        case 'manager':
+          router.push('/manager/dashboard');
+          break;
+        default:
+          router.push('/employee/dashboard');
+      }
+      return;
+    }
+
+    // If user is authenticated but onboarding not complete, redirect to onboarding
+    router.push('/onboarding');
+  }, [user, isLoading, router]);
 
   const handleCountryChange = (countryCode: string) => {
     // Route to country-specific page
@@ -84,6 +117,30 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
       router.push(`/${countryCode}`);
     }
   };
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-preem-teal mx-auto mb-4"></div>
+          <p className="text-lg text-muted-foreground">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is authenticated, don't render marketing page (redirect will happen)
+  if (user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-preem-teal mx-auto mb-4"></div>
+          <p className="text-lg text-muted-foreground">Redirection...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50">
