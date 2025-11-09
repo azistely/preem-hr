@@ -353,6 +353,10 @@ const styles = StyleSheet.create({
   },
   summaryLeft: {
     width: '48%',
+    backgroundColor: '#e0e7ff', // Light lavender/blue matching design
+    padding: 16,
+    borderRadius: 4,
+    border: '1 solid #c7d2fe',
   },
   summaryRight: {
     width: '48%',
@@ -861,130 +865,173 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
         )}
 
         {/* ============================================ */}
-        {/* COTISATIONS SOCIALES TABLE (6 columns) */}
+        {/* RETENUES EMPLOYÉ (Employee Deductions) */}
         {/* ============================================ */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Cotisations sociales</Text>
+          <Text style={styles.sectionTitle}>Retenues employé</Text>
           <View style={styles.table}>
             {/* Header */}
-            <View style={styles.contribTableHeader}>
-              <Text style={[styles.contribColDesignation, styles.tableHeaderTextSmall]}>Désignation</Text>
-              <Text style={[styles.contribColBase, styles.tableHeaderTextSmall]}>Base</Text>
-              <Text style={[styles.contribColTauxSal, styles.tableHeaderTextSmall]}>Taux sal.</Text>
-              <Text style={[styles.contribColMontantSal, styles.tableHeaderTextSmall]}>Mont. sal.</Text>
-              <Text style={[styles.contribColTauxPat, styles.tableHeaderTextSmall]}>Taux patr.</Text>
-              <Text style={[styles.contribColMontantPat, styles.tableHeaderTextSmall]}>Mont. patr.</Text>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.colDesignation, styles.tableHeaderText]}>Désignation</Text>
+              <Text style={[styles.colBase, styles.tableHeaderText]}>Base</Text>
+              <Text style={[styles.colTaux, styles.tableHeaderText]}>Taux</Text>
+              <Text style={[styles.colMontant, styles.tableHeaderText]}>Montant</Text>
             </View>
 
-            {/* CNPS / Social Security */}
+            {/* Employee contributions from countryConfig */}
             {data.countryConfig?.contributions && data.countryConfig.contributions.length > 0 ? (
               <>
-                {/* Render from countryConfig */}
-                {data.countryConfig.contributions.map((contrib) => {
-                  const hasEmployee = (contrib.employeeAmount ?? 0) > 0;
-                  const hasEmployer = (contrib.employerAmount ?? 0) > 0;
-                  if (!hasEmployee && !hasEmployer) return null;
-
-                  return (
-                    <View key={contrib.code} style={styles.contribTableRow}>
-                      <Text style={styles.contribColDesignation}>{contrib.name}</Text>
-                      <Text style={styles.contribColBase}>
+                {data.countryConfig.contributions
+                  .filter((contrib) => (contrib.employeeAmount ?? 0) > 0)
+                  .map((contrib) => (
+                    <View key={`emp-${contrib.code}`} style={styles.tableRow}>
+                      <Text style={styles.colDesignation}>{contrib.name}</Text>
+                      <Text style={styles.colBase}>
                         {contrib.base ? formatCurrency(contrib.base) : ''}
                       </Text>
-                      <Text style={styles.contribColTauxSal}>
-                        {hasEmployee ? `${(contrib.employeeRate * 100).toFixed(1)}%` : ''}
+                      <Text style={styles.colTaux}>
+                        {`${(contrib.employeeRate * 100).toFixed(1)}%`}
                       </Text>
-                      <Text style={styles.contribColMontantSal}>
-                        {hasEmployee ? formatCurrency(contrib.employeeAmount || 0) : ''}
-                      </Text>
-                      <Text style={styles.contribColTauxPat}>
-                        {hasEmployer ? `${(contrib.employerRate * 100).toFixed(1)}%` : ''}
-                      </Text>
-                      <Text style={styles.contribColMontantPat}>
-                        {hasEmployer ? formatCurrency(contrib.employerAmount || 0) : ''}
+                      <Text style={styles.colMontant}>
+                        {formatCurrency(contrib.employeeAmount || 0)}
                       </Text>
                     </View>
-                  );
-                })}
+                  ))}
               </>
             ) : (
               <>
-                {/* Fallback: CNPS row */}
-                <View style={styles.contribTableRow}>
-                  <Text style={styles.contribColDesignation}>{socialSchemeName} - Prestations familiales</Text>
-                  <Text style={styles.contribColBase}>{formatCurrency(data.grossSalary)}</Text>
-                  <Text style={styles.contribColTauxSal}>{(cnpsEmployeeRate * 100).toFixed(1)}%</Text>
-                  <Text style={styles.contribColMontantSal}>{formatCurrency(data.cnpsEmployee)}</Text>
-                  <Text style={styles.contribColTauxPat}>{(cnpsEmployerRate * 100).toFixed(1)}%</Text>
-                  <Text style={styles.contribColMontantPat}>{formatCurrency(data.cnpsEmployer)}</Text>
-                </View>
+                {/* Fallback: CNPS Employee */}
+                {data.cnpsEmployee > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>{socialSchemeName} - Prestations familiales</Text>
+                    <Text style={styles.colBase}>{formatCurrency(data.grossSalary)}</Text>
+                    <Text style={styles.colTaux}>{(cnpsEmployeeRate * 100).toFixed(1)}%</Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.cnpsEmployee)}</Text>
+                  </View>
+                )}
 
-                {/* CMU row */}
-                {(data.cmuEmployee > 0 || data.cmuEmployer > 0) && (
-                  <View style={styles.contribTableRow}>
-                    <Text style={styles.contribColDesignation}>CMU</Text>
-                    <Text style={styles.contribColBase}></Text>
-                    <Text style={styles.contribColTauxSal}>Fixe</Text>
-                    <Text style={styles.contribColMontantSal}>{formatCurrency(data.cmuEmployee)}</Text>
-                    <Text style={styles.contribColTauxPat}>
-                      {data.cmuEmployer > 0 ? 'Fixe' : ''}
-                    </Text>
-                    <Text style={styles.contribColMontantPat}>
-                      {data.cmuEmployer > 0 ? formatCurrency(data.cmuEmployer) : ''}
-                    </Text>
+                {/* CMU Employee */}
+                {data.cmuEmployee > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>CMU</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}>Fixe</Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.cmuEmployee)}</Text>
                   </View>
                 )}
               </>
             )}
 
-            {/* ITS / Tax row */}
-            <View style={styles.contribTableRow}>
-              <Text style={styles.contribColDesignation}>{taxSystemName}</Text>
-              <Text style={styles.contribColBase}>
-                {data.brutImposable ? formatCurrency(data.brutImposable) : formatCurrency(data.grossSalary)}
-              </Text>
-              <Text style={styles.contribColTauxSal}>Progr.</Text>
-              <Text style={styles.contribColMontantSal}>{formatCurrency(data.its)}</Text>
-              <Text style={styles.contribColTauxPat}></Text>
-              <Text style={styles.contribColMontantPat}></Text>
+            {/* ITS / Tax */}
+            {data.its > 0 && (
+              <View style={styles.tableRow}>
+                <Text style={styles.colDesignation}>{taxSystemName}</Text>
+                <Text style={styles.colBase}>
+                  {data.brutImposable ? formatCurrency(data.brutImposable) : formatCurrency(data.grossSalary)}
+                </Text>
+                <Text style={styles.colTaux}>Progr.</Text>
+                <Text style={styles.colMontant}>{formatCurrency(data.its)}</Text>
+              </View>
+            )}
+
+            {/* Additional employee deductions */}
+            {data.deductionsDetails?.map((detail, index) => (
+              <View key={`emp-deduction-${index}`} style={styles.tableRow}>
+                <Text style={styles.colDesignation}>{detail.description}</Text>
+                <Text style={styles.colBase}></Text>
+                <Text style={styles.colTaux}></Text>
+                <Text style={styles.colMontant}>{formatCurrency(detail.amount)}</Text>
+              </View>
+            ))}
+
+            {/* Total employee deductions */}
+            <View style={[styles.tableRow, styles.tableRowGray]}>
+              <Text style={styles.colDesignation}>Total retenues employé</Text>
+              <Text style={styles.colBase}></Text>
+              <Text style={styles.colTaux}></Text>
+              <Text style={styles.colMontant}>{formatCurrency(data.totalDeductions)}</Text>
             </View>
+          </View>
+        </View>
+
+        {/* ============================================ */}
+        {/* CHARGES PATRONALES (Employer Contributions) */}
+        {/* ============================================ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Charges patronales</Text>
+          <View style={styles.table}>
+            {/* Header */}
+            <View style={styles.tableHeader}>
+              <Text style={[styles.colDesignation, styles.tableHeaderText]}>Désignation</Text>
+              <Text style={[styles.colBase, styles.tableHeaderText]}>Base</Text>
+              <Text style={[styles.colTaux, styles.tableHeaderText]}>Taux</Text>
+              <Text style={[styles.colMontant, styles.tableHeaderText]}>Montant</Text>
+            </View>
+
+            {/* Employer contributions from countryConfig */}
+            {data.countryConfig?.contributions && data.countryConfig.contributions.length > 0 ? (
+              <>
+                {data.countryConfig.contributions
+                  .filter((contrib) => (contrib.employerAmount ?? 0) > 0)
+                  .map((contrib) => (
+                    <View key={`er-${contrib.code}`} style={styles.tableRow}>
+                      <Text style={styles.colDesignation}>{contrib.name}</Text>
+                      <Text style={styles.colBase}>
+                        {contrib.base ? formatCurrency(contrib.base) : ''}
+                      </Text>
+                      <Text style={styles.colTaux}>
+                        {`${(contrib.employerRate * 100).toFixed(1)}%`}
+                      </Text>
+                      <Text style={styles.colMontant}>
+                        {formatCurrency(contrib.employerAmount || 0)}
+                      </Text>
+                    </View>
+                  ))}
+              </>
+            ) : (
+              <>
+                {/* Fallback: CNPS Employer */}
+                {data.cnpsEmployer > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>{socialSchemeName} - Prestations familiales</Text>
+                    <Text style={styles.colBase}>{formatCurrency(data.grossSalary)}</Text>
+                    <Text style={styles.colTaux}>{(cnpsEmployerRate * 100).toFixed(1)}%</Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.cnpsEmployer)}</Text>
+                  </View>
+                )}
+
+                {/* CMU Employer */}
+                {data.cmuEmployer > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>CMU</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}>Fixe</Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.cmuEmployer)}</Text>
+                  </View>
+                )}
+              </>
+            )}
 
             {/* Other employer taxes from countryConfig */}
             {data.countryConfig?.otherTaxes
               ?.filter((tax) => tax.paidBy === 'employer' && (tax.amount ?? 0) > 0)
               .map((tax) => (
-                <View key={tax.code} style={styles.contribTableRow}>
-                  <Text style={styles.contribColDesignation}>{tax.name}</Text>
-                  <Text style={styles.contribColBase}>{formatCurrency(data.grossSalary)}</Text>
-                  <Text style={styles.contribColTauxSal}></Text>
-                  <Text style={styles.contribColMontantSal}></Text>
-                  <Text style={styles.contribColTauxPat}>
-                    {tax.rate ? `${(tax.rate * 100).toFixed(1)}%` : ''}
+                <View key={`er-tax-${tax.code}`} style={styles.tableRow}>
+                  <Text style={styles.colDesignation}>{tax.name}</Text>
+                  <Text style={styles.colBase}>{formatCurrency(data.grossSalary)}</Text>
+                  <Text style={styles.colTaux}>
+                    {tax.rate ? `${(tax.rate * 100).toFixed(1)}%` : 'Fixe'}
                   </Text>
-                  <Text style={styles.contribColMontantPat}>{formatCurrency(tax.amount || 0)}</Text>
+                  <Text style={styles.colMontant}>{formatCurrency(tax.amount || 0)}</Text>
                 </View>
               ))}
 
-            {/* Additional deductions details */}
-            {data.deductionsDetails?.map((detail, index) => (
-              <View key={`deduction-${index}`} style={styles.contribTableRow}>
-                <Text style={styles.contribColDesignation}>{detail.description}</Text>
-                <Text style={styles.contribColBase}></Text>
-                <Text style={styles.contribColTauxSal}></Text>
-                <Text style={styles.contribColMontantSal}>{formatCurrency(detail.amount)}</Text>
-                <Text style={styles.contribColTauxPat}></Text>
-                <Text style={styles.contribColMontantPat}></Text>
-              </View>
-            ))}
-
-            {/* Total row */}
-            <View style={[styles.contribTableRow, styles.tableRowGray]}>
-              <Text style={styles.contribColDesignation}>Total des cotisations</Text>
-              <Text style={styles.contribColBase}></Text>
-              <Text style={styles.contribColTauxSal}></Text>
-              <Text style={styles.contribColMontantSal}>{formatCurrency(data.totalDeductions)}</Text>
-              <Text style={styles.contribColTauxPat}></Text>
-              <Text style={styles.contribColMontantPat}>
+            {/* Total employer contributions */}
+            <View style={[styles.tableRow, styles.tableRowGray]}>
+              <Text style={styles.colDesignation}>Total charges patronales</Text>
+              <Text style={styles.colBase}></Text>
+              <Text style={styles.colTaux}></Text>
+              <Text style={styles.colMontant}>
                 {formatCurrency(data.totalEmployerContributions || (data.cnpsEmployer + data.cmuEmployer + (data.fdfp || 0)))}
               </Text>
             </View>
