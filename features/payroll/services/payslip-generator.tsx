@@ -558,6 +558,16 @@ const formatCurrency = (amount: number): string => {
   return formatted.replace(/\u202F/g, ' ');
 };
 
+const translatePaymentMethod = (method: string | undefined): string => {
+  const translations: Record<string, string> = {
+    'bank_transfer': 'Virement bancaire',
+    'cash': 'Espèces',
+    'check': 'Chèque',
+    'mobile_money': 'Mobile Money',
+  };
+  return translations[method || ''] || 'Virement bancaire';
+};
+
 const formatPeriod = (start: Date, end: Date): string => {
   return format(start, 'MMMM yyyy', { locale: fr });
 };
@@ -918,7 +928,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                         {contrib.base ? formatCurrency(contrib.base) : ''}
                       </Text>
                       <Text style={styles.colTaux}>
-                        {`${(contrib.employeeRate * 100).toFixed(1)}%`}
+                        {contrib.employeeRate > 0 ? `${(contrib.employeeRate * 100).toFixed(1)}%` : 'Fixe'}
                       </Text>
                       <Text style={styles.colMontantDeduction}>
                         -{formatCurrency(contrib.employeeAmount || 0)}
@@ -1008,7 +1018,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                         {contrib.base ? formatCurrency(contrib.base) : ''}
                       </Text>
                       <Text style={styles.colTaux}>
-                        {`${(contrib.employerRate * 100).toFixed(1)}%`}
+                        {contrib.employerRate > 0 ? `${(contrib.employerRate * 100).toFixed(1)}%` : 'Fixe'}
                       </Text>
                       <Text style={styles.colMontant}>
                         {formatCurrency(contrib.employerAmount || 0)}
@@ -1143,7 +1153,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
             <Text style={styles.summaryTitle}>Net à payer</Text>
             <Text style={styles.netAmount}>{formatCurrency(data.netSalary)} FCFA</Text>
             <Text style={styles.paymentDetail}>
-              {data.paymentMethod || 'Virement bancaire'} effectué le{' '}
+              {translatePaymentMethod(data.paymentMethod)} effectué le{' '}
               {format(data.payDate, 'dd/MM/yyyy', { locale: fr })}
             </Text>
             {data.bankAccount && (
