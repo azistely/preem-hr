@@ -96,6 +96,80 @@ const getPayrollRunInputSchema = z.object({
 });
 
 // ========================================
+// Helper Functions
+// ========================================
+
+/**
+ * Calculate year-to-date cumulative totals for an employee
+ *
+ * Aggregates all finalized payroll line items from January 1st to the specified period end date.
+ * Used for payslip YTD cumuls section.
+ *
+ * @param employeeId - Employee UUID
+ * @param tenantId - Tenant UUID (for security filtering)
+ * @param periodEnd - End of current payroll period
+ * @returns YTD totals for gross, taxable net (brut imposable), and net paid
+ */
+async function calculateYTDCumuls(
+  employeeId: string,
+  tenantId: string,
+  periodEnd: Date
+): Promise<{ ytdGross: number; ytdTaxableNet: number; ytdNetPaid: number }> {
+  // Calculate year start (January 1st of the period end year)
+  const yearStart = new Date(periodEnd.getFullYear(), 0, 1);
+  const yearStartStr = yearStart.toISOString().split('T')[0];
+  const periodEndStr = periodEnd.toISOString().split('T')[0];
+
+  // Query all payroll line items for this employee, joined with their runs
+  // Using manual join as recommended (not Drizzle's `with` relations)
+  const result = await db
+    .select({
+      lineItemId: payrollLineItems.id,
+      grossSalary: payrollLineItems.grossSalary,
+      brutImposable: payrollLineItems.brutImposable,
+      netSalary: payrollLineItems.netSalary,
+      runStatus: payrollRuns.status,
+      runPeriodEnd: payrollRuns.periodEnd,
+    })
+    .from(payrollLineItems)
+    .innerJoin(payrollRuns, eq(payrollLineItems.payrollRunId, payrollRuns.id))
+    .where(
+      and(
+        eq(payrollLineItems.employeeId, employeeId),
+        eq(payrollRuns.tenantId, tenantId),
+        gte(payrollRuns.periodEnd, yearStartStr),
+        lte(payrollRuns.periodEnd, periodEndStr),
+        or(
+          eq(payrollRuns.status, 'approved'),
+          eq(payrollRuns.status, 'paid')
+        )
+      )
+    );
+
+  // Sum up YTD totals
+  const ytdGross = result.reduce(
+    (sum, item) => sum + parseFloat(item.grossSalary?.toString() || '0'),
+    0
+  );
+
+  const ytdTaxableNet = result.reduce(
+    (sum, item) => sum + parseFloat(item.brutImposable?.toString() || '0'),
+    0
+  );
+
+  const ytdNetPaid = result.reduce(
+    (sum, item) => sum + parseFloat(item.netSalary?.toString() || '0'),
+    0
+  );
+
+  return {
+    ytdGross,
+    ytdTaxableNet,
+    ytdNetPaid,
+  };
+}
+
+// ========================================
 // Payroll Router
 // ========================================
 
@@ -1657,34 +1731,89 @@ export const payrollRouter = createTRPCRouter({
         const taxSystemName = typeof config.taxSystem.name === 'string' ? config.taxSystem.name : (config.taxSystem.name as any).fr;
         const socialSchemeName = typeof config.socialScheme.name === 'string' ? config.socialScheme.name : (config.socialScheme.name as any).fr;
 
+        // Use stored contributionDetails if available, otherwise fall back to config
+        const contributionDetails = lineItem.contributionDetails as any[] || [];
+        const hasContributionDetails = contributionDetails.length > 0;
+
+        // Group contributions by code to merge employee and employer into single rows
+        const groupedContributions: Array<{
+          code: string;
+          name: string;
+          employeeRate: number;
+          employerRate: number;
+          employeeAmount: number;
+          employerAmount: number;
+          base: number;
+        }> = hasContributionDetails
+          ? Object.values(
+              contributionDetails.reduce((acc: any, contrib: any) => {
+                const key = contrib.code;
+                if (!acc[key]) {
+                  acc[key] = {
+                    code: contrib.code,
+                    name: contrib.name,
+                    employeeRate: 0,
+                    employerRate: 0,
+                    employeeAmount: 0,
+                    employerAmount: 0,
+                    base: contrib.base || parseFloat(lineItem.grossSalary?.toString() || '0'),
+                  };
+                }
+                if (contrib.paidBy === 'employee') {
+                  acc[key].employeeRate = contrib.rate || 0;
+                  acc[key].employeeAmount = contrib.amount || 0;
+                } else if (contrib.paidBy === 'employer') {
+                  acc[key].employerRate = contrib.rate || 0;
+                  acc[key].employerAmount = contrib.amount || 0;
+                }
+                return acc;
+              }, {})
+            )
+          : [];
+
         countryConfig = {
           taxSystemName,
           socialSchemeName,
           laborCodeReference: undefined, // TODO: Add laborCodeReference to CountryConfig type
-          contributions: config.socialScheme.contributionTypes.map((contrib: any) => ({
-            code: contrib.code,
-            name: typeof contrib.name === 'string' ? contrib.name : contrib.name.fr,
-            employeeRate: contrib.employeeRate,
-            employerRate: contrib.employerRate,
-            employeeAmount: contrib.code === 'pension'
-              ? parseFloat(lineItem.cnpsEmployee?.toString() || '0')
-              : contrib.code === 'health'
-              ? parseFloat(lineItem.cmuEmployee?.toString() || '0')
-              : 0,
-            employerAmount: contrib.code === 'pension'
-              ? parseFloat(lineItem.cnpsEmployer?.toString() || '0')
-              : contrib.code === 'health'
-              ? parseFloat(lineItem.cmuEmployer?.toString() || '0')
-              : 0,
-          })),
-          otherTaxes: config.otherTaxes.map((tax: any) => ({
-            code: tax.code,
-            name: typeof tax.name === 'string' ? tax.name : tax.name.fr,
-            paidBy: tax.paidBy,
-            amount: tax.code === 'fdfp' || tax.code === 'fdfp_tap'
-              ? parseFloat(lineItem.totalOtherTaxes?.toString() || '0')
-              : 0,
-          })),
+          contributions: hasContributionDetails
+            ? groupedContributions
+            : config.socialScheme.contributionTypes.map((contrib: any) => ({
+                code: contrib.code,
+                name: typeof contrib.name === 'string' ? contrib.name : contrib.name.fr,
+                employeeRate: contrib.employeeRate,
+                employerRate: contrib.employerRate,
+                employeeAmount: contrib.code === 'pension'
+                  ? parseFloat(lineItem.cnpsEmployee?.toString() || '0')
+                  : contrib.code === 'health'
+                  ? parseFloat(lineItem.cmuEmployee?.toString() || '0')
+                  : 0,
+                employerAmount: contrib.code === 'pension'
+                  ? parseFloat(lineItem.cnpsEmployer?.toString() || '0')
+                  : contrib.code === 'health'
+                  ? parseFloat(lineItem.cmuEmployer?.toString() || '0')
+                  : 0,
+              })),
+          otherTaxes: (() => {
+            // Use stored other_taxes_details if available
+            const otherTaxesDetails = lineItem.otherTaxesDetails as any[] || [];
+            if (otherTaxesDetails.length > 0) {
+              return otherTaxesDetails.map((tax: any) => ({
+                code: tax.code,
+                name: tax.name,
+                paidBy: tax.paidBy || 'employer',
+                amount: tax.amount || 0,
+                rate: tax.rate,
+              }));
+            }
+            // Fallback to config
+            return config.otherTaxes.map((tax: any) => ({
+              code: tax.code,
+              name: typeof tax.name === 'string' ? tax.name : tax.name.fr,
+              paidBy: tax.paidBy,
+              amount: 0,
+              rate: undefined,
+            }));
+          })(),
         };
       } catch (error) {
         // If country config not found, payslip will use fallback labels
@@ -1742,6 +1871,13 @@ export const payrollRouter = createTRPCRouter({
         });
       }
 
+      // Calculate YTD cumuls
+      const ytdCumuls = await calculateYTDCumuls(
+        input.employeeId,
+        run.tenantId,
+        new Date(run.periodEnd)
+      );
+
       // Prepare payslip data
       const payslipData: PayslipData = {
         companyName: tenant?.name || 'Company',
@@ -1750,6 +1886,8 @@ export const payrollRouter = createTRPCRouter({
         employeeNumber: lineItem.employeeNumber || employee?.employeeNumber || '',
         employeeCNPS: employee?.cnpsNumber || undefined,
         employeePosition: lineItem.positionTitle || undefined,
+        employeeDepartment: employee?.division || employee?.section || employee?.service || undefined,
+        employeeHireDate: employee?.hireDate ? new Date(employee.hireDate) : undefined,
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
         payDate: new Date(run.payDate),
@@ -1762,18 +1900,27 @@ export const payrollRouter = createTRPCRouter({
         overtimePay: parseFloat(lineItem.overtimePay?.toString() || '0'),
         bonuses: parseFloat(lineItem.bonuses?.toString() || '0'),
         grossSalary: parseFloat(lineItem.grossSalary?.toString() || '0'),
+        brutImposable: parseFloat(lineItem.brutImposable?.toString() || '0'),
         cnpsEmployee: parseFloat(lineItem.cnpsEmployee?.toString() || '0'),
         cmuEmployee: parseFloat(lineItem.cmuEmployee?.toString() || '0'),
         its: parseFloat(lineItem.its?.toString() || '0'),
         totalDeductions: parseFloat(lineItem.totalDeductions?.toString() || '0'),
         cnpsEmployer: parseFloat(lineItem.cnpsEmployer?.toString() || '0'),
         cmuEmployer: parseFloat(lineItem.cmuEmployer?.toString() || '0'),
+        fdfp: parseFloat(lineItem.totalOtherTaxes?.toString() || '0'),
+        totalEmployerContributions:
+          parseFloat(lineItem.cnpsEmployer?.toString() || '0') +
+          parseFloat(lineItem.cmuEmployer?.toString() || '0') +
+          parseFloat(lineItem.totalOtherTaxes?.toString() || '0'),
         netSalary: parseFloat(lineItem.netSalary?.toString() || '0'),
         paymentMethod: lineItem.paymentMethod,
         bankAccount: lineItem.bankAccount || undefined,
         daysWorked: parseFloat(lineItem.daysWorked?.toString() || '0'),
         components: components.length > 0 ? components : undefined,
         countryConfig,
+        ytdGross: ytdCumuls.ytdGross,
+        ytdTaxableNet: ytdCumuls.ytdTaxableNet,
+        ytdNetPaid: ytdCumuls.ytdNetPaid,
       };
 
       // Generate PDF (lazy load renderer)

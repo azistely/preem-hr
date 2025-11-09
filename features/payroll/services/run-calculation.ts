@@ -543,7 +543,7 @@ export async function calculatePayrollRun(
           // Denormalized employee info (for historical accuracy and exports)
           employeeName: `${employee.firstName} ${employee.lastName}`,
           employeeNumber: employee.employeeNumber,
-          positionTitle: null, // Position is tracked separately in job_details table
+          positionTitle: employee.jobTitle || null,
 
           // Salary information
           baseSalary: String(calculation.baseSalary),

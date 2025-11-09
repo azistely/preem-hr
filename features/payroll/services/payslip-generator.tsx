@@ -2,17 +2,14 @@
  * Pay Slip PDF Generator
  *
  * Generates French-language bulletin de paie (pay slip) PDFs
- * for Côte d'Ivoire employees compliant with local labor law.
+ * for West African countries compliant with local labor law.
  *
- * Required fields per CI labor law:
- * - Employer info (company name, address, CNPS number)
- * - Employee info (name, position, employee number, CNPS number)
- * - Period (month/year)
- * - Earnings breakdown
- * - Deductions breakdown
- * - Employer contributions
- * - Net salary (highlighted)
- * - Payment method and date
+ * Layout inspired by professional French payslip design with:
+ * - Company header (2-column layout)
+ * - Employee information (2-column grid)
+ * - Gains table (4 columns: Désignation, Base, Taux, Montant)
+ * - Cotisations sociales (6 columns: employee + employer breakdown)
+ * - Bottom summary (YTD cumuls + Net à payer)
  */
 
 import * as React from 'react';
@@ -36,6 +33,8 @@ export interface PayslipData {
   employeeNumber: string;
   employeeCNPS?: string;
   employeePosition?: string;
+  employeeDepartment?: string;
+  employeeHireDate?: Date;
 
   // Period
   periodStart: Date;
@@ -52,12 +51,15 @@ export interface PayslipData {
   overtimePay?: number;
   bonuses?: number;
   grossSalary: number;
+  brutImposable?: number; // Taxable gross (after tax-exempt deductions)
 
   // Component-based earnings (new system)
   components?: Array<{
     code: string;
     name: string;
     amount: number;
+    base?: string; // e.g., "21 jours", "151.67 h"
+    rate?: string; // e.g., "3%", "22.50 €"
   }>;
 
   // Deductions
@@ -70,6 +72,7 @@ export interface PayslipData {
   cnpsEmployer: number;
   cmuEmployer: number;
   fdfp?: number;
+  totalEmployerContributions?: number;
 
   // Net
   netSalary: number;
@@ -82,12 +85,17 @@ export interface PayslipData {
   daysWorked?: number;
   daysInPeriod?: number;
 
+  // YTD Cumulative totals
+  ytdGross?: number;
+  ytdTaxableNet?: number;
+  ytdNetPaid?: number;
+
   // CDDTI-specific fields (Phase 5)
   isCDDTI?: boolean;
-  gratification?: number; // 6.25% - Prime annuelle de 75% répartie sur l'année
-  congesPayes?: number; // 10.15% - Provision de 2.2 jours/mois
-  indemnitePrecarite?: number; // 3% of (base + gratification + congés)
-  hoursWorked?: number; // Total hours for daily workers
+  gratification?: number;
+  congesPayes?: number;
+  indemnitePrecarite?: number;
+  hoursWorked?: number;
   timeEntriesSummary?: {
     regularHours: number;
     overtimeHours: number;
@@ -113,12 +121,14 @@ export interface PayslipData {
       employerRate: number;
       employeeAmount?: number;
       employerAmount?: number;
+      base?: number; // Calculation base
     }>;
     otherTaxes: Array<{
       code: string;
       name: string;
       paidBy: 'employee' | 'employer';
       amount?: number;
+      rate?: number;
     }>;
   };
 }
@@ -134,125 +144,261 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica',
     backgroundColor: '#ffffff',
   },
-  header: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-    color: '#1a1a1a',
-  },
-  subtitle: {
-    fontSize: 11,
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#4a4a4a',
-  },
-  section: {
-    marginBottom: 15,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    paddingBottom: 4,
-    borderBottom: '2 solid #000000',
-    color: '#1a1a1a',
-  },
-  row: {
+
+  // Header section (company + document info)
+  headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 3,
+    borderBottom: '1 solid #e5e7eb',
+    paddingBottom: 16,
+    marginBottom: 16,
+  },
+  headerLeft: {
+    width: '50%',
+  },
+  headerRight: {
+    width: '50%',
+    alignItems: 'flex-end',
+  },
+  companyName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  companyInfo: {
+    fontSize: 10,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  documentTitle: {
+    fontSize: 10,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+
+  // Employee information section
+  section: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 8,
+    borderBottom: '1 solid #e5e7eb',
+    paddingBottom: 4,
+  },
+  employeeInfoGrid: {
+    flexDirection: 'row',
+    gap: 20,
+  },
+  employeeInfoColumn: {
+    width: '50%',
   },
   infoRow: {
-    flexDirection: 'row',
     marginBottom: 5,
   },
-  label: {
-    width: '50%',
-    fontSize: 9,
-    color: '#4a4a4a',
+  infoText: {
+    fontSize: 10,
+    color: '#6b7280',
   },
-  value: {
-    width: '50%',
-    fontSize: 9,
-    color: '#1a1a1a',
-    fontWeight: 'bold',
-  },
+
+  // Tables - 4 column (Gains)
   table: {
-    marginTop: 5,
+    marginTop: 6,
+    border: '1 solid #e5e7eb',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#f9fafb',
+    borderBottom: '1 solid #e5e7eb',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottom: '1 solid #e0e0e0',
-    paddingVertical: 5,
-  },
-  tableHeader: {
-    backgroundColor: '#f5f5f5',
-    fontWeight: 'bold',
-    borderBottom: '2 solid #000000',
-  },
-  col1: {
-    width: '60%',
-    paddingLeft: 5,
-  },
-  col2: {
-    width: '40%',
-    textAlign: 'right',
-    paddingRight: 5,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    marginTop: 10,
+    borderBottom: '1 solid #e5e7eb',
     paddingVertical: 8,
-    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 12,
+  },
+  tableRowGray: {
+    backgroundColor: '#f9fafb',
     fontWeight: 'bold',
+    borderTop: '1 solid #e5e7eb',
   },
-  netRow: {
-    flexDirection: 'row',
-    marginTop: 15,
-    paddingVertical: 12,
-    backgroundColor: '#1a1a1a',
+
+  // Gains table columns (4 columns)
+  colDesignation: {
+    width: '45%',
+    fontSize: 10,
+    color: '#111827',
   },
-  netLabel: {
-    width: '60%',
-    paddingLeft: 5,
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  netValue: {
-    width: '40%',
+  colBase: {
+    width: '20%',
+    fontSize: 10,
+    color: '#6b7280',
     textAlign: 'right',
-    paddingRight: 5,
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#ffffff',
   },
-  footer: {
-    marginTop: 30,
-    paddingTop: 15,
-    borderTop: '1 solid #000000',
+  colTaux: {
+    width: '15%',
+    fontSize: 10,
+    color: '#6b7280',
+    textAlign: 'right',
+  },
+  colMontant: {
+    width: '20%',
+    fontSize: 10,
+    color: '#111827',
+    textAlign: 'right',
+    fontWeight: 'bold',
+  },
+
+  // Contributions table columns (6 columns)
+  contribColDesignation: {
+    width: '28%',
+    fontSize: 9,
+    color: '#111827',
+  },
+  contribColBase: {
+    width: '14%',
+    fontSize: 9,
+    color: '#6b7280',
+    textAlign: 'right',
+  },
+  contribColTauxSal: {
+    width: '13%',
+    fontSize: 9,
+    color: '#6b7280',
+    textAlign: 'right',
+  },
+  contribColMontantSal: {
+    width: '15%',
+    fontSize: 9,
+    color: '#111827',
+    textAlign: 'right',
+    fontWeight: 'bold',
+  },
+  contribColTauxPat: {
+    width: '13%',
+    fontSize: 9,
+    color: '#6b7280',
+    textAlign: 'right',
+  },
+  contribColMontantPat: {
+    width: '17%',
+    fontSize: 9,
+    color: '#6b7280',
+    textAlign: 'right',
+  },
+
+  // Contributions table (compact spacing)
+  contribTableRow: {
+    flexDirection: 'row',
+    borderBottom: '1 solid #e5e7eb',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  contribTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#f9fafb',
+    borderBottom: '1 solid #e5e7eb',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+
+  // Header text styles
+  tableHeaderText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#6b7280',
+    textTransform: 'uppercase',
+  },
+  tableHeaderTextSmall: {
     fontSize: 8,
-    color: '#666666',
+    fontWeight: 'bold',
+    color: '#6b7280',
+    textTransform: 'uppercase',
+  },
+
+  // Bottom summary section
+  summaryContainer: {
+    flexDirection: 'row',
+    marginTop: 16,
+    gap: 20,
+  },
+  summaryLeft: {
+    width: '48%',
+  },
+  summaryRight: {
+    width: '48%',
+    backgroundColor: '#f9fafb',
+    padding: 16,
+    borderRadius: 4,
+    border: '1 solid #e5e7eb',
+  },
+  summaryTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    paddingVertical: 4,
+    borderBottom: '1 solid #e5e7eb',
+  },
+  summaryLabel: {
+    fontSize: 10,
+    color: '#111827',
+  },
+  summaryValue: {
+    fontSize: 10,
+    color: '#111827',
+    fontWeight: 'bold',
+  },
+  netAmount: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  paymentDetail: {
+    fontSize: 9,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+
+  // Footer
+  footer: {
+    marginTop: 24,
+    paddingTop: 12,
+    borderTop: '1 solid #e5e7eb',
+    fontSize: 8,
+    color: '#9ca3af',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   footerText: {
-    marginBottom: 3,
+    fontSize: 8,
+    color: '#9ca3af',
   },
-  // CDDTI-specific styles (Phase 5)
+
+  // CDDTI highlight box
   highlightBox: {
-    backgroundColor: '#fff8e1',
-    border: '2 solid #ffa726',
-    padding: 10,
-    marginBottom: 15,
+    backgroundColor: '#fef3c7',
+    border: '2 solid #fbbf24',
+    padding: 12,
+    marginBottom: 16,
     borderRadius: 4,
   },
   highlightTitle: {
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#e65100',
+    color: '#92400e',
     marginBottom: 8,
   },
   highlightRow: {
@@ -262,12 +408,12 @@ const styles = StyleSheet.create({
   },
   highlightLabel: {
     fontSize: 9,
-    color: '#4a4a4a',
+    color: '#78350f',
     fontWeight: 'bold',
   },
   highlightValue: {
     fontSize: 9,
-    color: '#1a1a1a',
+    color: '#78350f',
     fontWeight: 'bold',
   },
 });
@@ -277,8 +423,7 @@ const styles = StyleSheet.create({
 // ========================================
 
 const formatCurrency = (amount: number): string => {
-  // Format with fr-FR locale, then replace narrow no-break space (U+202F) with regular space
-  // @react-pdf/renderer doesn't render U+202F correctly, showing it as a slash
+  // Format with fr-FR locale (space thousands separator)
   const formatted = new Intl.NumberFormat('fr-FR', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
@@ -287,420 +432,505 @@ const formatCurrency = (amount: number): string => {
 };
 
 const formatPeriod = (start: Date, end: Date): string => {
-  return format(start, 'MMMM yyyy', { locale: fr }).toUpperCase();
+  return format(start, 'MMMM yyyy', { locale: fr });
+};
+
+// Calculate contribution rate from amount and base
+const calculateRate = (amount: number, base: number): string => {
+  if (base === 0) return '-';
+  const rate = (amount / base) * 100;
+  return `${rate.toFixed(1)}%`;
 };
 
 // ========================================
 // PDF Document Component
 // ========================================
 
-export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => (
-  <Document>
-    <Page size="A4" style={styles.page}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>BULLETIN DE PAIE</Text>
-        <Text style={styles.subtitle}>{formatPeriod(data.periodStart, data.periodEnd)}</Text>
-      </View>
+export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
+  // Determine social security scheme name
+  const socialSchemeName = data.countryConfig?.socialSchemeName || 'CNPS';
+  const taxSystemName = data.countryConfig?.taxSystemName || 'ITS';
 
-      {/* Company & Employee Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>INFORMATIONS</Text>
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Employeur :</Text>
-          <Text style={styles.value}>{data.companyName}</Text>
-        </View>
-        {data.companyAddress && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Adresse :</Text>
-            <Text style={styles.value}>{data.companyAddress}</Text>
+  // Calculate rates if not provided in countryConfig
+  const cnpsEmployeeRate = data.countryConfig?.contributions.find(c => c.code === 'cnps_employee')?.employeeRate
+    || (data.cnpsEmployee / data.grossSalary);
+  const cnpsEmployerRate = data.countryConfig?.contributions.find(c => c.code === 'cnps_employer')?.employerRate
+    || (data.cnpsEmployer / data.grossSalary);
+  const fdfpRate = data.fdfp && data.grossSalary > 0 ? data.fdfp / data.grossSalary : 0.012;
+
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        {/* ============================================ */}
+        {/* HEADER: Company Info (left) + Document Info (right) */}
+        {/* ============================================ */}
+        <View style={styles.headerContainer}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.companyName}>{data.companyName.toUpperCase()}</Text>
+            {data.companyAddress && (
+              <Text style={styles.companyInfo}>{data.companyAddress}</Text>
+            )}
+            {data.companyCNPS && (
+              <Text style={styles.companyInfo}>N° {socialSchemeName}: {data.companyCNPS}</Text>
+            )}
+            {data.companyTaxId && (
+              <Text style={styles.companyInfo}>CC/DGI: {data.companyTaxId}</Text>
+            )}
           </View>
-        )}
-        {data.companyCNPS && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>N° CNPS Employeur :</Text>
-            <Text style={styles.value}>{data.companyCNPS}</Text>
-          </View>
-        )}
-        {data.companyTaxId && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>N° CC/DGI :</Text>
-            <Text style={styles.value}>{data.companyTaxId}</Text>
-          </View>
-        )}
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Salarié :</Text>
-          <Text style={styles.value}>{data.employeeName}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Matricule :</Text>
-          <Text style={styles.value}>{data.employeeNumber}</Text>
-        </View>
-        {data.employeePosition && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Poste :</Text>
-            <Text style={styles.value}>{data.employeePosition}</Text>
-          </View>
-        )}
-        {data.employeeCNPS && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>N° CNPS Salarié :</Text>
-            <Text style={styles.value}>{data.employeeCNPS}</Text>
-          </View>
-        )}
-        {data.daysWorked !== undefined && data.daysInPeriod !== undefined && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Jours travaillés :</Text>
-            <Text style={styles.value}>
-              {data.daysWorked} / {data.daysInPeriod}
+          <View style={styles.headerRight}>
+            <Text style={styles.documentTitle}>Bulletin de salaire</Text>
+            <Text style={styles.documentTitle}>
+              Période: {formatPeriod(data.periodStart, data.periodEnd)}
+            </Text>
+            <Text style={styles.documentTitle}>
+              Date d'émission: {format(data.payDate, 'dd/MM/yyyy', { locale: fr })}
             </Text>
           </View>
-        )}
-      </View>
+        </View>
 
-      {/* Earnings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>GAINS</Text>
-        <View style={styles.table}>
-          <View style={[styles.tableRow, styles.tableHeader]}>
-            <Text style={styles.col1}>Libellé</Text>
-            <Text style={styles.col2}>Montant (FCFA)</Text>
-          </View>
-
-          {/* Render from components array if available (new system) */}
-          {data.components && data.components.length > 0 ? (
-            <>
-              {data.components.map((component, index) => (
-                <View key={`component-${index}`} style={styles.tableRow}>
-                  <Text style={styles.col1}>{component.name}</Text>
-                  <Text style={styles.col2}>{formatCurrency(component.amount)}</Text>
-                </View>
-              ))}
-              {data.overtimePay && data.overtimePay > 0 && (
-                <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Heures supplémentaires</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.overtimePay)}</Text>
-                </View>
-              )}
-              {data.bonuses && data.bonuses > 0 && (
-                <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Primes et bonus</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.bonuses)}</Text>
-                </View>
-              )}
-            </>
-          ) : (
-            <>
-              {/* Fallback to hardcoded fields for backward compatibility */}
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>Salaire de base</Text>
-                <Text style={styles.col2}>{formatCurrency(data.baseSalary)}</Text>
+        {/* ============================================ */}
+        {/* EMPLOYEE INFORMATION (2-column grid) */}
+        {/* ============================================ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Informations salarié</Text>
+          <View style={styles.employeeInfoGrid}>
+            <View style={styles.employeeInfoColumn}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoText}>Nom: {data.employeeName}</Text>
               </View>
-              {data.housingAllowance && data.housingAllowance > 0 && (
-                <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Prime de logement</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.housingAllowance)}</Text>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoText}>Matricule: {data.employeeNumber}</Text>
+              </View>
+              {data.employeePosition && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>Emploi: {data.employeePosition}</Text>
                 </View>
               )}
-              {data.transportAllowance && data.transportAllowance > 0 && (
-                <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Prime de transport</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.transportAllowance)}</Text>
+              {data.employeeDepartment && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>Département: {data.employeeDepartment}</Text>
                 </View>
               )}
-              {data.mealAllowance && data.mealAllowance > 0 && (
-                <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Prime de panier</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.mealAllowance)}</Text>
+            </View>
+            <View style={styles.employeeInfoColumn}>
+              {data.employeeCNPS && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>N° {socialSchemeName}: {data.employeeCNPS}</Text>
                 </View>
               )}
-              {data.seniorityBonus && data.seniorityBonus > 0 && (
-                <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Prime d'ancienneté</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.seniorityBonus)}</Text>
+              {data.employeeHireDate && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>
+                    Date d'entrée: {format(data.employeeHireDate, 'dd/MM/yyyy', { locale: fr })}
+                  </Text>
                 </View>
               )}
-              {data.familyAllowance && data.familyAllowance > 0 && (
-                <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Allocations familiales</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.familyAllowance)}</Text>
+              {data.daysWorked !== undefined && data.daysInPeriod !== undefined && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>
+                    Jours travaillés: {data.daysWorked} / {data.daysInPeriod}
+                  </Text>
                 </View>
               )}
-              {data.overtimePay && data.overtimePay > 0 && (
+            </View>
+          </View>
+        </View>
+
+        {/* ============================================ */}
+        {/* GAINS TABLE (4 columns) */}
+        {/* ============================================ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Éléments de rémunération</Text>
+          <View style={styles.table}>
+            {/* Header */}
+            <View style={styles.tableHeader}>
+              <Text style={[styles.colDesignation, styles.tableHeaderText]}>Désignation</Text>
+              <Text style={[styles.colBase, styles.tableHeaderText]}>Base</Text>
+              <Text style={[styles.colTaux, styles.tableHeaderText]}>Taux</Text>
+              <Text style={[styles.colMontant, styles.tableHeaderText]}>Montant</Text>
+            </View>
+
+            {/* Render from components array if available */}
+            {data.components && data.components.length > 0 ? (
+              <>
+                {data.components.map((component, index) => (
+                  <View key={`component-${index}`} style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>{component.name}</Text>
+                    <Text style={styles.colBase}>{component.base || ''}</Text>
+                    <Text style={styles.colTaux}>{component.rate || ''}</Text>
+                    <Text style={styles.colMontant}>{formatCurrency(component.amount)}</Text>
+                  </View>
+                ))}
+                {data.overtimePay && data.overtimePay > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Heures supplémentaires</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.overtimePay)}</Text>
+                  </View>
+                )}
+                {data.bonuses && data.bonuses > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Primes et bonus</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.bonuses)}</Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Fallback to hardcoded fields */}
                 <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Heures supplémentaires</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.overtimePay)}</Text>
+                  <Text style={styles.colDesignation}>Salaire de base</Text>
+                  <Text style={styles.colBase}>
+                    {data.daysWorked ? `${data.daysWorked} jours` : ''}
+                  </Text>
+                  <Text style={styles.colTaux}></Text>
+                  <Text style={styles.colMontant}>{formatCurrency(data.baseSalary)}</Text>
+                </View>
+                {data.seniorityBonus && data.seniorityBonus > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Prime d'ancienneté</Text>
+                    <Text style={styles.colBase}>{formatCurrency(data.baseSalary)}</Text>
+                    <Text style={styles.colTaux}>
+                      {calculateRate(data.seniorityBonus, data.baseSalary)}
+                    </Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.seniorityBonus)}</Text>
+                  </View>
+                )}
+                {data.transportAllowance && data.transportAllowance > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Prime de transport</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.transportAllowance)}</Text>
+                  </View>
+                )}
+                {data.housingAllowance && data.housingAllowance > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Prime de logement</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.housingAllowance)}</Text>
+                  </View>
+                )}
+                {data.mealAllowance && data.mealAllowance > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Prime de panier</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.mealAllowance)}</Text>
+                  </View>
+                )}
+                {data.familyAllowance && data.familyAllowance > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Allocations familiales</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.familyAllowance)}</Text>
+                  </View>
+                )}
+                {data.overtimePay && data.overtimePay > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Heures supplémentaires</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.overtimePay)}</Text>
+                  </View>
+                )}
+                {data.bonuses && data.bonuses > 0 && (
+                  <View style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>Primes et bonus</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(data.bonuses)}</Text>
+                  </View>
+                )}
+                {data.earningsDetails?.map((detail, index) => (
+                  <View key={index} style={styles.tableRow}>
+                    <Text style={styles.colDesignation}>{detail.description}</Text>
+                    <Text style={styles.colBase}></Text>
+                    <Text style={styles.colTaux}></Text>
+                    <Text style={styles.colMontant}>{formatCurrency(detail.amount)}</Text>
+                  </View>
+                ))}
+              </>
+            )}
+
+            {/* Subtotal: Gross Salary */}
+            <View style={[styles.tableRow, styles.tableRowGray]}>
+              <Text style={styles.colDesignation}>Salaire brut</Text>
+              <Text style={styles.colBase}></Text>
+              <Text style={styles.colTaux}></Text>
+              <Text style={styles.colMontant}>{formatCurrency(data.grossSalary)}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* CDDTI Highlight Box */}
+        {data.isCDDTI && (
+          <View style={styles.highlightBox}>
+            <Text style={styles.highlightTitle}>
+              COMPOSANTES CDDTI (Contrat à Durée Déterminée à Terme Imprécis)
+            </Text>
+            {data.gratification && data.gratification > 0 && (
+              <View style={styles.highlightRow}>
+                <Text style={styles.highlightLabel}>Gratification (6,25%) :</Text>
+                <Text style={styles.highlightValue}>{formatCurrency(data.gratification)}</Text>
+              </View>
+            )}
+            {data.congesPayes && data.congesPayes > 0 && (
+              <View style={styles.highlightRow}>
+                <Text style={styles.highlightLabel}>Congés payés (10,15%) :</Text>
+                <Text style={styles.highlightValue}>{formatCurrency(data.congesPayes)}</Text>
+              </View>
+            )}
+            {data.indemnitePrecarite && data.indemnitePrecarite > 0 && (
+              <View style={styles.highlightRow}>
+                <Text style={styles.highlightLabel}>Indemnité de précarité (3%) :</Text>
+                <Text style={styles.highlightValue}>{formatCurrency(data.indemnitePrecarite)}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Time Entries Summary */}
+        {data.timeEntriesSummary && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Détail des heures</Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.colDesignation, styles.tableHeaderText]}>Type d'heures</Text>
+                <Text style={[styles.colMontant, styles.tableHeaderText]}>Heures</Text>
+              </View>
+              {data.timeEntriesSummary.regularHours > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.colDesignation}>Heures normales</Text>
+                  <Text style={styles.colMontant}>{data.timeEntriesSummary.regularHours} h</Text>
                 </View>
               )}
-              {data.bonuses && data.bonuses > 0 && (
+              {data.timeEntriesSummary.overtimeHours > 0 && (
                 <View style={styles.tableRow}>
-                  <Text style={styles.col1}>Primes et bonus</Text>
-                  <Text style={styles.col2}>{formatCurrency(data.bonuses)}</Text>
+                  <Text style={styles.colDesignation}>Heures supplémentaires</Text>
+                  <Text style={styles.colMontant}>{data.timeEntriesSummary.overtimeHours} h</Text>
                 </View>
               )}
-              {data.earningsDetails?.map((detail, index) => (
-                <View key={index} style={styles.tableRow}>
-                  <Text style={styles.col1}>{detail.description}</Text>
-                  <Text style={styles.col2}>{formatCurrency(detail.amount)}</Text>
+              {data.timeEntriesSummary.saturdayHours > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.colDesignation}>Heures samedi</Text>
+                  <Text style={styles.colMontant}>{data.timeEntriesSummary.saturdayHours} h</Text>
+                </View>
+              )}
+              {data.timeEntriesSummary.sundayHours > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.colDesignation}>Heures dimanche/férié</Text>
+                  <Text style={styles.colMontant}>{data.timeEntriesSummary.sundayHours} h</Text>
+                </View>
+              )}
+              {data.timeEntriesSummary.nightHours > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={styles.colDesignation}>Heures de nuit</Text>
+                  <Text style={styles.colMontant}>{data.timeEntriesSummary.nightHours} h</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ============================================ */}
+        {/* COTISATIONS SOCIALES TABLE (6 columns) */}
+        {/* ============================================ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Cotisations sociales</Text>
+          <View style={styles.table}>
+            {/* Header */}
+            <View style={styles.contribTableHeader}>
+              <Text style={[styles.contribColDesignation, styles.tableHeaderTextSmall]}>Désignation</Text>
+              <Text style={[styles.contribColBase, styles.tableHeaderTextSmall]}>Base</Text>
+              <Text style={[styles.contribColTauxSal, styles.tableHeaderTextSmall]}>Taux sal.</Text>
+              <Text style={[styles.contribColMontantSal, styles.tableHeaderTextSmall]}>Mont. sal.</Text>
+              <Text style={[styles.contribColTauxPat, styles.tableHeaderTextSmall]}>Taux patr.</Text>
+              <Text style={[styles.contribColMontantPat, styles.tableHeaderTextSmall]}>Mont. patr.</Text>
+            </View>
+
+            {/* CNPS / Social Security */}
+            {data.countryConfig?.contributions && data.countryConfig.contributions.length > 0 ? (
+              <>
+                {/* Render from countryConfig */}
+                {data.countryConfig.contributions.map((contrib) => {
+                  const hasEmployee = (contrib.employeeAmount ?? 0) > 0;
+                  const hasEmployer = (contrib.employerAmount ?? 0) > 0;
+                  if (!hasEmployee && !hasEmployer) return null;
+
+                  return (
+                    <View key={contrib.code} style={styles.contribTableRow}>
+                      <Text style={styles.contribColDesignation}>{contrib.name}</Text>
+                      <Text style={styles.contribColBase}>
+                        {contrib.base ? formatCurrency(contrib.base) : ''}
+                      </Text>
+                      <Text style={styles.contribColTauxSal}>
+                        {hasEmployee ? `${(contrib.employeeRate * 100).toFixed(1)}%` : ''}
+                      </Text>
+                      <Text style={styles.contribColMontantSal}>
+                        {hasEmployee ? formatCurrency(contrib.employeeAmount || 0) : ''}
+                      </Text>
+                      <Text style={styles.contribColTauxPat}>
+                        {hasEmployer ? `${(contrib.employerRate * 100).toFixed(1)}%` : ''}
+                      </Text>
+                      <Text style={styles.contribColMontantPat}>
+                        {hasEmployer ? formatCurrency(contrib.employerAmount || 0) : ''}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                {/* Fallback: CNPS row */}
+                <View style={styles.contribTableRow}>
+                  <Text style={styles.contribColDesignation}>{socialSchemeName} - Prestations familiales</Text>
+                  <Text style={styles.contribColBase}>{formatCurrency(data.grossSalary)}</Text>
+                  <Text style={styles.contribColTauxSal}>{(cnpsEmployeeRate * 100).toFixed(1)}%</Text>
+                  <Text style={styles.contribColMontantSal}>{formatCurrency(data.cnpsEmployee)}</Text>
+                  <Text style={styles.contribColTauxPat}>{(cnpsEmployerRate * 100).toFixed(1)}%</Text>
+                  <Text style={styles.contribColMontantPat}>{formatCurrency(data.cnpsEmployer)}</Text>
+                </View>
+
+                {/* CMU row */}
+                {(data.cmuEmployee > 0 || data.cmuEmployer > 0) && (
+                  <View style={styles.contribTableRow}>
+                    <Text style={styles.contribColDesignation}>CMU</Text>
+                    <Text style={styles.contribColBase}></Text>
+                    <Text style={styles.contribColTauxSal}>Fixe</Text>
+                    <Text style={styles.contribColMontantSal}>{formatCurrency(data.cmuEmployee)}</Text>
+                    <Text style={styles.contribColTauxPat}>
+                      {data.cmuEmployer > 0 ? 'Fixe' : ''}
+                    </Text>
+                    <Text style={styles.contribColMontantPat}>
+                      {data.cmuEmployer > 0 ? formatCurrency(data.cmuEmployer) : ''}
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ITS / Tax row */}
+            <View style={styles.contribTableRow}>
+              <Text style={styles.contribColDesignation}>{taxSystemName}</Text>
+              <Text style={styles.contribColBase}>
+                {data.brutImposable ? formatCurrency(data.brutImposable) : formatCurrency(data.grossSalary)}
+              </Text>
+              <Text style={styles.contribColTauxSal}>Progr.</Text>
+              <Text style={styles.contribColMontantSal}>{formatCurrency(data.its)}</Text>
+              <Text style={styles.contribColTauxPat}></Text>
+              <Text style={styles.contribColMontantPat}></Text>
+            </View>
+
+            {/* Other employer taxes from countryConfig */}
+            {data.countryConfig?.otherTaxes
+              ?.filter((tax) => tax.paidBy === 'employer' && (tax.amount ?? 0) > 0)
+              .map((tax) => (
+                <View key={tax.code} style={styles.contribTableRow}>
+                  <Text style={styles.contribColDesignation}>{tax.name}</Text>
+                  <Text style={styles.contribColBase}>{formatCurrency(data.grossSalary)}</Text>
+                  <Text style={styles.contribColTauxSal}></Text>
+                  <Text style={styles.contribColMontantSal}></Text>
+                  <Text style={styles.contribColTauxPat}>
+                    {tax.rate ? `${(tax.rate * 100).toFixed(1)}%` : ''}
+                  </Text>
+                  <Text style={styles.contribColMontantPat}>{formatCurrency(tax.amount || 0)}</Text>
                 </View>
               ))}
-            </>
-          )}
-        </View>
-        <View style={styles.totalRow}>
-          <Text style={styles.col1}>SALAIRE BRUT</Text>
-          <Text style={styles.col2}>{formatCurrency(data.grossSalary)}</Text>
-        </View>
-      </View>
 
-      {/* CDDTI Highlight Box (Phase 5) */}
-      {data.isCDDTI && (
-        <View style={styles.highlightBox}>
-          <Text style={styles.highlightTitle}>
-            COMPOSANTES CDDTI (Contrat à Durée Déterminée à Terme Imprécis)
-          </Text>
-          {data.gratification && data.gratification > 0 && (
-            <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Gratification (6,25%) :</Text>
-              <Text style={styles.highlightValue}>{formatCurrency(data.gratification)}</Text>
-            </View>
-          )}
-          {data.congesPayes && data.congesPayes > 0 && (
-            <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Congés payés (10,15%) :</Text>
-              <Text style={styles.highlightValue}>{formatCurrency(data.congesPayes)}</Text>
-            </View>
-          )}
-          {data.indemnitePrecarite && data.indemnitePrecarite > 0 && (
-            <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Indemnité de précarité (3%) :</Text>
-              <Text style={styles.highlightValue}>{formatCurrency(data.indemnitePrecarite)}</Text>
-            </View>
-          )}
-          {data.daysWorked !== undefined && (
-            <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Jours travaillés :</Text>
-              <Text style={styles.highlightValue}>{data.daysWorked}</Text>
-            </View>
-          )}
-          {data.hoursWorked !== undefined && (
-            <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Heures travaillées :</Text>
-              <Text style={styles.highlightValue}>{data.hoursWorked} h</Text>
-            </View>
-          )}
-          {data.paymentFrequency && data.paymentFrequency !== 'MONTHLY' && (
-            <View style={styles.highlightRow}>
-              <Text style={styles.highlightLabel}>Fréquence de paiement :</Text>
-              <Text style={styles.highlightValue}>
-                {data.paymentFrequency === 'WEEKLY'
-                  ? 'Hebdomadaire'
-                  : data.paymentFrequency === 'BIWEEKLY'
-                  ? 'Quinzaine'
-                  : 'Journalier'}
+            {/* Additional deductions details */}
+            {data.deductionsDetails?.map((detail, index) => (
+              <View key={`deduction-${index}`} style={styles.contribTableRow}>
+                <Text style={styles.contribColDesignation}>{detail.description}</Text>
+                <Text style={styles.contribColBase}></Text>
+                <Text style={styles.contribColTauxSal}></Text>
+                <Text style={styles.contribColMontantSal}>{formatCurrency(detail.amount)}</Text>
+                <Text style={styles.contribColTauxPat}></Text>
+                <Text style={styles.contribColMontantPat}></Text>
+              </View>
+            ))}
+
+            {/* Total row */}
+            <View style={[styles.contribTableRow, styles.tableRowGray]}>
+              <Text style={styles.contribColDesignation}>Total des cotisations</Text>
+              <Text style={styles.contribColBase}></Text>
+              <Text style={styles.contribColTauxSal}></Text>
+              <Text style={styles.contribColMontantSal}>{formatCurrency(data.totalDeductions)}</Text>
+              <Text style={styles.contribColTauxPat}></Text>
+              <Text style={styles.contribColMontantPat}>
+                {formatCurrency(data.totalEmployerContributions || (data.cnpsEmployer + data.cmuEmployer + (data.fdfp || 0)))}
               </Text>
             </View>
-          )}
-        </View>
-      )}
-
-      {/* Time Entries Summary (for daily workers) */}
-      {data.timeEntriesSummary && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>DÉTAIL DES HEURES</Text>
-          <View style={styles.table}>
-            <View style={[styles.tableRow, styles.tableHeader]}>
-              <Text style={styles.col1}>Type d'heures</Text>
-              <Text style={styles.col2}>Heures</Text>
-            </View>
-            {data.timeEntriesSummary.regularHours > 0 && (
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>Heures normales</Text>
-                <Text style={styles.col2}>{data.timeEntriesSummary.regularHours} h</Text>
-              </View>
-            )}
-            {data.timeEntriesSummary.overtimeHours > 0 && (
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>Heures supplémentaires</Text>
-                <Text style={styles.col2}>{data.timeEntriesSummary.overtimeHours} h</Text>
-              </View>
-            )}
-            {data.timeEntriesSummary.saturdayHours > 0 && (
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>Heures samedi</Text>
-                <Text style={styles.col2}>{data.timeEntriesSummary.saturdayHours} h</Text>
-              </View>
-            )}
-            {data.timeEntriesSummary.sundayHours > 0 && (
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>Heures dimanche/férié</Text>
-                <Text style={styles.col2}>{data.timeEntriesSummary.sundayHours} h</Text>
-              </View>
-            )}
-            {data.timeEntriesSummary.nightHours > 0 && (
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>Heures de nuit</Text>
-                <Text style={styles.col2}>{data.timeEntriesSummary.nightHours} h</Text>
-              </View>
-            )}
           </View>
         </View>
-      )}
 
-      {/* Deductions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>RETENUES SALARIALES</Text>
-        <View style={styles.table}>
-          <View style={[styles.tableRow, styles.tableHeader]}>
-            <Text style={styles.col1}>Libellé</Text>
-            <Text style={styles.col2}>Montant (FCFA)</Text>
+        {/* ============================================ */}
+        {/* BOTTOM SUMMARY: Cumuls (left) + Net à payer (right) */}
+        {/* ============================================ */}
+        <View style={styles.summaryContainer}>
+          {/* Left: YTD Cumuls */}
+          <View style={styles.summaryLeft}>
+            <Text style={styles.summaryTitle}>Cumuls</Text>
+            {data.ytdGross !== undefined && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Brut année</Text>
+                <Text style={styles.summaryValue}>{formatCurrency(data.ytdGross)} FCFA</Text>
+              </View>
+            )}
+            {data.ytdTaxableNet !== undefined && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Net imposable année</Text>
+                <Text style={styles.summaryValue}>{formatCurrency(data.ytdTaxableNet)} FCFA</Text>
+              </View>
+            )}
+            {data.ytdNetPaid !== undefined && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Net payé année</Text>
+                <Text style={styles.summaryValue}>{formatCurrency(data.ytdNetPaid)} FCFA</Text>
+              </View>
+            )}
+            {/* If no YTD data, show placeholder */}
+            {data.ytdGross === undefined && data.ytdNetPaid === undefined && (
+              <Text style={styles.infoText}>Cumuls non disponibles</Text>
+            )}
           </View>
 
-          {/* Dynamic contribution labels from country config */}
-          {data.countryConfig?.contributions
-            .filter((contrib) => (contrib.employeeAmount ?? 0) > 0)
-            .map((contrib) => (
-              <View key={contrib.code} style={styles.tableRow}>
-                <Text style={styles.col1}>
-                  {contrib.name} ({(contrib.employeeRate * 100).toFixed(1)}%)
-                </Text>
-                <Text style={styles.col2}>
-                  {formatCurrency(contrib.employeeAmount || 0)}
-                </Text>
-              </View>
-            ))}
-
-          {/* Fallback to hardcoded labels if no country config */}
-          {!data.countryConfig && (
-            <>
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>CNPS Salarié (6,3%)</Text>
-                <Text style={styles.col2}>{formatCurrency(data.cnpsEmployee)}</Text>
-              </View>
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>CMU Salarié</Text>
-                <Text style={styles.col2}>{formatCurrency(data.cmuEmployee)}</Text>
-              </View>
-            </>
-          )}
-
-          {/* Tax */}
-          <View style={styles.tableRow}>
-            <Text style={styles.col1}>
-              {data.countryConfig?.taxSystemName || 'Impôt sur Traitement et Salaire (ITS)'}
+          {/* Right: Net à payer */}
+          <View style={styles.summaryRight}>
+            <Text style={styles.summaryTitle}>Net à payer</Text>
+            <Text style={styles.netAmount}>{formatCurrency(data.netSalary)} FCFA</Text>
+            <Text style={styles.paymentDetail}>
+              {data.paymentMethod || 'Virement bancaire'} effectué le{' '}
+              {format(data.payDate, 'dd/MM/yyyy', { locale: fr })}
             </Text>
-            <Text style={styles.col2}>{formatCurrency(data.its)}</Text>
+            {data.bankAccount && (
+              <Text style={styles.paymentDetail}>
+                IBAN: {data.bankAccount.replace(/(.{4})(.{4})(.{4})(.{4})/, '$1 **** **** $4')}
+              </Text>
+            )}
           </View>
-
-          {data.deductionsDetails?.map((detail, index) => (
-            <View key={index} style={styles.tableRow}>
-              <Text style={styles.col1}>{detail.description}</Text>
-              <Text style={styles.col2}>{formatCurrency(detail.amount)}</Text>
-            </View>
-          ))}
         </View>
-        <View style={styles.totalRow}>
-          <Text style={styles.col1}>TOTAL RETENUES</Text>
-          <Text style={styles.col2}>{formatCurrency(data.totalDeductions)}</Text>
-        </View>
-      </View>
 
-      {/* Employer Contributions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>CHARGES PATRONALES (Information)</Text>
-        <View style={styles.table}>
-          <View style={[styles.tableRow, styles.tableHeader]}>
-            <Text style={styles.col1}>Libellé</Text>
-            <Text style={styles.col2}>Montant (FCFA)</Text>
-          </View>
-
-          {/* Dynamic employer contribution labels from country config */}
-          {data.countryConfig?.contributions
-            .filter((contrib) => (contrib.employerAmount ?? 0) > 0)
-            .map((contrib) => (
-              <View key={contrib.code} style={styles.tableRow}>
-                <Text style={styles.col1}>
-                  {contrib.name} Patronale ({(contrib.employerRate * 100).toFixed(1)}%)
-                </Text>
-                <Text style={styles.col2}>
-                  {formatCurrency(contrib.employerAmount || 0)}
-                </Text>
-              </View>
-            ))}
-
-          {/* Fallback to hardcoded labels if no country config */}
-          {!data.countryConfig && (
-            <>
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>CNPS Patronale (7,7% + 5% + 2-5%)</Text>
-                <Text style={styles.col2}>{formatCurrency(data.cnpsEmployer)}</Text>
-              </View>
-              <View style={styles.tableRow}>
-                <Text style={styles.col1}>CMU Patronale</Text>
-                <Text style={styles.col2}>{formatCurrency(data.cmuEmployer)}</Text>
-              </View>
-            </>
-          )}
-
-          {/* Other employer taxes */}
-          {data.countryConfig?.otherTaxes
-            ?.filter((tax) => tax.paidBy === 'employer' && (tax.amount ?? 0) > 0)
-            .map((tax) => (
-              <View key={tax.code} style={styles.tableRow}>
-                <Text style={styles.col1}>{tax.name}</Text>
-                <Text style={styles.col2}>{formatCurrency(tax.amount || 0)}</Text>
-              </View>
-            ))}
-
-          {/* Fallback FDFP for legacy payslips */}
-          {!data.countryConfig && data.fdfp && data.fdfp > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.col1}>FDFP (Formation professionnelle)</Text>
-              <Text style={styles.col2}>{formatCurrency(data.fdfp)}</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* Net Salary */}
-      <View style={styles.netRow}>
-        <Text style={styles.netLabel}>SALAIRE NET À PAYER</Text>
-        <Text style={styles.netValue}>{formatCurrency(data.netSalary)} FCFA</Text>
-      </View>
-
-      {/* Payment Info */}
-      <View style={styles.section}>
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Mode de paiement :</Text>
-          <Text style={styles.value}>{data.paymentMethod || 'Virement bancaire'}</Text>
-        </View>
-        {data.bankAccount && (
-          <View style={styles.infoRow}>
-            <Text style={styles.label}>Compte bancaire :</Text>
-            <Text style={styles.value}>{data.bankAccount}</Text>
-          </View>
-        )}
-        <View style={styles.infoRow}>
-          <Text style={styles.label}>Date de paiement :</Text>
-          <Text style={styles.value}>
-            {format(data.payDate, 'dd MMMM yyyy', { locale: fr })}
+        {/* ============================================ */}
+        {/* FOOTER */}
+        {/* ============================================ */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            🔒 Document sécurisé conforme à la législation
+          </Text>
+          <Text style={styles.footerText}>
+            Généré le {format(new Date(), 'dd/MM/yyyy', { locale: fr })}
           </Text>
         </View>
-      </View>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          {data.countryConfig?.laborCodeReference ||
-           'Ce bulletin de paie est conforme aux dispositions du Code du Travail.'}
-        </Text>
-        <Text style={styles.footerText}>
-          Document généré le {format(new Date(), 'dd/MM/yyyy à HH:mm', { locale: fr })}
-        </Text>
-      </View>
-    </Page>
-  </Document>
-);
+      </Page>
+    </Document>
+  );
+};
 
 /**
  * Generate pay slip file name
