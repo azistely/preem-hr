@@ -1,0 +1,13 @@
+AC-No.,Name,Date/Time,State,Device Name,Device ID
+101,Jean Kouassi,2025-01-08 08:00:00,C/In,Entrée Principale,1
+101,Jean Kouassi,2025-01-08 12:00:00,C/Out,Entrée Principale,1
+101,Jean Kouassi,2025-01-08 13:00:00,C/In,Entrée Principale,1
+101,Jean Kouassi,2025-01-08 17:30:00,C/Out,Entrée Principale,1
+102,Aminata Diallo,2025-01-08 08:15:00,C/In,Entrée Principale,1
+102,Aminata Diallo,2025-01-08 12:00:00,C/Out,Entrée Principale,1
+102,Aminata Diallo,2025-01-08 13:00:00,C/In,Entrée Principale,1
+102,Aminata Diallo,2025-01-08 17:00:00,C/Out,Entrée Principale,1
+103,Mohamed Traoré,2025-01-08 07:45:00,C/In,Atelier,2
+103,Mohamed Traoré,2025-01-08 12:00:00,C/Out,Atelier,2
+103,Mohamed Traoré,2025-01-08 13:00:00,C/In,Atelier,2
+103,Mohamed Traoré,2025-01-08 18:00:00,C/Out,Atelier,2

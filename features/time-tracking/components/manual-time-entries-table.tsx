@@ -35,7 +35,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Plus, Edit2, Trash2, Clock, TrendingUp } from 'lucide-react';
+import { Loader2, Plus, Edit2, Trash2, Clock, TrendingUp, Lock, Smartphone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ManualTimeEntryDialog } from './manual-time-entry-dialog';
 import {
@@ -59,6 +59,7 @@ interface TimeEntry {
   clockOut: string | null;
   totalHours: string | null;
   entryType: string;
+  entrySource: 'manual' | 'biometric' | 'app';
   overtimeBreakdown: {
     hours_41_to_46?: number;
     hours_above_46?: number;
@@ -372,15 +373,46 @@ export function ManualTimeEntriesTable({
                             month: '2-digit',
                           });
                           const hasOvertime = entry.entryType === 'overtime';
+                          const isManual = entry.entrySource === 'manual';
+                          const isBiometric = entry.entrySource === 'biometric';
+                          const isApp = entry.entrySource === 'app';
+
+                          // Visual styling based on source
+                          const sourceConfig = {
+                            manual: {
+                              icon: Edit2,
+                              bgColor: 'bg-blue-50 border border-blue-200',
+                              iconColor: 'text-blue-600',
+                              label: 'Saisie manuelle',
+                              labelShort: 'Manuelle',
+                            },
+                            biometric: {
+                              icon: Lock,
+                              bgColor: 'bg-green-50 border border-green-200',
+                              iconColor: 'text-green-600',
+                              label: 'Enregistré par appareil biométrique',
+                              labelShort: 'Appareil',
+                            },
+                            app: {
+                              icon: Smartphone,
+                              bgColor: 'bg-purple-50 border border-purple-200',
+                              iconColor: 'text-purple-600',
+                              label: 'Pointage via application mobile',
+                              labelShort: 'Application',
+                            },
+                          };
+
+                          const config = sourceConfig[entry.entrySource as keyof typeof sourceConfig] || sourceConfig.manual;
+                          const SourceIcon = config.icon;
 
                           return (
                             <TooltipProvider key={entry.id}>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <div
-                                    className="flex items-center gap-1 bg-muted rounded-md px-2 py-1 hover:bg-muted/80 cursor-help"
+                                    className={`flex items-center gap-1 rounded-md px-2 py-1 hover:opacity-80 cursor-help ${config.bgColor}`}
                                   >
-                                    <Clock className="h-3 w-3 text-muted-foreground" />
+                                    <SourceIcon className={`h-3 w-3 ${config.iconColor}`} />
                                     <div className="flex flex-col items-start">
                                       <span className="text-xs text-muted-foreground">
                                         {formattedDate}
@@ -394,25 +426,34 @@ export function ManualTimeEntriesTable({
                                         )}
                                       </div>
                                     </div>
-                                    <div className="flex gap-1 ml-1">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleEditClick(employee, entry)}
-                                        className="h-6 w-6 p-0"
-                                      >
-                                        <Edit2 className="h-3 w-3" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleDelete(entry.id, entry.clockIn)}
-                                        disabled={deleteMutation.isPending}
-                                        className="h-6 w-6 p-0"
-                                      >
-                                        <Trash2 className="h-3 w-3 text-destructive" />
-                                      </Button>
-                                    </div>
+
+                                    {/* Actions: Only show for manual entries */}
+                                    {isManual && (
+                                      <div className="flex gap-1 ml-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleEditClick(employee, entry)}
+                                          className="h-6 w-6 p-0"
+                                        >
+                                          <Edit2 className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleDelete(entry.id, entry.clockIn)}
+                                          disabled={deleteMutation.isPending}
+                                          className="h-6 w-6 p-0"
+                                        >
+                                          <Trash2 className="h-3 w-3 text-destructive" />
+                                        </Button>
+                                      </div>
+                                    )}
+
+                                    {/* Lock icon for non-manual entries */}
+                                    {!isManual && (
+                                      <Lock className={`h-3 w-3 ml-1 ${config.iconColor}`} />
+                                    )}
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent>
@@ -427,6 +468,14 @@ export function ManualTimeEntriesTable({
                                         minute: '2-digit',
                                       })}
                                     </div>
+                                    <div className="text-xs font-medium mt-1">
+                                      Source: {config.label}
+                                    </div>
+                                    {!isManual && (
+                                      <div className="text-xs text-muted-foreground">
+                                        🔒 Cette entrée ne peut pas être modifiée
+                                      </div>
+                                    )}
                                     {entry.notes && (
                                       <div className="text-xs text-muted-foreground mt-1">
                                         {entry.notes}

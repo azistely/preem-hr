@@ -488,7 +488,8 @@ export async function deleteManualTimeEntry(entryId: string, tenantId: string) {
 }
 
 /**
- * Get manual time entries for period
+ * Get all time entries for period (manual + biometric + app)
+ * Shows complete work history for accurate employee status
  */
 export async function getManualTimeEntriesForPeriod(
   tenantId: string,
@@ -502,6 +503,7 @@ export async function getManualTimeEntriesForPeriod(
   });
 
   // Use manual join instead of with: clause (TypeScript best practice)
+  // Note: Returns ALL entry sources (manual, biometric, app) for complete visibility
   const result = await db
     .select({
       id: timeEntries.id,
@@ -540,7 +542,7 @@ export async function getManualTimeEntriesForPeriod(
     .where(
       and(
         eq(timeEntries.tenantId, tenantId),
-        eq(timeEntries.entrySource, 'manual'),
+        // Removed entrySource filter - show all sources for complete visibility
         sql`${timeEntries.clockIn} >= ${startDate.toISOString()}`,
         sql`${timeEntries.clockIn} < ${endDate.toISOString()}`
       )
@@ -550,6 +552,10 @@ export async function getManualTimeEntriesForPeriod(
   console.log('[getManualTimeEntriesForPeriod] DB result:', {
     count: result.length,
     entries: result,
+    sourceBreakdown: result.reduce((acc, e) => {
+      acc[e.entrySource] = (acc[e.entrySource] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
   });
 
   return result;

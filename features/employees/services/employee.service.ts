@@ -417,7 +417,7 @@ export async function listEmployees(input: ListEmployeesInput) {
   const items = hasMore ? results.slice(0, limit) : results;
 
   // Decrypt PII fields (handle decryption failures gracefully)
-  const decryptedItems = items.map((employee) => {
+  const decryptedItems = items.map((employee): typeof employees.$inferSelect & { nationalId: string | null; bankAccount: string | null } => {
     let decryptedNationalId = null;
     let decryptedBankAccount = null;
 
