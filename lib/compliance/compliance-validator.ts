@@ -335,6 +335,285 @@ export class ComplianceValidator {
   }
 
   /**
+   * Validate custom component against compliance rules (without template)
+   * Used in wizard-based component creation
+   *
+   * @param componentData - Component metadata to validate
+   * @param countryCode - Country code (e.g., 'CI')
+   * @returns Validation result with violations and warnings
+   */
+  async validateComponentAgainstRules(
+    componentData: {
+      name: string;
+      category: string;
+      componentType?: string;
+      isTaxable: boolean;
+      isReimbursement: boolean;
+      calculationRule?: {
+        type: 'fixed' | 'percentage' | 'auto-calculated';
+        baseAmount?: number;
+        rate?: number;
+      };
+    },
+    countryCode: string
+  ): Promise<ValidationResult> {
+    const violations: ValidationViolation[] = [];
+    const warnings: ValidationWarning[] = [];
+
+    // Rule 1: If it's a reimbursement, it MUST be non-taxable
+    if (componentData.isReimbursement && componentData.isTaxable) {
+      violations.push({
+        field: 'isTaxable',
+        error: 'Un remboursement ne peut pas être imposable selon le Code Général des Impôts',
+        legalReference: 'Code Général des Impôts Article X - Remboursements de frais',
+        severity: 'error',
+      });
+    }
+
+    // Rule 2: If non-taxable and NOT a reimbursement, warn about 10% cap
+    if (!componentData.isTaxable && !componentData.isReimbursement) {
+      warnings.push({
+        field: 'isTaxable',
+        message: 'Cette prime sera soumise au plafond global de 10% des primes non imposables',
+        legalReference: 'Code Général des Impôts Article X - Primes et indemnités non imposables',
+        severity: 'warning',
+      });
+    }
+
+    // Rule 3: Validate component-specific caps for non-taxable components
+    if (!componentData.isTaxable && componentData.componentType) {
+      const componentTypeRules = await this.getComponentTypeRules(
+        countryCode,
+        componentData.componentType
+      );
+
+      for (const rule of componentTypeRules) {
+        const ruleResult = await this.checkComponentTypeRule(
+          rule,
+          componentData
+        );
+        violations.push(...ruleResult.violations);
+        warnings.push(...ruleResult.warnings);
+      }
+    }
+
+    return {
+      valid: violations.length === 0,
+      violations,
+      warnings: warnings.length > 0 ? warnings : undefined,
+    };
+  }
+
+  /**
+   * Get compliance rules specific to a component type
+   */
+  private async getComponentTypeRules(
+    countryCode: string,
+    componentType: string
+  ): Promise<ComplianceRule[]> {
+    const today = new Date().toISOString().split('T')[0];
+
+    const rules = await db.query.complianceRules.findMany({
+      where: and(
+        eq(complianceRules.countryCode, countryCode),
+        lte(complianceRules.effectiveFrom, today),
+        or(
+          isNull(complianceRules.effectiveTo),
+          lte(complianceRules.effectiveTo, today)
+        )
+      ),
+    });
+
+    // Filter rules that apply to this component type
+    return rules.filter((rule) => {
+      const validationLogic = rule.validationLogic as any;
+
+      // Global rules apply to all
+      if (validationLogic.scope === 'global') {
+        return true;
+      }
+
+      // Component-specific rules
+      if (validationLogic.component_type === componentType) {
+        return true;
+      }
+
+      // Multi-component rules (e.g., representation/responsibility/function)
+      if (Array.isArray(validationLogic.component_types)) {
+        return validationLogic.component_types.includes(componentType);
+      }
+
+      return false;
+    }) as ComplianceRule[];
+  }
+
+  /**
+   * Check component data against a specific rule
+   */
+  private async checkComponentTypeRule(
+    rule: ComplianceRule,
+    componentData: {
+      name: string;
+      category: string;
+      componentType?: string;
+      isTaxable: boolean;
+      isReimbursement: boolean;
+      calculationRule?: {
+        type: 'fixed' | 'percentage' | 'auto-calculated';
+        baseAmount?: number;
+        rate?: number;
+      };
+    }
+  ): Promise<RuleCheckResult> {
+    const violations: ValidationViolation[] = [];
+    const warnings: ValidationWarning[] = [];
+    const validationLogic = rule.validationLogic as any;
+
+    // Check fixed amount caps (e.g., uniform allowance ≤ 3,000 FCFA)
+    if (validationLogic.max_amount && componentData.calculationRule?.baseAmount) {
+      const amount = componentData.calculationRule.baseAmount;
+      const maxAmount = validationLogic.max_amount as number;
+
+      if (amount > maxAmount) {
+        if (rule.canExceed) {
+          warnings.push({
+            field: 'calculationRule.baseAmount',
+            message: validationLogic.error_message || `Le montant dépasse ${maxAmount.toLocaleString('fr-FR')} FCFA et sera imposable`,
+            legalReference: rule.legalReference,
+            severity: 'warning',
+          });
+        } else {
+          violations.push({
+            field: 'calculationRule.baseAmount',
+            error: validationLogic.error_message || `Le montant ne peut pas dépasser ${maxAmount.toLocaleString('fr-FR')} FCFA`,
+            legalReference: rule.legalReference,
+            severity: 'error',
+          });
+        }
+      }
+    }
+
+    // Check percentage caps (e.g., representation ≤ 10%)
+    if (validationLogic.max_percentage && componentData.calculationRule?.rate) {
+      const rate = componentData.calculationRule.rate;
+      const maxRate = validationLogic.max_percentage as number;
+
+      if (rate > maxRate) {
+        violations.push({
+          field: 'calculationRule.rate',
+          error: validationLogic.error_message || `Le pourcentage ne peut pas dépasser ${maxRate * 100}%`,
+          legalReference: rule.legalReference,
+          severity: 'error',
+        });
+      }
+    }
+
+    return {
+      rule,
+      passed: violations.length === 0,
+      violations,
+      warnings,
+    };
+  }
+
+  /**
+   * Validate global 10% cap on non-taxable components during payroll
+   *
+   * @param payrollData - Employee salary components for validation
+   * @param countryCode - Country code (e.g., 'CI')
+   * @returns Validation result with cap percentage and warnings
+   */
+  async validateGlobalNonTaxableCap(
+    payrollData: {
+      totalRemuneration: number; // Total gross salary (brut global)
+      components: Array<{
+        code: string;
+        name: string;
+        amount: number;
+        isTaxable: boolean;
+        isReimbursement: boolean;
+      }>;
+    },
+    countryCode: string
+  ): Promise<{
+    valid: boolean;
+    currentPercentage: number;
+    maxPercentage: number;
+    totalNonTaxable: number;
+    totalReimbursements: number;
+    violations: ValidationViolation[];
+    warnings: ValidationWarning[];
+  }> {
+    const violations: ValidationViolation[] = [];
+    const warnings: ValidationWarning[] = [];
+
+    // Get the global cap rule
+    const today = new Date().toISOString().split('T')[0];
+    const globalCapRule = await db.query.complianceRules.findFirst({
+      where: and(
+        eq(complianceRules.countryCode, countryCode),
+        eq(complianceRules.ruleType, 'non_taxable_global_cap'),
+        lte(complianceRules.effectiveFrom, today),
+        or(
+          isNull(complianceRules.effectiveTo),
+          lte(complianceRules.effectiveTo, today)
+        )
+      ),
+    });
+
+    const maxPercentage = globalCapRule
+      ? ((globalCapRule.validationLogic as any).max_percentage as number)
+      : 0.10;
+
+    // Separate reimbursements from other non-taxable components
+    const totalReimbursements = payrollData.components
+      .filter((c) => c.isReimbursement)
+      .reduce((sum, c) => sum + c.amount, 0);
+
+    const totalNonTaxableNonReimbursements = payrollData.components
+      .filter((c) => !c.isTaxable && !c.isReimbursement)
+      .reduce((sum, c) => sum + c.amount, 0);
+
+    const totalNonTaxable = totalReimbursements + totalNonTaxableNonReimbursements;
+
+    // Calculate percentage (excluding reimbursements per the rule)
+    const currentPercentage =
+      payrollData.totalRemuneration > 0
+        ? totalNonTaxableNonReimbursements / payrollData.totalRemuneration
+        : 0;
+
+    // Check if exceeds cap
+    if (currentPercentage > maxPercentage) {
+      const excessAmount = totalNonTaxableNonReimbursements - payrollData.totalRemuneration * maxPercentage;
+
+      violations.push({
+        field: 'global_non_taxable_cap',
+        error: `Le total des primes non imposables (${totalNonTaxableNonReimbursements.toLocaleString('fr-FR')} FCFA) dépasse le plafond de ${maxPercentage * 100}% de la rémunération totale (${(payrollData.totalRemuneration * maxPercentage).toLocaleString('fr-FR')} FCFA). Excédent: ${excessAmount.toLocaleString('fr-FR')} FCFA.`,
+        legalReference: globalCapRule?.legalReference || 'Code Général des Impôts Article X',
+        severity: 'error',
+      });
+    } else if (currentPercentage > maxPercentage * 0.8) {
+      // Warning if approaching cap (>80% of limit)
+      warnings.push({
+        field: 'global_non_taxable_cap',
+        message: `Attention: Les primes non imposables représentent ${(currentPercentage * 100).toFixed(1)}% de la rémunération totale. Le plafond légal est de ${maxPercentage * 100}%.`,
+        legalReference: globalCapRule?.legalReference || 'Code Général des Impôts Article X',
+        severity: 'warning',
+      });
+    }
+
+    return {
+      valid: violations.length === 0,
+      currentPercentage,
+      maxPercentage,
+      totalNonTaxable,
+      totalReimbursements,
+      violations,
+      warnings,
+    };
+  }
+
+  /**
    * Get recommended value for a configurable component
    * Used to pre-fill customization dialog with legal defaults
    */

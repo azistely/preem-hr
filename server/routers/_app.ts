@@ -23,6 +23,7 @@ import { terminationsRouter } from './terminations';
 import { documentsRouter } from './documents';
 import { jobSearchDaysRouter } from './job-search-days';
 import { timeTrackingRouter } from './time-tracking';
+import { timeTrackingImportRouter } from './time-tracking-import';
 import { timeOffRouter } from './time-off';
 import { workSchedulesRouter } from './work-schedules';
 import { policiesRouter } from './policies';
@@ -86,6 +87,7 @@ export const appRouter = createTRPCRouter({
   documents: documentsRouter,
   jobSearchDays: jobSearchDaysRouter,
   timeTracking: timeTrackingRouter,
+  timeTrackingImport: timeTrackingImportRouter,
   timeOff: timeOffRouter,
   workSchedules: workSchedulesRouter,
   policies: policiesRouter,

@@ -31,6 +31,8 @@ import { complianceValidator } from '@/lib/compliance';
 import { mergeTemplatesWithActivations, mergeTemplateWithOverrides } from '@/lib/salary-components/template-merger';
 import type { TenantActivation, SalaryComponentTemplate as TemplateMergerTemplate } from '@/lib/salary-components/template-merger';
 import { getBaseSalaryComponents } from '@/lib/salary-components/base-salary-loader';
+import { templateMatcher } from '@/lib/salary-components/template-matcher';
+import type { TemplateSuggestion } from '@/lib/salary-components/template-matcher';
 
 // ============================================================================
 // Input Schemas
@@ -101,6 +103,24 @@ const validateCustomizationSchema = z.object({
 });
 
 const getBaseSalaryComponentsSchema = z.object({
+  countryCode: z.string().length(2),
+});
+
+const getSimilarTemplatesSchema = z.object({
+  name: z.string().min(3, 'Le nom doit contenir au moins 3 caractères'),
+  category: z.enum(['allowance', 'bonus', 'deduction', 'benefit']),
+  countryCode: z.string().length(2),
+});
+
+const createCustomComponentWizardSchema = z.object({
+  name: z.string().min(1),
+  category: z.enum(['allowance', 'bonus', 'deduction', 'benefit']),
+  isReimbursement: z.boolean(),
+  isTaxable: z.boolean(),
+  isSubjectToSocialSecurity: z.boolean(),
+  calculationMethod: z.enum(['fixed', 'percentage', 'variable']),
+  amount: z.number().optional(),
+  rate: z.number().optional(),
   countryCode: z.string().length(2),
 });
 
@@ -699,5 +719,160 @@ export const salaryComponentsRouter = createTRPCRouter({
 
         return { success: true, id: result.id };
       }
+    }),
+
+  /**
+   * Get similar templates (for wizard suggestion)
+   *
+   * Uses TemplateMatcher to find similar components based on:
+   * - Name similarity (Levenshtein distance + keyword matching)
+   * - Category match
+   *
+   * Returns top 3 suggestions with 70%+ similarity
+   */
+  getSimilarTemplates: publicProcedure
+    .input(getSimilarTemplatesSchema)
+    .query(async ({ input }): Promise<TemplateSuggestion[]> => {
+      const { name, category, countryCode } = input;
+
+      // Fetch all templates for the country
+      const templates = await db
+        .select()
+        .from(salaryComponentDefinitions)
+        .where(eq(salaryComponentDefinitions.countryCode, countryCode))
+        .orderBy(salaryComponentDefinitions.displayOrder);
+
+      // Find similar templates using TemplateMatcher
+      const suggestions = await templateMatcher.findSimilarTemplates(
+        { name, category },
+        templates as unknown as SalaryComponentTemplate[]
+      );
+
+      return suggestions;
+    }),
+
+  /**
+   * Create custom component from wizard
+   *
+   * Creates a new component definition + tenant activation.
+   * Used by the compliance-guided component creation wizard.
+   *
+   * Validation:
+   * - Validates against compliance rules
+   * - Detects reimbursements
+   * - Checks caps (uniform, representation, etc.)
+   *
+   * Reference: docs/COMPLIANCE-GUIDED-COMPONENT-CREATION.md
+   */
+  createCustomComponentWizard: publicProcedure
+    .input(createCustomComponentWizardSchema)
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user?.tenantId;
+      const userId = ctx.user?.id;
+
+      if (!tenantId) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Tenant ID requis',
+        });
+      }
+
+      const {
+        name,
+        category,
+        isReimbursement,
+        isTaxable,
+        isSubjectToSocialSecurity,
+        calculationMethod,
+        amount,
+        rate,
+        countryCode,
+      } = input;
+
+      // 1. Validate against compliance rules
+      const validationResult = await complianceValidator.validateComponentAgainstRules(
+        {
+          name,
+          category,
+          componentType: category, // Use category as type for validation
+          isTaxable,
+          isReimbursement,
+          calculationRule: {
+            type: calculationMethod === 'fixed' ? 'fixed' : 'percentage',
+            baseAmount: amount,
+            rate,
+          },
+        },
+        countryCode
+      );
+
+      if (!validationResult.valid) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: validationResult.violations?.[0]?.error || 'Composant non conforme',
+          cause: validationResult,
+        });
+      }
+
+      // 2. Generate unique component code for custom components
+      const customCodePrefix = 'CUSTOM_';
+      const timestamp = Date.now().toString(36);
+      const random = Math.random().toString(36).substring(2, 5);
+      const componentCode = `${customCodePrefix}${timestamp}_${random}`;
+
+      // 3. Build metadata (CI-specific for now)
+      const metadata: ComponentMetadata = {
+        taxTreatment: {
+          isTaxable,
+          includeInBrutImposable: isTaxable,
+          includeInSalaireCategoriel: isTaxable,
+        },
+        socialSecurityTreatment: {
+          includeInCnpsBase: isSubjectToSocialSecurity,
+        },
+        calculationRule: {
+          type: calculationMethod === 'fixed' ? 'fixed' : 'percentage',
+          baseAmount: amount,
+          rate,
+        },
+      };
+
+      // 4. Create component definition
+      const [component] = await db
+        .insert(salaryComponentDefinitions)
+        .values({
+          countryCode,
+          code: componentCode,
+          name: { fr: name },
+          category,
+          componentType: category, // Use category as component type
+          isTaxable,
+          isSubjectToSocialSecurity,
+          calculationMethod,
+          defaultValue: amount ? amount.toString() : null,
+          isCommon: false,
+          isReimbursement,
+          requiresCapValidation: !isReimbursement && !isTaxable, // Non-taxable non-reimbursements need validation
+          metadata: metadata as any,
+          displayOrder: 999, // Custom components at the end
+        })
+        .returning();
+
+      // 5. Create tenant activation
+      await db.insert(tenantSalaryComponentActivations).values({
+        tenantId,
+        countryCode,
+        templateCode: componentCode,
+        isActive: true,
+        overrides: {},
+        displayOrder: 999,
+        createdBy: userId || null,
+      });
+
+      return {
+        success: true,
+        componentId: component.id,
+        code: componentCode,
+      };
     }),
 });

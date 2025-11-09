@@ -33,6 +33,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/manager/dashboard': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/team': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/time-tracking': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/time-tracking/manual-entry': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/time-off/approvals': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/reports/overtime': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/shift-planning': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
@@ -48,6 +49,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
 
   // Admin time management (HR Manager+)
   '/admin/time-tracking': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/time-tracking/import': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/time-off': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/public-holidays': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/geofencing': ['hr_manager', 'tenant_admin', 'super_admin'],

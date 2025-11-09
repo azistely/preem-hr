@@ -198,6 +198,7 @@ export const hrManagerMobileSections: NavSection[] = [
     items: [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
+      { icon: Upload, label: "Importer depuis appareil", href: "/admin/time-tracking/import" },
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
       { icon: Calendar, label: "Planning des Quarts", href: "/hr/shift-planning" },
       { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },
@@ -288,6 +289,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
+      { icon: Upload, label: "Importer depuis appareil", href: "/admin/time-tracking/import" },
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
       { icon: Calendar, label: "Planning des Quarts", href: "/hr/shift-planning" },
       { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },

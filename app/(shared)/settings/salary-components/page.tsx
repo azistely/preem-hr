@@ -24,6 +24,7 @@ import {
   useDeleteCustomComponent,
 } from '@/features/employees/hooks/use-salary-components';
 import { QuickAddTemplate } from '@/features/salary-components/components/quick-add-template';
+import { CustomComponentWizard } from '@/features/employees/components/salary-components';
 import {
   Dialog,
   DialogContent,
@@ -46,6 +47,7 @@ import type { SalaryComponentTemplate, CustomSalaryComponent } from '@/features/
 export default function SalaryComponentsPage() {
   const [componentToDelete, setComponentToDelete] = useState<CustomSalaryComponent | null>(null);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [showCustomWizard, setShowCustomWizard] = useState(false);
 
   const countryCode = 'CI'; // TODO: Get from tenant context
 
@@ -79,6 +81,10 @@ export default function SalaryComponentsPage() {
         <Button onClick={() => setShowTemplateDialog(true)} variant="default" className="min-h-[48px]">
           <Sparkles className="mr-2 h-5 w-5" />
           Ajouter depuis le catalogue
+        </Button>
+        <Button onClick={() => setShowCustomWizard(true)} variant="outline" className="min-h-[48px]">
+          <Plus className="mr-2 h-5 w-5" />
+          Créer un composant personnalisé
         </Button>
       </div>
 
@@ -243,6 +249,17 @@ export default function SalaryComponentsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Custom Component Creation Wizard */}
+      <CustomComponentWizard
+        open={showCustomWizard}
+        onClose={() => setShowCustomWizard(false)}
+        onSuccess={() => {
+          refetchCustom();
+          setShowCustomWizard(false);
+        }}
+        countryCode={countryCode}
+      />
     </div>
   );
 }

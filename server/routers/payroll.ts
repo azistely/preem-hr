@@ -1888,6 +1888,15 @@ export const payrollRouter = createTRPCRouter({
         employeePosition: lineItem.positionTitle || undefined,
         employeeDepartment: employee?.division || employee?.section || employee?.service || undefined,
         employeeHireDate: employee?.hireDate ? new Date(employee.hireDate) : undefined,
+        employeeContractType: employee?.contractType || undefined,
+
+        // Bank and administrative details
+        socialSecurityNumber: employee?.nationalId || undefined,
+        iban: employee?.bankAccount || undefined,
+        healthInsurance: undefined, // TODO: Add healthInsurance field to employees table
+        pensionScheme: undefined, // TODO: Add pensionScheme field to employees table
+        email: employee?.email || undefined,
+
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
         payDate: new Date(run.payDate),
@@ -1921,6 +1930,10 @@ export const payrollRouter = createTRPCRouter({
         ytdGross: ytdCumuls.ytdGross,
         ytdTaxableNet: ytdCumuls.ytdTaxableNet,
         ytdNetPaid: ytdCumuls.ytdNetPaid,
+
+        // Leave data (TODO: Implement when leave management system is built)
+        absencesDuringPeriod: undefined,
+        leaveBalances: undefined,
       };
 
       // Generate PDF (lazy load renderer)
@@ -2088,6 +2101,17 @@ export const payrollRouter = createTRPCRouter({
           employeeName: lineItem.employeeName || '',
           employeeNumber: lineItem.employeeNumber || '',
           employeePosition: lineItem.positionTitle || '',
+          employeeDepartment: employee?.division || employee?.section || employee?.service || undefined,
+          employeeHireDate: employee?.hireDate ? new Date(employee.hireDate) : undefined,
+          employeeContractType: employee?.contractType || undefined,
+
+          // Bank and administrative details
+          socialSecurityNumber: employee?.nationalId || undefined,
+          iban: employee?.bankAccount || undefined,
+          healthInsurance: undefined, // TODO: Add healthInsurance field to employees table
+          pensionScheme: undefined, // TODO: Add pensionScheme field to employees table
+          email: employee?.email || undefined,
+
           companyName: tenant?.name || '',
           companyAddress: undefined, // TODO: Add address field to tenants table
           employeeCNPS: employee?.cnpsNumber || undefined,
@@ -2115,6 +2139,10 @@ export const payrollRouter = createTRPCRouter({
           bankAccount: lineItem.bankAccount || undefined,
           components: components.length > 0 ? components : undefined,
           countryConfig,
+
+          // Leave data (TODO: Implement when leave management system is built)
+          absencesDuringPeriod: undefined,
+          leaveBalances: undefined,
         };
 
         // Generate PDF (lazy load renderer)

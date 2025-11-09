@@ -35,6 +35,14 @@ export interface PayslipData {
   employeePosition?: string;
   employeeDepartment?: string;
   employeeHireDate?: Date;
+  employeeContractType?: string; // e.g., "CDI", "CDD", "CDDTI"
+
+  // Bank and administrative details (Coordonnées bancaires & administratives)
+  socialSecurityNumber?: string;
+  iban?: string;
+  healthInsurance?: string; // Mutuelle name
+  pensionScheme?: string; // Régime retraite
+  email?: string;
 
   // Period
   periodStart: Date;
@@ -108,6 +116,22 @@ export interface PayslipData {
   // Additional details (optional)
   earningsDetails?: Array<{ description: string; amount: number }>;
   deductionsDetails?: Array<{ description: string; amount: number }>;
+
+  // Leave and absences data (Absences et congés + Soldes de congés)
+  absencesDuringPeriod?: Array<{
+    type: string; // e.g., "Congés payés", "RTT", "Arrêt maladie"
+    startDate: Date;
+    endDate: Date;
+    duration: number; // in days
+    treatment: 'paid' | 'unpaid' | 'not_processed'; // "Payé (Déduit des congés)", "Non payé", "Non traité"
+    impact?: string;
+  }>;
+  leaveBalances?: {
+    paidLeave?: { total: number; used: number }; // Congés payés
+    rtt?: { total: number; used: number }; // RTT
+    sickLeave?: { total: number | 'unlimited'; used: number }; // Arrêt maladie
+    familyEvents?: { total: number | 'by_event'; used: number }; // Événements familiaux
+  };
 
   // Country configuration for dynamic labels
   countryConfig?: {
@@ -416,6 +440,77 @@ const styles = StyleSheet.create({
     color: '#78350f',
     fontWeight: 'bold',
   },
+
+  // Absences et congés table (5 columns)
+  absencesTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#f9fafb',
+    borderBottom: '1 solid #e5e7eb',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  absencesTableRow: {
+    flexDirection: 'row',
+    borderBottom: '1 solid #e5e7eb',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  absencesColType: {
+    width: '20%',
+    fontSize: 9,
+    color: '#111827',
+  },
+  absencesColPeriode: {
+    width: '30%',
+    fontSize: 9,
+    color: '#6b7280',
+  },
+  absencesColDuree: {
+    width: '15%',
+    fontSize: 9,
+    color: '#6b7280',
+    textAlign: 'right',
+  },
+  absencesColTraitement: {
+    width: '25%',
+    fontSize: 9,
+    color: '#111827',
+  },
+  absencesColImpact: {
+    width: '10%',
+    fontSize: 9,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+
+  // Leave balance cards section
+  leaveBalancesContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  leaveBalanceCard: {
+    width: '23%',
+    backgroundColor: '#ffffff',
+    border: '1 solid #e5e7eb',
+    borderRadius: 4,
+    padding: 8,
+  },
+  leaveBalanceLabel: {
+    fontSize: 9,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  leaveBalanceValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4f46e5',
+    marginBottom: 2,
+  },
+  leaveBalanceSubtext: {
+    fontSize: 8,
+    color: '#9ca3af',
+  },
 });
 
 // ========================================
@@ -492,9 +587,10 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
         {/* EMPLOYEE INFORMATION (2-column grid) */}
         {/* ============================================ */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Informations salarié</Text>
           <View style={styles.employeeInfoGrid}>
+            {/* Left column: Informations salarié */}
             <View style={styles.employeeInfoColumn}>
+              <Text style={styles.sectionTitle}>Informations salarié</Text>
               <View style={styles.infoRow}>
                 <Text style={styles.infoText}>Nom: {data.employeeName}</Text>
               </View>
@@ -503,19 +599,12 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
               </View>
               {data.employeePosition && (
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoText}>Emploi: {data.employeePosition}</Text>
+                  <Text style={styles.infoText}>Poste: {data.employeePosition}</Text>
                 </View>
               )}
               {data.employeeDepartment && (
                 <View style={styles.infoRow}>
                   <Text style={styles.infoText}>Département: {data.employeeDepartment}</Text>
-                </View>
-              )}
-            </View>
-            <View style={styles.employeeInfoColumn}>
-              {data.employeeCNPS && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoText}>N° {socialSchemeName}: {data.employeeCNPS}</Text>
                 </View>
               )}
               {data.employeeHireDate && (
@@ -525,11 +614,39 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                   </Text>
                 </View>
               )}
-              {data.daysWorked !== undefined && data.daysInPeriod !== undefined && (
+              {data.employeeContractType && (
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoText}>
-                    Jours travaillés: {data.daysWorked} / {data.daysInPeriod}
-                  </Text>
+                  <Text style={styles.infoText}>Type de contrat: {data.employeeContractType}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Right column: Coordonnées bancaires & administratives */}
+            <View style={styles.employeeInfoColumn}>
+              <Text style={styles.sectionTitle}>Coordonnées bancaires & administratives</Text>
+              {data.socialSecurityNumber && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>N° Sécurité Sociale: {data.socialSecurityNumber}</Text>
+                </View>
+              )}
+              {data.iban && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>IBAN: {data.iban}</Text>
+                </View>
+              )}
+              {data.healthInsurance && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>Mutuelle: {data.healthInsurance}</Text>
+                </View>
+              )}
+              {data.pensionScheme && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>Régime retraite: {data.pensionScheme}</Text>
+                </View>
+              )}
+              {data.email && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>Email: {data.email}</Text>
                 </View>
               )}
             </View>
@@ -870,6 +987,47 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
         </View>
 
         {/* ============================================ */}
+        {/* ABSENCES ET CONGÉS (Leave/absences during this period) */}
+        {/* ============================================ */}
+        {data.absencesDuringPeriod && data.absencesDuringPeriod.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Absences et congés</Text>
+            <View style={styles.table}>
+              {/* Header */}
+              <View style={styles.absencesTableHeader}>
+                <Text style={[styles.absencesColType, styles.tableHeaderTextSmall]}>TYPE</Text>
+                <Text style={[styles.absencesColPeriode, styles.tableHeaderTextSmall]}>PÉRIODE</Text>
+                <Text style={[styles.absencesColDuree, styles.tableHeaderTextSmall]}>DURÉE</Text>
+                <Text style={[styles.absencesColTraitement, styles.tableHeaderTextSmall]}>TRAITEMENT</Text>
+                <Text style={[styles.absencesColImpact, styles.tableHeaderTextSmall]}>IMPACT</Text>
+              </View>
+
+              {/* Absence rows */}
+              {data.absencesDuringPeriod.map((absence, index) => (
+                <View key={`absence-${index}`} style={styles.absencesTableRow}>
+                  <Text style={styles.absencesColType}>{absence.type}</Text>
+                  <Text style={styles.absencesColPeriode}>
+                    Du {format(absence.startDate, 'dd/MM/yyyy', { locale: fr })} au{' '}
+                    {format(absence.endDate, 'dd/MM/yyyy', { locale: fr })}
+                  </Text>
+                  <Text style={styles.absencesColDuree}>
+                    {absence.duration} {absence.duration === 1 ? 'jour' : 'jours'}
+                  </Text>
+                  <Text style={styles.absencesColTraitement}>
+                    {absence.treatment === 'paid'
+                      ? 'Payé (Déduit des congés)'
+                      : absence.treatment === 'unpaid'
+                      ? 'Non payé'
+                      : 'Non traité'}
+                  </Text>
+                  <Text style={styles.absencesColImpact}>{absence.impact || '-'}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* ============================================ */}
         {/* BOTTOM SUMMARY: Cumuls (left) + Net à payer (right) */}
         {/* ============================================ */}
         <View style={styles.summaryContainer}>
@@ -915,6 +1073,67 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
             )}
           </View>
         </View>
+
+        {/* ============================================ */}
+        {/* SOLDES DE CONGÉS (Leave balances) */}
+        {/* ============================================ */}
+        {data.leaveBalances && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Soldes de congés</Text>
+            <View style={styles.leaveBalancesContainer}>
+              {/* Congés payés (Paid leave) */}
+              {data.leaveBalances.paidLeave && (
+                <View style={styles.leaveBalanceCard}>
+                  <Text style={styles.leaveBalanceLabel}>Congés payés</Text>
+                  <Text style={styles.leaveBalanceValue}>
+                    {data.leaveBalances.paidLeave.total - data.leaveBalances.paidLeave.used} /{' '}
+                    {data.leaveBalances.paidLeave.total}
+                  </Text>
+                  <Text style={styles.leaveBalanceSubtext}>
+                    Utilisés: {data.leaveBalances.paidLeave.used}
+                  </Text>
+                </View>
+              )}
+
+              {/* RTT */}
+              {data.leaveBalances.rtt && (
+                <View style={styles.leaveBalanceCard}>
+                  <Text style={styles.leaveBalanceLabel}>RTT</Text>
+                  <Text style={styles.leaveBalanceValue}>
+                    {data.leaveBalances.rtt.total - data.leaveBalances.rtt.used} / {data.leaveBalances.rtt.total}
+                  </Text>
+                  <Text style={styles.leaveBalanceSubtext}>Utilisés: {data.leaveBalances.rtt.used}</Text>
+                </View>
+              )}
+
+              {/* Arrêt maladie (Sick leave) */}
+              {data.leaveBalances.sickLeave && (
+                <View style={styles.leaveBalanceCard}>
+                  <Text style={styles.leaveBalanceLabel}>Arrêt maladie</Text>
+                  <Text style={styles.leaveBalanceValue}>
+                    {data.leaveBalances.sickLeave.total === 'unlimited' ? 'Illimité' : data.leaveBalances.sickLeave.total}
+                  </Text>
+                  <Text style={styles.leaveBalanceSubtext}>
+                    Utilisés: {data.leaveBalances.sickLeave.used} jour(s)
+                  </Text>
+                </View>
+              )}
+
+              {/* Événements familiaux (Family events) */}
+              {data.leaveBalances.familyEvents && (
+                <View style={styles.leaveBalanceCard}>
+                  <Text style={styles.leaveBalanceLabel}>Événements familiaux</Text>
+                  <Text style={styles.leaveBalanceValue}>
+                    {data.leaveBalances.familyEvents.total === 'by_event' ? 'Selon événement' : data.leaveBalances.familyEvents.total}
+                  </Text>
+                  <Text style={styles.leaveBalanceSubtext}>
+                    Utilisés: {data.leaveBalances.familyEvents.used} jour(s)
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* ============================================ */}
         {/* FOOTER */}

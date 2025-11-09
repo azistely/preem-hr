@@ -1,0 +1,31 @@
+﻿SALAIRE TYPE DU TRAVAILLEUR JOURNALIER SUR LA BASE DU NOUVEAU  SMIG
+(Travailleur sans qualification professionnelle et classé en 1ère catégorie pendant 12 mois)
+
+
+1. SALAIRE HORAIRE
+SMIG 1ère Catégorie       :  75 000                                         = 433 F/H  
+                                             173.33
+Prime de gratification   :     75 000 x 75                                   = 27   F/H
+                                            100 x 12 x 173.33  
+Congé payés                   :   (433  x 8) + (27 x 8) x 2.2                 = 47 F/H
+                                                             173.33    
+Salaire Horaire  (avant prime de précarité)                            = 506 F/ H
+
+
+Prime de précarité : 506 x 3                                         =  15  F/H
+                                        100  
+Salaire Brut Horaire                                                         = 521 F/H
+
+
+2. PRIME DE TRANSPORT PAR JOUR : 30 000                         = 1154 F/Jour
+                                                                    26  
+3. SALAIRE D’UNE JOURNEE DE TRAVAIL DE 8 HEURES :
+1ère Catégorie (SMIG)          : 433  x 8                                 = 3464         F
+Prime de gratification         : 27 x 8                                 = 216                F
+Congés payés                      : 47 x 8                                         = 376                 F
+Total salaire (avant prime de précarité)                                 = 4056         F
+Prime de précarité : 4056 x 3                                         = 121                F
+                                         100    
+SALAIRE BRUT :                                                         4177         FCFA
+Prime de transport :                                                         1154        FCFA
+TOTAL :                                                                         5331         FCFA

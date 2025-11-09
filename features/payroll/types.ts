@@ -258,6 +258,14 @@ export interface PayrollCalculationResult {
     amount: number;
     sourceType?: string;
   }>;
+
+  // Compliance Warnings (10% cap on non-taxable components)
+  complianceWarnings?: Array<{
+    field: string;
+    message: string;
+    severity: 'warning' | 'error';
+    legalReference?: string;
+  }>;
 }
 
 // ========================================
