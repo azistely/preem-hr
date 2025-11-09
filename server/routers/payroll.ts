@@ -254,7 +254,6 @@ async function fetchLeaveBalances(
   tenantId: string
 ): Promise<{
   paidLeave?: { total: number; used: number };
-  rtt?: { total: number; used: number };
   sickLeave?: { total: number | 'unlimited'; used: number };
   familyEvents?: { total: number | 'by_event'; used: number };
 }> {
@@ -280,10 +279,9 @@ async function fetchLeaveBalances(
       )
     );
 
-  // Group by policy type
+  // Group by policy type (West African leave types)
   const result: {
     paidLeave?: { total: number; used: number };
-    rtt?: { total: number; used: number };
     sickLeave?: { total: number | 'unlimited'; used: number };
     familyEvents?: { total: number | 'by_event'; used: number };
   } = {};
@@ -292,19 +290,17 @@ async function fetchLeaveBalances(
     const total = parseFloat(balance.balance?.toString() || '0') + parseFloat(balance.used?.toString() || '0');
     const used = parseFloat(balance.used?.toString() || '0');
 
-    // Map policy types to payslip categories
-    // Common policy types: PAID_LEAVE, RTT, SICK_LEAVE, FAMILY_EVENT, etc.
+    // Map policy types to West African leave categories
     const policyType = balance.policyType?.toUpperCase() || '';
 
-    if (policyType.includes('PAID') || policyType.includes('CONGE')) {
+    if (policyType.includes('PAID') || policyType.includes('ANNUAL') || policyType.includes('CONGE')) {
+      // Congés payés (typically 2.5 days per month = 30 days per year in CI)
       result.paidLeave = { total, used };
-    } else if (policyType.includes('RTT')) {
-      result.rtt = { total, used };
     } else if (policyType.includes('SICK') || policyType.includes('MALADIE')) {
-      // Sick leave is typically unlimited in West African countries
+      // Arrêt maladie (unlimited with medical certificate in most West African countries)
       result.sickLeave = { total: 'unlimited', used };
-    } else if (policyType.includes('FAMILY') || policyType.includes('FAMILIAL')) {
-      // Family events are typically "by event" (variable days based on event type)
+    } else if (policyType.includes('FAMILY') || policyType.includes('FAMILIAL') || policyType.includes('EVENT')) {
+      // Congés événements familiaux (variable days: marriage, birth, death, etc.)
       result.familyEvents = { total: 'by_event', used };
     }
   }

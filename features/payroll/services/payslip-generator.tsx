@@ -119,7 +119,7 @@ export interface PayslipData {
 
   // Leave and absences data (Absences et congés + Soldes de congés)
   absencesDuringPeriod?: Array<{
-    type: string; // e.g., "Congés payés", "RTT", "Arrêt maladie"
+    type: string; // e.g., "Congés payés", "Arrêt maladie", "Congés événements familiaux"
     startDate: Date;
     endDate: Date;
     duration: number; // in days
@@ -127,10 +127,9 @@ export interface PayslipData {
     impact?: string;
   }>;
   leaveBalances?: {
-    paidLeave?: { total: number; used: number }; // Congés payés
-    rtt?: { total: number; used: number }; // RTT
-    sickLeave?: { total: number | 'unlimited'; used: number }; // Arrêt maladie
-    familyEvents?: { total: number | 'by_event'; used: number }; // Événements familiaux
+    paidLeave?: { total: number; used: number }; // Congés payés (30 days/year in West Africa)
+    sickLeave?: { total: number | 'unlimited'; used: number }; // Arrêt maladie (unlimited with certificate)
+    familyEvents?: { total: number | 'by_event'; used: number }; // Congés événements familiaux (variable by event)
   };
 
   // Country configuration for dynamic labels
@@ -1081,7 +1080,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Soldes de congés</Text>
             <View style={styles.leaveBalancesContainer}>
-              {/* Congés payés (Paid leave) */}
+              {/* Congés payés (Paid leave - 30 days/year in West Africa) */}
               {data.leaveBalances.paidLeave && (
                 <View style={styles.leaveBalanceCard}>
                   <Text style={styles.leaveBalanceLabel}>Congés payés</Text>
@@ -1095,18 +1094,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                 </View>
               )}
 
-              {/* RTT */}
-              {data.leaveBalances.rtt && (
-                <View style={styles.leaveBalanceCard}>
-                  <Text style={styles.leaveBalanceLabel}>RTT</Text>
-                  <Text style={styles.leaveBalanceValue}>
-                    {data.leaveBalances.rtt.total - data.leaveBalances.rtt.used} / {data.leaveBalances.rtt.total}
-                  </Text>
-                  <Text style={styles.leaveBalanceSubtext}>Utilisés: {data.leaveBalances.rtt.used}</Text>
-                </View>
-              )}
-
-              {/* Arrêt maladie (Sick leave) */}
+              {/* Arrêt maladie (Sick leave - unlimited with medical certificate) */}
               {data.leaveBalances.sickLeave && (
                 <View style={styles.leaveBalanceCard}>
                   <Text style={styles.leaveBalanceLabel}>Arrêt maladie</Text>
