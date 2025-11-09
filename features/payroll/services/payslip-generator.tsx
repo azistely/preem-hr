@@ -411,15 +411,36 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingTop: 12,
     borderTop: '1 solid #e5e7eb',
-    fontSize: 8,
-    color: '#9ca3af',
+  },
+  footerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   footerText: {
     fontSize: 8,
     color: '#9ca3af',
+  },
+  footerBranding: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingTop: 8,
+    borderTop: '1 solid #f3f4f6',
+  },
+  footerBrandText: {
+    fontSize: 8,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  footerBrandName: {
+    fontWeight: 'bold',
+    color: '#4f46e5', // Preem brand color (indigo)
+  },
+  footerWebsite: {
+    fontSize: 7,
+    color: '#9ca3af',
+    fontStyle: 'italic',
   },
 
   // CDDTI highlight box
@@ -1187,12 +1208,20 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
         {/* FOOTER */}
         {/* ============================================ */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            🔒 Document sécurisé conforme à la législation
-          </Text>
-          <Text style={styles.footerText}>
-            Généré le {format(new Date(), 'dd/MM/yyyy', { locale: fr })}
-          </Text>
+          <View style={styles.footerTop}>
+            <Text style={styles.footerText}>
+              🔒 Document sécurisé conforme à la législation
+            </Text>
+            <Text style={styles.footerText}>
+              Généré le {format(new Date(), 'dd/MM/yyyy', { locale: fr })}
+            </Text>
+          </View>
+          <View style={styles.footerBranding}>
+            <Text style={styles.footerBrandText}>
+              Généré par <Text style={styles.footerBrandName}>Preem</Text> - Logiciel RH pour l'Afrique
+            </Text>
+            <Text style={styles.footerWebsite}>preemhr.com</Text>
+          </View>
         </View>
       </Page>
     </Document>
