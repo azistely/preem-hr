@@ -277,6 +277,13 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontWeight: 'bold',
   },
+  colMontantDeduction: {
+    width: '20%',
+    fontSize: 10,
+    color: '#dc2626', // Red color for deductions
+    textAlign: 'right',
+    fontWeight: 'bold',
+  },
 
   // Contributions table columns (6 columns)
   contribColDesignation: {
@@ -892,8 +899,8 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                       <Text style={styles.colTaux}>
                         {`${(contrib.employeeRate * 100).toFixed(1)}%`}
                       </Text>
-                      <Text style={styles.colMontant}>
-                        {formatCurrency(contrib.employeeAmount || 0)}
+                      <Text style={styles.colMontantDeduction}>
+                        -{formatCurrency(contrib.employeeAmount || 0)}
                       </Text>
                     </View>
                   ))}
@@ -906,7 +913,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                     <Text style={styles.colDesignation}>{socialSchemeName} - Prestations familiales</Text>
                     <Text style={styles.colBase}>{formatCurrency(data.grossSalary)}</Text>
                     <Text style={styles.colTaux}>{(cnpsEmployeeRate * 100).toFixed(1)}%</Text>
-                    <Text style={styles.colMontant}>{formatCurrency(data.cnpsEmployee)}</Text>
+                    <Text style={styles.colMontantDeduction}>-{formatCurrency(data.cnpsEmployee)}</Text>
                   </View>
                 )}
 
@@ -916,7 +923,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                     <Text style={styles.colDesignation}>CMU</Text>
                     <Text style={styles.colBase}></Text>
                     <Text style={styles.colTaux}>Fixe</Text>
-                    <Text style={styles.colMontant}>{formatCurrency(data.cmuEmployee)}</Text>
+                    <Text style={styles.colMontantDeduction}>-{formatCurrency(data.cmuEmployee)}</Text>
                   </View>
                 )}
               </>
@@ -930,7 +937,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                   {data.brutImposable ? formatCurrency(data.brutImposable) : formatCurrency(data.grossSalary)}
                 </Text>
                 <Text style={styles.colTaux}>Progr.</Text>
-                <Text style={styles.colMontant}>{formatCurrency(data.its)}</Text>
+                <Text style={styles.colMontantDeduction}>-{formatCurrency(data.its)}</Text>
               </View>
             )}
 
@@ -940,7 +947,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
                 <Text style={styles.colDesignation}>{detail.description}</Text>
                 <Text style={styles.colBase}></Text>
                 <Text style={styles.colTaux}></Text>
-                <Text style={styles.colMontant}>{formatCurrency(detail.amount)}</Text>
+                <Text style={styles.colMontantDeduction}>-{formatCurrency(detail.amount)}</Text>
               </View>
             ))}
 
@@ -949,7 +956,7 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
               <Text style={styles.colDesignation}>Total retenues employé</Text>
               <Text style={styles.colBase}></Text>
               <Text style={styles.colTaux}></Text>
-              <Text style={styles.colMontant}>{formatCurrency(data.totalDeductions)}</Text>
+              <Text style={styles.colMontantDeduction}>-{formatCurrency(data.totalDeductions)}</Text>
             </View>
           </View>
         </View>
