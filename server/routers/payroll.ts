@@ -2048,6 +2048,7 @@ export const payrollRouter = createTRPCRouter({
         healthInsurance: undefined, // TODO: Add healthInsurance field to employees table
         pensionScheme: undefined, // TODO: Add pensionScheme field to employees table
         email: employee?.email || undefined,
+        phone: employee?.phone || undefined,
 
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
@@ -2276,6 +2277,7 @@ export const payrollRouter = createTRPCRouter({
           healthInsurance: undefined, // TODO: Add healthInsurance field to employees table
           pensionScheme: undefined, // TODO: Add pensionScheme field to employees table
           email: employee?.email || undefined,
+          phone: employee?.phone || undefined,
 
           companyName: tenant?.name || '',
           companyAddress: undefined, // TODO: Add address field to tenants table

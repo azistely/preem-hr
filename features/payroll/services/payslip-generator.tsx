@@ -43,6 +43,7 @@ export interface PayslipData {
   healthInsurance?: string; // Mutuelle name
   pensionScheme?: string; // Régime retraite
   email?: string;
+  phone?: string;
 
   // Period
   periodStart: Date;
@@ -646,6 +647,11 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
               {data.email && (
                 <View style={styles.infoRow}>
                   <Text style={styles.infoText}>Email: {data.email}</Text>
+                </View>
+              )}
+              {data.phone && (
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoText}>Téléphone: {data.phone}</Text>
                 </View>
               )}
             </View>
