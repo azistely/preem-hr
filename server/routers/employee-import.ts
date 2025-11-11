@@ -572,6 +572,7 @@ export const employeeImportRouter = createTRPCRouter({
                 tenantId,
                 maritalStatus: normalizedMaritalStatus,
                 dependentChildrenCount: validatedChildrenCount,
+                tx, // Pass transaction context for better performance
               });
             }
 

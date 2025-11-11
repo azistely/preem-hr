@@ -19,6 +19,7 @@ export interface CreatePlaceholderDependentsInput {
   tenantId: string;
   maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
   dependentChildrenCount: number;
+  tx?: any; // Transaction context from db.transaction() - typed as any for flexibility across schema versions
 }
 
 export interface CreatePlaceholderDependentsResult {
@@ -47,7 +48,7 @@ export interface CreatePlaceholderDependentsResult {
 export async function createPlaceholderDependents(
   input: CreatePlaceholderDependentsInput
 ): Promise<CreatePlaceholderDependentsResult> {
-  const { employeeId, tenantId, maritalStatus, dependentChildrenCount } = input;
+  const { employeeId, tenantId, maritalStatus, dependentChildrenCount, tx } = input;
 
   const dependentsToCreate = [];
   let spouseCreated = false;
@@ -94,9 +95,10 @@ export async function createPlaceholderDependents(
     childrenCreated++;
   }
 
-  // Bulk insert all dependents
+  // Bulk insert all dependents using transaction if provided, otherwise use global db
   if (dependentsToCreate.length > 0) {
-    await db.insert(employeeDependents).values(dependentsToCreate);
+    const dbContext = tx || db;
+    await dbContext.insert(employeeDependents).values(dependentsToCreate);
   }
 
   return {
