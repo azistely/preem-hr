@@ -97,6 +97,12 @@ export const employees = pgTable('employees', {
   fiscalParts: numeric('fiscal_parts'),
   hasFamily: boolean('has_family'),
 
+  // ACP (Allocations de Congés Payés) - Vacation pay management
+  acpPaymentDate: date('acp_payment_date'), // Date of ACP payment (e.g., 15th of month)
+  acpPaymentActive: boolean('acp_payment_active').default(false), // Whether ACP is enabled for this employee
+  acpLastPaidAt: timestamp('acp_last_paid_at'), // Last ACP payment timestamp
+  acpNotes: text('acp_notes'), // Admin notes about ACP payments
+
   // Compensation (temporary import fields - will migrate to compensation table)
   categoricalSalary: numeric('categorical_salary', { precision: 15, scale: 2 }), // "Salaire Catégoriel"
   salaryPremium: numeric('salary_premium', { precision: 15, scale: 2 }), // "Sursalaire"
@@ -161,6 +167,20 @@ export const employeeDependents = pgTable('employee_dependents', {
   lastName: varchar('last_name', { length: 100 }).notNull(),
   dateOfBirth: date('date_of_birth').notNull(),
   relationship: varchar('relationship', { length: 50 }).notNull(), // 'child', 'spouse', 'other'
+  gender: varchar('gender', { length: 20 }), // 'male' or 'female' - nullable during migration, will be required
+
+  // Identification numbers (optional - for dependents with own coverage)
+  cnpsNumber: varchar('cnps_number', { length: 50 }), // If dependent has own CNPS (working adults)
+  cmuNumber: varchar('cmu_number', { length: 50 }), // If dependent has own CMU registration
+
+  // Coverage by other employer
+  coveredByOtherEmployer: boolean('covered_by_other_employer').notNull().default(false), // True if covered by spouse's/another employer CMU
+
+  // Coverage certificate (required if coveredByOtherEmployer = true)
+  coverageCertificateType: varchar('coverage_certificate_type', { length: 100 }), // 'Attestation de couverture CMU'
+  coverageCertificateNumber: varchar('coverage_certificate_number', { length: 100 }),
+  coverageCertificateUrl: text('coverage_certificate_url'), // Link to uploaded certificate
+  coverageCertificateExpiryDate: date('coverage_certificate_expiry_date'), // Certificate expiry (must be future date)
 
   // Verification status
   isVerified: boolean('is_verified').notNull().default(false),

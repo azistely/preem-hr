@@ -1517,6 +1517,7 @@ export const timeOffPolicies = pgTable("time_off_policies", {
 	templateId: uuid("template_id"),
 	complianceLevel: varchar("compliance_level", { length: 20 }),
 	legalReference: text("legal_reference"),
+	eligibleGender: text("eligible_gender"),
 }, (table) => [
 	foreignKey({
 			columns: [table.createdBy],
@@ -2460,6 +2461,94 @@ export const timeOffRequests = pgTable("time_off_requests", {
 	check("valid_status_request", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])`),
 ]);
 
+export const acpConfiguration = pgTable("acp_configuration", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	countryCode: varchar("country_code", { length: 2 }).notNull(),
+	daysPerMonthFactor: numeric("days_per_month_factor", { precision: 3, scale: 1 }).default('2.2').notNull(),
+	calendarDayMultiplier: numeric("calendar_day_multiplier", { precision: 3, scale: 2 }).default('1.25').notNull(),
+	defaultPaidDaysPerMonth: integer("default_paid_days_per_month").default(30).notNull(),
+	includesBaseSalary: boolean("includes_base_salary").default(true).notNull(),
+	includesTaxableAllowances: boolean("includes_taxable_allowances").default(true).notNull(),
+	referencePeriodType: varchar("reference_period_type", { length: 20 }).default('since_last_leave').notNull(),
+	effectiveFrom: date("effective_from").notNull(),
+	effectiveTo: date("effective_to"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_acp_config_country").using("btree", table.countryCode.asc().nullsLast().op("varchar_ops")),
+	index("idx_acp_config_effective").using("btree", table.countryCode.asc().nullsLast().op("varchar_ops"), table.effectiveFrom.desc().nullsFirst().op("date_ops")),
+	foreignKey({
+		columns: [table.countryCode],
+		foreignColumns: [countries.code],
+		name: "acp_configuration_country_code_fkey"
+	}).onUpdate("cascade").onDelete("restrict"),
+	unique("acp_configuration_country_code_effective_from_key").on(table.countryCode, table.effectiveFrom),
+	check("acp_config_valid_multiplier", sql`(calendar_day_multiplier >= 1.0) AND (calendar_day_multiplier <= 2.0)`),
+	check("acp_config_valid_days_factor", sql`(days_per_month_factor >= 0) AND (days_per_month_factor <= 5.0)`),
+	check("acp_config_valid_reference_period", sql`reference_period_type = ANY (ARRAY['since_last_leave'::text, 'calendar_year'::text, 'rolling_12_months'::text])`),
+]);
+
+export const acpPaymentHistory = pgTable("acp_payment_history", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	employeeId: uuid("employee_id").notNull(),
+	payrollRunId: uuid("payroll_run_id").notNull(),
+	referencePeriodStart: date("reference_period_start").notNull(),
+	referencePeriodEnd: date("reference_period_end").notNull(),
+	numberOfMonths: numeric("number_of_months", { precision: 5, scale: 2 }).notNull(),
+	totalGrossTaxableSalary: numeric("total_gross_taxable_salary", { precision: 15, scale: 2 }).notNull(),
+	totalPaidDays: integer("total_paid_days").notNull(),
+	nonDeductibleAbsenceDays: integer("non_deductible_absence_days").default(0).notNull(),
+	dailyAverageSalary: numeric("daily_average_salary", { precision: 15, scale: 2 }).notNull(),
+	leaveDaysAccruedBase: numeric("leave_days_accrued_base", { precision: 5, scale: 2 }).notNull(),
+	seniorityBonusDays: integer("seniority_bonus_days").default(0).notNull(),
+	leaveDaysAccruedTotal: numeric("leave_days_accrued_total", { precision: 5, scale: 2 }).notNull(),
+	leaveDaysTakenCalendar: numeric("leave_days_taken_calendar", { precision: 5, scale: 2 }).notNull(),
+	acpAmount: numeric("acp_amount", { precision: 15, scale: 2 }).notNull(),
+	acpConfigurationId: uuid("acp_configuration_id"),
+	calculationMetadata: jsonb("calculation_metadata").default({}).notNull(),
+	warnings: jsonb().default([]).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+}, (table) => [
+	index("idx_acp_history_created").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("idx_acp_history_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
+	index("idx_acp_history_payroll_run").using("btree", table.payrollRunId.asc().nullsLast().op("uuid_ops")),
+	index("idx_acp_history_reference_period").using("btree", table.referencePeriodStart.asc().nullsLast().op("date_ops"), table.referencePeriodEnd.asc().nullsLast().op("date_ops")),
+	index("idx_acp_history_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+		columns: [table.acpConfigurationId],
+		foreignColumns: [acpConfiguration.id],
+		name: "acp_payment_history_acp_configuration_id_fkey"
+	}),
+	foreignKey({
+		columns: [table.createdBy],
+		foreignColumns: [users.id],
+		name: "acp_payment_history_created_by_fkey"
+	}),
+	foreignKey({
+		columns: [table.employeeId],
+		foreignColumns: [employees.id],
+		name: "acp_payment_history_employee_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.payrollRunId],
+		foreignColumns: [payrollRuns.id],
+		name: "acp_payment_history_payroll_run_id_fkey"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: "acp_payment_history_tenant_id_fkey"
+	}).onDelete("cascade"),
+	uniqueIndex("idx_acp_history_unique_payment").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops"), table.payrollRunId.asc().nullsLast().op("uuid_ops")),
+	pgPolicy("acp_history_tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text)) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`(((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text)) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))` }),
+	check("chk_acp_amount_non_negative", sql`acp_amount >= 0`),
+	check("chk_daily_salary_positive", sql`daily_average_salary > 0`),
+	check("chk_months_positive", sql`number_of_months > 0`),
+	check("chk_reference_period_valid", sql`reference_period_end >= reference_period_start`),
+]);
+
 export const employeeSiteAssignments = pgTable("employee_site_assignments", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	employeeId: uuid("employee_id").notNull(),
@@ -2805,6 +2894,14 @@ export const employeeDependents = pgTable("employee_dependents", {
 	lastName: varchar("last_name", { length: 100 }).notNull(),
 	dateOfBirth: date("date_of_birth").notNull(),
 	relationship: varchar({ length: 50 }).notNull(),
+	gender: varchar({ length: 20 }),
+	cnpsNumber: varchar("cnps_number", { length: 50 }),
+	cmuNumber: varchar("cmu_number", { length: 50 }),
+	coveredByOtherEmployer: boolean("covered_by_other_employer").default(false).notNull(),
+	coverageCertificateType: varchar("coverage_certificate_type", { length: 100 }),
+	coverageCertificateNumber: varchar("coverage_certificate_number", { length: 100 }),
+	coverageCertificateUrl: text("coverage_certificate_url"),
+	coverageCertificateExpiryDate: date("coverage_certificate_expiry_date"),
 	isVerified: boolean("is_verified").default(false).notNull(),
 	requiresDocument: boolean("requires_document").default(false).notNull(),
 	documentType: varchar("document_type", { length: 100 }),
@@ -3124,6 +3221,11 @@ export const employees: any = pgTable("employees", {
 	weeklyHoursRegime: varchar("weekly_hours_regime", { length: 10 }).default('40h').notNull(),
 	paymentFrequency: varchar("payment_frequency", { length: 20 }).default('MONTHLY').notNull(),
 	currentContractId: uuid("current_contract_id"),
+	// ACP (Allocations de Congés Payés) fields
+	acpPaymentDate: date("acp_payment_date"),
+	acpPaymentActive: boolean("acp_payment_active").default(false),
+	acpLastPaidAt: timestamp("acp_last_paid_at", { withTimezone: true, mode: 'string' }),
+	acpNotes: text("acp_notes"),
 }, (table) => [
 	index("idx_employees_cgeci_category").using("btree", table.categoryCode.asc().nullsLast().op("text_ops"), table.sectorCodeCgeci.asc().nullsLast().op("text_ops")).where(sql`(category_code IS NOT NULL)`),
 	index("idx_employees_cmu_number").using("btree", table.cmuNumber.asc().nullsLast().op("text_ops")),

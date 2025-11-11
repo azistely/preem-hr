@@ -70,28 +70,37 @@ export const timeOffPolicies = pgTable('time_off_policies', {
 
   // Policy details
   name: text('name').notNull(),
-  policyType: text('policy_type').notNull(), // annual, sick, personal, maternity, paternity, unpaid
-  description: text('description'),
+  policyType: text('policy_type').notNull(), // annual_leave, sick_leave, maternity, paternity, unpaid
 
   // Allocation
-  daysPerYear: numeric('days_per_year', { precision: 5, scale: 2 }),
-  accrualRate: text('accrual_rate'), // monthly, yearly, per_pay_period
-  maxCarryover: numeric('max_carryover', { precision: 5, scale: 2 }),
-  maxAccrual: numeric('max_accrual', { precision: 5, scale: 2 }),
+  accrualMethod: text('accrual_method'), // fixed, accrued_monthly, accrued_hourly
+  accrualRate: numeric('accrual_rate', { precision: 5, scale: 2 }),
+  maxBalance: numeric('max_balance', { precision: 5, scale: 2 }),
 
   // Rules
   requiresApproval: boolean('requires_approval').notNull().default(true),
-  minimumIncrement: numeric('minimum_increment', { precision: 3, scale: 2 }).default('0.5'), // 0.5 = half day
-  advanceNoticeRequired: integer('advance_notice_required').default(0), // days
-  blackoutPeriods: text('blackout_periods'), // JSONB stored as text
+  advanceNoticeDays: integer('advance_notice_days').default(0), // days
+  minDaysPerRequest: numeric('min_days_per_request', { precision: 3, scale: 2 }),
+  maxDaysPerRequest: numeric('max_days_per_request', { precision: 3, scale: 2 }),
+  blackoutPeriods: jsonb('blackout_periods'),
+
+  // Gender eligibility
+  eligibleGender: text('eligible_gender'), // male, female, or NULL (all genders)
 
   // Status
-  isActive: boolean('is_active').notNull().default(true),
+  isPaid: boolean('is_paid').default(true),
+  effectiveFrom: date('effective_from'),
+  effectiveTo: date('effective_to'),
 
   // Audit
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   createdBy: uuid('created_by'), // References users(id)
+
+  // Additional fields
+  templateId: uuid('template_id'),
+  complianceLevel: text('compliance_level'),
+  legalReference: text('legal_reference'),
 }, (table) => [
   // RLS Policy: Tenant Isolation
   pgPolicy('tenant_isolation', {
@@ -144,21 +153,26 @@ export const timeOffRequests = pgTable('time_off_requests', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
   policyId: uuid('policy_id').notNull().references(() => timeOffPolicies.id),
-  balanceId: uuid('balance_id').references(() => timeOffBalances.id),
 
   // Request details
   startDate: date('start_date').notNull(),
   endDate: date('end_date').notNull(),
-  daysRequested: numeric('days_requested', { precision: 5, scale: 2 }).notNull(),
+  totalDays: numeric('total_days', { precision: 5, scale: 2 }).notNull(),
   reason: text('reason'),
   notes: text('notes'),
 
   // Approval workflow
   status: text('status').notNull().default('pending'), // pending, approved, rejected, cancelled
+  submittedAt: timestamp('submitted_at'),
   reviewedBy: uuid('reviewed_by'), // References users(id)
   reviewedAt: timestamp('reviewed_at'),
   reviewNotes: text('review_notes'),
-  cancellationReason: text('cancellation_reason'),
+
+  // ACP (Allocations de Congés Payés) tracking
+  isDeductibleForAcp: boolean('is_deductible_for_acp').default(true),
+  acpAmount: numeric('acp_amount', { precision: 15, scale: 2 }),
+  acpPaidInPayrollRunId: uuid('acp_paid_in_payroll_run_id'),
+  acpPaidAt: timestamp('acp_paid_at'),
 
   // Audit
   createdAt: timestamp('created_at').notNull().defaultNow(),

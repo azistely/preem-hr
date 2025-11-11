@@ -16,13 +16,19 @@
  */
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Info, TrendingUp, TrendingDown } from 'lucide-react';
+import { ChevronDown, ChevronUp, Info, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 import { FiscalPartsBreakdown } from './fiscal-parts-breakdown';
 import { DeductionBreakdown } from './deduction-breakdown';
@@ -174,12 +180,37 @@ export function SalaryPreviewCard({
             <div className="space-y-3">
               <h4 className="font-semibold">Composantes du salaire</h4>
               <div className="space-y-2 text-sm">
-                {preview.components.map((component, index) => (
-                  <div key={index} className="flex justify-between items-center">
-                    <span className="text-muted-foreground">{component.name}</span>
-                    <span className="font-medium">{formatCurrency(component.amount, preview.countryCode)}</span>
-                  </div>
-                ))}
+                <TooltipProvider>
+                  {preview.components.map((component, index) => {
+                    const isACP = component.code?.toLowerCase().includes('acp') ||
+                                  component.name?.toLowerCase().includes('acp');
+
+                    return (
+                      <div key={index} className="flex justify-between items-center">
+                        <span className="text-muted-foreground flex items-center gap-2">
+                          {isACP && <Calendar className="h-3 w-3" />}
+                          {component.name}
+                          {isACP && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 cursor-help text-blue-600" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p className="text-sm font-semibold mb-1">
+                                  Allocations de congés payés (ACP)
+                                </p>
+                                <p className="text-xs">
+                                  Montant calculé selon les jours de congé pris
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </span>
+                        <span className="font-medium">{formatCurrency(component.amount, preview.countryCode)}</span>
+                      </div>
+                    );
+                  })}
+                </TooltipProvider>
                 <Separator />
                 <div className="flex justify-between font-semibold">
                   <span>Total brut</span>

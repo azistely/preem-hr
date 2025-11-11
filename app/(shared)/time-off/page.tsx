@@ -127,7 +127,7 @@ export default function TimeOffPage() {
           </Card>
         ) : balances && balances.length > 0 ? (
           balances.map((balance) => {
-            const policy = balance.policy as unknown as TimeOffPolicy;
+            const policy = balance.timeOffPolicy as unknown as TimeOffPolicy;
             return (
             <Card key={balance.id}>
               <CardHeader className="pb-3">
@@ -193,7 +193,7 @@ export default function TimeOffPage() {
                   {requests
                     .filter((r) => r.status === 'pending')
                     .map((request) => {
-                      const requestPolicy = request.policy as unknown as TimeOffPolicy;
+                      const requestPolicy = request.timeOffPolicy as unknown as TimeOffPolicy;
                       return (
                       <div
                         key={request.id}
@@ -238,7 +238,7 @@ export default function TimeOffPage() {
                   {requests
                     .filter((r) => r.status === 'approved')
                     .map((request) => {
-                      const requestPolicy = request.policy as unknown as TimeOffPolicy;
+                      const requestPolicy = request.timeOffPolicy as unknown as TimeOffPolicy;
                       return (
                       <div
                         key={request.id}
@@ -283,7 +283,7 @@ export default function TimeOffPage() {
                   {requests
                     .filter((r) => r.status === 'rejected')
                     .map((request) => {
-                      const requestPolicy = request.policy as unknown as TimeOffPolicy;
+                      const requestPolicy = request.timeOffPolicy as unknown as TimeOffPolicy;
                       return (
                       <div
                         key={request.id}

@@ -23,6 +23,9 @@ import {
   getTotalACPPaidForEmployee,
 } from '@/features/leave/services/acp-payment-history.service'
 import { loadACPConfig, getAllACPConfigs } from '@/features/leave/services/acp-config.loader'
+import { db } from '@/db'
+import { employees, acpPaymentHistory } from '@/drizzle/schema'
+import { eq, and, like, or, sql, desc, inArray, asc } from 'drizzle-orm'
 
 export const acpRouter = createTRPCRouter({
   /**
@@ -286,4 +289,137 @@ export const acpRouter = createTRPCRouter({
       })
     }
   }),
+
+  /**
+   * Get ACP dashboard data for all employees
+   *
+   * Returns summary of all employees with:
+   * - Leave days taken (deductible for ACP)
+   * - Last ACP payment date and amount
+   * - Estimated next ACP amount
+   * - Contract type and status
+   *
+   * Permissions: hr, hr_manager, super_admin
+   */
+  getDashboardData: protectedProcedure
+    .input(
+      z.object({
+        contractType: z.enum(['all', 'CDI', 'CDD', 'INTERIM']).optional().default('all'),
+        search: z.string().optional(),
+        limit: z.number().min(1).max(500).optional().default(100),
+        offset: z.number().min(0).optional().default(0),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      if (!ctx.user?.tenantId) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Tenant ID required',
+        })
+      }
+
+      // Check if user has HR manager role or higher
+      const allowedRoles = ['hr_manager', 'tenant_admin', 'super_admin'];
+      if (!allowedRoles.includes(ctx.user?.role || '')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'HR role required',
+        })
+      }
+
+      try {
+        // Build where conditions
+        const conditions: any[] = [
+          eq(employees.tenantId, ctx.user.tenantId),
+          eq(employees.status, 'active'),
+        ]
+
+        // Contract type filter
+        if (input.contractType !== 'all') {
+          conditions.push(eq(employees.contractType, input.contractType))
+        } else {
+          // Only show CDI and CDD (INTERIM doesn't get ACP)
+          conditions.push(inArray(employees.contractType, ['CDI', 'CDD']))
+        }
+
+        // Employee search
+        if (input.search) {
+          const searchTerm = `%${input.search}%`
+          conditions.push(
+            or(
+              like(employees.firstName, searchTerm),
+              like(employees.lastName, searchTerm)
+            )
+          )
+        }
+
+        // Get employees without using db.query API (since relations aren't defined)
+        const employeesList = await db
+          .select({
+            id: employees.id,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+            email: employees.email,
+            contractType: employees.contractType,
+            hireDate: employees.hireDate,
+            acpPaymentActive: employees.acpPaymentActive,
+            acpPaymentDate: employees.acpPaymentDate,
+            acpLastPaidAt: employees.acpLastPaidAt,
+          })
+          .from(employees)
+          .where(and(...conditions))
+          .orderBy(asc(employees.lastName), asc(employees.firstName))
+
+        // For each employee, get their ACP payment history
+        const dashboardData = await Promise.all(
+          employeesList.map(async (employee) => {
+            // Get latest payment - use manual query instead of db.query API
+            const latestPayments = await db
+              .select({
+                id: acpPaymentHistory.id,
+                acpAmount: acpPaymentHistory.acpAmount,
+                leaveDaysTakenCalendar: acpPaymentHistory.leaveDaysTakenCalendar,
+                createdAt: acpPaymentHistory.createdAt,
+              })
+              .from(acpPaymentHistory)
+              .where(eq(acpPaymentHistory.employeeId, employee.id))
+              .orderBy(desc(acpPaymentHistory.createdAt))
+              .limit(1)
+
+            const latestPayment = latestPayments[0] || null
+
+            // Get total paid
+            const totalPaid = await getTotalACPPaidForEmployee(employee.id, ctx.user.tenantId)
+
+            return {
+              employee: {
+                id: employee.id,
+                firstName: employee.firstName,
+                lastName: employee.lastName,
+                email: employee.email,
+                contractType: employee.contractType,
+                hireDate: employee.hireDate,
+                acpPaymentActive: employee.acpPaymentActive,
+                acpPaymentDate: employee.acpPaymentDate,
+                acpLastPaidAt: employee.acpLastPaidAt,
+              },
+              latestPayment: latestPayment ? {
+                id: latestPayment.id,
+                acpAmount: latestPayment.acpAmount,
+                leaveDaysTakenCalendar: latestPayment.leaveDaysTakenCalendar,
+                createdAt: latestPayment.createdAt,
+              } : null,
+              totalPaid,
+            }
+          })
+        )
+
+        return dashboardData
+      } catch (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Failed to fetch dashboard data',
+        })
+      }
+    }),
 })

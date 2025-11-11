@@ -19,10 +19,7 @@ export const timeOffRequestsRelations = relations(timeOffRequests, ({ one }) => 
     fields: [timeOffRequests.policyId],
     references: [timeOffPolicies.id],
   }),
-  balance: one(timeOffBalances, {
-    fields: [timeOffRequests.balanceId],
-    references: [timeOffBalances.id],
-  }),
+  // Note: balance relation removed as time_off_requests.balance_id doesn't exist in database
 }));
 
 export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({

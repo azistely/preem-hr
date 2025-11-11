@@ -25,6 +25,8 @@ import {
   UserCircle,
   Heart,
   FileText,
+  Calculator,
+  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEmployee, useReactivateEmployee } from '@/features/employees/hooks/use-employees';
@@ -57,6 +59,9 @@ import { Plus, ChevronDown } from 'lucide-react';
 import { DependentsManager } from '@/features/employees/components/dependents-manager';
 import { EmployeeBenefitsTab } from '@/components/employees/employee-benefits-tab';
 import { ContractInfoCard } from '@/components/contracts/contract-info-card';
+import { ACPPaymentSection } from '@/features/employees/components/acp-payment-section';
+import { ACPPreviewDialog } from '@/features/employees/components/acp-preview-dialog';
+import { ACPPaymentHistoryTimeline } from '@/features/leave/components/acp-payment-history-timeline';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -69,6 +74,7 @@ export default function EmployeeDetailPage() {
   const [showTransferWizard, setShowTransferWizard] = useState(false);
   const [showSalaryWizard, setShowSalaryWizard] = useState(false);
   const [showTimeOffRequestForm, setShowTimeOffRequestForm] = useState(false);
+  const [showACPPreviewDialog, setShowACPPreviewDialog] = useState(false);
 
   const { data: employee, isLoading, error } = useEmployee(employeeId);
   const reactivateEmployee = useReactivateEmployee();
@@ -93,6 +99,26 @@ export default function EmployeeDetailPage() {
 
   const { data: timeOffRequests, isLoading: isLoadingRequests } = trpc.timeOff.getEmployeeRequests.useQuery(
     { employeeId: params.id as string },
+    { enabled: !!employee }
+  );
+
+  // ACP calculation query - only fetch when dialog is open
+  const { data: acpCalculation, isLoading: isLoadingACP } = trpc.acp.previewCalculation.useQuery(
+    {
+      employeeId: params.id as string,
+      acpPaymentDate: (employee as any)?.acpPaymentDate
+        ? new Date((employee as any).acpPaymentDate)
+        : new Date(),
+    },
+    { enabled: showACPPreviewDialog && !!employee }
+  );
+
+  // ACP payment history query
+  const { data: acpPaymentHistory, isLoading: isLoadingACPHistory } = trpc.acp.getPaymentHistory.useQuery(
+    {
+      employeeId: params.id as string,
+      limit: 20,
+    },
     { enabled: !!employee }
   );
 
@@ -889,6 +915,47 @@ export default function EmployeeDetailPage() {
             <LeaveBalanceCard balances={timeOffBalances as any} />
           ) : null}
 
+          {/* ACP Payment Configuration (only for CDI/CDD employees) */}
+          {(employee as any)?.contractType !== 'INTERIM' && (
+            <Collapsible>
+              <Card>
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
+                  <CollapsibleTrigger className="flex flex-1 items-center gap-2 hover:opacity-80 transition-opacity">
+                    <Wallet className="h-5 w-5 text-primary" />
+                    <CardTitle>Configuration ACP</CardTitle>
+                    <ChevronDown className="h-4 w-4 ml-auto transition-transform duration-200 data-[state=open]:rotate-180" />
+                  </CollapsibleTrigger>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowACPPreviewDialog(true)}
+                    className="ml-4 min-h-[44px]"
+                  >
+                    <Calculator className="mr-2 h-4 w-4" />
+                    Prévisualiser ACP
+                  </Button>
+                </CardHeader>
+                <CollapsibleContent>
+                  <CardContent>
+                    <ACPPaymentSection
+                      employeeId={employeeId}
+                      initialData={{
+                        acpPaymentDate: (employee as any)?.acpPaymentDate
+                          ? new Date((employee as any).acpPaymentDate)
+                          : null,
+                        acpPaymentActive: (employee as any)?.acpPaymentActive || false,
+                        acpNotes: (employee as any)?.acpNotes || null,
+                        acpLastPaidAt: (employee as any)?.acpLastPaidAt
+                          ? new Date((employee as any).acpLastPaidAt)
+                          : null,
+                      }}
+                    />
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          )}
+
           {/* Leave Requests */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
@@ -936,6 +1003,21 @@ export default function EmployeeDetailPage() {
               </CollapsibleContent>
             </Card>
           </Collapsible>
+
+          {/* ACP Payment History (only for CDI/CDD employees) */}
+          {(employee as any)?.contractType !== 'INTERIM' && (
+            <>
+              {isLoadingACPHistory ? (
+                <Card>
+                  <CardContent className="py-12 flex justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </CardContent>
+                </Card>
+              ) : acpPaymentHistory && acpPaymentHistory.length > 0 ? (
+                <ACPPaymentHistoryTimeline history={acpPaymentHistory as any} />
+              ) : null}
+            </>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -1005,6 +1087,15 @@ export default function EmployeeDetailPage() {
           />
         </DialogContent>
       </Dialog>
+
+      {/* ACP Preview Dialog */}
+      <ACPPreviewDialog
+        open={showACPPreviewDialog}
+        onOpenChange={setShowACPPreviewDialog}
+        employeeName={`${(employee as any)?.firstName} ${(employee as any)?.lastName}`}
+        calculation={acpCalculation || null}
+        isLoading={isLoadingACP}
+      />
     </div>
   );
 }

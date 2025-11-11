@@ -5,11 +5,17 @@
  */
 
 import { db } from '@/lib/db';
-import { tenants, employees, positions, assignments, employeeSalaries } from '@/drizzle/schema';
-import { eq } from 'drizzle-orm';
+import { tenants, employees, positions, assignments, employeeSalaries, timeOffPolicies, timeOffBalances } from '@/drizzle/schema';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { ValidationError, NotFoundError } from '@/lib/errors';
 import { generateEmployeeNumber } from '@/features/employees/services/employee-number';
 import { autoInjectCalculatedComponents } from '@/lib/salary-components/component-calculator';
+import {
+  normalizeMaritalStatus,
+  validateDependentChildrenCount,
+  createPlaceholderDependents
+} from '@/features/employees/services/auto-dependent-creation.service';
+import { initializeEmployeeBalances } from '@/features/time-off/services/time-off.service';
 
 // Types
 export type CompanySize = 'solo' | 'small_team' | 'medium' | 'large';
@@ -655,6 +661,15 @@ export async function createFirstEmployee(input: CreateFirstEmployeeInput) {
     })
     .returning();
 
+  // Step 6: Initialize time-off balances (CDI employees during onboarding)
+  await initializeEmployeeBalances(
+    employee.id,
+    input.tenantId,
+    input.hireDate,
+    employee.contractType || 'CDI', // Default to CDI for onboarding
+    undefined // No balance override
+  );
+
   // Update onboarding state to store employee ID for later use
   const state = await getOnboardingState(input.tenantId);
   const settings = (tenant.settings as any) || {};
@@ -792,6 +807,15 @@ export async function addEmployeeToOnboarding(input: AddEmployeeInput) {
     })
     .returning();
 
+  // Initialize time-off balances (CDI employees during onboarding)
+  await initializeEmployeeBalances(
+    employee.id,
+    input.tenantId,
+    input.hireDate,
+    employee.contractType || 'CDI', // Default to CDI for onboarding
+    undefined // No balance override
+  );
+
   return {
     employee,
     position,
@@ -822,6 +846,9 @@ export interface ImportValidationResult {
     positionTitle: string;
     baseSalary: number;
     hireDate: string;
+    maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
+    dependentChildrenCount: number;
+    initialLeaveBalance?: number;
   }>;
 }
 
@@ -839,7 +866,7 @@ export function validateEmployeeImport(csvContent: string): ImportValidationResu
   const header = lines[0].split(',').map(h => h.trim());
 
   // Expected columns
-  const requiredColumns = ['Prénom', 'Nom', 'Email', 'Poste', 'Salaire', 'Date embauche'];
+  const requiredColumns = ['Prénom', 'Nom', 'Email', 'Poste', 'Salaire', 'Date embauche', 'Situation familiale', 'Nombre d\'enfants'];
   const missingColumns = requiredColumns.filter(col => !header.includes(col));
 
   if (missingColumns.length > 0) {
@@ -865,6 +892,9 @@ export function validateEmployeeImport(csvContent: string): ImportValidationResu
     const positionTitle = values[header.indexOf('Poste')];
     const salaryStr = values[header.indexOf('Salaire')];
     const hireDateStr = values[header.indexOf('Date embauche')];
+    const maritalStatusStr = values[header.indexOf('Situation familiale')];
+    const dependentChildrenStr = values[header.indexOf('Nombre d\'enfants')];
+    const initialLeaveBalanceStr = values[header.indexOf('Solde congés')];
 
     let hasError = false;
 
@@ -905,6 +935,32 @@ export function validateEmployeeImport(csvContent: string): ImportValidationResu
       hasError = true;
     }
 
+    // Validate marital status
+    const maritalStatus = normalizeMaritalStatus(maritalStatusStr);
+    if (!maritalStatus) {
+      errors.push({ row, field: 'Situation familiale', message: 'Valeur invalide (single/married/divorced/widowed ou célibataire/marié/divorcé/veuf)' });
+      hasError = true;
+    }
+
+    // Validate dependent children count
+    const dependentChildrenCount = validateDependentChildrenCount(dependentChildrenStr);
+    if (dependentChildrenCount === null) {
+      errors.push({ row, field: 'Nombre d\'enfants', message: 'Doit être un nombre entre 0 et 10' });
+      hasError = true;
+    }
+
+    // Validate initial leave balance (optional)
+    let initialLeaveBalance: number | undefined = undefined;
+    if (initialLeaveBalanceStr && initialLeaveBalanceStr.trim()) {
+      const balance = parseFloat(initialLeaveBalanceStr);
+      if (isNaN(balance) || balance < 0) {
+        errors.push({ row, field: 'Solde congés', message: 'Doit être un nombre positif ou vide' });
+        hasError = true;
+      } else {
+        initialLeaveBalance = balance;
+      }
+    }
+
     if (!hasError) {
       data.push({
         firstName,
@@ -914,6 +970,9 @@ export function validateEmployeeImport(csvContent: string): ImportValidationResu
         positionTitle,
         baseSalary,
         hireDate: hireDateStr,
+        maritalStatus: maritalStatus!,
+        dependentChildrenCount: dependentChildrenCount!,
+        initialLeaveBalance,
       });
       validRows++;
     }
@@ -967,7 +1026,53 @@ export async function importEmployeesFromCSV(input: ImportEmployeesInput) {
         positionTitle: empData.positionTitle,
         baseSalary: empData.baseSalary,
         hireDate,
+        // NOTE: NOT passing maritalStatus or dependentChildrenCount
+        // to keep employees.dependentChildren field as NULL/0
+        // Dependents are managed only via employee_dependents table
       });
+
+      // Auto-create placeholder dependents based on marital status and children count
+      await createPlaceholderDependents({
+        employeeId: result.employee.id,
+        tenantId: input.tenantId,
+        maritalStatus: empData.maritalStatus,
+        dependentChildrenCount: empData.dependentChildrenCount,
+      });
+
+      // If initial leave balance was provided in CSV, update the annual leave balance
+      if (empData.initialLeaveBalance !== undefined) {
+        // Find the annual leave policy
+        const annualLeavePolicy = await db.query.timeOffPolicies.findFirst({
+          where: and(
+            eq(timeOffPolicies.tenantId, input.tenantId),
+            or(
+              eq(timeOffPolicies.policyType, 'annual_leave'),
+              sql`LOWER(${timeOffPolicies.name}) LIKE '%congé annuel%'`,
+              sql`LOWER(${timeOffPolicies.name}) LIKE '%annual leave%'`
+            )
+          ),
+        });
+
+        if (annualLeavePolicy) {
+          // Update the balance with imported value
+          const existingBalance = await db.query.timeOffBalances.findFirst({
+            where: and(
+              eq(timeOffBalances.employeeId, result.employee.id),
+              eq(timeOffBalances.policyId, annualLeavePolicy.id)
+            ),
+          });
+
+          if (existingBalance) {
+            await db
+              .update(timeOffBalances)
+              .set({
+                balance: empData.initialLeaveBalance.toFixed(1),
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(timeOffBalances.id, existingBalance.id));
+          }
+        }
+      }
 
       imported.push(result);
     } catch (error: any) {
@@ -987,9 +1092,9 @@ export async function importEmployeesFromCSV(input: ImportEmployeesInput) {
  * Download CSV template for employee import
  */
 export function getEmployeeImportTemplate(): { csvContent: string } {
-  const csvContent = `Prénom,Nom,Email,Téléphone,Poste,Salaire,Date embauche
-Jean,Kouassi,jean.kouassi@example.com,+225 01 23 45 67 89,Vendeur,150000,01/01/2025
-Marie,Koffi,marie.koffi@example.com,+225 09 87 65 43 21,Caissier,120000,01/01/2025`;
+  const csvContent = `Prénom,Nom,Email,Téléphone,Poste,Salaire,Date embauche,Situation familiale,Nombre d'enfants,Solde congés
+Jean,Kouassi,jean.kouassi@example.com,+225 01 23 45 67 89,Vendeur,150000,01/01/2025,married,2,
+Marie,Koffi,marie.koffi@example.com,+225 09 87 65 43 21,Caissier,120000,01/01/2025,single,0,18.5`;
 
   return { csvContent };
 }

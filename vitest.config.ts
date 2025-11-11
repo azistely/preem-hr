@@ -2,13 +2,14 @@ import { defineConfig } from 'vitest/config';
 import { config } from 'dotenv';
 import path from 'path';
 
-// Load environment variables from .env file
-config();
+// Load environment variables from .env.local (for tests)
+config({ path: '.env.local' });
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
 
     // Browser mode configuration (Vitest 3.x)
     browser: {

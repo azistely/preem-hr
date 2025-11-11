@@ -836,7 +836,7 @@ export const employeesRouter = createTRPCRouter({
             acpPaymentDate: input.paymentDate?.toISOString().split('T')[0] || null,
             acpPaymentActive: input.active,
             acpNotes: input.notes,
-            updatedAt: new Date(),
+            updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,
           })
           .where(

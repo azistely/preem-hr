@@ -10,6 +10,7 @@ import {
   timeOffBalances,
   timeOffPolicies,
   employees,
+  tenants,
 } from '@/drizzle/schema';
 import { and, eq, gte, lte, or, isNull, sql } from 'drizzle-orm';
 import {
@@ -91,20 +92,22 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
     throw new TimeOffError('Politique de congé non trouvée', 'POLICY_NOT_FOUND');
   }
 
-  // Get employee to determine country
+  // Get employee to validate existence
   const employee = await db.query.employees.findFirst({
     where: eq(employees.id, employeeId),
-    with: {
-      tenant: true,
-    },
   });
 
   if (!employee) {
     throw new TimeOffError('Employé non trouvé', 'EMPLOYEE_NOT_FOUND');
   }
 
-  // tenant can be an array from relations
-  const tenant = Array.isArray(employee.tenant) ? employee.tenant[0] : employee.tenant;
+  // Get tenant to determine country (using tenantId from input)
+  const [tenant] = await db
+    .select()
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+
   const countryCode = tenant?.countryCode || 'CI';
 
   // Validate dates
@@ -421,4 +424,134 @@ export async function accrueLeaveBalance(
     .where(eq(timeOffBalances.id, balance.id));
 
   return balance;
+}
+
+/**
+ * Initialize time-off balances for a newly hired employee
+ * Creates balances for all active policies with pro-rated amounts
+ *
+ * @param employeeId - Employee ID
+ * @param tenantId - Tenant ID
+ * @param hireDate - Employee hire date
+ * @param contractType - Employee contract type (only CDI/CDD get balances)
+ * @param initialBalanceOverride - Optional: Override balance for annual leave (from CSV import)
+ */
+export async function initializeEmployeeBalances(
+  employeeId: string,
+  tenantId: string,
+  hireDate: Date,
+  contractType: string,
+  initialBalanceOverride?: number
+) {
+  // Only CDI and CDD employees are eligible for paid leave
+  if (!['CDI', 'CDD'].includes(contractType)) {
+    return;
+  }
+
+  // Get employee gender for filtering policies
+  const employee = await db.query.employees.findFirst({
+    where: eq(employees.id, employeeId),
+    columns: {
+      gender: true,
+    },
+  });
+
+  const employeeGender = employee?.gender;
+
+  // Get all active policies for tenant (active = effective_to is NULL or in future)
+  const allPolicies = await db.query.timeOffPolicies.findMany({
+    where: and(
+      eq(timeOffPolicies.tenantId, tenantId),
+      or(
+        isNull(timeOffPolicies.effectiveTo),
+        gte(timeOffPolicies.effectiveTo, new Date().toISOString().split('T')[0])
+      )
+    ),
+  });
+
+  // Filter policies by gender eligibility
+  const policies = allPolicies.filter(policy => {
+    // If policy has no gender restriction (NULL or 'all'), it's available to everyone
+    if (!policy.eligibleGender || policy.eligibleGender === 'all') {
+      return true;
+    }
+
+    // If employee has no gender set, skip gender-specific policies
+    if (!employeeGender) {
+      return false;
+    }
+
+    // Match policy's eligible gender with employee's gender
+    return policy.eligibleGender === employeeGender;
+  });
+
+  if (policies.length === 0) {
+    return;
+  }
+
+  // Calculate current year period
+  const currentYear = new Date().getFullYear();
+  const periodStart = new Date(currentYear, 0, 1); // Jan 1
+  const periodEnd = new Date(currentYear, 11, 31); // Dec 31
+
+  // Calculate months remaining in year (including hire month)
+  const hireMonth = hireDate.getMonth() + 1; // 1-12
+  const monthsRemaining = 13 - hireMonth; // Months left in year
+
+  // Create balance for each policy
+  for (const policy of policies) {
+    let balance: number;
+
+    // Check if this is annual leave policy and we have an override from import
+    const isAnnualLeave = policy.policyType === 'annual_leave' ||
+                          policy.name.toLowerCase().includes('congé annuel') ||
+                          policy.name.toLowerCase().includes('annual leave');
+
+    if (isAnnualLeave && initialBalanceOverride !== undefined) {
+      // Use imported balance for annual leave
+      balance = initialBalanceOverride;
+    } else if (policy.accrualMethod === 'accrued_monthly') {
+      // Pro-rate monthly accrual policies based on months remaining
+      const accrualRate = parseFloat(policy.accrualRate as string);
+      balance = accrualRate * monthsRemaining;
+    } else if (policy.accrualMethod === 'annual_allocation') {
+      // For annual allocation, use the full accrual rate
+      balance = parseFloat(policy.accrualRate as string);
+    } else {
+      // For other methods, use accrual rate as-is
+      balance = parseFloat(policy.accrualRate as string);
+    }
+
+    // Ensure balance doesn't exceed max balance if configured
+    if (policy.maxBalance) {
+      const maxBalance = parseFloat(policy.maxBalance as string);
+      balance = Math.min(balance, maxBalance);
+    }
+
+    // Check if balance already exists
+    const existingBalance = await db.query.timeOffBalances.findFirst({
+      where: and(
+        eq(timeOffBalances.employeeId, employeeId),
+        eq(timeOffBalances.policyId, policy.id)
+      ),
+    });
+
+    if (existingBalance) {
+      // Balance already exists, skip
+      continue;
+    }
+
+    // Create balance record
+    await db.insert(timeOffBalances).values({
+      tenantId,
+      employeeId,
+      policyId: policy.id,
+      balance: balance.toFixed(1),
+      used: '0',
+      pending: '0',
+      periodStart: periodStart.toISOString().split('T')[0],
+      periodEnd: periodEnd.toISOString().split('T')[0],
+      lastAccrualDate: hireDate.toISOString().split('T')[0],
+    });
+  }
 }

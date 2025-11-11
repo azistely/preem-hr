@@ -91,6 +91,10 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   // @deprecated Use employeeType instead (GAP-ITS-JOUR-002)
   // ITS employer tax calculation - kept for backward compatibility, maps to employeeType
   isExpat?: boolean; // If true, maps to employeeType='EXPAT'; otherwise employeeType='LOCAL'
+
+  // ACP (Allocations de Congés Payés) - vacation pay
+  // Only applicable to CDI/CDD contracts when employee takes leave
+  acpAmount?: number; // Calculated ACP amount to include in this payroll
 }
 
 /**
@@ -119,12 +123,18 @@ function convertAllowancesToComponents(
 
   // Seniority bonus (Code 21) - if provided
   if (input.seniorityBonus && input.seniorityBonus > 0) {
-    components.push({
-      code: '21',
-      name: "Prime d'ancienneté",
-      amount: input.seniorityBonus,
-      sourceType: 'standard',
-    });
+    // Validation: Check contract type eligibility (CI specific rule)
+    if (input.countryCode === 'CI' && input.contractType && ['CDDTI', 'INTERIM', 'STAGE'].includes(input.contractType)) {
+      console.warn(`[PAYROLL WARNING] Seniority bonus of ${input.seniorityBonus} FCFA provided for contract type ${input.contractType}, which is not eligible in Côte d'Ivoire. Only CDI and CDD contracts receive prime d'ancienneté. This bonus will be ignored.`);
+      // Skip adding the component for ineligible contract types
+    } else {
+      components.push({
+        code: '21',
+        name: "Prime d'ancienneté",
+        amount: input.seniorityBonus,
+        sourceType: 'standard',
+      });
+    }
   }
 
   // Transport allowance (Code 22)
@@ -1137,6 +1147,15 @@ export async function calculatePayrollV2(
       skipProration: !shouldApplyProration, // Skip period-based proration for daily/hourly workers (amounts already final)
     });
     grossSalary = grossCalc.totalGross;
+  }
+
+  // ========================================
+  // STEP 1.4: Add ACP (Allocations de Congés Payés) if provided
+  // ========================================
+  // ACP is only applicable to CDI/CDD employees when they take leave
+  // It's added to gross salary and is fully taxable
+  if (input.acpAmount && input.acpAmount > 0) {
+    grossSalary += input.acpAmount;
   }
 
   // ========================================
@@ -2182,11 +2201,15 @@ function buildEarningsDetails(grossCalc: any, input: PayrollCalculationInputV2, 
   }
 
   if (input.seniorityBonus && input.seniorityBonus > 0) {
-    details.push({
-      type: 'seniority_bonus',
-      description: 'Prime d\'ancienneté',
-      amount: input.seniorityBonus,
-    });
+    // Only include seniority bonus for eligible contract types (CI: CDI/CDD only)
+    const isEligible = !(input.countryCode === 'CI' && input.contractType && ['CDDTI', 'INTERIM', 'STAGE'].includes(input.contractType));
+    if (isEligible) {
+      details.push({
+        type: 'seniority_bonus',
+        description: 'Prime d\'ancienneté',
+        amount: input.seniorityBonus,
+      });
+    }
   }
 
   if (input.familyAllowance && input.familyAllowance > 0) {
@@ -2194,6 +2217,16 @@ function buildEarningsDetails(grossCalc: any, input: PayrollCalculationInputV2, 
       type: 'family_allowance',
       description: 'Allocations familiales',
       amount: input.familyAllowance,
+    });
+  }
+
+  // ACP (Allocations de Congés Payés) - vacation pay
+  // Only for CDI/CDD contracts
+  if (input.acpAmount && input.acpAmount > 0) {
+    details.push({
+      type: 'acp',
+      description: 'ACP (Allocations de Congés Payés)',
+      amount: input.acpAmount,
     });
   }
 

@@ -25,6 +25,8 @@ export interface SeniorityCalculationInput {
   // New: For DB formula loading
   tenantId?: string;
   countryCode?: string;
+  // Contract type for eligibility checks
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE';
 }
 
 export interface SeniorityCalculationResult {
@@ -57,7 +59,7 @@ export interface SeniorityCalculationResult {
 export async function calculateSeniorityBonus(
   input: SeniorityCalculationInput
 ): Promise<SeniorityCalculationResult> {
-  const { baseSalary, hireDate, currentDate = new Date(), metadata, tenantId, countryCode } = input;
+  const { baseSalary, hireDate, currentDate = new Date(), metadata, tenantId, countryCode, contractType } = input;
 
   // Load formula from database if tenantId provided
   let effectiveMetadata = metadata;
@@ -81,6 +83,23 @@ export async function calculateSeniorityBonus(
   const yearsOfService = Math.floor(
     (currentDate.getTime() - hireDate.getTime()) / millisecondsPerYear
   );
+
+  // Check contract type eligibility (Côte d'Ivoire specific rule)
+  // In CI, only CDI and CDD contracts are eligible for prime d'ancienneté
+  // CDDTI, INTERIM, and STAGE contracts are NOT eligible
+  if (countryCode === 'CI' && contractType) {
+    const ineligibleContracts: Array<'CDDTI' | 'INTERIM' | 'STAGE'> = ['CDDTI', 'INTERIM', 'STAGE'];
+    if (ineligibleContracts.includes(contractType as any)) {
+      return {
+        yearsOfService,
+        rate: 0,
+        amount: 0,
+        isCapped: false,
+      };
+    }
+  }
+  // TODO: Add database-driven eligibility rules for other countries
+  // For now, other countries allow seniority for all contract types
 
   // Check eligibility (must have minimum years of service)
   if (yearsOfService < minimumYears) {
@@ -119,6 +138,7 @@ export async function calculateSeniorityBonus(
  * @param metadata Component metadata (optional)
  * @param tenantId Tenant ID for formula loading (optional)
  * @param countryCode Country code for formula loading (optional)
+ * @param contractType Contract type for eligibility checks (optional)
  * @returns Salary component instance
  */
 export async function createSeniorityComponent(
@@ -126,7 +146,8 @@ export async function createSeniorityComponent(
   hireDate: Date,
   metadata?: CIComponentMetadata,
   tenantId?: string,
-  countryCode?: string
+  countryCode?: string,
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'
 ): Promise<SalaryComponentInstance> {
   const calculation = await calculateSeniorityBonus({
     baseSalary,
@@ -134,6 +155,7 @@ export async function createSeniorityComponent(
     metadata,
     tenantId,
     countryCode,
+    contractType,
   });
 
   return {
@@ -211,6 +233,7 @@ export interface AutoInjectOptions {
   numberOfDependents?: number;
   countryCode: string;
   tenantId?: string; // For DB formula loading
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'; // For eligibility checks
   enableSeniority?: boolean;
   enableFamilyAllowance?: boolean;
 }
@@ -233,6 +256,7 @@ export async function autoInjectCalculatedComponents(
     numberOfDependents = 0,
     countryCode,
     tenantId,
+    contractType,
     enableSeniority = true,
     enableFamilyAllowance = true,
   } = options;
@@ -248,12 +272,13 @@ export async function autoInjectCalculatedComponents(
       hireDate,
       tenantId,
       countryCode,
+      contractType,
     });
     console.timeEnd('[Component Calculator] Seniority calculation');
     console.log(`[Component Calculator] Seniority calculated in ${Date.now() - seniorityStart}ms`);
 
-    // Only inject if employee has been there >= 2 years (24 months)
-    if (seniorityCalc.yearsOfService >= 2) {
+    // Only inject if employee has been there >= 2 years (24 months) AND eligible by contract type
+    if (seniorityCalc.yearsOfService >= 2 && seniorityCalc.amount > 0) {
       console.time('[Component Calculator] Create seniority component');
       const createStart = Date.now();
       const seniorityComponent = await createSeniorityComponent(
@@ -261,7 +286,8 @@ export async function autoInjectCalculatedComponents(
         hireDate,
         undefined,
         tenantId,
-        countryCode
+        countryCode,
+        contractType
       );
       console.timeEnd('[Component Calculator] Create seniority component');
       console.log(`[Component Calculator] Component created in ${Date.now() - createStart}ms`);
@@ -305,7 +331,7 @@ export interface EligibilityCheck {
 export async function checkComponentEligibility(
   options: AutoInjectOptions
 ): Promise<EligibilityCheck[]> {
-  const { baseSalary, hireDate, numberOfDependents = 0, tenantId, countryCode } = options;
+  const { baseSalary, hireDate, numberOfDependents = 0, tenantId, countryCode, contractType } = options;
   const checks: EligibilityCheck[] = [];
 
   // Check seniority eligibility
@@ -314,16 +340,27 @@ export async function checkComponentEligibility(
     hireDate,
     tenantId,
     countryCode,
+    contractType,
   });
+
+  // Determine eligibility based on contract type and years of service
+  const isEligible = seniorityCalc.yearsOfService >= 2 && seniorityCalc.amount > 0;
+  let reason: string;
+
+  if (countryCode === 'CI' && contractType && ['CDDTI', 'INTERIM', 'STAGE'].includes(contractType)) {
+    reason = `Type de contrat ${contractType} non éligible pour la prime d'ancienneté en Côte d'Ivoire`;
+  } else if (seniorityCalc.yearsOfService < 2) {
+    reason = "Moins de 2 ans de service (minimum 24 mois requis)";
+  } else {
+    reason = `${seniorityCalc.yearsOfService} années de service (${(seniorityCalc.rate * 100).toFixed(0)}%)`;
+  }
+
   checks.push({
     componentCode: '21',
     componentName: "Prime d'ancienneté",
-    isEligible: seniorityCalc.yearsOfService >= 2,
-    reason:
-      seniorityCalc.yearsOfService >= 2
-        ? `${seniorityCalc.yearsOfService} années de service (${(seniorityCalc.rate * 100).toFixed(0)}%)`
-        : "Moins de 2 ans de service (minimum 24 mois requis)",
-    suggestedAmount: seniorityCalc.yearsOfService >= 2 ? seniorityCalc.amount : 0,
+    isEligible,
+    reason,
+    suggestedAmount: isEligible ? seniorityCalc.amount : 0,
   });
 
   // Check family allowance eligibility

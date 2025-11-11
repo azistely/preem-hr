@@ -13,8 +13,9 @@ export const tenants = pgTable('tenants', {
   taxId: text('tax_id'),
   businessRegistration: text('business_registration'),
   industry: text('industry'),
-  email: text('email'),
-  hrEmail: text('hr_email'),
+
+  // Sector configuration (required field)
+  sectorCode: varchar('sector_code', { length: 50 }).notNull(),
 
   // CGECI Sector (company-level, determines employee categories and minimum wages)
   cgeciSectorCode: varchar('cgeci_sector_code', { length: 50 }), // 'BANQUES', 'BTP', 'COMMERCE', etc.

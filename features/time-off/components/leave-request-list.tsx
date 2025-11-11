@@ -13,11 +13,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, XCircle, CheckCircle, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, XCircle, CheckCircle, AlertCircle, Wallet, Settings } from 'lucide-react';
 import { format, differenceInBusinessDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +45,7 @@ interface TimeOffRequest {
   reviewNotes?: string | null;
   submittedAt: string;
   reviewedAt?: string | null;
+  isDeductibleForAcp?: boolean;
   policy?: {
     id: string;
     name: string;
@@ -54,6 +61,14 @@ interface LeaveRequestListProps {
 
 export function LeaveRequestList({ requests, employeeId, canApprove = false }: LeaveRequestListProps) {
   const utils = trpc.useUtils();
+
+  // Get current user to check roles
+  const { data: currentUser } = trpc.auth.me.useQuery();
+
+  // Check if user has HR role
+  const isHRUser = currentUser?.role
+    ? ['hr', 'hr_manager', 'super_admin'].includes(currentUser.role)
+    : false;
 
   // Cancel mutation (for employee to cancel their own pending requests)
   const cancelMutation = trpc.timeOff.reject.useMutation({
@@ -88,6 +103,17 @@ export function LeaveRequestList({ requests, employeeId, canApprove = false }: L
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors du rejet');
+    },
+  });
+
+  // Set ACP deductibility (for HR users)
+  const setDeductibleMutation = trpc.timeOff.setDeductibleForACP.useMutation({
+    onSuccess: () => {
+      toast.success('Statut ACP mis à jour');
+      utils.timeOff.getEmployeeRequests.invalidate({ employeeId });
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erreur lors de la mise à jour');
     },
   });
 
@@ -128,6 +154,13 @@ export function LeaveRequestList({ requests, employeeId, canApprove = false }: L
     });
   };
 
+  const handleToggleDeductible = async (requestId: string, isDeductible: boolean) => {
+    await setDeductibleMutation.mutateAsync({
+      timeOffRequestId: requestId,
+      isDeductible: isDeductible,
+    });
+  };
+
   if (!requests || requests.length === 0) {
     return (
       <Card>
@@ -165,6 +198,46 @@ export function LeaveRequestList({ requests, employeeId, canApprove = false }: L
                       {request.policy?.name || 'Type inconnu'}
                     </h3>
                     {getStatusBadge(request.status)}
+
+                    {/* ACP Deductibility Badge */}
+                    {request.isDeductibleForAcp !== undefined && (
+                      <div className="flex items-center gap-1">
+                        <Badge
+                          variant={request.isDeductibleForAcp ? "default" : "secondary"}
+                          className="flex items-center gap-1"
+                        >
+                          <Wallet className="h-3 w-3" />
+                          {request.isDeductibleForAcp ? 'Déductible ACP' : 'Non déductible'}
+                        </Badge>
+
+                        {/* HR-only: Toggle deductibility */}
+                        {isHRUser && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1 hover:bg-muted rounded-sm min-h-[32px] min-w-[32px]">
+                                <Settings className="h-3 w-3 text-muted-foreground" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start">
+                              <DropdownMenuItem
+                                onClick={() => handleToggleDeductible(request.id, true)}
+                                disabled={setDeductibleMutation.isPending}
+                              >
+                                <Wallet className="mr-2 h-4 w-4" />
+                                Déductible pour ACP
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleToggleDeductible(request.id, false)}
+                                disabled={setDeductibleMutation.isPending}
+                              >
+                                <XCircle className="mr-2 h-4 w-4" />
+                                Non déductible pour ACP
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">

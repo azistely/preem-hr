@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Calendar } from 'lucide-react'
+import { Calendar, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { DatePicker } from '@/components/ui/date-picker'
-import { trpc } from '@/lib/trpc'
-import { toast } from '@/components/ui/use-toast'
+import { trpc } from '@/lib/trpc/client'
+import { useToast } from '@/hooks/use-toast'
 
 interface ACPPaymentSectionProps {
   employeeId: string
@@ -25,6 +25,7 @@ export function ACPPaymentSection({ employeeId, initialData }: ACPPaymentSection
   const [paymentDate, setPaymentDate] = useState<Date | null>(initialData?.acpPaymentDate ?? null)
   const [notes, setNotes] = useState(initialData?.acpNotes ?? '')
 
+  const { toast } = useToast()
   const setACPMutation = trpc.employees.setACPPaymentDate.useMutation()
 
   const handleSave = async () => {
@@ -37,7 +38,7 @@ export function ACPPaymentSection({ employeeId, initialData }: ACPPaymentSection
       })
 
       toast({
-        title: 'Enregistré',
+        title: 'Configuration enregistrée',
         description: active
           ? 'Le paiement ACP a été activé pour cet employé'
           : 'Le paiement ACP a été désactivé',
@@ -108,21 +109,6 @@ export function ACPPaymentSection({ employeeId, initialData }: ACPPaymentSection
               />
             </div>
 
-            {/* Preview Button */}
-            <Button
-              variant="ghost"
-              onClick={() => {
-                // TODO: Open ACP preview dialog
-                toast({
-                  title: 'Prévisualisation',
-                  description: 'La prévisualisation ACP sera disponible prochainement',
-                })
-              }}
-              className="w-full min-h-[44px]"
-            >
-              Prévisualiser le calcul ACP
-            </Button>
-
             {/* Last Payment Info */}
             {initialData?.acpLastPaidAt && (
               <div className="text-sm text-muted-foreground">
@@ -140,10 +126,17 @@ export function ACPPaymentSection({ employeeId, initialData }: ACPPaymentSection
         {/* Save Button */}
         <Button
           onClick={handleSave}
-          disabled={active && !paymentDate}
+          disabled={(active && !paymentDate) || setACPMutation.isPending}
           className="w-full min-h-[56px]"
         >
-          Enregistrer
+          {setACPMutation.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              Enregistrement...
+            </>
+          ) : (
+            'Enregistrer'
+          )}
         </Button>
       </CardContent>
     </Card>

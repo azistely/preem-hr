@@ -51,6 +51,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/admin/time-tracking': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/time-tracking/import': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/time-off': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/acp-dashboard': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/public-holidays': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/geofencing': ['hr_manager', 'tenant_admin', 'super_admin'],
 

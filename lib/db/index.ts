@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from '@/drizzle/schema';
+import * as relations from '@/drizzle/relations';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
@@ -76,7 +77,7 @@ console.log('[DB] Serverless mode: max=1, idle_timeout=20s');
  * Standard database client
  * Subject to RLS policies based on JWT auth
  */
-export const db = drizzle({ client, schema });
+export const db = drizzle({ client, schema: { ...schema, ...relations } });
 
 /**
  * Service role database client
@@ -109,7 +110,7 @@ export function getServiceRoleDb() {
     }
 
     serviceRoleClient = postgres(serviceConnectionString, postgresConfig);
-    serviceRoleDb = drizzle({ client: serviceRoleClient, schema });
+    serviceRoleDb = drizzle({ client: serviceRoleClient, schema: { ...schema, ...relations } });
     console.log('[DB] Service role client initialized');
   }
 

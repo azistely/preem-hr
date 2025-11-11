@@ -25,6 +25,8 @@ interface ImportPreview {
     positionTitle: string;
     baseSalary: number;
     hireDate: string;
+    maritalStatus: 'single' | 'married' | 'divorced' | 'widowed';
+    dependentChildrenCount: number;
   }>;
 }
 
@@ -165,14 +167,22 @@ export function BulkImportStep({ onComplete }: BulkImportStepProps) {
             <p className="text-sm text-muted-foreground mb-3">
               Ouvrez le fichier CSV avec Excel ou Google Sheets et remplissez les informations de vos employés
             </p>
-            <div className="bg-white border border-amber-300 rounded-lg p-3 text-sm space-y-1">
+            <div className="bg-white border border-amber-300 rounded-lg p-3 text-sm space-y-2">
               <p className="font-medium">Colonnes requises :</p>
               <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                 <li>Prénom, Nom, Email</li>
                 <li>Poste, Salaire mensuel brut</li>
                 <li>Date d'embauche (format: JJ/MM/AAAA)</li>
+                <li>Situation familiale (single/married/divorced/widowed)</li>
+                <li>Nombre d'enfants (0-10)</li>
                 <li>Téléphone (optionnel)</li>
               </ul>
+              <div className="mt-2 pt-2 border-t border-amber-200">
+                <p className="font-medium text-amber-800">💡 Nouveauté :</p>
+                <p className="text-muted-foreground">
+                  Les personnes à charge (conjoint et enfants) seront automatiquement créées lors de l'import pour les calculs fiscaux.
+                </p>
+              </div>
             </div>
           </div>
         </div>

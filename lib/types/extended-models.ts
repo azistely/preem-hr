@@ -28,11 +28,11 @@ export type GeofenceEmployeeAssignment = InferSelectModel<typeof geofenceEmploye
 
 // Time-Off with Relations
 export type TimeOffBalanceWithPolicy = TimeOffBalance & {
-  policy: TimeOffPolicy;
+  timeOffPolicy: TimeOffPolicy;
 };
 
 export type TimeOffRequestWithPolicy = TimeOffRequest & {
-  policy: TimeOffPolicy;
+  timeOffPolicy: TimeOffPolicy;
 };
 
 export type TimeOffRequestWithEmployee = TimeOffRequest & {
@@ -40,7 +40,7 @@ export type TimeOffRequestWithEmployee = TimeOffRequest & {
 };
 
 export type TimeOffRequestWithRelations = TimeOffRequest & {
-  policy: TimeOffPolicy;
+  timeOffPolicy: TimeOffPolicy;
   employee: Pick<Employee, 'id' | 'firstName' | 'lastName' | 'photoUrl'>;
 };
 

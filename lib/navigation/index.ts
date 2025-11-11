@@ -43,6 +43,7 @@ import {
   FileBarChart,
   Edit3,
   Heart,
+  Wallet,
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
@@ -202,6 +203,7 @@ export const hrManagerMobileSections: NavSection[] = [
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
       { icon: Calendar, label: "Planning des Quarts", href: "/admin/shift-planning" },
       { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },
+      { icon: Wallet, label: "Tableau de bord ACP", href: "/admin/acp-dashboard" },
     ],
   },
   {
@@ -293,6 +295,7 @@ export const hrManagerDesktopSections: NavSection[] = [
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
       { icon: Calendar, label: "Planning des Quarts", href: "/admin/shift-planning" },
       { icon: Calendar, label: "Demandes de congé", href: "/admin/time-off" },
+      { icon: Wallet, label: "Tableau de bord ACP", href: "/admin/acp-dashboard" },
     ],
   },
   {

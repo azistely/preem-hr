@@ -28,6 +28,7 @@ export interface VerifiedDependent {
   dateOfBirth: string;
   age: number;
   relationship: 'child' | 'spouse' | 'other';
+  gender?: 'male' | 'female' | null;
   isVerified: boolean;
   requiresDocument: boolean;
   eligibleForFiscalParts: boolean;
@@ -36,6 +37,14 @@ export interface VerifiedDependent {
   documentNumber?: string | null;
   documentExpiryDate?: string | null;
   notes?: string | null;
+  // CMU tracking fields
+  cnpsNumber?: string | null;
+  cmuNumber?: string | null;
+  coveredByOtherEmployer: boolean;
+  coverageCertificateType?: string | null;
+  coverageCertificateNumber?: string | null;
+  coverageCertificateUrl?: string | null;
+  coverageCertificateExpiryDate?: string | null;
 }
 
 export interface DependentCounts {
@@ -137,6 +146,7 @@ export async function getVerifiedDependents(
           dateOfBirth: dep.dateOfBirth,
           age,
           relationship: dep.relationship as 'child' | 'spouse' | 'other',
+          gender: (dep.gender as 'male' | 'female' | null) ?? null,
           isVerified: hasValidDocument,
           requiresDocument: true,
           eligibleForFiscalParts: hasValidDocument && !!dep.eligibleForFiscalParts,
@@ -145,6 +155,13 @@ export async function getVerifiedDependents(
           documentNumber: dep.documentNumber,
           documentExpiryDate: dep.documentExpiryDate,
           notes: dep.notes,
+          cnpsNumber: dep.cnpsNumber,
+          cmuNumber: dep.cmuNumber,
+          coveredByOtherEmployer: dep.coveredByOtherEmployer ?? false,
+          coverageCertificateType: dep.coverageCertificateType,
+          coverageCertificateNumber: dep.coverageCertificateNumber,
+          coverageCertificateUrl: dep.coverageCertificateUrl,
+          coverageCertificateExpiryDate: dep.coverageCertificateExpiryDate,
         };
       }
 
@@ -159,6 +176,7 @@ export async function getVerifiedDependents(
             dateOfBirth: dep.dateOfBirth,
             age,
             relationship: dep.relationship as 'child' | 'spouse' | 'other',
+            gender: (dep.gender as 'male' | 'female' | null) ?? null,
             isVerified: true,
             requiresDocument: false,
             eligibleForFiscalParts: dep.eligibleForFiscalParts,
@@ -167,6 +185,13 @@ export async function getVerifiedDependents(
             documentNumber: dep.documentNumber,
             documentExpiryDate: dep.documentExpiryDate,
             notes: dep.notes,
+            cnpsNumber: dep.cnpsNumber,
+            cmuNumber: dep.cmuNumber,
+            coveredByOtherEmployer: dep.coveredByOtherEmployer ?? false,
+            coverageCertificateType: dep.coverageCertificateType,
+            coverageCertificateNumber: dep.coverageCertificateNumber,
+            coverageCertificateUrl: dep.coverageCertificateUrl,
+            coverageCertificateExpiryDate: dep.coverageCertificateExpiryDate,
           };
         }
 
@@ -182,6 +207,7 @@ export async function getVerifiedDependents(
           dateOfBirth: dep.dateOfBirth,
           age,
           relationship: dep.relationship as 'child' | 'spouse' | 'other',
+          gender: (dep.gender as 'male' | 'female' | null) ?? null,
           isVerified: hasValidDocument,
           requiresDocument: true,
           eligibleForFiscalParts: hasValidDocument && !!dep.eligibleForFiscalParts,
@@ -190,6 +216,13 @@ export async function getVerifiedDependents(
           documentNumber: dep.documentNumber,
           documentExpiryDate: dep.documentExpiryDate,
           notes: dep.notes,
+          cnpsNumber: dep.cnpsNumber,
+          cmuNumber: dep.cmuNumber,
+          coveredByOtherEmployer: dep.coveredByOtherEmployer ?? false,
+          coverageCertificateType: dep.coverageCertificateType,
+          coverageCertificateNumber: dep.coverageCertificateNumber,
+          coverageCertificateUrl: dep.coverageCertificateUrl,
+          coverageCertificateExpiryDate: dep.coverageCertificateExpiryDate,
         };
       }
 
@@ -205,6 +238,7 @@ export async function getVerifiedDependents(
         dateOfBirth: dep.dateOfBirth,
         age,
         relationship: dep.relationship as 'child' | 'spouse' | 'other',
+        gender: (dep.gender as 'male' | 'female' | null) ?? null,
         isVerified: hasValidDocument,
         requiresDocument: true,
         eligibleForFiscalParts: hasValidDocument && !!dep.eligibleForFiscalParts,
@@ -213,6 +247,13 @@ export async function getVerifiedDependents(
         documentNumber: dep.documentNumber,
         documentExpiryDate: dep.documentExpiryDate,
         notes: dep.notes,
+        cnpsNumber: dep.cnpsNumber,
+        cmuNumber: dep.cmuNumber,
+        coveredByOtherEmployer: dep.coveredByOtherEmployer ?? false,
+        coverageCertificateType: dep.coverageCertificateType,
+        coverageCertificateNumber: dep.coverageCertificateNumber,
+        coverageCertificateUrl: dep.coverageCertificateUrl,
+        coverageCertificateExpiryDate: dep.coverageCertificateExpiryDate,
       };
     })
     .filter(dep => dep.isVerified); // Only return verified dependents
@@ -238,12 +279,20 @@ export async function getVerifiedDependentsCount(
   return verified.filter(dep => {
     if (purpose === 'fiscal_parts') {
       // For fiscal parts: Only count CHILDREN (spouse is in married base)
+      // Fiscal parts count ALL verified children regardless of CMU coverage status
       return dep.eligibleForFiscalParts && dep.relationship !== 'spouse';
     } else {
       // For CMU: Only count CHILDREN (spouse is added by maritalStatus in CMU calculation)
       // CMU formula: totalPersons = 1 (employee) + (married ? 1 : 0) + dependentChildren
       // So dependentChildren should NOT include the spouse to avoid double-counting
-      return dep.eligibleForCmu && dep.relationship !== 'spouse';
+      //
+      // ADDITIONALLY: Exclude dependents who are:
+      // 1. Covered by another employer's CMU (spouse's job, ex-spouse's job, etc.)
+      // 2. Have their own CMU registration number (working adults)
+      const isCoveredElsewhere = dep.coveredByOtherEmployer || !!dep.cmuNumber;
+      return dep.eligibleForCmu
+        && dep.relationship !== 'spouse'
+        && !isCoveredElsewhere;
     }
   }).length;
 }
@@ -400,12 +449,25 @@ export async function getDependentsWithExpiringDocuments(
       dateOfBirth: dep.dateOfBirth,
       age: calculateAge(dep.dateOfBirth),
       relationship: dep.relationship as 'child' | 'spouse' | 'other',
+      gender: (dep.gender as 'male' | 'female' | null) ?? null,
       isVerified: !!dep.isVerified,
       requiresDocument: dep.requiresDocument,
       eligibleForFiscalParts: dep.eligibleForFiscalParts,
       eligibleForCmu: dep.eligibleForCmu,
       documentType: dep.documentType,
+      documentNumber: dep.documentNumber,
       documentExpiryDate: dep.documentExpiryDate,
+      notes: dep.notes,
+      cnpsNumber: dep.cnpsNumber,
+      cmuNumber: dep.cmuNumber,
+      coveredByOtherEmployer: dep.coveredByOtherEmployer,
+      coverageCertificateType: dep.coverageCertificateType,
+      coverageCertificateNumber: dep.coverageCertificateNumber,
+      coverageCertificateUrl: dep.coverageCertificateUrl,
+      coverageCertificateExpiryDate: dep.coverageCertificateExpiryDate,
+      createdAt: dep.createdAt,
+      updatedAt: dep.updatedAt,
+      status: dep.status as 'active' | 'inactive' | 'expired',
     }));
 }
 
@@ -483,6 +545,7 @@ export async function getAllDependents(
     dateOfBirth: dep.dateOfBirth,
     age: calculateAge(dep.dateOfBirth),
     relationship: dep.relationship as 'child' | 'spouse' | 'other',
+    gender: (dep.gender as 'male' | 'female' | null) ?? null,
     isVerified: !!dep.isVerified,
     requiresDocument: dep.requiresDocument,
     eligibleForFiscalParts: dep.eligibleForFiscalParts,
@@ -490,5 +553,16 @@ export async function getAllDependents(
     documentType: dep.documentType,
     documentNumber: dep.documentNumber,
     documentExpiryDate: dep.documentExpiryDate,
+    notes: dep.notes,
+    cnpsNumber: dep.cnpsNumber,
+    cmuNumber: dep.cmuNumber,
+    coveredByOtherEmployer: dep.coveredByOtherEmployer,
+    coverageCertificateType: dep.coverageCertificateType,
+    coverageCertificateNumber: dep.coverageCertificateNumber,
+    coverageCertificateUrl: dep.coverageCertificateUrl,
+    coverageCertificateExpiryDate: dep.coverageCertificateExpiryDate,
+    createdAt: dep.createdAt,
+    updatedAt: dep.updatedAt,
+    status: dep.status as 'active' | 'inactive' | 'expired',
   }));
 }

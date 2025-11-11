@@ -45,7 +45,6 @@ export const alertEscalationFunction = inngest.createFunction(
       const alert = await db.query.alerts.findFirst({
         where: and(eq(alerts.id, alertId), eq(alerts.tenantId, tenantId)),
         with: {
-          assignee: true,
           employee: true,
         },
       });

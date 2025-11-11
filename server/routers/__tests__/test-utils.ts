@@ -19,6 +19,7 @@ export const testTenant = {
   countryCode: 'CI',
   currency: 'XOF',
   timezone: 'Africa/Abidjan',
+  sectorCode: 'SERVICES', // Required field in actual schema
   plan: 'trial' as const,
   features: [],
   settings: {},

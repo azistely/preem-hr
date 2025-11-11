@@ -12,12 +12,12 @@
 
 // @ts-nocheck - Temporary: Drizzle relations not properly typed yet
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure, managerProcedure } from '../api/trpc';
+import { createTRPCRouter, publicProcedure, protectedProcedure, managerProcedure } from '../api/trpc';
 import * as timeOffService from '@/features/time-off/services/time-off.service';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { timeOffPolicies, timeOffRequests, timeOffBalances } from '@/drizzle/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { timeOffPolicies, timeOffRequests, timeOffBalances, employees } from '@/drizzle/schema';
+import { eq, and, sql, like, or, gte, lte, inArray, ne, desc } from 'drizzle-orm';
 import type {
   TimeOffBalanceWithPolicy,
   TimeOffRequestWithPolicy,
@@ -169,16 +169,36 @@ export const timeOffRouter = createTRPCRouter({
       })
     )
     .query(async ({ input, ctx }): Promise<TimeOffBalanceWithPolicy[]> => {
-      return await db.query.timeOffBalances.findMany({
-        where: and(
-          eq(timeOffBalances.employeeId, input.employeeId),
-          eq(timeOffBalances.tenantId, ctx.user.tenantId)
-        ),
-        with: {
-          // @ts-ignore - Drizzle relations not fully typed yet
-          policy: true,
-        },
-      }) as TimeOffBalanceWithPolicy[];
+      // Fetch balances without using db.query API (since relations aren't defined)
+      const balances = await db
+        .select()
+        .from(timeOffBalances)
+        .where(
+          and(
+            eq(timeOffBalances.employeeId, input.employeeId),
+            eq(timeOffBalances.tenantId, ctx.user.tenantId)
+          )
+        );
+
+      // Fetch associated policies
+      const policyIds = balances.map((b) => b.policyId);
+      if (policyIds.length === 0) {
+        return [];
+      }
+
+      const policies = await db
+        .select()
+        .from(timeOffPolicies)
+        .where(inArray(timeOffPolicies.id, policyIds));
+
+      // Create a map for quick lookup
+      const policyMap = new Map(policies.map((p) => [p.id, p]));
+
+      // Combine balances with policies
+      return balances.map((balance) => ({
+        ...balance,
+        timeOffPolicy: policyMap.get(balance.policyId) || null,
+      })) as TimeOffBalanceWithPolicy[];
     }),
 
   /**
@@ -194,7 +214,7 @@ export const timeOffRouter = createTRPCRouter({
         // @ts-ignore - Drizzle relations not fully typed yet
         employee: true,
         // @ts-ignore - Drizzle relations not fully typed yet
-        policy: true,
+        timeOffPolicy: true,
       },
       orderBy: (requests, { desc }) => [desc(requests.submittedAt)],
     }) as TimeOffRequestWithRelations[];
@@ -207,9 +227,6 @@ export const timeOffRouter = createTRPCRouter({
    */
   getPendingRequestsForTeam: managerProcedure
     .query(async ({ ctx }) => {
-      const { employees } = await import('@/drizzle/schema');
-      const { eq } = await import('drizzle-orm');
-
       if (!ctx.user.employeeId) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -234,7 +251,6 @@ export const timeOffRouter = createTRPCRouter({
       }
 
       // Fetch pending requests from team members
-      const { inArray } = await import('drizzle-orm');
       return await db.query.timeOffRequests.findMany({
         where: (requests, { and, eq, inArray }) =>
           and(
@@ -244,7 +260,7 @@ export const timeOffRouter = createTRPCRouter({
           ),
         with: {
           employee: true,
-          policy: true,
+          timeOffPolicy: true,
         },
         orderBy: (requests, { desc }) => [desc(requests.submittedAt)],
       }) as TimeOffRequestWithRelations[];
@@ -266,7 +282,7 @@ export const timeOffRouter = createTRPCRouter({
           eq(timeOffRequests.tenantId, ctx.user.tenantId)
         ),
         with: {
-          policy: true,
+          timeOffPolicy: true,
         },
         orderBy: (requests, { desc }) => [desc(requests.submittedAt)],
       }) as TimeOffRequestWithPolicy[];
@@ -352,7 +368,7 @@ export const timeOffRouter = createTRPCRouter({
   /**
    * Get pending requests with employee balances
    */
-  getPendingRequestsWithBalances: publicProcedure.query(async ({ ctx }): Promise<TimeOffRequestWithBalanceAndRelations[]> => {
+  getPendingRequestsWithBalances: protectedProcedure.query(async ({ ctx }): Promise<TimeOffRequestWithBalanceAndRelations[]> => {
     const requests = await db.query.timeOffRequests.findMany({
       where: and(
         eq(timeOffRequests.tenantId, ctx.user.tenantId),
@@ -367,7 +383,7 @@ export const timeOffRouter = createTRPCRouter({
             photoUrl: true,
           },
         },
-        policy: true,
+        timeOffPolicy: true,
       },
       orderBy: (requests, { desc }) => [desc(requests.submittedAt)],
     }) as TimeOffRequestWithRelations[];
@@ -425,6 +441,7 @@ export const timeOffRouter = createTRPCRouter({
               lastName: true,
             },
           },
+          timeOffPolicy: true,
         },
       });
 
@@ -465,7 +482,7 @@ export const timeOffRouter = createTRPCRouter({
             lastName: true,
           },
         },
-        policy: {
+        timeOffPolicy: {
           columns: {
             id: true,
             name: true,
@@ -482,8 +499,6 @@ export const timeOffRouter = createTRPCRouter({
    * Get pending requests summary
    */
   getPendingSummary: publicProcedure.query(async ({ ctx }) => {
-    const { sql } = await import('drizzle-orm');
-
     const result = await db
       .select({
         count: sql<number>`count(*)`,
@@ -556,5 +571,294 @@ export const timeOffRouter = createTRPCRouter({
           message: error.message || 'Erreur lors de la mise à jour de la déductibilité ACP',
         });
       }
+    }),
+
+  /**
+   * Get filtered time-off requests with advanced filtering
+   * Supports: date range, employee search, department, status, policy type
+   * Used by admin time-off page for bulk management
+   */
+  getFilteredRequests: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'cancelled', 'all']).default('all'),
+        policyType: z.enum(['all', 'annual_leave', 'sick_leave', 'maternity', 'paternity', 'unpaid']).default('all'),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        employeeSearch: z.string().optional(),
+      })
+    )
+    .query(async ({ input, ctx }): Promise<TimeOffRequestWithBalanceAndRelations[]> => {
+      // Build where conditions
+      const conditions: any[] = [eq(timeOffRequests.tenantId, ctx.user.tenantId)];
+
+      // Status filter
+      if (input.status !== 'all') {
+        conditions.push(eq(timeOffRequests.status, input.status));
+      }
+
+      // Date range filter
+      if (input.startDate) {
+        conditions.push(gte(timeOffRequests.endDate, input.startDate.toISOString().split('T')[0]));
+      }
+      if (input.endDate) {
+        conditions.push(lte(timeOffRequests.startDate, input.endDate.toISOString().split('T')[0]));
+      }
+
+      // Get all requests without relations (since relations aren't defined)
+      const baseRequests = await db
+        .select()
+        .from(timeOffRequests)
+        .where(and(...conditions))
+        .orderBy(desc(timeOffRequests.submittedAt));
+
+      // Fetch related data separately
+      const requestsWithRelations = await Promise.all(
+        baseRequests.map(async (request) => {
+          // Fetch employee
+          const [employee] = await db
+            .select({
+              id: employees.id,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+              email: employees.email,
+            })
+            .from(employees)
+            .where(eq(employees.id, request.employeeId))
+            .limit(1);
+
+          // Fetch policy
+          const [policy] = await db
+            .select({
+              id: timeOffPolicies.id,
+              name: timeOffPolicies.name,
+              policyType: timeOffPolicies.policyType,
+              tenantId: timeOffPolicies.tenantId,
+            })
+            .from(timeOffPolicies)
+            .where(eq(timeOffPolicies.id, request.policyId))
+            .limit(1);
+
+          return {
+            ...request,
+            employee,
+            policy,
+          };
+        })
+      );
+
+      // Apply filters
+      let filteredRequests = requestsWithRelations;
+
+      // Employee search filter
+      if (input.employeeSearch) {
+        const searchLower = input.employeeSearch.toLowerCase();
+        filteredRequests = filteredRequests.filter(req =>
+          req.employee.firstName.toLowerCase().includes(searchLower) ||
+          req.employee.lastName.toLowerCase().includes(searchLower)
+        );
+      }
+
+      // Policy type filter
+      if (input.policyType !== 'all') {
+        filteredRequests = filteredRequests.filter(req =>
+          req.policy.policyType === input.policyType
+        );
+      }
+
+      // Get balances for each request
+      const requestsWithBalances = await Promise.all(
+        filteredRequests.map(async (request) => {
+          const [balance] = await db
+            .select()
+            .from(timeOffBalances)
+            .where(and(
+              eq(timeOffBalances.employeeId, request.employeeId),
+              eq(timeOffBalances.policyId, request.policyId)
+            ))
+            .limit(1);
+
+          return {
+            ...request,
+            balance: balance || null,
+          };
+        })
+      );
+
+      return requestsWithBalances as TimeOffRequestWithBalanceAndRelations[];
+    }),
+
+  /**
+   * Detect conflicts for a date range
+   * Returns employees who have overlapping approved leave
+   */
+  detectConflictsByDateRange: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.date(),
+        endDate: z.date(),
+        excludeRequestId: z.string().uuid().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const conditions: any[] = [
+        eq(timeOffRequests.tenantId, ctx.user.tenantId),
+        eq(timeOffRequests.status, 'approved'),
+        // Overlapping logic: request.startDate <= input.endDate AND request.endDate >= input.startDate
+        lte(timeOffRequests.startDate, input.endDate.toISOString().split('T')[0]),
+        gte(timeOffRequests.endDate, input.startDate.toISOString().split('T')[0]),
+      ];
+
+      // Exclude specific request (when editing)
+      if (input.excludeRequestId) {
+        conditions.push(ne(timeOffRequests.id, input.excludeRequestId));
+      }
+
+      // Fetch conflicts using manual joins
+      const conflictsRaw = await db
+        .select({
+          id: timeOffRequests.id,
+          employeeId: timeOffRequests.employeeId,
+          policyId: timeOffRequests.policyId,
+          startDate: timeOffRequests.startDate,
+          endDate: timeOffRequests.endDate,
+          status: timeOffRequests.status,
+          totalDays: timeOffRequests.totalDays,
+          // Employee fields (aliased)
+          employeeIdField: employees.id,
+          employeeFirstName: employees.firstName,
+          employeeLastName: employees.lastName,
+          // Policy fields (aliased)
+          policyIdField: timeOffPolicies.id,
+          policyName: timeOffPolicies.name,
+        })
+        .from(timeOffRequests)
+        .innerJoin(employees, eq(timeOffRequests.employeeId, employees.id))
+        .innerJoin(timeOffPolicies, eq(timeOffRequests.policyId, timeOffPolicies.id))
+        .where(and(...conditions));
+
+      // Transform flat results to nested structure
+      const conflicts = conflictsRaw.map(row => ({
+        id: row.id,
+        employeeId: row.employeeId,
+        policyId: row.policyId,
+        startDate: row.startDate,
+        endDate: row.endDate,
+        status: row.status,
+        totalDays: row.totalDays,
+        employee: {
+          id: row.employeeIdField,
+          firstName: row.employeeFirstName,
+          lastName: row.employeeLastName,
+        },
+        policy: {
+          id: row.policyIdField,
+          name: row.policyName,
+        },
+      }));
+
+      return conflicts;
+    }),
+
+  /**
+   * Detect conflicts for multiple requests at once
+   * Returns a map of requestId -> conflicts[]
+   * This allows checking conflicts for all pending requests in a single query
+   */
+  detectConflictsForRequests: protectedProcedure
+    .input(
+      z.object({
+        requests: z.array(
+          z.object({
+            id: z.string().uuid(),
+            startDate: z.string(), // ISO date string
+            endDate: z.string(),   // ISO date string
+          })
+        ),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      // If no requests, return empty map
+      if (input.requests.length === 0) {
+        return {};
+      }
+
+      // Build OR conditions for all date ranges
+      // For each request, we want to find approved leaves that overlap
+      const dateRangeConditions = input.requests.map(req =>
+        and(
+          // Overlapping logic: approved.startDate <= req.endDate AND approved.endDate >= req.startDate
+          lte(timeOffRequests.startDate, req.endDate),
+          gte(timeOffRequests.endDate, req.startDate),
+          // Exclude the request itself
+          ne(timeOffRequests.id, req.id)
+        )
+      );
+
+      // Fetch all potentially conflicting approved leaves
+      const conflictsRaw = await db
+        .select({
+          id: timeOffRequests.id,
+          employeeId: timeOffRequests.employeeId,
+          policyId: timeOffRequests.policyId,
+          startDate: timeOffRequests.startDate,
+          endDate: timeOffRequests.endDate,
+          status: timeOffRequests.status,
+          totalDays: timeOffRequests.totalDays,
+          // Employee fields
+          employeeIdField: employees.id,
+          employeeFirstName: employees.firstName,
+          employeeLastName: employees.lastName,
+          // Policy fields
+          policyIdField: timeOffPolicies.id,
+          policyName: timeOffPolicies.name,
+        })
+        .from(timeOffRequests)
+        .innerJoin(employees, eq(timeOffRequests.employeeId, employees.id))
+        .innerJoin(timeOffPolicies, eq(timeOffRequests.policyId, timeOffPolicies.id))
+        .where(
+          and(
+            eq(timeOffRequests.tenantId, ctx.user.tenantId),
+            eq(timeOffRequests.status, 'approved'),
+            or(...dateRangeConditions)
+          )
+        );
+
+      // Transform to structured format
+      const allConflicts = conflictsRaw.map(row => ({
+        id: row.id,
+        employeeId: row.employeeId,
+        policyId: row.policyId,
+        startDate: row.startDate,
+        endDate: row.endDate,
+        status: row.status,
+        totalDays: row.totalDays,
+        employee: {
+          id: row.employeeIdField,
+          firstName: row.employeeFirstName,
+          lastName: row.employeeLastName,
+        },
+        policy: {
+          id: row.policyIdField,
+          name: row.policyName,
+        },
+      }));
+
+      // Map conflicts to each request
+      const conflictsByRequestId: Record<string, typeof allConflicts> = {};
+
+      for (const req of input.requests) {
+        // Filter conflicts that actually overlap with this specific request
+        conflictsByRequestId[req.id] = allConflicts.filter(conflict => {
+          // Check if conflict overlaps with request dates
+          return (
+            conflict.startDate <= req.endDate &&
+            conflict.endDate >= req.startDate &&
+            conflict.id !== req.id
+          );
+        });
+      }
+
+      return conflictsByRequestId;
     }),
 });

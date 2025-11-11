@@ -389,6 +389,7 @@ export async function calculatePayrollRun(
 
         // Auto-calculate Prime d'ancienneté if not already in stored components
         // This ensures employees receive seniority bonus even if component wasn't explicitly added
+        // IMPORTANT: Contract type eligibility is checked in the calculator (CI: CDI/CDD only, no CDDTI/INTERIM/STAGE)
         let effectiveSeniorityBonus = breakdown.seniorityBonus;
 
         if (effectiveSeniorityBonus === 0 && salaireCategoriel > 0) {
@@ -401,12 +402,15 @@ export async function calculatePayrollRun(
             currentDate: new Date(run.periodEnd),
             tenantId: run.tenantId,
             countryCode: tenant.countryCode,
+            contractType, // Pass contract type for eligibility checks
           });
 
           effectiveSeniorityBonus = seniorityCalc.amount;
 
           if (effectiveSeniorityBonus > 0) {
             console.log(`[PAYROLL AUTO-CALC] Employee ${employee.id} (${employee.firstName} ${employee.lastName}): Auto-calculated Prime d'ancienneté = ${effectiveSeniorityBonus} FCFA (${seniorityCalc.yearsOfService} years, ${(seniorityCalc.rate * 100).toFixed(0)}%)`);
+          } else if (seniorityCalc.yearsOfService >= 2 && contractType && ['CDDTI', 'INTERIM', 'STAGE'].includes(contractType)) {
+            console.log(`[PAYROLL AUTO-CALC] Employee ${employee.id} (${employee.firstName} ${employee.lastName}): Seniority bonus excluded for contract type ${contractType} (${seniorityCalc.yearsOfService} years of service)`);
           }
         }
 

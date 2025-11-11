@@ -247,7 +247,7 @@ export default function ManagerTimeOffApprovalsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground mb-1">Type de congé</p>
                       <p className="font-semibold">
-                        {request.policy?.name || getTypeLabel(request.type || 'vacation')}
+                        {request.timeOffPolicy?.name || getTypeLabel(request.type || 'vacation')}
                       </p>
                     </div>
                     <div>
