@@ -77,6 +77,10 @@ const createSchema = z.object({
   lastName: z.string().min(1, 'Le nom est requis'),
   dateOfBirth: z.string().min(1, 'La date de naissance est requise'),
   relationship: z.enum(['child', 'spouse', 'other']),
+  gender: z.enum(['male', 'female'], {
+    required_error: 'Le genre est requis',
+    invalid_type_error: 'Le genre doit être "male" ou "female"',
+  }),
   documentType: z.string().optional(),
   documentNumber: z.string().optional(),
   documentIssueDate: z.string().optional(),
@@ -85,6 +89,23 @@ const createSchema = z.object({
   notes: z.string().optional(),
   eligibleForFiscalParts: z.boolean().default(true),
   eligibleForCmu: z.boolean().default(true),
+  // CMU tracking fields
+  cnpsNumber: z.string().optional(),
+  cmuNumber: z.string().optional(),
+  coveredByOtherEmployer: z.boolean().default(false),
+  coverageCertificateType: z.string().optional(),
+  coverageCertificateNumber: z.string().optional(),
+  coverageCertificateUrl: z.string().optional(),
+  coverageCertificateExpiryDate: z.string().optional(),
+}).refine((data) => {
+  // If covered by other employer, only certificate type is required (URL and expiry are optional)
+  if (data.coveredByOtherEmployer) {
+    return !!data.coverageCertificateType;
+  }
+  return true;
+}, {
+  message: "Le type d'attestation de couverture est requis si le dépendant est couvert par un autre employeur",
+  path: ['coverageCertificateType'],
 });
 
 const updateSchema = z.object({
@@ -93,6 +114,7 @@ const updateSchema = z.object({
   lastName: z.string().min(1).optional(),
   dateOfBirth: z.string().optional(),
   relationship: z.enum(['child', 'spouse', 'other']).optional(),
+  gender: z.enum(['male', 'female']).optional(),
   documentType: z.string().optional(),
   documentNumber: z.string().optional(),
   documentIssueDate: z.string().optional(),
@@ -102,6 +124,23 @@ const updateSchema = z.object({
   eligibleForFiscalParts: z.boolean().optional(),
   eligibleForCmu: z.boolean().optional(),
   status: z.enum(['active', 'inactive', 'expired']).optional(),
+  // CMU tracking fields
+  cnpsNumber: z.string().optional(),
+  cmuNumber: z.string().optional(),
+  coveredByOtherEmployer: z.boolean().optional(),
+  coverageCertificateType: z.string().optional(),
+  coverageCertificateNumber: z.string().optional(),
+  coverageCertificateUrl: z.string().optional(),
+  coverageCertificateExpiryDate: z.string().optional(),
+}).refine((data) => {
+  // If covered by other employer is being set to true, only certificate type is required (URL and expiry are optional)
+  if (data.coveredByOtherEmployer === true) {
+    return !!data.coverageCertificateType;
+  }
+  return true;
+}, {
+  message: "Le type d'attestation de couverture est requis si le dépendant est couvert par un autre employeur",
+  path: ['coverageCertificateType'],
 });
 
 const deleteSchema = z.object({
@@ -226,6 +265,7 @@ export const dependentsRouter = createTRPCRouter({
             dateOfBirth: input.dateOfBirth,
             relationship: input.relationship,
             isVerified,
+            gender: input.gender,
             documentType: input.documentType || null,
             documentNumber: input.documentNumber || null,
             documentIssueDate: input.documentIssueDate || null,
@@ -234,6 +274,14 @@ export const dependentsRouter = createTRPCRouter({
             notes: input.notes || null,
             eligibleForFiscalParts: input.eligibleForFiscalParts,
             eligibleForCmu: input.eligibleForCmu,
+            // CMU tracking fields
+            cnpsNumber: input.cnpsNumber || null,
+            cmuNumber: input.cmuNumber || null,
+            coveredByOtherEmployer: input.coveredByOtherEmployer,
+            coverageCertificateType: input.coverageCertificateType || null,
+            coverageCertificateNumber: input.coverageCertificateNumber || null,
+            coverageCertificateUrl: input.coverageCertificateUrl || null,
+            coverageCertificateExpiryDate: input.coverageCertificateExpiryDate || null,
             createdBy: ctx.user.id,
             updatedBy: ctx.user.id,
           })
@@ -321,12 +369,32 @@ export const dependentsRouter = createTRPCRouter({
           mergedData.documentExpiryDate
         );
 
-        // Update dependent
-        const { id, ...updateData } = input;
+        // Update dependent - convert empty strings to null for optional fields
         const [updated] = await db
           .update(employeeDependents)
           .set({
-            ...updateData,
+            ...(input.firstName && { firstName: input.firstName }),
+            ...(input.lastName && { lastName: input.lastName }),
+            ...(input.dateOfBirth && { dateOfBirth: input.dateOfBirth }),
+            ...(input.relationship && { relationship: input.relationship }),
+            ...(input.gender !== undefined && { gender: input.gender || null }),
+            ...(input.documentType !== undefined && { documentType: input.documentType || null }),
+            ...(input.documentNumber !== undefined && { documentNumber: input.documentNumber || null }),
+            ...(input.documentIssueDate !== undefined && { documentIssueDate: input.documentIssueDate || null }),
+            ...(input.documentExpiryDate !== undefined && { documentExpiryDate: input.documentExpiryDate || null }),
+            ...(input.documentUrl !== undefined && { documentUrl: input.documentUrl || null }),
+            ...(input.notes !== undefined && { notes: input.notes || null }),
+            ...(input.eligibleForFiscalParts !== undefined && { eligibleForFiscalParts: input.eligibleForFiscalParts }),
+            ...(input.eligibleForCmu !== undefined && { eligibleForCmu: input.eligibleForCmu }),
+            ...(input.status && { status: input.status }),
+            // CMU tracking fields - convert empty strings to null
+            ...(input.cnpsNumber !== undefined && { cnpsNumber: input.cnpsNumber || null }),
+            ...(input.cmuNumber !== undefined && { cmuNumber: input.cmuNumber || null }),
+            ...(input.coveredByOtherEmployer !== undefined && { coveredByOtherEmployer: input.coveredByOtherEmployer }),
+            ...(input.coverageCertificateType !== undefined && { coverageCertificateType: input.coverageCertificateType || null }),
+            ...(input.coverageCertificateNumber !== undefined && { coverageCertificateNumber: input.coverageCertificateNumber || null }),
+            ...(input.coverageCertificateUrl !== undefined && { coverageCertificateUrl: input.coverageCertificateUrl || null }),
+            ...(input.coverageCertificateExpiryDate !== undefined && { coverageCertificateExpiryDate: input.coverageCertificateExpiryDate || null }),
             isVerified,
             updatedAt: new Date().toISOString(),
             updatedBy: ctx.user.id,

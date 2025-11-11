@@ -18,6 +18,11 @@ import { employees, employeeSalaries, positions, assignments } from '@/lib/db/sc
 import { timeOffBalances, timeOffPolicies, benefitPlans, employeeBenefitEnrollments, employmentContracts } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { createClient } from '@supabase/supabase-js';
+import {
+  createPlaceholderDependents,
+  normalizeMaritalStatus,
+  validateDependentChildrenCount,
+} from '@/features/employees/services/auto-dependent-creation.service';
 
 // ============================================================================
 // Supabase Storage Client
@@ -547,6 +552,28 @@ export const employeeImportRouter = createTRPCRouter({
 
             const [employee] = await tx.insert(employees).values(employeeData).returning();
             created.push(employee);
+
+            // ===================================================================
+            // Auto-create placeholder dependents (spouse + children)
+            // ===================================================================
+            const normalizedMaritalStatus = normalizeMaritalStatus(row.maritalStatus);
+            const validatedChildrenCount = validateDependentChildrenCount(
+              row.dependentChildren?.toString()
+            );
+
+            if (normalizedMaritalStatus && validatedChildrenCount !== null) {
+              console.log(
+                `[IMPORT] Creating placeholder dependents for ${employee.employeeNumber}: ` +
+                `maritalStatus=${normalizedMaritalStatus}, children=${validatedChildrenCount}`
+              );
+
+              await createPlaceholderDependents({
+                employeeId: employee.id,
+                tenantId,
+                maritalStatus: normalizedMaritalStatus,
+                dependentChildrenCount: validatedChildrenCount,
+              });
+            }
 
             // ===================================================================
             // Create employment contract record (NORMALIZED ARCHITECTURE)

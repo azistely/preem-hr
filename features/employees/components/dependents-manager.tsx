@@ -13,7 +13,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -39,10 +39,19 @@ interface DependentFormData {
   lastName: string;
   dateOfBirth: string;
   relationship: 'child' | 'spouse' | 'other';
+  gender?: 'male' | 'female';
   documentType?: string;
   documentNumber?: string;
   documentExpiryDate?: string;
   notes?: string;
+  // CMU tracking fields
+  cnpsNumber?: string;
+  cmuNumber?: string;
+  coveredByOtherEmployer?: boolean;
+  coverageCertificateType?: string;
+  coverageCertificateNumber?: string;
+  coverageCertificateUrl?: string;
+  coverageCertificateExpiryDate?: string;
 }
 
 export function DependentsManager({
@@ -98,16 +107,24 @@ export function DependentsManager({
   });
 
   const handleSubmit = (data: DependentFormData) => {
+    // Validate gender is provided (required for CMU tracking)
+    if (!data.gender) {
+      alert('Le genre est requis pour tous les dépendants.');
+      return;
+    }
+
     if (data.id) {
       updateMutation.mutate({
         id: data.id,
         ...data,
+        gender: data.gender, // Explicitly pass to satisfy TypeScript
       });
     } else {
       createMutation.mutate({
         employeeId,
         tenantId,
         ...data,
+        gender: data.gender, // Explicitly pass to satisfy TypeScript
       });
     }
   };
@@ -224,7 +241,7 @@ export function DependentsManager({
               Ajouter
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DependentForm
               data={editingDependent}
               onSubmit={handleSubmit}
@@ -307,10 +324,19 @@ export function DependentsManager({
                           lastName: dependent.lastName,
                           dateOfBirth: dependent.dateOfBirth,
                           relationship: dependent.relationship,
+                          gender: dependent.gender || undefined,
                           documentType: dependent.documentType || '',
                           documentNumber: dependent.documentNumber || '',
                           documentExpiryDate: dependent.documentExpiryDate || '',
                           notes: dependent.notes || '',
+                          // CMU tracking fields
+                          cnpsNumber: dependent.cnpsNumber || '',
+                          cmuNumber: dependent.cmuNumber || '',
+                          coveredByOtherEmployer: dependent.coveredByOtherEmployer || false,
+                          coverageCertificateType: dependent.coverageCertificateType || '',
+                          coverageCertificateNumber: dependent.coverageCertificateNumber || '',
+                          coverageCertificateUrl: dependent.coverageCertificateUrl || '',
+                          coverageCertificateExpiryDate: dependent.coverageCertificateExpiryDate || '',
                         });
                         setIsDialogOpen(true);
                       }}
@@ -377,12 +403,47 @@ function DependentForm({ data, onSubmit, onCancel, isSubmitting }: DependentForm
     lastName: data?.lastName || '',
     dateOfBirth: data?.dateOfBirth || '',
     relationship: data?.relationship || 'child',
+    gender: data?.gender,
     documentType: data?.documentType || '',
     documentNumber: data?.documentNumber || '',
     documentExpiryDate: data?.documentExpiryDate || '',
     notes: data?.notes || '',
+    // CMU tracking fields
+    cnpsNumber: data?.cnpsNumber || '',
+    cmuNumber: data?.cmuNumber || '',
+    coveredByOtherEmployer: data?.coveredByOtherEmployer || false,
+    coverageCertificateType: data?.coverageCertificateType || '',
+    coverageCertificateNumber: data?.coverageCertificateNumber || '',
+    coverageCertificateUrl: data?.coverageCertificateUrl || '',
+    coverageCertificateExpiryDate: data?.coverageCertificateExpiryDate || '',
     ...(data?.id && { id: data.id }),
   });
+
+  // Update form data when data prop changes (when editing different dependents)
+  useEffect(() => {
+    if (data) {
+      setFormData({
+        firstName: data.firstName || '',
+        lastName: data.lastName || '',
+        dateOfBirth: data.dateOfBirth || '',
+        relationship: data.relationship || 'child',
+        gender: data.gender,
+        documentType: data.documentType || '',
+        documentNumber: data.documentNumber || '',
+        documentExpiryDate: data.documentExpiryDate || '',
+        notes: data.notes || '',
+        // CMU tracking fields
+        cnpsNumber: data.cnpsNumber || '',
+        cmuNumber: data.cmuNumber || '',
+        coveredByOtherEmployer: data.coveredByOtherEmployer || false,
+        coverageCertificateType: data.coverageCertificateType || '',
+        coverageCertificateNumber: data.coverageCertificateNumber || '',
+        coverageCertificateUrl: data.coverageCertificateUrl || '',
+        coverageCertificateExpiryDate: data.coverageCertificateExpiryDate || '',
+        ...(data.id && { id: data.id }),
+      });
+    }
+  }, [data]);
 
   const age = formData.dateOfBirth
     ? calculateAge(new Date(formData.dateOfBirth))
@@ -476,6 +537,184 @@ function DependentForm({ data, onSubmit, onCancel, isSubmitting }: DependentForm
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {/* Gender (Required) */}
+        <div className="space-y-2">
+          <Label htmlFor="gender">Genre *</Label>
+          <Select
+            value={formData.gender}
+            onValueChange={(value) =>
+              setFormData({
+                ...formData,
+                gender: value as 'male' | 'female',
+              })
+            }
+            required
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="male">Masculin</SelectItem>
+              <SelectItem value="female">Féminin</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Requis pour tous les dépendants
+          </p>
+        </div>
+
+        {/* CMU Tracking Fields */}
+        <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+          <h4 className="font-medium text-sm">Informations CMU (optionnel)</h4>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="cnpsNumber">Numéro CNPS</Label>
+              <Input
+                id="cnpsNumber"
+                value={formData.cnpsNumber}
+                onChange={(e) =>
+                  setFormData({ ...formData, cnpsNumber: e.target.value })
+                }
+                placeholder="Si le dépendant a son propre numéro"
+              />
+              <p className="text-xs text-muted-foreground">
+                Pour les travailleurs avec propre CNPS
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cmuNumber">Numéro CMU</Label>
+              <Input
+                id="cmuNumber"
+                value={formData.cmuNumber}
+                onChange={(e) =>
+                  setFormData({ ...formData, cmuNumber: e.target.value })
+                }
+                placeholder="Si le dépendant a son propre numéro"
+              />
+              <p className="text-xs text-muted-foreground">
+                Pour les personnes avec propre CMU
+              </p>
+            </div>
+          </div>
+
+          {/* Covered by Other Employer */}
+          <div className="flex items-start space-x-2">
+            <input
+              type="checkbox"
+              id="coveredByOtherEmployer"
+              checked={formData.coveredByOtherEmployer}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  coveredByOtherEmployer: e.target.checked,
+                })
+              }
+              className="mt-1"
+            />
+            <div className="flex-1">
+              <Label htmlFor="coveredByOtherEmployer" className="cursor-pointer">
+                Ce dépendant est couvert par la CMU d'un autre employeur
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Ex: conjoint(e) ayant son propre employeur, enfant couvert par l'ex-conjoint(e)
+              </p>
+            </div>
+          </div>
+
+          {/* Coverage Certificate Section (Conditional) */}
+          {formData.coveredByOtherEmployer && (
+            <div className="space-y-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <p className="text-sm text-orange-900 font-medium">
+                ⚠️ Ce dépendant ne sera PAS compté dans le calcul CMU
+              </p>
+              <p className="text-xs text-orange-800">
+                Type d'attestation requis (Il/Elle est déjà couvert(e) par un autre employeur)
+              </p>
+
+              <div className="space-y-4 mt-3">
+                <div className="space-y-2">
+                  <Label htmlFor="coverageCertificateType">
+                    Type de certificat *
+                  </Label>
+                  <Input
+                    id="coverageCertificateType"
+                    value={formData.coverageCertificateType}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        coverageCertificateType: e.target.value,
+                      })
+                    }
+                    placeholder="Attestation de couverture CMU"
+                    required={formData.coveredByOtherEmployer}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="coverageCertificateNumber">
+                    Numéro du certificat
+                  </Label>
+                  <Input
+                    id="coverageCertificateNumber"
+                    value={formData.coverageCertificateNumber}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        coverageCertificateNumber: e.target.value,
+                      })
+                    }
+                    placeholder="Optionnel"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="coverageCertificateExpiryDate">
+                    Date d'expiration
+                  </Label>
+                  <Input
+                    id="coverageCertificateExpiryDate"
+                    type="date"
+                    value={formData.coverageCertificateExpiryDate}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        coverageCertificateExpiryDate: e.target.value,
+                      })
+                    }
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optionnel - La date doit être dans le futur si renseignée
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="coverageCertificateUrl">
+                    Upload du certificat
+                  </Label>
+                  <Input
+                    id="coverageCertificateUrl"
+                    type="url"
+                    value={formData.coverageCertificateUrl}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        coverageCertificateUrl: e.target.value,
+                      })
+                    }
+                    placeholder="URL du document uploadé (optionnel)"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optionnel - TODO: Intégrer file upload component
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Document Required Warning */}
