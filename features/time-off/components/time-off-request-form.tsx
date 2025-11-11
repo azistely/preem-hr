@@ -36,9 +36,10 @@ import { Calendar } from '@/components/ui/calendar';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
-import { Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, AlertCircle, Settings } from 'lucide-react';
 import { fr } from 'date-fns/locale';
 import { differenceInBusinessDays, addDays } from 'date-fns';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -52,6 +53,7 @@ const timeOffRequestSchema = z.object({
     required_error: 'Date de fin requise',
   }),
   reason: z.string().optional(),
+  isDeductibleForACP: z.boolean(),
 });
 
 type TimeOffRequestForm = z.infer<typeof timeOffRequestSchema>;
@@ -63,6 +65,14 @@ interface TimeOffRequestFormProps {
 
 export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestFormProps) {
   const utils = trpc.useUtils();
+
+  // Get current user to check roles
+  const { data: currentUser } = trpc.auth.me.useQuery();
+
+  // Check if user has HR role
+  const isHRUser = currentUser?.role
+    ? ['hr', 'hr_manager', 'super_admin'].includes(currentUser.role)
+    : false;
 
   // Get policies
   const { data: policies } = trpc.timeOff.getPolicies.useQuery();
@@ -91,6 +101,7 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
     defaultValues: {
       startDate: addDays(new Date(), 15), // Default: 15 days from now
       endDate: addDays(new Date(), 16), // Default: 2 days leave
+      isDeductibleForACP: true, // Default: deductible for ACP
     },
   });
 
@@ -125,6 +136,7 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
       startDate: data.startDate,
       endDate: data.endDate,
       reason: data.reason,
+      isDeductibleForACP: data.isDeductibleForACP,
     });
   };
 
@@ -270,6 +282,42 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
                 </FormItem>
               )}
             />
+
+            {/* HR-only: ACP Deductibility */}
+            {isHRUser && (
+              <div className="space-y-2 p-4 bg-muted rounded-md border">
+                <div className="flex items-center gap-2 mb-2">
+                  <Settings className="h-4 w-4" />
+                  <span className="text-sm font-semibold">
+                    Options avancées (HR seulement)
+                  </span>
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="isDeductibleForACP"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={!field.value}
+                          onCheckedChange={(checked) => field.onChange(!checked)}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-sm font-normal cursor-pointer">
+                          Non déductible pour le calcul ACP
+                        </FormLabel>
+                        <FormDescription className="text-xs">
+                          Cocher si cette absence ne doit pas réduire les jours payés
+                          pour le calcul de l'ACP (ex: permission, absence non justifiée)
+                        </FormDescription>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             {/* Submit button */}
             <Button

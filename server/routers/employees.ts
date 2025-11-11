@@ -9,7 +9,7 @@
  */
 
 import { z } from 'zod';
-import { sql } from 'drizzle-orm';
+import { sql, and, eq } from 'drizzle-orm';
 import { createTRPCRouter, publicProcedure, employeeProcedure, managerProcedure, hrManagerProcedure } from '../api/trpc';
 import {
   createEmployee,
@@ -24,7 +24,7 @@ import { eventBus } from '@/lib/event-bus';
 import { TRPCError } from '@trpc/server';
 import { getMinimumWageHelper } from '@/lib/compliance/coefficient-validation.service';
 import { db } from '@/lib/db';
-import { employeeBenefitEnrollments } from '@/drizzle/schema';
+import { employeeBenefitEnrollments, employees } from '@/drizzle/schema';
 
 // Zod Schemas
 const genderEnum = z.enum(['male', 'female', 'other', 'prefer_not_to_say']);
@@ -809,4 +809,96 @@ export const employeesRouter = createTRPCRouter({
         });
       }
     }),
+
+  /**
+   * Set ACP payment date and activation status for an employee
+   *
+   * ACP (Allocations de Congés Payés) is only applicable to CDI/CDD employees.
+   * This endpoint activates ACP payment and sets the date when payment should occur.
+   *
+   * Permissions: HR Manager
+   */
+  setACPPaymentDate: hrManagerProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid('ID employé invalide'),
+        paymentDate: z.date().nullable(),
+        active: z.boolean(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Update employee ACP settings
+        const [updatedEmployee] = await db
+          .update(employees)
+          .set({
+            acpPaymentDate: input.paymentDate?.toISOString().split('T')[0] || null,
+            acpPaymentActive: input.active,
+            acpNotes: input.notes,
+            updatedAt: new Date(),
+            updatedBy: ctx.user.id,
+          })
+          .where(
+            and(
+              eq(employees.id, input.employeeId),
+              eq(employees.tenantId, ctx.user.tenantId)
+            )
+          )
+          .returning();
+
+        if (!updatedEmployee) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Employé introuvable',
+          });
+        }
+
+        // Emit event
+        await eventBus.publish('employee.acp_configured', {
+          employeeId: updatedEmployee.id,
+          tenantId: ctx.user.tenantId,
+          active: input.active,
+          paymentDate: input.paymentDate,
+        });
+
+        return updatedEmployee;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la configuration ACP',
+        });
+      }
+    }),
+
+  /**
+   * Get all employees with active ACP payments
+   *
+   * Returns list of employees who have ACP payment activated,
+   * ordered by payment date.
+   *
+   * Permissions: HR Manager
+   */
+  getEmployeesWithActiveACP: hrManagerProcedure.query(async ({ ctx }) => {
+    try {
+      const employeesWithACP = await db
+        .select()
+        .from(employees)
+        .where(
+          and(
+            eq(employees.tenantId, ctx.user.tenantId),
+            eq(employees.acpPaymentActive, true),
+            eq(employees.status, 'active')
+          )
+        )
+        .orderBy(employees.acpPaymentDate);
+
+      return employeesWithACP;
+    } catch (error: any) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: error.message || 'Erreur lors de la récupération des employés avec ACP',
+      });
+    }
+  }),
 });

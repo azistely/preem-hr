@@ -37,6 +37,7 @@ export const timeOffRouter = createTRPCRouter({
         startDate: z.date(),
         endDate: z.date(),
         reason: z.string().optional(),
+        isDeductibleForACP: z.boolean().default(true),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -48,6 +49,7 @@ export const timeOffRouter = createTRPCRouter({
           startDate: input.startDate,
           endDate: input.endDate,
           reason: input.reason,
+          isDeductibleForAcp: input.isDeductibleForACP,
         });
 
         // Emit event for workflow automation
@@ -493,4 +495,66 @@ export const timeOffRouter = createTRPCRouter({
       pendingCount: Number(result[0]?.count || 0),
     };
   }),
+
+  /**
+   * Set deductibility for ACP calculation
+   *
+   * Mark leave as non-deductible for ACP (Allocations de Congés Payés) calculation.
+   * Used for unpaid leave, permissions, and other absence types that should not
+   * reduce the number of paid days in ACP reference period.
+   *
+   * Permissions: HR only
+   */
+  setDeductibleForACP: publicProcedure
+    .input(
+      z.object({
+        timeOffRequestId: z.string().uuid('ID de demande invalide'),
+        isDeductible: z.boolean(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      // Check if user has HR role
+      const userRoles = ctx.user?.roles || [];
+      const isHR = userRoles.includes('hr') || userRoles.includes('hr_manager') || userRoles.includes('super_admin');
+
+      if (!isHR) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Seuls les RH peuvent modifier la déductibilité ACP',
+        });
+      }
+
+      try {
+        // Update time_off_request
+        const [updated] = await db
+          .update(timeOffRequests)
+          .set({
+            isDeductibleForAcp: input.isDeductible,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(timeOffRequests.id, input.timeOffRequestId),
+              eq(timeOffRequests.tenantId, ctx.user.tenantId)
+            )
+          )
+          .returning();
+
+        if (!updated) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Demande de congé introuvable',
+          });
+        }
+
+        return updated;
+      } catch (error: any) {
+        if (error instanceof TRPCError) throw error;
+
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la mise à jour de la déductibilité ACP',
+        });
+      }
+    }),
 });

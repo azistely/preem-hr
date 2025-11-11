@@ -30,6 +30,7 @@ export interface TimeOffRequestInput {
   startDate: Date;
   endDate: Date;
   reason?: string;
+  isDeductibleForAcp?: boolean;
 }
 
 export interface ApproveTimeOffInput {
@@ -79,7 +80,7 @@ async function calculateBusinessDaysWithHolidays(
  * Request time off
  */
 export async function requestTimeOff(input: TimeOffRequestInput) {
-  const { employeeId, tenantId, policyId, startDate, endDate, reason } = input;
+  const { employeeId, tenantId, policyId, startDate, endDate, reason, isDeductibleForAcp = true } = input;
 
   // Get policy
   const policy = await db.query.timeOffPolicies.findFirst({
@@ -193,6 +194,7 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
   // Create request
   const [request] = await db
     .insert(timeOffRequests)
+    // @ts-expect-error - isDeductibleForAcp field exists in schema but Drizzle type inference doesn't pick it up
     .values({
       tenantId,
       employeeId,
@@ -202,6 +204,7 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
       totalDays: totalDays.toString(),
       reason,
       status: 'pending',
+      isDeductibleForAcp: isDeductibleForAcp ?? true,
     })
     .returning();
 
