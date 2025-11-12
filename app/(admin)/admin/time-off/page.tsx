@@ -112,12 +112,12 @@ export default function TimeOffAdminPage() {
 
   // Handle tab change: adjust status filter based on view
   const handleTabChange = (tab: string) => {
-    setCurrentTab(tab as 'list' | 'calendar');
+    setCurrentTab(tab as 'list' | 'calendar' | 'planning');
 
-    // Calendar view should show approved leaves (to see who's away)
+    // Calendar view should show all approved AND planned leaves (to see who's away)
     // List view should show pending requests (for processing)
     if (tab === 'calendar') {
-      setStatusFilter('approved');
+      setStatusFilter('all'); // Show both approved and planned
     } else if (tab === 'list') {
       setStatusFilter('pending');
     }

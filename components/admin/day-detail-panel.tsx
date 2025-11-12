@@ -59,6 +59,7 @@ export function DayDetailPanel({
   // Group by status
   const approvedRequests = requests.filter((r) => r.status === 'approved');
   const pendingRequests = requests.filter((r) => r.status === 'pending');
+  const plannedRequests = requests.filter((r) => r.status === 'planned');
 
   const getInitials = (firstName: string, lastName: string) => {
     return `${firstName[0]}${lastName[0]}`;
@@ -131,7 +132,60 @@ export function DayDetailPanel({
               </div>
             )}
 
-            {approvedRequests.length > 0 && pendingRequests.length > 0 && (
+            {approvedRequests.length > 0 && (pendingRequests.length > 0 || plannedRequests.length > 0) && (
+              <Separator />
+            )}
+
+            {/* Planned leaves */}
+            {plannedRequests.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Calendar className="h-4 w-4 text-blue-600" />
+                  <h3 className="font-semibold text-sm">
+                    Planifiés ({plannedRequests.length})
+                  </h3>
+                </div>
+
+                <div className="space-y-3">
+                  {plannedRequests.map((request) => (
+                    <div
+                      key={request.id}
+                      className="flex items-start gap-3 p-3 rounded-lg border bg-blue-50 border-blue-200"
+                    >
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback className="bg-blue-600 text-white">
+                          {getInitials(
+                            request.employee.firstName,
+                            request.employee.lastName
+                          )}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">
+                          {request.employee.firstName} {request.employee.lastName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {request.policy.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formatDateRange(request.startDate, request.endDate)}
+                        </p>
+                      </div>
+
+                      <Badge
+                        variant="outline"
+                        className="border-blue-600 text-blue-700 text-xs"
+                      >
+                        Planifié
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {plannedRequests.length > 0 && pendingRequests.length > 0 && (
               <Separator />
             )}
 
