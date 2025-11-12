@@ -70,6 +70,12 @@ export const employeeMobileSections: NavSection[] = [
     ],
   },
   {
+    title: "Documents",
+    items: [
+      { icon: FileStack, label: "Mes documents", href: "/employee/documents" },
+    ],
+  },
+  {
     title: "Mon Profil",
     items: [
       { icon: User, label: "Mes informations", href: "/employee/profile" },
@@ -96,6 +102,12 @@ export const employeeDesktopSections: NavSection[] = [
     title: "Ma Paie",
     items: [
       { icon: FileText, label: "Mes bulletins", href: "/employee/payslips" },
+    ],
+  },
+  {
+    title: "Documents",
+    items: [
+      { icon: FileStack, label: "Mes documents", href: "/employee/documents" },
     ],
   },
   {
@@ -135,6 +147,12 @@ export const managerMobileSections: NavSection[] = [
       { icon: BarChart, label: "Heures supplémentaires", href: "/manager/reports/overtime" },
     ],
   },
+  {
+    title: "Documents",
+    items: [
+      { icon: FileStack, label: "Documents équipe", href: "/manager/documents" },
+    ],
+  },
 ];
 
 export const managerDesktopSections: NavSection[] = [
@@ -163,6 +181,12 @@ export const managerDesktopSections: NavSection[] = [
     title: "Rapports",
     items: [
       { icon: BarChart, label: "Heures supplémentaires", href: "/manager/reports/overtime" },
+    ],
+  },
+  {
+    title: "Documents",
+    items: [
+      { icon: FileStack, label: "Documents équipe", href: "/manager/documents" },
     ],
   },
 ];
@@ -211,6 +235,12 @@ export const hrManagerMobileSections: NavSection[] = [
     items: [
       { icon: BookOpen, label: "Registre du personnel", href: "/compliance/registre-personnel" },
       { icon: AlertCircle, label: "Suivi des CDD", href: "/compliance/cdd" },
+    ],
+  },
+  {
+    title: "Documents",
+    items: [
+      { icon: FileStack, label: "Gestion des documents", href: "/admin/documents" },
     ],
   },
   {
@@ -303,6 +333,12 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: BookOpen, label: "Registre du personnel", href: "/compliance/registre-personnel" },
       { icon: AlertCircle, label: "Suivi des CDD", href: "/compliance/cdd" },
+    ],
+  },
+  {
+    title: "Documents",
+    items: [
+      { icon: FileStack, label: "Gestion des documents", href: "/admin/documents" },
     ],
   },
   {

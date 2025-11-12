@@ -52,6 +52,7 @@ import {
   AlertTriangle,
   List,
   CalendarDays,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -67,6 +68,7 @@ import {
 } from '@/components/ui/dialog';
 import { TimeOffRequestForm } from '@/features/time-off/components/time-off-request-form';
 import { UserPlus } from 'lucide-react';
+import { LeavePlanningPanel } from '@/components/admin/leave-planning-panel';
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'cancelled';
 type PolicyTypeFilter = 'all' | 'annual_leave' | 'sick_leave' | 'maternity' | 'paternity' | 'unpaid';
@@ -90,7 +92,7 @@ const policyTypeLabels: Record<PolicyTypeFilter, string> = {
 
 export default function TimeOffAdminPage() {
   // Tab state
-  const [currentTab, setCurrentTab] = useState<'list' | 'calendar'>('list');
+  const [currentTab, setCurrentTab] = useState<'list' | 'calendar' | 'planning'>('list');
 
   // Filters state
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
@@ -401,9 +403,9 @@ export default function TimeOffAdminPage() {
         </div>
       </div>
 
-      {/* Tabs: List View vs Calendar View */}
+      {/* Tabs: List View vs Calendar View vs Planning */}
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-3xl grid-cols-3">
           <TabsTrigger value="list" className="flex items-center gap-2">
             <List className="h-4 w-4" />
             Liste
@@ -411,6 +413,10 @@ export default function TimeOffAdminPage() {
           <TabsTrigger value="calendar" className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4" />
             Calendrier
+          </TabsTrigger>
+          <TabsTrigger value="planning" className="flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Planification
           </TabsTrigger>
         </TabsList>
 
@@ -717,6 +723,11 @@ export default function TimeOffAdminPage() {
             open={dayPanelOpen}
             onOpenChange={setDayPanelOpen}
           />
+        </TabsContent>
+
+        {/* Planning View */}
+        <TabsContent value="planning" className="space-y-6 mt-6">
+          <LeavePlanningPanel />
         </TabsContent>
       </Tabs>
     </div>

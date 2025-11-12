@@ -192,6 +192,13 @@ export const managerNavigation: NavigationSection[] = [
         icon: CheckSquare,
         description: 'Approuver les demandes',
       },
+      {
+        id: 'documents',
+        label: 'Documents',
+        href: '/manager/documents',
+        icon: FileStack,
+        description: 'Gérer les documents',
+      },
     ],
   },
   {
@@ -285,6 +292,13 @@ export const hrManagerNavigation: NavigationSection[] = [
         href: '/contracts',
         icon: FileText,
         description: 'Gestion des contrats',
+      },
+      {
+        id: 'documents',
+        label: 'Documents',
+        href: '/admin/documents',
+        icon: FileStack,
+        description: 'Gestion des documents',
       },
       {
         id: 'positions',

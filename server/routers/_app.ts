@@ -4,7 +4,7 @@
  * Combines all feature routers into a single app router.
  */
 
-import { createTRPCRouter } from '../api/trpc';
+import { createTRPCRouter } from '@/server/api/trpc';
 import { authRouter } from './auth';
 import { payrollRouter } from './payroll';
 import { payrollReviewRouter } from './payroll-review';
@@ -50,6 +50,8 @@ import { employeeImportRouter } from './employee-import';
 import { contractsRouter } from './contracts';
 import { shiftPlanningRouter } from './shift-planning';
 import { acpRouter } from './acp';
+import { leavePlanningRouter } from './leave-planning';
+import { notificationsRouter } from './notifications';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -90,6 +92,8 @@ export const appRouter = createTRPCRouter({
   timeTracking: timeTrackingRouter,
   timeTrackingImport: timeTrackingImportRouter,
   timeOff: timeOffRouter,
+  leavePlanning: leavePlanningRouter,
+  notifications: notificationsRouter,
   workSchedules: workSchedulesRouter,
   policies: policiesRouter,
   publicHolidays: publicHolidaysRouter,
