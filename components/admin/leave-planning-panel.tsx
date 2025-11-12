@@ -20,15 +20,21 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
+  Table as TableIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LeavePlanningInlineTable } from './leave-planning-inline-table';
+
+type PlanningMode = 'inline' | 'excel';
 
 export function LeavePlanningPanel() {
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [mode, setMode] = useState<PlanningMode>('inline');
 
   // Fetch periods
   const { data: periods, refetch: refetchPeriods } = api.leavePlanning.listPeriods.useQuery();
@@ -185,48 +191,6 @@ export function LeavePlanningPanel() {
               </DialogContent>
             </Dialog>
           </div>
-
-          {/* Actions */}
-          {selectedPeriodId && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => downloadTemplateMutation.mutate({ periodId: selectedPeriodId })}
-                disabled={downloadTemplateMutation.isPending}
-                className="min-h-[44px]"
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Télécharger le template Excel
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => document.getElementById('file-upload')?.click()}
-                disabled={importMutation.isPending}
-                className="min-h-[44px]"
-              >
-                <Upload className="mr-2 h-4 w-4" />
-                Importer le plan
-              </Button>
-              <input
-                id="file-upload"
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-
-              <Button
-                variant="outline"
-                onClick={() => exportMutation.mutate({ periodId: selectedPeriodId })}
-                disabled={exportMutation.isPending}
-                className="min-h-[44px]"
-              >
-                <FileDown className="mr-2 h-4 w-4" />
-                Exporter vers Excel
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -289,6 +253,90 @@ export function LeavePlanningPanel() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Mode Selector avec Tabs */}
+      {selectedPeriodId && (
+        <Tabs value={mode} onValueChange={(value) => setMode(value as PlanningMode)} className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-2 min-h-[44px]">
+            <TabsTrigger value="inline" className="min-h-[40px]">
+              <TableIcon className="mr-2 h-4 w-4" />
+              Édition en ligne
+            </TabsTrigger>
+            <TabsTrigger value="excel" className="min-h-[40px]">
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Import/Export Excel
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Inline editing mode */}
+          <TabsContent value="inline" className="mt-6">
+            <LeavePlanningInlineTable periodId={selectedPeriodId} />
+          </TabsContent>
+
+          {/* Excel mode */}
+          <TabsContent value="excel" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Import et Export Excel</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-muted-foreground text-sm">
+                  Utilisez cette option pour travailler hors ligne ou pour effectuer des modifications en masse dans Excel.
+                </p>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => downloadTemplateMutation.mutate({ periodId: selectedPeriodId })}
+                    disabled={downloadTemplateMutation.isPending}
+                    className="min-h-[44px]"
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Télécharger le template Excel
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => document.getElementById('file-upload')?.click()}
+                    disabled={importMutation.isPending}
+                    className="min-h-[44px]"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importer le plan
+                  </Button>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+
+                  <Button
+                    variant="outline"
+                    onClick={() => exportMutation.mutate({ periodId: selectedPeriodId })}
+                    disabled={exportMutation.isPending}
+                    className="min-h-[44px]"
+                  >
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Exporter vers Excel
+                  </Button>
+                </div>
+
+                <div className="border rounded-lg p-4 bg-muted/50">
+                  <h4 className="font-semibold mb-2">Comment ça marche ?</h4>
+                  <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                    <li>Téléchargez le template Excel pré-rempli avec vos employés</li>
+                    <li>Remplissez les dates de congé et les notes dans Excel</li>
+                    <li>Importez le fichier pour créer toutes les demandes en une seule fois</li>
+                    <li>Exportez à tout moment pour avoir une copie de sauvegarde</li>
+                  </ol>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
