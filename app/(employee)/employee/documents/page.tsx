@@ -5,6 +5,7 @@
  * - Pay slips (Bulletins de paie)
  * - Work certificates (Certificats de travail)
  * - Other HR documents
+ * - Uploaded documents (with approval tracking)
  *
  * Following HCI principles:
  * - Zero learning curve (obvious card-based layout)
@@ -23,10 +24,12 @@ import {
   FileText,
   Eye,
   Loader2,
+  Upload,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { UploadButton, DocumentList } from '@/components/documents';
 
 export default function EmployeeDocumentsPage() {
   // Fetch all documents for current employee
@@ -76,39 +79,38 @@ export default function EmployeeDocumentsPage() {
     <div className="container mx-auto max-w-4xl py-8 px-4">
       {/* Header - Level 1: Essential */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold">Mes Documents</h1>
-        <p className="text-muted-foreground mt-2">
-          Consultez et téléchargez tous vos documents RH
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Mes Documents</h1>
+            <p className="text-muted-foreground mt-2">
+              Consultez et téléchargez tous vos documents RH
+            </p>
+          </div>
+          <UploadButton />
+        </div>
       </div>
 
-      {/* Loading State */}
-      {isLoading ? (
-        <Card>
-          <CardContent className="py-12">
-            <div className="flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              <span className="ml-3 text-muted-foreground">Chargement des documents...</span>
-            </div>
-          </CardContent>
-        </Card>
-      ) : !documents || (documents.payslips.length === 0 && documents.others.length === 0) ? (
-        /* Empty State */
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center">
-              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-lg font-semibold">Aucun document disponible</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Vos documents apparaîtront ici une fois générés
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-8">
-          {/* Bulletins de Paie Section */}
-          {documents.payslips.length > 0 && (
+      <div className="space-y-8">
+        {/* Uploaded Documents Section - Always visible */}
+        <div>
+          <h2 className="text-2xl font-bold mb-4">Documents Téléchargés</h2>
+          <DocumentList />
+        </div>
+
+        {/* Generated Documents Sections */}
+        {isLoading ? (
+          <Card>
+            <CardContent className="py-12">
+              <div className="flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <span className="ml-3 text-muted-foreground">Chargement des documents générés...</span>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* Bulletins de Paie Section */}
+            {documents?.payslips && documents.payslips.length > 0 && (
             <div>
               <h2 className="text-2xl font-bold mb-4">Bulletins de Paie</h2>
               <div className="space-y-3">
@@ -161,7 +163,7 @@ export default function EmployeeDocumentsPage() {
           )}
 
           {/* Other Documents Section */}
-          {documents.others.length > 0 && (
+          {documents?.others && documents.others.length > 0 && (
             <div>
               <h2 className="text-2xl font-bold mb-4">Autres Documents</h2>
               <div className="space-y-3">
@@ -210,8 +212,9 @@ export default function EmployeeDocumentsPage() {
               </div>
             </div>
           )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

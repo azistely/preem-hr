@@ -62,6 +62,7 @@ import { ContractInfoCard } from '@/components/contracts/contract-info-card';
 import { ACPPaymentSection } from '@/features/employees/components/acp-payment-section';
 import { ACPPreviewDialog } from '@/features/employees/components/acp-preview-dialog';
 import { ACPPaymentHistoryTimeline } from '@/features/leave/components/acp-payment-history-timeline';
+import { UploadButton, DocumentList } from '@/components/documents';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -362,7 +363,7 @@ export default function EmployeeDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-7">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-8">
           <TabsTrigger value="overview" className="min-h-[44px]">
             <UserCircle className="mr-2 h-4 w-4" />
             Vue d'ensemble
@@ -386,6 +387,10 @@ export default function EmployeeDetailPage() {
           <TabsTrigger value="benefits" className="min-h-[44px]">
             <Heart className="mr-2 h-4 w-4" />
             Avantages
+          </TabsTrigger>
+          <TabsTrigger value="documents" className="min-h-[44px]">
+            <FileText className="mr-2 h-4 w-4" />
+            Documents
           </TabsTrigger>
           <TabsTrigger value="time" className="min-h-[44px]">
             <Clock className="mr-2 h-4 w-4" />
@@ -900,6 +905,19 @@ export default function EmployeeDetailPage() {
         {/* Benefits Tab */}
         <TabsContent value="benefits" className="space-y-6">
           <EmployeeBenefitsTab employeeId={employeeId} />
+        </TabsContent>
+
+        {/* Documents Tab */}
+        <TabsContent value="documents" className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Documents de l'employé</CardTitle>
+              <UploadButton employeeId={employeeId} />
+            </CardHeader>
+            <CardContent>
+              <DocumentList employeeId={employeeId} showActions={true} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Time Tab */}
