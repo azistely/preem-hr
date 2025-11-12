@@ -100,7 +100,8 @@ export function TimeOffCalendar({ requests, onDayClick }: TimeOffCalendarProps) 
     const dayRequests = getDayRequests(date);
     const approved = dayRequests.filter(r => r.status === 'approved').length;
     const pending = dayRequests.filter(r => r.status === 'pending').length;
-    return { total: dayRequests.length, approved, pending };
+    const planned = dayRequests.filter(r => r.status === 'planned').length;
+    return { total: dayRequests.length, approved, pending, planned };
   };
 
   const handleDayClick = (date: Date) => {
@@ -255,6 +256,17 @@ export function TimeOffCalendar({ requests, onDayClick }: TimeOffCalendarProps) 
                         </Badge>
                       </div>
                     )}
+                    {stats.planned > 0 && (
+                      <div className="flex items-center justify-center gap-1">
+                        <Badge
+                          variant="outline"
+                          className="text-xs px-1 py-0 h-5 border-blue-500 text-blue-700"
+                        >
+                          <Users className="h-3 w-3 mr-0.5" />
+                          {stats.planned}
+                        </Badge>
+                      </div>
+                    )}
                     {stats.pending > 0 && (
                       <div className="flex items-center justify-center gap-1">
                         <Badge
@@ -274,12 +286,18 @@ export function TimeOffCalendar({ requests, onDayClick }: TimeOffCalendarProps) 
         </div>
 
         {/* Legend */}
-        <div className="mt-4 pt-4 border-t flex items-center gap-4 text-sm">
+        <div className="mt-4 pt-4 border-t flex flex-wrap items-center gap-4 text-sm">
           <span className="font-medium text-muted-foreground">Légende:</span>
           <div className="flex items-center gap-2">
             <Badge variant="default" className="bg-green-500">
               <Users className="h-3 w-3 mr-1" />
               Approuvé
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="border-blue-500 text-blue-700">
+              <Users className="h-3 w-3 mr-1" />
+              Planifié
             </Badge>
           </div>
           <div className="flex items-center gap-2">
