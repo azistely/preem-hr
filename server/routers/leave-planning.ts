@@ -3,11 +3,214 @@ import { createTRPCRouter, protectedProcedure } from '../api/trpc';
 import { importLeavePlan } from '@/features/time-off/services/leave-planning-import.service';
 import { generateLeavePlanningTemplate } from '@/scripts/generate-leave-planning-template';
 import { db } from '@/db';
-import { leavePlanningPeriods, timeOffRequests, tenants } from '@/drizzle/schema';
-import { eq } from 'drizzle-orm';
+import { leavePlanningPeriods, timeOffRequests, tenants, employees, timeOffPolicies } from '@/drizzle/schema';
+import { eq, and } from 'drizzle-orm';
+import { eachDayOfInterval, isWeekend } from 'date-fns';
 import * as XLSX from 'xlsx';
 
 export const leavePlanningRouter = createTRPCRouter({
+  // List employees (for dropdowns)
+  listEmployees: protectedProcedure.query(async ({ ctx }) => {
+    const employeeList = await db.query.employees.findMany({
+      where: eq(employees.tenantId, ctx.user.tenantId),
+      columns: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        employeeNumber: true,
+      },
+      orderBy: [employees.lastName, employees.firstName],
+    });
+
+    return employeeList;
+  }),
+
+  // List time-off policies (for dropdowns)
+  listPolicies: protectedProcedure.query(async ({ ctx }) => {
+    const policies = await db.query.timeOffPolicies.findMany({
+      where: eq(timeOffPolicies.tenantId, ctx.user.tenantId),
+      columns: {
+        id: true,
+        name: true,
+      },
+      orderBy: [timeOffPolicies.name],
+    });
+
+    return policies;
+  }),
+
+  // Get all requests for inline editing
+  getRequestsForPeriod: protectedProcedure
+    .input(z.object({ periodId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const results = await db
+        .select({
+          request: timeOffRequests,
+          employee: employees,
+          policy: timeOffPolicies,
+        })
+        .from(timeOffRequests)
+        .innerJoin(employees, eq(timeOffRequests.employeeId, employees.id))
+        .innerJoin(timeOffPolicies, eq(timeOffRequests.policyId, timeOffPolicies.id))
+        .where(
+          and(
+            eq(timeOffRequests.planningPeriodId, input.periodId),
+            eq(timeOffRequests.tenantId, ctx.user.tenantId)
+          )
+        )
+        .orderBy(timeOffRequests.startDate);
+
+      return results.map(({ request, employee, policy }) => ({
+        id: request.id,
+        employeeId: employee.id,
+        employeeName: `${employee.firstName} ${employee.lastName}`,
+        employeeNumber: employee.employeeNumber,
+        policyId: policy.id,
+        policyName: policy.name,
+        startDate: request.startDate,
+        endDate: request.endDate,
+        totalDays: Number(request.totalDays),
+        notes: request.handoverNotes || '',
+        status: request.status,
+      }));
+    }),
+
+  // Upsert single request (inline edit)
+  upsertRequest: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().optional(),
+        periodId: z.string(),
+        employeeId: z.string(),
+        policyId: z.string(),
+        startDate: z.string(), // YYYY-MM-DD format
+        endDate: z.string(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      // Validate employee exists
+      const employee = await db.query.employees.findFirst({
+        where: and(
+          eq(employees.id, input.employeeId),
+          eq(employees.tenantId, ctx.user.tenantId)
+        ),
+      });
+
+      if (!employee) {
+        throw new Error('Employé introuvable');
+      }
+
+      // Validate policy exists
+      const policy = await db.query.timeOffPolicies.findFirst({
+        where: and(
+          eq(timeOffPolicies.id, input.policyId),
+          eq(timeOffPolicies.tenantId, ctx.user.tenantId)
+        ),
+      });
+
+      if (!policy) {
+        throw new Error('Type de congé introuvable');
+      }
+
+      // Parse dates
+      const startDate = new Date(input.startDate);
+      const endDate = new Date(input.endDate);
+
+      if (endDate < startDate) {
+        throw new Error('La date de fin doit être après la date de début');
+      }
+
+      // Calculate business days
+      const days = eachDayOfInterval({ start: startDate, end: endDate });
+      const businessDays = days.filter(day => !isWeekend(day)).length;
+
+      // Check for overlaps (conflicts)
+      const overlaps = await db
+        .select()
+        .from(timeOffRequests)
+        .where(
+          and(
+            eq(timeOffRequests.employeeId, input.employeeId),
+            eq(timeOffRequests.tenantId, ctx.user.tenantId)
+          )
+        );
+
+      const conflicts = overlaps.filter((req) => {
+        if (input.id && req.id === input.id) return false; // Skip self
+        if (req.status === 'rejected' || req.status === 'cancelled') return false;
+
+        const reqStart = new Date(req.startDate);
+        const reqEnd = new Date(req.endDate);
+        return (startDate <= reqEnd && endDate >= reqStart);
+      });
+
+      // Insert or update
+      if (input.id) {
+        // Update existing
+        await db.update(timeOffRequests)
+          .set({
+            employeeId: input.employeeId,
+            policyId: input.policyId,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            totalDays: businessDays.toString(),
+            handoverNotes: input.notes || null,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(timeOffRequests.id, input.id));
+      } else {
+        // Create new
+        const [newRequest] = await db.insert(timeOffRequests).values({
+          tenantId: ctx.user.tenantId,
+          employeeId: input.employeeId,
+          policyId: input.policyId,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          totalDays: businessDays.toString(),
+          status: 'planned',
+          planningPeriodId: input.periodId,
+          handoverNotes: input.notes || null,
+          submittedAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }).returning();
+
+        return {
+          request: newRequest,
+          conflicts: conflicts.map(c => ({
+            type: 'overlap' as const,
+            message: `Chevauchement avec congé du ${c.startDate} au ${c.endDate}`,
+            conflictingRequestId: c.id,
+          })),
+        };
+      }
+
+      return {
+        request: null, // Updated request
+        conflicts: conflicts.map(c => ({
+          type: 'overlap' as const,
+          message: `Chevauchement avec congé du ${c.startDate} au ${c.endDate}`,
+          conflictingRequestId: c.id,
+        })),
+      };
+    }),
+
+  // Delete request
+  deleteRequest: protectedProcedure
+    .input(z.object({ requestId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      await db.delete(timeOffRequests)
+        .where(
+          and(
+            eq(timeOffRequests.id, input.requestId),
+            eq(timeOffRequests.tenantId, ctx.user.tenantId)
+          )
+        );
+
+      return { success: true };
+    }),
+
   // Créer période
   createPeriod: protectedProcedure
     .input(
