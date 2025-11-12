@@ -31,7 +31,7 @@ import * as React from 'react';
 // This prevents issues with Turbopack/Next.js module resolution
 import { PayslipDocument, PayslipData, generatePayslipFilename } from '@/features/payroll/services/payslip-generator';
 import { generateCNPSExcel, generateCNPSFilename, CNPSExportData } from '@/features/payroll/services/cnps-export';
-import { generateCMUExcel, generateCMUFilename, CMUExportData } from '@/features/payroll/services/cmu-export';
+import { generateCMUBeneficiaryExport, formatCNPSDate, mapRelationshipToType, mapGenderCode, type CMUBeneficiaryRow } from '@/features/payroll/services/cmu-export';
 import { generateEtat301Excel, generateEtat301Filename, Etat301ExportData } from '@/features/payroll/services/etat-301-export';
 import { generateBankTransferExcel, generateBankTransferFilename, BankTransferExportData } from '@/features/payroll/services/bank-transfer-export';
 
@@ -2418,9 +2418,10 @@ export const payrollRouter = createTRPCRouter({
     }),
 
   /**
-   * Export CMU declaration file
+   * Export CMU Beneficiary declaration file
    *
-   * Generates CSV/Excel file for CMU portal submission.
+   * Generates Excel file with one row per beneficiary (spouse/child) for CMU registration.
+   * Format per CNPS requirements.
    *
    * @example
    * ```typescript
@@ -2436,7 +2437,7 @@ export const payrollRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ input }) => {
-      // Get payroll run
+      // 1. Get payroll run
       const run = await db.query.payrollRuns.findFirst({
         where: eq(payrollRuns.id, input.runId),
       });
@@ -2449,38 +2450,110 @@ export const payrollRouter = createTRPCRouter({
         throw new Error('Seules les paies approuvées peuvent être exportées');
       }
 
-      // Get line items
+      // 2. Get line items
       const lineItems = await db.query.payrollLineItems.findMany({
         where: eq(payrollLineItems.payrollRunId, input.runId),
+        orderBy: [asc(payrollLineItems.employeeName)],
       });
 
-      // Get tenant info
+      if (lineItems.length === 0) {
+        throw new Error('No employees found in this payroll run');
+      }
+
+      // 3. Get all employees with full details
+      const employeeIds = lineItems.map((item) => item.employeeId);
+      const employeesList = await db.query.employees.findMany({
+        where: inArray(employees.id, employeeIds),
+        columns: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          dateOfBirth: true,
+          cnpsNumber: true,
+          cmuNumber: true,
+        },
+      });
+
+      // 4. Get all CMU-eligible dependents for these employees
+      const allDependents = await db.query.employeeDependents.findMany({
+        where: and(
+          inArray(employeeDependents.employeeId, employeeIds),
+          eq(employeeDependents.status, 'active'),
+          eq(employeeDependents.eligibleForCmu, true)
+        ),
+        orderBy: [
+          asc(employeeDependents.employeeId),
+          asc(employeeDependents.relationship),
+          asc(employeeDependents.dateOfBirth),
+        ],
+      });
+
+      // 5. Build beneficiary rows
+      const beneficiaryRows: CMUBeneficiaryRow[] = [];
+
+      for (const employee of employeesList) {
+        // Get this employee's CMU-eligible dependents
+        const employeeDeps = allDependents.filter(
+          (d) => d.employeeId === employee.id
+        );
+
+        // Employee base data (repeated on each row)
+        const employeeData = {
+          employeeCnpsNumber: employee.cnpsNumber || '',
+          employeeSocialSecurityNumber: employee.cmuNumber || '',
+          employeeLastName: employee.lastName || '',
+          employeeFirstName: employee.firstName || '',
+          employeeDateOfBirth: formatCNPSDate(employee.dateOfBirth),
+        };
+
+        if (employeeDeps.length === 0) {
+          // Employee with no dependents - single row with empty beneficiary columns
+          beneficiaryRows.push({
+            ...employeeData,
+            beneficiaryCnpsNumber: '',
+            beneficiarySocialSecurityNumber: '',
+            beneficiaryType: '',
+            beneficiaryLastName: '',
+            beneficiaryFirstName: '',
+            beneficiaryDateOfBirth: '',
+            beneficiaryGender: '',
+          });
+        } else {
+          // Employee with dependents - one row per dependent
+          for (const dep of employeeDeps) {
+            beneficiaryRows.push({
+              ...employeeData,
+              beneficiaryCnpsNumber: dep.cnpsNumber || '',
+              beneficiarySocialSecurityNumber: dep.cmuNumber || '',
+              beneficiaryType: mapRelationshipToType(dep.relationship || ''),
+              beneficiaryLastName: dep.lastName || '',
+              beneficiaryFirstName: dep.firstName || '',
+              beneficiaryDateOfBirth: formatCNPSDate(dep.dateOfBirth),
+              beneficiaryGender: mapGenderCode(dep.gender),
+            });
+          }
+        }
+      }
+
+      // 6. Get tenant/company info
       const tenant = await db.query.tenants.findFirst({
-        where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
+        where: eq(tenants.id, run.tenantId),
       });
 
-      // Prepare export data
-      const exportData: CMUExportData = {
-        companyName: tenant?.name || 'Company',
-        companyTaxId: tenant?.taxId || undefined,
+      // 7. Generate Excel file
+      const result = await generateCMUBeneficiaryExport({
+        beneficiaryRows,
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
-        employees: lineItems.map((item) => ({
-          employeeName: item.employeeName || '',
-          employeeNumber: item.employeeNumber || '',
-          cmuEmployee: parseFloat(item.cmuEmployee?.toString() || '0'),
-          cmuEmployer: parseFloat(item.cmuEmployer?.toString() || '0'),
-        })),
-      };
-
-      // Generate Excel
-      const excelBuffer = generateCMUExcel(exportData);
-      const filename = generateCMUFilename(new Date(run.periodStart), 'xlsx');
+        companyName: tenant?.name || 'Entreprise',
+        totalEmployees: employeesList.length,
+        totalBeneficiaries: allDependents.length,
+      });
 
       return {
-        data: Buffer.from(excelBuffer).toString('base64'),
-        filename,
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        data: result.data.toString('base64'),
+        filename: result.filename,
+        contentType: result.contentType,
       };
     }),
 

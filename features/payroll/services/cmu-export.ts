@@ -1,321 +1,326 @@
 /**
- * CMU Export Service
+ * CMU Beneficiary Export Service
  *
- * Generates CSV/Excel export file for CMU (Couverture Maladie Universelle)
- * portal submission in Côte d'Ivoire.
+ * Generates Excel export file for CMU (Couverture Maladie Universelle)
+ * beneficiary registration in Côte d'Ivoire.
  *
- * IMPORTANT: Multi-Closure Aggregation (Phase 5)
- * ==============================================
- * With daily workers (journaliers), a company may have multiple payroll closures per month.
- * CMU declaration follows the same aggregation strategy as CNPS:
+ * Format: One row per beneficiary (spouse or dependent child)
+ * Employee data is repeated on each row for their beneficiaries.
+ * Employees with no beneficiaries get one row with empty beneficiary columns.
  *
- * CMU Aggregation Strategy:
- * -------------------------
- * - CMU is filed ONCE per month, aggregating all closures
- * - Sum CMU contributions for each employee across all closures in the month
- * - Monthly workers pay CMU once, weekly workers 4× per month (1,000 + 500 each week = 6,000 total)
- * - Example: If a weekly worker has CMU 1,500 FCFA/week:
- *   - Week 1-4: 1,500 each = 6,000 total CMU
- *
- * Implementation Note:
- * - Accept month parameter (YYYY-MM) instead of single payrollRunId
- * - Query all approved payroll_runs for that month
- * - Group by employee_id, sum CMU contributions across all closures
- * - Generate single CMU declaration with aggregated totals
- *
- * Reference: DAILY-WORKERS-ARCHITECTURE-V2.md Section 10.5, Task 3
- *
- * Required columns:
- * - Matricule (employee number)
- * - Nom et Prénoms (full name)
- * - Cotisation Salarié (1,000 FCFA fixed) - AGGREGATED across closures
- * - Cotisation Patronale (500 FCFA without family, 5,000 FCFA with family) - AGGREGATED
- * - Ayants droit (number of family members - not always available)
+ * Required columns (per CNPS requirements):
+ * 1. NUMERO CNPS ASSURE - Employee CNPS number
+ * 2. NUMERO SECURITE SOCIALE ASSURE - Employee CMU number
+ * 3. NOM ASSURE - Employee last name
+ * 4. PRENOMS ASSURE - Employee first name
+ * 5. DATE DE NAISSANCE ASSURE - Employee DOB (DD/MM/YYYY)
+ * 6. NUMERO CNPS BENEFICIAIRE - Dependent CNPS number
+ * 7. NUMERO SECURITE SOCIALE BENEFICIAIRE - Dependent CMU number
+ * 8. TYPE BENEFICIAIRE - C (CONJOINT/spouse) or E (ENFANT/child)
+ * 9. NOM BENEFICIAIRE - Dependent last name
+ * 10. PRENOMS BENEFICIAIRE - Dependent first name
+ * 11. DATE DE NAISSANCE BENEFICIAIRE - Dependent DOB (DD/MM/YYYY)
+ * 12. GENRE BENEFICIAIRE - H (HOMME/male) or F (FEMME/female)
  */
 
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
 
 // ========================================
 // Types
 // ========================================
 
-export interface CMUEmployeeData {
-  employeeName: string;
-  employeeNumber: string;
-  cmuEmployee: number;
-  cmuEmployer: number;
-  hasFamily?: boolean;
-  dependents?: number;
+/**
+ * CMU Beneficiary Export Row
+ *
+ * Each row represents ONE beneficiary (spouse or child).
+ * Employee data is repeated for each of their beneficiaries.
+ * If employee has no beneficiaries, they get one row with empty beneficiary columns.
+ */
+export interface CMUBeneficiaryRow {
+  // Employee Information (Assuré)
+  employeeCnpsNumber: string; // NUMERO CNPS ASSURE
+  employeeSocialSecurityNumber: string; // NUMERO SECURITE SOCIALE ASSURE
+  employeeLastName: string; // NOM ASSURE
+  employeeFirstName: string; // PRENOMS ASSURE
+  employeeDateOfBirth: string; // DATE DE NAISSANCE ASSURE (DD/MM/YYYY)
+
+  // Beneficiary Information (Bénéficiaire)
+  beneficiaryCnpsNumber: string; // NUMERO CNPS BENEFICIAIRE
+  beneficiarySocialSecurityNumber: string; // NUMERO SECURITE SOCIALE BENEFICIAIRE
+  beneficiaryType: string; // TYPE: C (CONJOINT) or E (ENFANT)
+  beneficiaryLastName: string; // NOM BENEFICIAIRE
+  beneficiaryFirstName: string; // PRENOMS BENEFICIAIRE
+  beneficiaryDateOfBirth: string; // DATE DE NAISSANCE BENEFICIAIRE (DD/MM/YYYY)
+  beneficiaryGender: string; // GENRE: H (HOMME) or F (FEMME)
 }
 
-export interface CMUExportData {
-  companyName: string;
-  companyTaxId?: string;
+export interface CMUBeneficiaryExportData {
+  beneficiaryRows: CMUBeneficiaryRow[];
   periodStart: Date;
   periodEnd: Date;
-  employees: CMUEmployeeData[];
+  companyName: string;
+  totalEmployees: number;
+  totalBeneficiaries: number;
 }
-
-interface CMURow {
-  Matricule: string;
-  'Nom et Prénoms': string;
-  'Cotisation Salarié (FCFA)': number;
-  'Cotisation Patronale (FCFA)': number;
-  'Ayants droit': number;
-  'Total (FCFA)': number;
-}
-
-// ========================================
-// Constants
-// ========================================
-
-const CMU_RATES = {
-  EMPLOYEE: 1000, // Fixed 1,000 FCFA per employee
-  EMPLOYER_WITHOUT_FAMILY: 500, // 500 FCFA if no family
-  EMPLOYER_WITH_FAMILY: 5000, // 5,000 FCFA if has family
-};
 
 // ========================================
 // Helper Functions
 // ========================================
 
-const formatCurrency = (amount: number): number => {
-  return Math.round(amount);
-};
+/**
+ * Format date as DD/MM/YYYY for CNPS export
+ */
+export function formatCNPSDate(date: Date | string | null | undefined): string {
+  if (!date) return '';
 
-const formatPeriod = (periodStart: Date): string => {
-  return format(periodStart, 'MMMM yyyy', { locale: fr }).toUpperCase();
-};
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return '';
+
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const year = d.getFullYear();
+
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Map relationship type to CNPS beneficiary type code
+ */
+export function mapRelationshipToType(relationship: string): string {
+  switch (relationship.toLowerCase()) {
+    case 'spouse':
+    case 'conjoint':
+      return 'C'; // CONJOINT/TRAVAILLEUR
+    case 'child':
+    case 'enfant':
+      return 'E'; // ENFANT
+    default:
+      return 'E'; // Default to child
+  }
+}
+
+/**
+ * Map gender to CNPS gender code
+ */
+export function mapGenderCode(gender: string | null | undefined): string {
+  if (!gender) return '';
+
+  switch (gender.toLowerCase()) {
+    case 'male':
+    case 'homme':
+    case 'm':
+      return 'H'; // HOMME
+    case 'female':
+    case 'femme':
+    case 'f':
+      return 'F'; // FEMME
+    default:
+      return '';
+  }
+}
+
+/**
+ * Format period for filename
+ */
+function formatPeriod(periodStart: Date): string {
+  return format(periodStart, 'yyyy-MM');
+}
 
 // ========================================
 // Export Functions
 // ========================================
 
 /**
- * Generate CMU declaration CSV file
+ * Generate CMU Beneficiary Export
  *
- * Creates a CSV file with employee CMU contributions
- * ready for submission to the CMU portal.
+ * Creates Excel file with one row per beneficiary (spouse/child).
+ * Employees with no beneficiaries get one row with empty beneficiary columns.
  */
-export const generateCMUCSV = (data: CMUExportData): string => {
-  // Prepare rows
-  const rows: CMURow[] = data.employees.map((emp) => {
-    const total = emp.cmuEmployee + emp.cmuEmployer;
-
-    return {
-      Matricule: emp.employeeNumber,
-      'Nom et Prénoms': emp.employeeName,
-      'Cotisation Salarié (FCFA)': formatCurrency(emp.cmuEmployee),
-      'Cotisation Patronale (FCFA)': formatCurrency(emp.cmuEmployer),
-      'Ayants droit': emp.dependents || (emp.hasFamily ? 1 : 0),
-      'Total (FCFA)': formatCurrency(total),
-    };
-  });
-
-  // Calculate totals
-  const totals: CMURow = {
-    Matricule: '',
-    'Nom et Prénoms': 'TOTAL',
-    'Cotisation Salarié (FCFA)': rows.reduce(
-      (sum, row) => sum + row['Cotisation Salarié (FCFA)'],
-      0
-    ),
-    'Cotisation Patronale (FCFA)': rows.reduce(
-      (sum, row) => sum + row['Cotisation Patronale (FCFA)'],
-      0
-    ),
-    'Ayants droit': rows.reduce((sum, row) => sum + row['Ayants droit'], 0),
-    'Total (FCFA)': rows.reduce((sum, row) => sum + row['Total (FCFA)'], 0),
-  };
-
-  // Add totals row
-  rows.push(totals);
-
-  // Convert to CSV
-  const headers = Object.keys(rows[0]);
-  const csvRows = [
-    // Header row
-    headers.join(','),
-    // Data rows
-    ...rows.map((row) =>
-      headers.map((header) => {
-        const value = row[header as keyof CMURow];
-        // Wrap text fields in quotes if they contain commas
-        if (typeof value === 'string' && value.includes(',')) {
-          return `"${value}"`;
-        }
-        return value;
-      }).join(',')
-    ),
-  ];
-
-  return csvRows.join('\n');
-};
-
-/**
- * Generate CMU declaration Excel file
- *
- * Creates an Excel file with employee CMU contributions
- * ready for submission to the CMU portal.
- */
-export const generateCMUExcel = (data: CMUExportData): ArrayBuffer => {
-  // Prepare rows
-  const rows: CMURow[] = data.employees.map((emp) => {
-    const total = emp.cmuEmployee + emp.cmuEmployer;
-
-    return {
-      Matricule: emp.employeeNumber,
-      'Nom et Prénoms': emp.employeeName,
-      'Cotisation Salarié (FCFA)': formatCurrency(emp.cmuEmployee),
-      'Cotisation Patronale (FCFA)': formatCurrency(emp.cmuEmployer),
-      'Ayants droit': emp.dependents || (emp.hasFamily ? 1 : 0),
-      'Total (FCFA)': formatCurrency(total),
-    };
-  });
-
-  // Calculate totals
-  const totals: CMURow = {
-    Matricule: '',
-    'Nom et Prénoms': 'TOTAL',
-    'Cotisation Salarié (FCFA)': rows.reduce(
-      (sum, row) => sum + row['Cotisation Salarié (FCFA)'],
-      0
-    ),
-    'Cotisation Patronale (FCFA)': rows.reduce(
-      (sum, row) => sum + row['Cotisation Patronale (FCFA)'],
-      0
-    ),
-    'Ayants droit': rows.reduce((sum, row) => sum + row['Ayants droit'], 0),
-    'Total (FCFA)': rows.reduce((sum, row) => sum + row['Total (FCFA)'], 0),
-  };
-
-  // Add totals row
-  rows.push(totals);
-
-  // Create worksheet
-  const worksheet = XLSX.utils.json_to_sheet(rows);
+export async function generateCMUBeneficiaryExport(
+  data: CMUBeneficiaryExportData
+): Promise<{ data: Buffer; filename: string; contentType: string }> {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('CMU Bénéficiaires');
 
   // Set column widths
-  worksheet['!cols'] = [
-    { wch: 15 }, // Matricule
-    { wch: 30 }, // Nom et Prénoms
-    { wch: 22 }, // Cotisation Salarié
-    { wch: 22 }, // Cotisation Patronale
-    { wch: 15 }, // Ayants droit
-    { wch: 15 }, // Total
+  worksheet.columns = [
+    { width: 15 }, // NUMERO CNPS ASSURE
+    { width: 20 }, // NUMERO SECURITE SOCIALE ASSURE
+    { width: 20 }, // NOM ASSURE
+    { width: 20 }, // PRENOMS ASSURE
+    { width: 15 }, // DATE DE NAISSANCE ASSURE
+    { width: 15 }, // NUMERO CNPS BENEFICIAIRE
+    { width: 20 }, // NUMERO SECURITE SOCIALE BENEFICIAIRE
+    { width: 12 }, // TYPE BENEFICIAIRE
+    { width: 20 }, // NOM BENEFICIAIRE
+    { width: 20 }, // PRENOMS BENEFICIAIRE
+    { width: 15 }, // DATE DE NAISSANCE BENEFICIAIRE
+    { width: 12 }, // GENRE BENEFICIAIRE
   ];
 
-  // Create workbook
-  const workbook = XLSX.utils.book_new();
+  // Add header row (yellow background, bold, borders)
+  const headerRow = worksheet.addRow([
+    'NUMERO CNPS ASSURE',
+    'NUMERO SECURITE SOCIALE ASSURE',
+    'NOM ASSURE',
+    'PRENOMS ASSURE',
+    'DATE DE NAISSANCE ASSURE',
+    'NUMERO CNPS BENEFICIAIRE',
+    'NUMERO SECURITE SOCIALE BENEFICIAIRE',
+    'TYPE BENEFICIAIRE C: CONJOINT/TRAVAILLEUR E: ENFANT',
+    'NOM BENEFICIAIRE',
+    'PRENOMS BENEFICIAIRE',
+    'DATE DE NAISSANCE BENEFICIAIRE',
+    'GENRE BENEFICIAIRE H: HOMME F: FEMME',
+  ]);
 
-  // Add header info sheet
-  const headerData = [
-    ['DÉCLARATION CMU'],
-    ['(Couverture Maladie Universelle)'],
-    [''],
-    ['Employeur:', data.companyName],
-    ['CC/DGI:', data.companyTaxId || 'N/A'],
-    ['Période:', formatPeriod(data.periodStart)],
-    ['Nombre de salariés:', data.employees.length],
-    [''],
-    ['Tarifs CMU:'],
-    ['- Cotisation salarié: 1 000 FCFA (fixe)'],
-    ['- Cotisation patronale sans famille: 500 FCFA'],
-    ['- Cotisation patronale avec famille: 5 000 FCFA'],
-    [''],
-  ];
+  // Style header
+  headerRow.font = { bold: true, size: 11 };
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFFFFF00' }, // Yellow background
+  };
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  headerRow.height = 30;
 
-  const headerSheet = XLSX.utils.aoa_to_sheet(headerData);
-  XLSX.utils.book_append_sheet(workbook, headerSheet, 'Informations');
+  // Add borders to header
+  headerRow.eachCell((cell) => {
+    cell.border = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' },
+    };
+  });
 
-  // Add data sheet
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Déclaration CMU');
+  // Add data rows
+  data.beneficiaryRows.forEach((row) => {
+    const dataRow = worksheet.addRow([
+      row.employeeCnpsNumber,
+      row.employeeSocialSecurityNumber,
+      row.employeeLastName,
+      row.employeeFirstName,
+      row.employeeDateOfBirth,
+      row.beneficiaryCnpsNumber,
+      row.beneficiarySocialSecurityNumber,
+      row.beneficiaryType,
+      row.beneficiaryLastName,
+      row.beneficiaryFirstName,
+      row.beneficiaryDateOfBirth,
+      row.beneficiaryGender,
+    ]);
 
-  // Generate Excel file
-  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    // Add borders to data cells
+    dataRow.eachCell((cell) => {
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+  });
 
-  return excelBuffer;
-};
+  // Enable auto-filter
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: 12 },
+  };
 
-/**
- * Generate CMU export file name
- */
-export const generateCMUFilename = (periodStart: Date, format: 'csv' | 'xlsx' = 'csv'): string => {
-  const month = XLSX.utils.format_cell({ t: 's', v: periodStart.getMonth() + 1 });
-  const year = periodStart.getFullYear();
-  const monthStr = month.toString().padStart(2, '0');
-  return `Declaration_CMU_${monthStr}_${year}.${format}`;
-};
+  // Freeze header row
+  worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // Generate buffer
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  // Generate filename
+  const periodStr = formatPeriod(data.periodStart);
+  const filename = `CMU_Beneficiaires_${periodStr}.xlsx`;
+
+  return {
+    data: Buffer.from(buffer),
+    filename,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  };
+}
+
+// ========================================
+// Validation Functions
+// ========================================
 
 /**
  * Validate CMU export data
+ *
+ * Returns array of warning messages (non-blocking)
  */
-export const validateCMUExportData = (data: CMUExportData): string[] => {
-  const errors: string[] = [];
+export function validateCMUBeneficiaryExportData(
+  data: CMUBeneficiaryExportData
+): string[] {
+  const warnings: string[] = [];
 
-  // Check if there are employees
-  if (data.employees.length === 0) {
-    errors.push('Aucun employé à exporter');
-  }
+  data.beneficiaryRows.forEach((row, index) => {
+    const rowNum = index + 2; // +2 because Excel is 1-indexed and row 1 is header
 
-  // Check if employees have valid employee numbers
-  const employeesWithoutNumber = data.employees.filter((emp) => !emp.employeeNumber);
-  if (employeesWithoutNumber.length > 0) {
-    errors.push(`${employeesWithoutNumber.length} employé(s) sans matricule`);
-  }
+    // Warning if employee missing CNPS number
+    if (!row.employeeCnpsNumber) {
+      warnings.push(
+        `Ligne ${rowNum}: Employé "${row.employeeFirstName} ${row.employeeLastName}" sans numéro CNPS`
+      );
+    }
 
-  // Check if CMU contributions are valid
-  const invalidContributions = data.employees.filter(
-    (emp) => emp.cmuEmployee <= 0 || emp.cmuEmployer <= 0
-  );
-  if (invalidContributions.length > 0) {
-    errors.push(`${invalidContributions.length} employé(s) avec des cotisations CMU invalides`);
-  }
+    // Warning if employee missing DOB
+    if (!row.employeeDateOfBirth) {
+      warnings.push(
+        `Ligne ${rowNum}: Employé "${row.employeeFirstName} ${row.employeeLastName}" sans date de naissance`
+      );
+    }
 
-  // Warn about non-standard employee contributions
-  const nonStandardEmployee = data.employees.filter(
-    (emp) => emp.cmuEmployee !== CMU_RATES.EMPLOYEE
-  );
-  if (nonStandardEmployee.length > 0) {
-    errors.push(
-      `${nonStandardEmployee.length} employé(s) avec une cotisation salarié différente de ${CMU_RATES.EMPLOYEE} FCFA`
-    );
-  }
+    // Warning if beneficiary has data but missing DOB
+    if (row.beneficiaryFirstName && !row.beneficiaryDateOfBirth) {
+      warnings.push(
+        `Ligne ${rowNum}: Bénéficiaire "${row.beneficiaryFirstName} ${row.beneficiaryLastName}" sans date de naissance`
+      );
+    }
 
-  // Warn about non-standard employer contributions
-  const nonStandardEmployer = data.employees.filter(
-    (emp) =>
-      emp.cmuEmployer !== CMU_RATES.EMPLOYER_WITHOUT_FAMILY &&
-      emp.cmuEmployer !== CMU_RATES.EMPLOYER_WITH_FAMILY
-  );
-  if (nonStandardEmployer.length > 0) {
-    errors.push(
-      `${nonStandardEmployer.length} employé(s) avec une cotisation patronale non-standard`
-    );
-  }
+    // Warning if beneficiary has invalid type
+    if (row.beneficiaryType && !['C', 'E', ''].includes(row.beneficiaryType)) {
+      warnings.push(
+        `Ligne ${rowNum}: Type bénéficiaire invalide "${row.beneficiaryType}"`
+      );
+    }
 
-  return errors;
-};
+    // Warning if beneficiary has invalid gender
+    if (row.beneficiaryGender && !['H', 'F', ''].includes(row.beneficiaryGender)) {
+      warnings.push(
+        `Ligne ${rowNum}: Genre bénéficiaire invalide "${row.beneficiaryGender}"`
+      );
+    }
+  });
+
+  return warnings;
+}
 
 /**
  * Get CMU export summary
  */
-export const getCMUExportSummary = (data: CMUExportData) => {
-  const totalEmployee = data.employees.reduce((sum, emp) => sum + emp.cmuEmployee, 0);
-  const totalEmployer = data.employees.reduce((sum, emp) => sum + emp.cmuEmployer, 0);
-  const totalContributions = totalEmployee + totalEmployer;
+export function getCMUBeneficiaryExportSummary(data: CMUBeneficiaryExportData) {
+  const rowsWithBeneficiaries = data.beneficiaryRows.filter(
+    (row) => row.beneficiaryFirstName !== ''
+  );
 
-  const employeesWithFamily = data.employees.filter((emp) => emp.hasFamily).length;
-  const employeesWithoutFamily = data.employees.length - employeesWithFamily;
+  const beneficiariesByType = {
+    spouse: rowsWithBeneficiaries.filter((row) => row.beneficiaryType === 'C').length,
+    children: rowsWithBeneficiaries.filter((row) => row.beneficiaryType === 'E').length,
+  };
 
   return {
-    employeeCount: data.employees.length,
-    employeesWithFamily,
-    employeesWithoutFamily,
-    totalEmployee: formatCurrency(totalEmployee),
-    totalEmployer: formatCurrency(totalEmployer),
-    totalContributions: formatCurrency(totalContributions),
+    totalRows: data.beneficiaryRows.length,
+    totalEmployees: data.totalEmployees,
+    totalBeneficiaries: data.totalBeneficiaries,
+    beneficiariesByType,
+    employeesWithoutBeneficiaries:
+      data.totalEmployees - new Set(rowsWithBeneficiaries.map((r) => r.employeeCnpsNumber)).size,
   };
-};
+}
