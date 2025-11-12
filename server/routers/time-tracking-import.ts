@@ -232,18 +232,21 @@ export const timeTrackingImportRouter = createTRPCRouter({
           const dateRange = parseResult.stats.dateRange;
           if (employeeIds.length > 0 && dateRange) {
             // Query existing time entries in this date range
-            const existingEntries = await db.query.timeEntries.findMany({
-              where: and(
-                eq(timeEntries.tenantId, ctx.user.tenantId),
-                inArray(timeEntries.employeeId, employeeIds),
-                gte(timeEntries.clockIn, dateRange.start.toISOString()),
-                lte(timeEntries.clockIn, dateRange.end.toISOString())
-              ),
-              columns: {
-                employeeId: true,
-                clockIn: true,
-              },
-            });
+            // Use core query builder to ensure proper date serialization
+            const existingEntries = await db
+              .select({
+                employeeId: timeEntries.employeeId,
+                clockIn: timeEntries.clockIn,
+              })
+              .from(timeEntries)
+              .where(
+                and(
+                  eq(timeEntries.tenantId, ctx.user.tenantId),
+                  inArray(timeEntries.employeeId, employeeIds),
+                  gte(timeEntries.clockIn, dateRange.start.toISOString()),
+                  lte(timeEntries.clockIn, dateRange.end.toISOString())
+                )
+              );
 
             // Flag potential duplicates (same employee, clockIn within 5 minutes)
             for (const pair of parseResult.pairedEntries) {

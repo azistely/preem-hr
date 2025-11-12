@@ -1,12 +1,9 @@
 /**
  * Documents tRPC Router
  *
- * Handles document generation:
- * - Pay slips (Bulletins de Paie) - single and bulk
- * - Work certificates (Certificat de Travail)
- * - Final settlements (Solde de Tout Compte)
- * - CNPS attestations
- * - Final payslips
+ * Handles document generation AND document upload management:
+ * - Document Generation: Pay slips, Work certificates, Final settlements, CNPS attestations
+ * - Document Upload: File uploads, approval workflow, expiry tracking
  */
 
 import { z } from 'zod';
@@ -17,9 +14,26 @@ import { generateFinalPayslip } from '@/features/documents/services/final-paysli
 import { bulletinService } from '@/lib/documents/bulletin-service';
 import { certificatService } from '@/lib/documents/certificat-travail-service';
 import { soldeService } from '@/lib/documents/solde-de-tout-compte-service';
+import { uploadDocument, deleteDocument, updateDocumentMetadata, validateFile } from '@/lib/documents/upload-service';
+import {
+  createSignatureRequest,
+  getSignatureStatus,
+  cancelSignatureRequest,
+  sendSignatureReminder,
+  type Signer
+} from '@/lib/documents/signing-service';
+import {
+  createNewVersion,
+  getVersionHistory,
+  getVersionStats,
+  rollbackToVersion,
+  compareVersions,
+  deleteVersion,
+} from '@/lib/documents/version-service';
+import { sendEvent } from '@/lib/inngest/client';
 import { db } from '@/lib/db';
-import { generatedDocuments, documentAccessLog, bulkGenerationJobs } from '@/lib/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { generatedDocuments, documentAccessLog, bulkGenerationJobs, uploadedDocuments, documentCategories, users } from '@/lib/db/schema';
+import { eq, and, desc, or, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 const generateWorkCertificateSchema = z.object({
@@ -419,6 +433,1309 @@ export const documentsRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: error.message || 'Erreur lors de la génération du solde',
+        });
+      }
+    }),
+
+  // =====================================================
+  // Document Upload Management (NEW)
+  // =====================================================
+
+  /**
+   * Get document categories (for dropdowns/UI)
+   */
+  getCategories: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      const categories = await db
+        .select()
+        .from(documentCategories)
+        .orderBy(documentCategories.displayOrder);
+
+      // Filter by employee permissions if needed
+      const isEmployee = ctx.user.role.toLowerCase() === 'employee';
+      if (isEmployee) {
+        return categories.filter((c) => c.employeeCanUpload);
+      }
+
+      return categories;
+    } catch (error: any) {
+      console.error('[Document Categories] Error:', error);
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Erreur lors de la récupération des catégories',
+      });
+    }
+  }),
+
+  /**
+   * Upload a document (file upload)
+   * Note: This expects file data as base64 string (client converts File to base64)
+   */
+  uploadDocument: protectedProcedure
+    .input(
+      z.object({
+        fileData: z.string(), // Base64 encoded file
+        fileName: z.string(),
+        fileSize: z.number(),
+        mimeType: z.string(),
+        employeeId: z.string().uuid().nullable(),
+        documentCategory: z.string(),
+        documentSubcategory: z.string().optional(),
+        expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        tags: z.array(z.string()).optional(),
+        metadata: z.record(z.unknown()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Convert base64 to File object
+        const buffer = Buffer.from(input.fileData, 'base64');
+        const file = new File([buffer], input.fileName, {
+          type: input.mimeType,
+        });
+
+        // Call upload service
+        const result = await uploadDocument({
+          file,
+          employeeId: input.employeeId,
+          documentCategory: input.documentCategory,
+          documentSubcategory: input.documentSubcategory,
+          expiryDate: input.expiryDate,
+          tags: input.tags,
+          metadata: input.metadata,
+          auth: {
+            userId: ctx.user.id,
+            tenantId: ctx.user.tenantId!,
+            role: ctx.user.role,
+          },
+        });
+
+        if (!result.success) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: result.error || 'Échec du téléchargement',
+          });
+        }
+
+        return result;
+      } catch (error: any) {
+        console.error('[Document Upload] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors du téléchargement',
+        });
+      }
+    }),
+
+  /**
+   * List uploaded documents with filters
+   */
+  listUploaded: protectedProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid().optional(),
+        documentCategory: z.string().optional(),
+        approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
+        includeArchived: z.boolean().default(false),
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      try {
+        const { employeeId, documentCategory, approvalStatus, includeArchived, limit, offset } = input;
+        const isHR = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+
+        // Build where conditions
+        const conditions = [eq(uploadedDocuments.tenantId, ctx.user.tenantId!)];
+
+        // Non-HR can only see their own documents
+        if (!isHR) {
+          if (!ctx.user.employeeId) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'Employee ID is required',
+            });
+          }
+          conditions.push(eq(uploadedDocuments.employeeId, ctx.user.employeeId));
+        } else if (employeeId) {
+          // HR can filter by employee
+          conditions.push(eq(uploadedDocuments.employeeId, employeeId));
+        }
+
+        if (documentCategory) {
+          conditions.push(eq(uploadedDocuments.documentCategory, documentCategory));
+        }
+
+        if (approvalStatus) {
+          conditions.push(eq(uploadedDocuments.approvalStatus, approvalStatus));
+        }
+
+        if (!includeArchived) {
+          conditions.push(eq(uploadedDocuments.isArchived, false));
+        }
+
+        // Fetch documents
+        const documents = await db
+          .select()
+          .from(uploadedDocuments)
+          .where(and(...conditions))
+          .orderBy(desc(uploadedDocuments.createdAt))
+          .limit(limit)
+          .offset(offset);
+
+        // Get total count
+        const [{ count }] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(uploadedDocuments)
+          .where(and(...conditions));
+
+        return {
+          documents,
+          total: count,
+          hasMore: offset + limit < count,
+        };
+      } catch (error: any) {
+        console.error('[List Uploaded Documents] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la récupération des documents',
+        });
+      }
+    }),
+
+  /**
+   * Get a single uploaded document by ID
+   */
+  getUploadedDocument: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      try {
+        const [document] = await db
+          .select()
+          .from(uploadedDocuments)
+          .where(
+            and(
+              eq(uploadedDocuments.id, input.id),
+              eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+            )
+          )
+          .limit(1);
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        // Check permissions (employees can only view their own)
+        const isHR = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+        if (!isHR && document.employeeId !== ctx.user.employeeId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Accès refusé',
+          });
+        }
+
+        return document;
+      } catch (error: any) {
+        console.error('[Get Uploaded Document] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la récupération du document',
+        });
+      }
+    }),
+
+  /**
+   * Approve a pending document (HR only)
+   */
+  approveDocument: hrManagerProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Get document
+        const [document] = await db
+          .select()
+          .from(uploadedDocuments)
+          .where(
+            and(
+              eq(uploadedDocuments.id, input.documentId),
+              eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+            )
+          )
+          .limit(1);
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        if (document.approvalStatus !== 'pending') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Document déjà traité',
+          });
+        }
+
+        // Update document
+        const [updated] = await db
+          .update(uploadedDocuments)
+          .set({
+            approvalStatus: 'approved',
+            approvedBy: ctx.user.id,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(uploadedDocuments.id, input.documentId))
+          .returning();
+
+        // Get approver name from database
+        const [approver] = await db
+          .select({ firstName: users.firstName, lastName: users.lastName })
+          .from(users)
+          .where(eq(users.id, ctx.user.id))
+          .limit(1);
+
+        const approverName = approver
+          ? `${approver.firstName || ''} ${approver.lastName || ''}`.trim()
+          : 'Gestionnaire RH';
+
+        // Emit Inngest event
+        await sendEvent({
+          name: 'document.approved',
+          data: {
+            documentId: input.documentId,
+            approvedById: ctx.user.id,
+            approvedByName: approverName || 'Gestionnaire RH',
+            tenantId: ctx.user.tenantId!,
+          },
+        });
+
+        console.log('[Document Approval] Document approved:', input.documentId);
+
+        return updated;
+      } catch (error: any) {
+        console.error('[Approve Document] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de l\'approbation',
+        });
+      }
+    }),
+
+  /**
+   * Reject a pending document (HR only)
+   */
+  rejectDocument: hrManagerProcedure
+    .input(
+      z.object({
+        documentId: z.string().uuid(),
+        rejectionReason: z.string().min(1, 'Raison requise'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Get document
+        const [document] = await db
+          .select()
+          .from(uploadedDocuments)
+          .where(
+            and(
+              eq(uploadedDocuments.id, input.documentId),
+              eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+            )
+          )
+          .limit(1);
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        if (document.approvalStatus !== 'pending') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Document déjà traité',
+          });
+        }
+
+        // Update document
+        const [updated] = await db
+          .update(uploadedDocuments)
+          .set({
+            approvalStatus: 'rejected',
+            rejectionReason: input.rejectionReason,
+            updatedAt: new Date(),
+          })
+          .where(eq(uploadedDocuments.id, input.documentId))
+          .returning();
+
+        // Get rejector name from database
+        const [rejector] = await db
+          .select({ firstName: users.firstName, lastName: users.lastName })
+          .from(users)
+          .where(eq(users.id, ctx.user.id))
+          .limit(1);
+
+        const rejectorName = rejector
+          ? `${rejector.firstName || ''} ${rejector.lastName || ''}`.trim()
+          : 'Gestionnaire RH';
+
+        // Emit Inngest event
+        await sendEvent({
+          name: 'document.rejected',
+          data: {
+            documentId: input.documentId,
+            rejectedById: ctx.user.id,
+            rejectedByName: rejectorName || 'Gestionnaire RH',
+            rejectionReason: input.rejectionReason,
+            tenantId: ctx.user.tenantId!,
+          },
+        });
+
+        console.log('[Document Rejection] Document rejected:', input.documentId);
+
+        return updated;
+      } catch (error: any) {
+        console.error('[Reject Document] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors du rejet',
+        });
+      }
+    }),
+
+  /**
+   * Delete (archive) an uploaded document (HR only)
+   */
+  deleteUploaded: hrManagerProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const result = await deleteDocument(input.documentId, {
+          userId: ctx.user.id,
+          tenantId: ctx.user.tenantId!,
+          role: ctx.user.role,
+        });
+
+        if (!result.success) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: result.error || 'Échec de la suppression',
+          });
+        }
+
+        return result;
+      } catch (error: any) {
+        console.error('[Delete Uploaded Document] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la suppression',
+        });
+      }
+    }),
+
+  /**
+   * Update document metadata (HR only)
+   */
+  updateUploadedMetadata: hrManagerProcedure
+    .input(
+      z.object({
+        documentId: z.string().uuid(),
+        documentCategory: z.string().optional(),
+        documentSubcategory: z.string().optional(),
+        expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+        tags: z.array(z.string()).optional(),
+        metadata: z.record(z.unknown()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const { documentId, ...updates } = input;
+
+        const result = await updateDocumentMetadata(
+          documentId,
+          updates,
+          {
+            userId: ctx.user.id,
+            tenantId: ctx.user.tenantId!,
+            role: ctx.user.role,
+          }
+        );
+
+        if (!result.success) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: result.error || 'Échec de la mise à jour',
+          });
+        }
+
+        return result;
+      } catch (error: any) {
+        console.error('[Update Document Metadata] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la mise à jour',
+        });
+      }
+    }),
+
+  /**
+   * Get pending document count (for HR badge)
+   */
+  getPendingCount: hrManagerProcedure.query(async ({ ctx }) => {
+    try {
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(uploadedDocuments)
+        .where(
+          and(
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!),
+            eq(uploadedDocuments.approvalStatus, 'pending'),
+            eq(uploadedDocuments.isArchived, false)
+          )
+        );
+
+      return count;
+    } catch (error: any) {
+      console.error('[Pending Document Count] Error:', error);
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Erreur lors de la récupération du compteur',
+      });
+    }
+  }),
+
+  /**
+   * Bulk approve documents
+   * Approve multiple documents at once (HR only)
+   */
+  bulkApproveDocuments: hrManagerProcedure
+    .input(
+      z.object({
+        documentIds: z.array(z.string().uuid()).min(1, 'Au moins un document requis'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const results = {
+          success: [] as string[],
+          failed: [] as { id: string; reason: string }[],
+        };
+
+        for (const documentId of input.documentIds) {
+          try {
+            // Update document status
+            await db
+              .update(uploadedDocuments)
+              .set({
+                approvalStatus: 'approved',
+                approvedBy: ctx.user.id,
+                approvedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(uploadedDocuments.id, documentId),
+                  eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+                )
+              );
+
+            // Emit approval event for Inngest workflow
+            await sendEvent({
+              name: 'document.approved',
+              data: {
+                documentId,
+                approvedBy: ctx.user.id,
+                approvedByEmail: ctx.user.email,
+                tenantId: ctx.user.tenantId!,
+              },
+              user: {
+                userId: ctx.user.id,
+                tenantId: ctx.user.tenantId!,
+                role: ctx.user.role,
+              },
+            });
+
+            results.success.push(documentId);
+          } catch (error) {
+            results.failed.push({
+              id: documentId,
+              reason: error instanceof Error ? error.message : 'Erreur inconnue',
+            });
+          }
+        }
+
+        return {
+          success: results.success.length === input.documentIds.length,
+          approved: results.success.length,
+          failed: results.failed.length,
+          details: results,
+        };
+      } catch (error: any) {
+        console.error('[Bulk Approve Documents] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de l\'approbation en masse',
+        });
+      }
+    }),
+
+  /**
+   * Bulk reject documents
+   * Reject multiple documents at once with a reason (HR only)
+   */
+  bulkRejectDocuments: hrManagerProcedure
+    .input(
+      z.object({
+        documentIds: z.array(z.string().uuid()).min(1, 'Au moins un document requis'),
+        reason: z.string().min(1, 'La raison du rejet est requise'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const results = {
+          success: [] as string[],
+          failed: [] as { id: string; reason: string }[],
+        };
+
+        for (const documentId of input.documentIds) {
+          try {
+            // Update document status
+            await db
+              .update(uploadedDocuments)
+              .set({
+                approvalStatus: 'rejected',
+                approvedBy: ctx.user.id,
+                approvedAt: new Date(),
+                rejectionReason: input.reason,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(uploadedDocuments.id, documentId),
+                  eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+                )
+              );
+
+            // Emit rejection event for Inngest workflow
+            await sendEvent({
+              name: 'document.rejected',
+              data: {
+                documentId,
+                rejectedBy: ctx.user.id,
+                rejectedByEmail: ctx.user.email,
+                reason: input.reason,
+                tenantId: ctx.user.tenantId!,
+              },
+              user: {
+                userId: ctx.user.id,
+                tenantId: ctx.user.tenantId!,
+                role: ctx.user.role,
+              },
+            });
+
+            results.success.push(documentId);
+          } catch (error) {
+            results.failed.push({
+              id: documentId,
+              reason: error instanceof Error ? error.message : 'Erreur inconnue',
+            });
+          }
+        }
+
+        return {
+          success: results.success.length === input.documentIds.length,
+          rejected: results.success.length,
+          failed: results.failed.length,
+          details: results,
+        };
+      } catch (error: any) {
+        console.error('[Bulk Reject Documents] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors du rejet en masse',
+        });
+      }
+    }),
+
+  /**
+   * Get documents for bulk download
+   * Returns document URLs for ZIP download preparation
+   */
+  getBulkDownloadData: hrManagerProcedure
+    .input(
+      z.object({
+        documentIds: z.array(z.string().uuid()).optional(),
+        filters: z
+          .object({
+            category: z.string().optional(),
+            approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
+            employeeId: z.string().uuid().optional(),
+          })
+          .optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      try {
+        let query = db
+          .select({
+            id: uploadedDocuments.id,
+            fileName: uploadedDocuments.fileName,
+            fileUrl: uploadedDocuments.fileUrl,
+            fileSize: uploadedDocuments.fileSize,
+            mimeType: uploadedDocuments.mimeType,
+            documentCategory: uploadedDocuments.documentCategory,
+          })
+          .from(uploadedDocuments)
+          .where(
+            and(
+              eq(uploadedDocuments.tenantId, ctx.user.tenantId!),
+              eq(uploadedDocuments.isArchived, false)
+            )
+          );
+
+        // Filter by specific document IDs if provided
+        if (input.documentIds && input.documentIds.length > 0) {
+          const documents = await db
+            .select({
+              id: uploadedDocuments.id,
+              fileName: uploadedDocuments.fileName,
+              fileUrl: uploadedDocuments.fileUrl,
+              fileSize: uploadedDocuments.fileSize,
+              mimeType: uploadedDocuments.mimeType,
+              documentCategory: uploadedDocuments.documentCategory,
+            })
+            .from(uploadedDocuments)
+            .where(
+              and(
+                eq(uploadedDocuments.tenantId, ctx.user.tenantId!),
+                eq(uploadedDocuments.isArchived, false),
+                or(...input.documentIds.map((id) => eq(uploadedDocuments.id, id)))
+              )
+            );
+
+          return {
+            documents,
+            totalSize: documents.reduce((sum, doc) => sum + doc.fileSize, 0),
+            count: documents.length,
+          };
+        }
+
+        // Apply filters if no specific IDs
+        const conditions = [
+          eq(uploadedDocuments.tenantId, ctx.user.tenantId!),
+          eq(uploadedDocuments.isArchived, false),
+        ];
+
+        if (input.filters?.category) {
+          conditions.push(eq(uploadedDocuments.documentCategory, input.filters.category));
+        }
+
+        if (input.filters?.approvalStatus) {
+          conditions.push(eq(uploadedDocuments.approvalStatus, input.filters.approvalStatus));
+        }
+
+        if (input.filters?.employeeId) {
+          conditions.push(eq(uploadedDocuments.employeeId, input.filters.employeeId));
+        }
+
+        const documents = await db
+          .select({
+            id: uploadedDocuments.id,
+            fileName: uploadedDocuments.fileName,
+            fileUrl: uploadedDocuments.fileUrl,
+            fileSize: uploadedDocuments.fileSize,
+            mimeType: uploadedDocuments.mimeType,
+            documentCategory: uploadedDocuments.documentCategory,
+          })
+          .from(uploadedDocuments)
+          .where(and(...conditions))
+          .limit(100); // Safety limit
+
+        return {
+          documents,
+          totalSize: documents.reduce((sum, doc) => sum + doc.fileSize, 0),
+          count: documents.length,
+        };
+      } catch (error: any) {
+        console.error('[Get Bulk Download Data] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la préparation du téléchargement',
+        });
+      }
+    }),
+
+  // =====================================================
+  // E-Signature Endpoints (Dropbox Sign)
+  // =====================================================
+
+  /**
+   * Create a signature request for a document
+   */
+  createSignatureRequest: hrManagerProcedure
+    .input(
+      z.object({
+        documentId: z.string().uuid(),
+        signers: z.array(
+          z.object({
+            name: z.string().min(1, 'Le nom du signataire est requis'),
+            email: z.string().email('Email invalide'),
+            order: z.number().optional(),
+          })
+        ).min(1, 'Au moins un signataire est requis'),
+        title: z.string().min(1, 'Le titre est requis'),
+        subject: z.string().optional(),
+        message: z.string().optional(),
+        signingOrder: z.enum(['sequential', 'parallel']).default('sequential'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Verify document belongs to tenant
+        const document = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.documentId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        // Check if document already has a pending signature request
+        if (document.signatureStatus === 'pending' || document.signatureStatus === 'partially_signed') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Ce document a déjà une demande de signature en cours',
+          });
+        }
+
+        // Create signature request
+        const result = await createSignatureRequest({
+          documentId: input.documentId,
+          signers: input.signers as Signer[],
+          title: input.title,
+          subject: input.subject,
+          message: input.message,
+          signingOrder: input.signingOrder,
+          testMode: process.env.NODE_ENV === 'development',
+        });
+
+        return {
+          success: true,
+          signatureRequestId: result.signatureRequestId,
+          signingUrls: result.signingUrls,
+        };
+      } catch (error: any) {
+        console.error('[Create Signature Request] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la création de la demande de signature',
+        });
+      }
+    }),
+
+  /**
+   * Get signature status for a document
+   */
+  getSignatureStatus: protectedProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      try {
+        // Get document
+        const document = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.documentId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        if (!document.signatureRequestId) {
+          return {
+            hasSignatureRequest: false,
+            status: null,
+          };
+        }
+
+        // Get status from Dropbox Sign
+        const status = await getSignatureStatus(document.signatureRequestId);
+
+        return {
+          hasSignatureRequest: true,
+          status,
+        };
+      } catch (error: any) {
+        console.error('[Get Signature Status] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la récupération du statut de signature',
+        });
+      }
+    }),
+
+  /**
+   * Cancel a pending signature request
+   */
+  cancelSignatureRequest: hrManagerProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Get document
+        const document = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.documentId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        if (!document.signatureRequestId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Ce document n\'a pas de demande de signature',
+          });
+        }
+
+        // Cancel request
+        await cancelSignatureRequest(document.signatureRequestId);
+
+        return { success: true };
+      } catch (error: any) {
+        console.error('[Cancel Signature Request] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de l\'annulation de la demande de signature',
+        });
+      }
+    }),
+
+  /**
+   * Send reminder to signers
+   */
+  sendSignatureReminder: hrManagerProcedure
+    .input(
+      z.object({
+        documentId: z.string().uuid(),
+        emailAddress: z.string().email().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Get document
+        const document = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.documentId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        if (!document.signatureRequestId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Ce document n\'a pas de demande de signature',
+          });
+        }
+
+        // Send reminder
+        await sendSignatureReminder(document.signatureRequestId, input.emailAddress);
+
+        return { success: true };
+      } catch (error: any) {
+        console.error('[Send Signature Reminder] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de l\'envoi du rappel',
+        });
+      }
+    }),
+
+  // =====================================================
+  // Document Versioning Endpoints
+  // =====================================================
+
+  /**
+   * Create a new version of an existing document
+   * Creates version chain: v1 → v2 → v3
+   */
+  createDocumentVersion: protectedProcedure
+    .input(
+      z.object({
+        originalDocumentId: z.string().uuid(),
+        fileUrl: z.string().url(),
+        fileName: z.string().min(1),
+        fileSize: z.number().positive(),
+        mimeType: z.string(),
+        versionNotes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Verify user has access to original document
+        const originalDoc = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.originalDocumentId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!originalDoc) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document original introuvable',
+          });
+        }
+
+        // Check permissions (employees can only version their own documents)
+        const isHR = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+        if (!isHR && originalDoc.employeeId !== ctx.user.employeeId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Vous ne pouvez pas créer de version pour ce document',
+          });
+        }
+
+        // Create new version
+        const result = await createNewVersion({
+          originalDocumentId: input.originalDocumentId,
+          fileUrl: input.fileUrl,
+          fileName: input.fileName,
+          fileSize: input.fileSize,
+          mimeType: input.mimeType,
+          versionNotes: input.versionNotes,
+          uploadedBy: ctx.user.id,
+          tenantId: ctx.user.tenantId!,
+        });
+
+        return {
+          success: true,
+          newVersionId: result.newVersionId,
+          versionNumber: result.versionNumber,
+        };
+      } catch (error: any) {
+        console.error('[Create Document Version] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la création de la version',
+        });
+      }
+    }),
+
+  /**
+   * Get version history for a document
+   * Returns all versions in chronological order
+   */
+  getDocumentVersionHistory: protectedProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      try {
+        // Verify user has access to document
+        const document = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.documentId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        // Check permissions
+        const isHR = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+        if (!isHR && document.employeeId !== ctx.user.employeeId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Accès refusé',
+          });
+        }
+
+        // Get version history
+        const history = await getVersionHistory(input.documentId);
+
+        return history;
+      } catch (error: any) {
+        console.error('[Get Document Version History] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la récupération de l\'historique',
+        });
+      }
+    }),
+
+  /**
+   * Get version statistics for a document
+   */
+  getDocumentVersionStats: protectedProcedure
+    .input(z.object({ documentId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      try {
+        // Verify user has access to document
+        const document = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.documentId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!document) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Document introuvable',
+          });
+        }
+
+        // Check permissions
+        const isHR = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+        if (!isHR && document.employeeId !== ctx.user.employeeId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Accès refusé',
+          });
+        }
+
+        // Get version stats
+        const stats = await getVersionStats(input.documentId);
+
+        return stats;
+      } catch (error: any) {
+        console.error('[Get Document Version Stats] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la récupération des statistiques',
+        });
+      }
+    }),
+
+  /**
+   * Rollback to a previous version
+   * Marks selected version as "latest"
+   */
+  rollbackDocumentVersion: hrManagerProcedure
+    .input(z.object({ versionId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Verify version belongs to tenant
+        const version = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.versionId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!version) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Version introuvable',
+          });
+        }
+
+        // Rollback
+        const result = await rollbackToVersion(input.versionId, ctx.user.id);
+
+        return result;
+      } catch (error: any) {
+        console.error('[Rollback Document Version] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors du retour à la version précédente',
+        });
+      }
+    }),
+
+  /**
+   * Compare two versions of a document
+   */
+  compareDocumentVersions: protectedProcedure
+    .input(
+      z.object({
+        versionId1: z.string().uuid(),
+        versionId2: z.string().uuid(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      try {
+        // Verify both versions belong to tenant
+        const [v1, v2] = await Promise.all([
+          db.query.uploadedDocuments.findFirst({
+            where: and(
+              eq(uploadedDocuments.id, input.versionId1),
+              eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+            ),
+          }),
+          db.query.uploadedDocuments.findFirst({
+            where: and(
+              eq(uploadedDocuments.id, input.versionId2),
+              eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+            ),
+          }),
+        ]);
+
+        if (!v1 || !v2) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Une ou plusieurs versions introuvables',
+          });
+        }
+
+        // Check permissions
+        const isHR = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
+        if (!isHR && (v1.employeeId !== ctx.user.employeeId || v2.employeeId !== ctx.user.employeeId)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Accès refusé',
+          });
+        }
+
+        // Compare versions
+        const comparison = await compareVersions(input.versionId1, input.versionId2);
+
+        return comparison;
+      } catch (error: any) {
+        console.error('[Compare Document Versions] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la comparaison des versions',
+        });
+      }
+    }),
+
+  /**
+   * Delete a specific version (HR only)
+   * Cannot delete v1 if it has children, cannot delete the only version
+   */
+  deleteDocumentVersion: hrManagerProcedure
+    .input(z.object({ versionId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Verify version belongs to tenant
+        const version = await db.query.uploadedDocuments.findFirst({
+          where: and(
+            eq(uploadedDocuments.id, input.versionId),
+            eq(uploadedDocuments.tenantId, ctx.user.tenantId!)
+          ),
+        });
+
+        if (!version) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Version introuvable',
+          });
+        }
+
+        // Delete version
+        const result = await deleteVersion(input.versionId);
+
+        return result;
+      } catch (error: any) {
+        console.error('[Delete Document Version] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la suppression de la version',
+        });
+      }
+    }),
+
+  /**
+   * ==========================================
+   * DOCUMENT CATEGORY MANAGEMENT
+   * ==========================================
+   */
+
+  /**
+   * List all document categories with their configuration
+   * Access: HR Manager, Tenant Admin, Super Admin
+   */
+  listCategories: hrManagerProcedure
+    .query(async () => {
+      try {
+        const categories = await db
+          .select()
+          .from(documentCategories)
+          .orderBy(documentCategories.displayOrder);
+
+        return categories;
+      } catch (error: any) {
+        console.error('[List Categories] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de la récupération des catégories',
+        });
+      }
+    }),
+
+  /**
+   * Update document category settings
+   * Access: HR Manager, Tenant Admin, Super Admin
+   */
+  updateCategory: hrManagerProcedure
+    .input(z.object({
+      categoryId: z.string().uuid(),
+      data: z.object({
+        labelFr: z.string().optional(),
+        icon: z.string().optional(),
+        allowsUpload: z.boolean().optional(),
+        allowsGeneration: z.boolean().optional(),
+        requiresHrApproval: z.boolean().optional(),
+        employeeCanUpload: z.boolean().optional(),
+        displayOrder: z.number().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        const [updated] = await db
+          .update(documentCategories)
+          .set(input.data)
+          .where(eq(documentCategories.id, input.categoryId))
+          .returning();
+
+        if (!updated) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Catégorie introuvable',
+          });
+        }
+
+        return updated;
+      } catch (error: any) {
+        console.error('[Update Category] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la mise à jour de la catégorie',
         });
       }
     }),

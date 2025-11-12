@@ -37,6 +37,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/manager/time-off/approvals': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/reports/overtime': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/shift-planning': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/documents': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
 
   // Admin dashboard (HR Manager+)
   '/admin/dashboard': ['hr_manager', 'tenant_admin', 'super_admin'],
@@ -59,6 +60,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/admin/employees/import-export': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/benefits': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/shift-planning': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/documents': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // Automation Hub (HR Manager+)
   '/automation': ['hr_manager', 'tenant_admin', 'super_admin'],
