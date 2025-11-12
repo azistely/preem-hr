@@ -31,6 +31,7 @@ export interface TimeOffRequestInput {
   startDate: Date;
   endDate: Date;
   reason?: string;
+  handoverNotes?: string;
   isDeductibleForAcp?: boolean;
 }
 
@@ -81,7 +82,7 @@ async function calculateBusinessDaysWithHolidays(
  * Request time off
  */
 export async function requestTimeOff(input: TimeOffRequestInput) {
-  const { employeeId, tenantId, policyId, startDate, endDate, reason, isDeductibleForAcp = true } = input;
+  const { employeeId, tenantId, policyId, startDate, endDate, reason, handoverNotes, isDeductibleForAcp = true } = input;
 
   // Get policy
   const policy = await db.query.timeOffPolicies.findFirst({
@@ -206,6 +207,7 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
       endDate: endDate.toISOString().split('T')[0],
       totalDays: totalDays.toString(),
       reason,
+      handoverNotes,
       status: 'pending',
       isDeductibleForAcp: isDeductibleForAcp ?? true,
     })

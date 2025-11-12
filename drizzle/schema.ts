@@ -2286,6 +2286,94 @@ export const generatedDocuments = pgTable("generated_documents", {
 	pgPolicy("documents_tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))` }),
 ]);
 
+export const uploadedDocuments = pgTable("uploaded_documents", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	employeeId: uuid("employee_id"),
+	documentCategory: text("document_category").notNull(),
+	documentSubcategory: text("document_subcategory"),
+	fileName: text("file_name").notNull(),
+	fileUrl: text("file_url").notNull(),
+	fileSize: integer("file_size").notNull(),
+	mimeType: text("mime_type").notNull(),
+	uploadedBy: uuid("uploaded_by").notNull(),
+	uploadedAt: timestamp("uploaded_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+	versionNumber: integer("version_number").default(1).notNull(),
+	parentDocumentId: uuid("parent_document_id"),
+	isLatestVersion: boolean("is_latest_version").default(true).notNull(),
+	versionNotes: text("version_notes"),
+	supersededAt: timestamp("superseded_at", { withTimezone: true, mode: 'string' }),
+	supersededById: uuid("superseded_by_id"),
+	expiryDate: date("expiry_date"),
+	tags: text().array(),
+	metadata: jsonb().default({}),
+	approvalStatus: text("approval_status").default('approved'),
+	approvedBy: uuid("approved_by"),
+	approvedAt: timestamp("approved_at", { withTimezone: true, mode: 'string' }),
+	rejectionReason: text("rejection_reason"),
+	isArchived: boolean("is_archived").default(false),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+	signatureRequestId: varchar("signature_request_id", { length: 255 }),
+	signatureProvider: varchar("signature_provider", { length: 50 }).default('dropbox_sign'),
+	signatureStatus: varchar("signature_status", { length: 50 }),
+	signatureUrl: text("signature_url"),
+	signedAt: timestamp("signed_at", { withTimezone: true, mode: 'string' }),
+	signatureMetadata: jsonb("signature_metadata").default({}),
+}, (table) => [
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "uploaded_documents_tenant_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.employeeId],
+			foreignColumns: [employees.id],
+			name: "uploaded_documents_employee_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.uploadedBy],
+			foreignColumns: [users.id],
+			name: "uploaded_documents_uploaded_by_fkey"
+		}),
+	foreignKey({
+			columns: [table.approvedBy],
+			foreignColumns: [users.id],
+			name: "uploaded_documents_approved_by_fkey"
+		}),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid))` }),
+	pgPolicy("employee_view_own", { as: "permissive", for: "select", to: ["public"], using: sql`((employee_id = ((auth.jwt() ->> 'employee_id'::text))::uuid))` }),
+	pgPolicy("hr_manage_all", { as: "permissive", for: "all", to: ["public"], using: sql`((auth.jwt() ->> 'role'::text) = ANY (ARRAY['HR_MANAGER'::text, 'ADMIN'::text, 'SUPER_ADMIN'::text]))` }),
+]);
+
+export const signatureEvents = pgTable("signature_events", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	documentId: uuid("document_id").notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	eventType: text("event_type").notNull(),
+	eventTimestamp: timestamp("event_timestamp", { withTimezone: true, mode: 'string' }).defaultNow(),
+	signerEmail: text("signer_email"),
+	signerName: text("signer_name"),
+	signerIpAddress: text("signer_ip_address"),
+	signerUserAgent: text("signer_user_agent"),
+	signatureProvider: text("signature_provider").default('dropbox_sign'),
+	providerEventId: text("provider_event_id"),
+	metadata: jsonb().default({}),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+	foreignKey({
+			columns: [table.documentId],
+			foreignColumns: [uploadedDocuments.id],
+			name: "signature_events_document_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "signature_events_tenant_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid))` }),
+]);
+
 export const accountingAccounts = pgTable("accounting_accounts", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id"),
@@ -2414,6 +2502,44 @@ export const timeOffBalances = pgTable("time_off_balances", {
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text)) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text))`  }),
 ]);
 
+export const leavePlanningPeriods = pgTable('leave_planning_periods', {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid('tenant_id').notNull(),
+	name: text().notNull(),
+	year: integer().notNull(),
+	quarter: integer(), // 1-4 or null for full year
+	status: text().default('draft').notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+	index('idx_leave_planning_periods_tenant').using('btree', table.tenantId.asc().nullsLast().op('uuid_ops')),
+	index('idx_leave_planning_periods_year').using('btree', table.year.asc().nullsLast()),
+	foreignKey({
+		columns: [table.tenantId],
+		foreignColumns: [tenants.id],
+		name: 'leave_planning_periods_tenant_id_fkey'
+	}).onDelete('cascade'),
+]);
+
+export const notifications = pgTable('notifications', {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid('user_id').notNull(),
+	type: text().notNull(),
+	title: text().notNull(),
+	message: text().notNull(),
+	actionUrl: text('action_url'),
+	read: boolean().default(false).notNull(),
+	readAt: timestamp('read_at', { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index('idx_notifications_user_read').using('btree', table.userId.asc().nullsLast().op('uuid_ops'), table.read.asc().nullsLast(), table.createdAt.desc().nullsFirst()),
+	foreignKey({
+		columns: [table.userId],
+		foreignColumns: [users.id],
+		name: 'notifications_user_id_fkey'
+	}).onDelete('cascade'),
+]);
+
 export const timeOffRequests = pgTable("time_off_requests", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tenantId: uuid("tenant_id").notNull(),
@@ -2429,6 +2555,11 @@ export const timeOffRequests = pgTable("time_off_requests", {
 	reviewedBy: uuid("reviewed_by"),
 	reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: 'string' }),
 	reviewNotes: text("review_notes"),
+	planningPeriodId: uuid('planning_period_id'),
+	handoverNotes: text('handover_notes'),
+	certificateGeneratedAt: timestamp('certificate_generated_at', { withTimezone: true, mode: 'string' }),
+	reminder20dSentAt: timestamp('reminder_20d_sent_at', { withTimezone: true, mode: 'string' }),
+	reminder15dSentAt: timestamp('reminder_15d_sent_at', { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -2456,9 +2587,14 @@ export const timeOffRequests = pgTable("time_off_requests", {
 			foreignColumns: [tenants.id],
 			name: "time_off_requests_tenant_id_fkey"
 		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.planningPeriodId],
+			foreignColumns: [leavePlanningPeriods.id],
+			name: "time_off_requests_planning_period_id_fkey"
+		}),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text)) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text))`  }),
 	check("valid_dates", sql`start_date <= end_date`),
-	check("valid_status_request", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])`),
+	check("valid_status_request", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text, 'planned'::text])`),
 ]);
 
 export const acpConfiguration = pgTable("acp_configuration", {

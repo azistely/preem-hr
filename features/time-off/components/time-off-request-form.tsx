@@ -53,6 +53,7 @@ const timeOffRequestSchema = z.object({
     required_error: 'Date de fin requise',
   }),
   reason: z.string().optional(),
+  handoverNotes: z.string().optional(),
   isDeductibleForACP: z.boolean(),
 });
 
@@ -136,6 +137,7 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
       startDate: data.startDate,
       endDate: data.endDate,
       reason: data.reason,
+      handoverNotes: data.handoverNotes,
       isDeductibleForACP: data.isDeductibleForACP,
     });
   };
@@ -277,6 +279,28 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
                   </FormControl>
                   <FormDescription>
                     Ce champ est optionnel mais peut aider votre gestionnaire
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Handover Notes */}
+            <FormField
+              control={form.control}
+              name="handoverNotes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-lg">Notes de passation (optionnel)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Décrivez la passation de charge pendant votre absence (tâches en cours, personnes à contacter, urgences)..."
+                      className="min-h-[120px] text-base"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Informations importantes pour assurer la continuité pendant votre absence
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

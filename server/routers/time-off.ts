@@ -37,6 +37,7 @@ export const timeOffRouter = createTRPCRouter({
         startDate: z.date(),
         endDate: z.date(),
         reason: z.string().optional(),
+        handoverNotes: z.string().optional(),
         isDeductibleForACP: z.boolean().default(true),
       })
     )
@@ -49,6 +50,7 @@ export const timeOffRouter = createTRPCRouter({
           startDate: input.startDate,
           endDate: input.endDate,
           reason: input.reason,
+          handoverNotes: input.handoverNotes,
           isDeductibleForAcp: input.isDeductibleForACP,
         });
 
