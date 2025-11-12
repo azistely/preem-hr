@@ -2380,15 +2380,26 @@ export const payrollRouter = createTRPCRouter({
         where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
       });
 
-      // Get employees for CNPS numbers
+      // Get employees with all required fields for CNPS export
       const employeeIds = lineItems.map((item) => item.employeeId);
       const employees = await db.query.employees.findMany({
         where: (employees, { inArray }) => inArray(employees.id, employeeIds),
+        columns: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          cnpsNumber: true,
+          dateOfBirth: true,
+          hireDate: true,
+          terminationDate: true,
+          salaryRegime: true,
+          contractType: true,
+        },
       });
 
       const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
 
-      // Prepare export data
+      // Prepare export data using new CNPS declaration format
       const exportData: CNPSExportData = {
         companyName: tenant?.name || 'Company',
         companyCNPS: tenant?.taxId || undefined,
@@ -2396,15 +2407,39 @@ export const payrollRouter = createTRPCRouter({
         periodEnd: new Date(run.periodEnd),
         employees: lineItems.map((item) => {
           const employee = employeeMap.get(item.employeeId);
+          if (!employee) {
+            throw new Error(`Employee not found for line item: ${item.id}`);
+          }
+
           return {
-            employeeName: item.employeeName || '',
-            employeeCNPS: employee?.cnpsNumber || null,
+            // Employee identification
+            cnpsNumber: employee.cnpsNumber || '',
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+
+            // Personal information
+            dateOfBirth: employee.dateOfBirth,
+
+            // Employment dates
+            hireDate: employee.hireDate,
+            terminationDate: employee.terminationDate,
+
+            // Employment classification
+            salaryRegime: employee.salaryRegime,
+            contractType: employee.contractType,
+
+            // Payroll data
+            daysWorked: item.daysWorked ? parseFloat(item.daysWorked.toString()) : null,
+            hoursWorked: item.hoursWorked ? parseFloat(item.hoursWorked.toString()) : null,
             grossSalary: parseFloat(item.grossSalary?.toString() || '0'),
-            cnpsEmployee: parseFloat(item.cnpsEmployee?.toString() || '0'),
-            cnpsEmployer: parseFloat(item.cnpsEmployer?.toString() || '0'),
           };
         }),
       };
+
+      // Debug logging
+      console.log('[CNPS Export] Total employees:', exportData.employees.length);
+      console.log('[CNPS Export] Employees with CNPS numbers:', exportData.employees.filter(e => e.cnpsNumber).length);
+      console.log('[CNPS Export] Sample employee:', exportData.employees[0]);
 
       // Generate Excel
       const excelBuffer = generateCNPSExcel(exportData);
