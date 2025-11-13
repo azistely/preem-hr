@@ -894,7 +894,6 @@ export default function EmployeeDetailPage() {
         <TabsContent value="dependents" className="space-y-6">
           <DependentsManager
             employeeId={employeeId}
-            tenantId={(employee as any)?.tenantId}
             onDependentsChange={async () => {
               // Optionally refresh employee data to update fiscal parts
               // The component already handles refetching its own data

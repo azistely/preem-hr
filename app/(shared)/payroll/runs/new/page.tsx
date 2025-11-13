@@ -65,10 +65,8 @@ export default function NewPayrollRunPage() {
   const [error, setError] = useState<string | null>(null);
   const [showPeriodEdit, setShowPeriodEdit] = useState(false);
 
-  // Get authenticated user from auth context
-  const { data: user } = api.auth.me.useQuery();
-  const tenantId = user?.tenantId;
-  const userId = user?.id;
+  // User authentication is handled by backend context
+  // No need to explicitly pass tenantId or userId to mutations
 
   // Load available countries and tenant info
   const { data: availableCountries, isLoading: countriesLoading } = api.payroll.getAvailableCountries.useQuery();
@@ -158,10 +156,7 @@ export default function NewPayrollRunPage() {
 
   // Handle final submission (Step 3)
   const handleComplete = async () => {
-    if (!tenantId || !userId) {
-      setError('Utilisateur non authentifié');
-      return;
-    }
+    // Authentication is verified by backend protectedProcedure
 
     // Prevent submission if an existing run is detected
     if (existingRun) {
@@ -175,14 +170,13 @@ export default function NewPayrollRunPage() {
       setIsSubmitting(true);
       setError(null);
 
+      // tenantId and createdBy are automatically injected from backend context
       await createRun.mutateAsync({
-        tenantId,
         countryCode: values.countryCode,
         periodStart: parseISO(values.periodStart),
         periodEnd: parseISO(values.periodEnd),
         paymentDate: parseISO(values.paymentDate),
         name: values.name || undefined,
-        createdBy: userId,
         paymentFrequency: values.paymentFrequency,
         closureSequence: values.closureSequence ?? undefined,
       });
@@ -199,15 +193,12 @@ export default function NewPayrollRunPage() {
   const paymentDate = formValues.paymentDate ? parseISO(formValues.paymentDate) : new Date();
 
   // Check for existing run (only check same payment frequency)
-  const { data: existingRun } = api.payroll.checkExistingRun.useQuery(
-    {
-      tenantId: tenantId!,
-      periodStart,
-      periodEnd,
-      paymentFrequency: formValues.paymentFrequency,
-    },
-    { enabled: !!tenantId }
-  );
+  // tenantId is automatically used from backend context
+  const { data: existingRun } = api.payroll.checkExistingRun.useQuery({
+    periodStart,
+    periodEnd,
+    paymentFrequency: formValues.paymentFrequency,
+  });
 
   // Memoized callbacks to prevent infinite loops in PaymentFrequencyStep
   const handlePaymentFrequencyChange = useCallback((freq: 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY') => {

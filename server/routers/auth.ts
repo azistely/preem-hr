@@ -11,7 +11,7 @@
 import { z } from 'zod';
 import { publicProcedure, protectedProcedure, router } from '@/server/api/trpc';
 import { db, getServiceRoleDb } from '@/lib/db';
-import { tenants, users } from '@/drizzle/schema';
+import { tenants, users, userTenants } from '@/drizzle/schema';
 import { createClient } from '@supabase/supabase-js';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
@@ -174,6 +174,7 @@ export const authRouter = router({
           .values({
             id: authData.user.id,
             tenantId: tenant.id,
+            activeTenantId: tenant.id, // Set active tenant on signup
             email,
             firstName,
             lastName,
@@ -192,6 +193,18 @@ export const authRouter = router({
         }
 
         console.log('[Auth] User created successfully:', user.id);
+
+        // 5. Create user_tenants record (many-to-many relationship)
+        console.log('[Auth] Creating user_tenants record...');
+        await serviceDb
+          .insert(userTenants)
+          .values({
+            userId: user.id,
+            tenantId: tenant.id,
+            role: 'tenant_admin',
+          });
+
+        console.log('[Auth] User_tenants record created');
 
         return {
           success: true,
@@ -280,21 +293,37 @@ export const authRouter = router({
    * Get current authenticated user with full details
    *
    * OPTIMIZATION: Parallel queries instead of sequential (2x speedup)
+   * Includes available tenants for tenant switching
    */
   me: protectedProcedure.query(async ({ ctx }) => {
-    // ✅ PARALLEL QUERY OPTIMIZATION: Fetch user and tenant in parallel instead of sequential
-    // BEFORE: 2 sequential queries ~1800ms + 1500ms = 3300ms total
-    // AFTER: 2 parallel queries ~max(1800ms, 1500ms) = 1800ms total
-    const [user, tenant] = await Promise.all([
+    // ✅ PARALLEL QUERY OPTIMIZATION: Fetch user, current tenant, and available tenants in parallel
+    // Use activeTenantId if available, otherwise fall back to tenantId
+    const effectiveTenantId = ctx.user.tenantId;
+
+    const [user, currentTenant, availableTenants] = await Promise.all([
       db.query.users.findFirst({
         where: eq(users.id, ctx.user.id),
       }),
-      // Pre-fetch tenant in parallel using ctx.user.tenantId from JWT
-      ctx.user.tenantId
+      // Pre-fetch current tenant in parallel
+      effectiveTenantId
         ? db.query.tenants.findFirst({
-            where: eq(tenants.id, ctx.user.tenantId),
+            where: eq(tenants.id, effectiveTenantId),
           })
         : Promise.resolve(null),
+      // Fetch all tenants user has access to
+      db
+        .select({
+          tenantId: userTenants.tenantId,
+          tenantName: tenants.name,
+          tenantSlug: tenants.slug,
+          tenantCountryCode: tenants.countryCode,
+          tenantStatus: tenants.status,
+          userRole: userTenants.role,
+        })
+        .from(userTenants)
+        .innerJoin(tenants, eq(userTenants.tenantId, tenants.id))
+        .where(eq(userTenants.userId, ctx.user.id))
+        .orderBy(tenants.name),
     ]);
 
     if (!user) {
@@ -306,7 +335,7 @@ export const authRouter = router({
 
     // ✅ OPTIMIZATION: Include onboarding status to avoid second query
     // Extract onboarding state from tenant settings (already fetched in parallel)
-    const onboardingSettings = tenant ? (tenant.settings as any)?.onboarding : null;
+    const onboardingSettings = currentTenant ? (currentTenant.settings as any)?.onboarding : null;
     const onboardingComplete = onboardingSettings?.onboarding_complete || false;
 
     return {
@@ -316,10 +345,27 @@ export const authRouter = router({
       lastName: user.lastName,
       role: user.role,
       tenantId: user.tenantId,
+      activeTenantId: user.activeTenantId,
       employeeId: user.employeeId,
-      companyName: tenant?.name || '',
+      companyName: currentTenant?.name || '',
       // Include onboarding status to avoid separate query
       onboardingComplete,
+      // Available tenants for tenant switching
+      availableTenants: availableTenants.map((t) => ({
+        id: t.tenantId,
+        name: t.tenantName,
+        slug: t.tenantSlug,
+        countryCode: t.tenantCountryCode,
+        status: t.tenantStatus,
+        userRole: t.userRole,
+      })),
+      // Current tenant details
+      currentTenant: currentTenant ? {
+        id: currentTenant.id,
+        name: currentTenant.name,
+        slug: currentTenant.slug,
+        countryCode: currentTenant.countryCode,
+      } : null,
     };
   }),
 });

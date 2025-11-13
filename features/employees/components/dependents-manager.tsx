@@ -29,7 +29,6 @@ import { formatDate } from '@/lib/utils';
 
 interface DependentsManagerProps {
   employeeId: string;
-  tenantId: string;
   onDependentsChange?: () => void;
 }
 
@@ -56,7 +55,6 @@ interface DependentFormData {
 
 export function DependentsManager({
   employeeId,
-  tenantId,
   onDependentsChange,
 }: DependentsManagerProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -120,9 +118,9 @@ export function DependentsManager({
         gender: data.gender, // Explicitly pass to satisfy TypeScript
       });
     } else {
+      // tenantId automatically injected from backend context
       createMutation.mutate({
         employeeId,
-        tenantId,
         ...data,
         gender: data.gender, // Explicitly pass to satisfy TypeScript
       });

@@ -72,7 +72,6 @@ const listSchema = z.object({
 
 const createSchema = z.object({
   employeeId: z.string().uuid(),
-  tenantId: z.string().uuid(),
   firstName: z.string().min(1, 'Le prénom est requis'),
   lastName: z.string().min(1, 'Le nom est requis'),
   dateOfBirth: z.string().min(1, 'La date de naissance est requise'),
@@ -226,6 +225,9 @@ export const dependentsRouter = createTRPCRouter({
     .input(createSchema)
     .mutation(async ({ input, ctx }) => {
       try {
+        // Use tenantId from context (automatically uses activeTenantId if set)
+        const tenantId = ctx.user.tenantId;
+
         // Verify employee belongs to tenant
         const [employee] = await db
           .select()
@@ -233,7 +235,7 @@ export const dependentsRouter = createTRPCRouter({
           .where(
             and(
               eq(employees.id, input.employeeId),
-              eq(employees.tenantId, ctx.user.tenantId)
+              eq(employees.tenantId, tenantId)
             )
           )
           .limit(1);
@@ -259,7 +261,7 @@ export const dependentsRouter = createTRPCRouter({
           .insert(employeeDependents)
           .values({
             employeeId: input.employeeId,
-            tenantId: input.tenantId,
+            tenantId: tenantId,
             firstName: input.firstName,
             lastName: input.lastName,
             dateOfBirth: input.dateOfBirth,
@@ -290,17 +292,17 @@ export const dependentsRouter = createTRPCRouter({
         // Recalculate fiscal parts, dependent count, and marital status for employee
         const fiscalParts = await calculateFiscalPartsFromDependents(
           input.employeeId,
-          input.tenantId
+          tenantId
         );
 
         const dependentCounts = await getDependentCounts(
           input.employeeId,
-          input.tenantId
+          tenantId
         );
 
         const maritalStatus = await calculateMaritalStatusFromDependents(
           input.employeeId,
-          input.tenantId
+          tenantId
         );
 
         // Update employee record with fiscal parts, dependent count, and marital status

@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { createAuthClient } from "@/lib/supabase/auth-client";
+import { TenantSwitcher } from "@/components/layout/tenant-switcher";
 
 export interface NavSection {
   title: string;
@@ -166,25 +167,33 @@ export function Sidebar({
         className
       )}
     >
-      {/* Header */}
-      <div className="flex h-14 items-center justify-between border-b px-4">
+      {/* Header with Tenant Switcher */}
+      <div className="border-b">
+        <div className="flex h-14 items-center justify-between px-4">
+          {!isCollapsed && (
+            <h2 className="text-lg font-semibold">Preem HR</h2>
+          )}
+          {collapsible && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className={cn("h-8 w-8", isCollapsed && "mx-auto")}
+            >
+              <ChevronLeft
+                className={cn(
+                  "h-4 w-4 transition-transform",
+                  isCollapsed && "rotate-180"
+                )}
+              />
+            </Button>
+          )}
+        </div>
+        {/* Tenant Switcher */}
         {!isCollapsed && (
-          <h2 className="text-lg font-semibold">Preem HR</h2>
-        )}
-        {collapsible && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className={cn("h-8 w-8", isCollapsed && "mx-auto")}
-          >
-            <ChevronLeft
-              className={cn(
-                "h-4 w-4 transition-transform",
-                isCollapsed && "rotate-180"
-              )}
-            />
-          </Button>
+          <div className="px-4 pb-3">
+            <TenantSwitcher variant="full" className="w-full justify-start" />
+          </div>
         )}
       </div>
 

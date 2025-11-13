@@ -54,13 +54,12 @@ export default function SectorManagementPage() {
   const [selectedSectorCode, setSelectedSectorCode] = useState<string>('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
-  // Get tenant ID from context (simplified - in real app would come from auth)
-  const tenantId = 'your-tenant-id'; // TODO: Get from auth context
+  // Get country code (TODO: Get from tenant configuration)
   const countryCode = 'CI'; // TODO: Get from tenant
 
-  // Fetch current sector
+  // Fetch current sector (tenantId comes from backend context)
   const { data: currentSector, isLoading: isLoadingSector } =
-    trpc.sectors.getTenantSector.useQuery({ tenantId });
+    trpc.sectors.getTenantSector.useQuery();
 
   // Fetch available sectors
   const { data: availableSectors, isLoading: isLoadingSectors } =
@@ -96,8 +95,8 @@ export default function SectorManagementPage() {
   const handleSectorChange = () => {
     if (!selectedSectorCode) return;
 
+    // tenantId automatically injected from backend context
     updateSector.mutate({
-      tenantId,
       sectorCode: selectedSectorCode,
     });
   };

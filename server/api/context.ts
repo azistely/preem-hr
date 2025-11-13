@@ -37,6 +37,7 @@ const DEV_MOCK_USER = {
   email: 'admin@preem.hr',
   role: 'tenant_admin' as UserRole,
   tenantId: '00000000-0000-0000-0000-000000000001',
+  activeTenantId: '00000000-0000-0000-0000-000000000001',
   employeeId: null as string | null,
 };
 
@@ -80,7 +81,7 @@ async function getUserFromSession() {
 
     const authUser = session.user;
 
-    // Fetch user details from database
+    // Fetch user details from database (including active tenant)
     const t4 = Date.now();
     const user = await db.query.users.findFirst({
       where: eq(users.id, authUser.id),
@@ -89,6 +90,7 @@ async function getUserFromSession() {
         email: true,
         role: true,
         tenantId: true,
+        activeTenantId: true,
         employeeId: true,
       },
     });
@@ -104,7 +106,10 @@ async function getUserFromSession() {
       id: user.id,
       email: user.email,
       role: user.role as UserRole,
-      tenantId: user.tenantId,
+      // TENANT ISOLATION FIX: Always use effective tenant (activeTenantId if set, otherwise tenantId)
+      // This ensures ctx.user.tenantId throughout the codebase reflects the currently active tenant
+      tenantId: user.activeTenantId || user.tenantId,
+      activeTenantId: user.activeTenantId, // Keep for audit trail
       employeeId: user.employeeId,
     };
   } catch (error) {
@@ -130,12 +135,15 @@ export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) =
   if (user) {
     try {
       const rlsStart = Date.now();
+      // Use activeTenantId if set, otherwise fall back to tenantId (for backward compatibility)
+      const effectiveTenantId = user.activeTenantId || user.tenantId;
+
       await db.execute(sql`
-        SELECT set_config('app.tenant_id', ${user.tenantId}, true),
+        SELECT set_config('app.tenant_id', ${effectiveTenantId}, true),
                set_config('app.user_role', ${user.role}, true),
                set_config('app.user_id', ${user.id}, true);
       `);
-      console.log(`[Context] RLS config set in ${Date.now() - rlsStart}ms`);
+      console.log(`[Context] RLS config set (tenant: ${effectiveTenantId}) in ${Date.now() - rlsStart}ms`);
     } catch (error) {
       console.error('[Context] Failed to set RLS config:', error);
       // Don't throw - allow unauthenticated requests to proceed

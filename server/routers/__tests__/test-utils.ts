@@ -81,6 +81,7 @@ export function createTestContext(user: typeof testHRManager | typeof testEmploy
     user: {
       id: user.id,
       tenantId: user.tenantId,
+      activeTenantId: user.tenantId, // Set active tenant same as tenant for tests
       email: user.email,
       role: user.role,
       employeeId: user.id === testEmployee.id ? testEmployeeRecord.id : null,

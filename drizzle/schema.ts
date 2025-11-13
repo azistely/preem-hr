@@ -105,7 +105,8 @@ export const tenants = pgTable("tenants", {
 
 export const users: any = pgTable("users", {
 	id: uuid().primaryKey().notNull(),
-	tenantId: uuid("tenant_id").notNull(),
+	tenantId: uuid("tenant_id"),
+	activeTenantId: uuid("active_tenant_id"),
 	employeeId: uuid("employee_id"),
 	email: text().notNull(),
 	firstName: text("first_name").notNull(),
@@ -124,6 +125,7 @@ export const users: any = pgTable("users", {
 	index("idx_users_role").using("btree", table.role.asc().nullsLast().op("text_ops")),
 	index("idx_users_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("uuid_ops")).where(sql`(status = 'active'::text)`),
 	index("idx_users_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_users_active_tenant_id").using("btree", table.activeTenantId.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
 			columns: [table.employeeId],
 			foreignColumns: [employees.id],
@@ -134,10 +136,67 @@ export const users: any = pgTable("users", {
 			foreignColumns: [tenants.id],
 			name: "users_tenant_id_fkey"
 		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.activeTenantId],
+			foreignColumns: [tenants.id],
+			name: "users_active_tenant_id_fkey"
+		}).onDelete("set null"),
 	unique("users_email_key").on(table.email),
-	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`((tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text) OR (auth.jwt() IS NULL))`, withCheck: sql`((auth.jwt() IS NULL) OR (tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`  }),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(((auth.jwt() ->> 'role'::text) = 'super_admin'::text) OR (id = ((auth.jwt() ->> 'sub'::text))::uuid) OR (tenant_id IN ( SELECT ut.tenant_id FROM user_tenants ut WHERE (ut.user_id = ((auth.jwt() ->> 'sub'::text))::uuid))) OR (tenant_id = (current_setting('app.tenant_id'::text, true))::uuid))`, withCheck: sql`((auth.jwt() IS NULL) OR (tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`  }),
 	check("valid_role", sql`role = ANY (ARRAY['super_admin'::text, 'tenant_admin'::text, 'hr_manager'::text, 'employee'::text])`),
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'archived'::text])`),
+]);
+
+export const userTenants = pgTable("user_tenants", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	role: text().default('hr_manager').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_user_tenants_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+	index("idx_user_tenants_tenant_id").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_user_tenants_user_tenant").using("btree", table.userId.asc().nullsLast().op("uuid_ops"), table.tenantId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "user_tenants_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "user_tenants_tenant_id_fkey"
+		}).onDelete("cascade"),
+	unique("unique_user_tenant").on(table.userId, table.tenantId),
+]);
+
+export const userTenantSwitches = pgTable("user_tenant_switches", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: uuid("user_id").notNull(),
+	fromTenantId: uuid("from_tenant_id"),
+	toTenantId: uuid("to_tenant_id").notNull(),
+	switchedAt: timestamp("switched_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	ipAddress: inet("ip_address"),
+	userAgent: text("user_agent"),
+}, (table) => [
+	index("idx_tenant_switches_user_id").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+	index("idx_tenant_switches_switched_at").using("btree", table.switchedAt.desc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [users.id],
+			name: "user_tenant_switches_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.fromTenantId],
+			foreignColumns: [tenants.id],
+			name: "user_tenant_switches_from_tenant_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.toTenantId],
+			foreignColumns: [tenants.id],
+			name: "user_tenant_switches_to_tenant_id_fkey"
+		}),
 ]);
 
 export const departments = pgTable("departments", {

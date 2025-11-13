@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * User role type
@@ -150,6 +151,17 @@ const PUBLIC_ROUTES = [
 ];
 
 /**
+ * Routes that don't require tenant selection
+ * (authenticated users can access these without selecting a tenant)
+ */
+const NO_TENANT_REQUIRED_ROUTES = [
+  '/select-tenant',          // Tenant selection page
+  '/auth/confirm',
+  '/auth/verify-email',
+  '/settings',               // User can access settings without tenant
+];
+
+/**
  * Get default redirect path based on role
  */
 function getDefaultPath(role: UserRole): string {
@@ -203,6 +215,19 @@ function isPublicRoute(pathname: string): boolean {
 }
 
 /**
+ * Check if route requires tenant selection
+ */
+function requiresTenantSelection(pathname: string): boolean {
+  // Check if route is in NO_TENANT_REQUIRED list
+  if (NO_TENANT_REQUIRED_ROUTES.some(route => pathname.startsWith(route))) {
+    return false;
+  }
+
+  // All other protected routes require tenant selection
+  return true;
+}
+
+/**
  * Middleware execution
  */
 export async function middleware(request: NextRequest) {
@@ -236,6 +261,47 @@ export async function middleware(request: NextRequest) {
 
   // Extract user role from JWT claims (app_metadata)
   const userRole = (user.app_metadata?.role || 'employee') as UserRole;
+
+  // ============================================================================
+  // TENANT SELECTION VALIDATION
+  // ============================================================================
+  // Check if user has selected a tenant (unless super_admin or route doesn't require it)
+  if (userRole !== 'super_admin' && requiresTenantSelection(pathname)) {
+    try {
+      // Create Supabase client to query user's active_tenant_id
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        }
+      );
+
+      // Query user's active_tenant_id from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('active_tenant_id')
+        .eq('id', user.id)
+        .single();
+
+      if (userError) {
+        console.error('[Middleware] Error checking tenant:', userError);
+        // Allow request to proceed - error will be handled by tRPC layer
+      } else if (!userData?.active_tenant_id) {
+        // User has not selected a tenant - redirect to tenant selector
+        console.log('[Middleware] No active tenant, redirecting to selector');
+        const selectTenantUrl = new URL('/select-tenant', request.url);
+        selectTenantUrl.searchParams.set('redirect', pathname);
+        return NextResponse.redirect(selectTenantUrl);
+      }
+    } catch (error) {
+      console.error('[Middleware] Exception checking tenant:', error);
+      // Allow request to proceed - error will be handled by tRPC layer
+    }
+  }
 
   // Check if user has access to this route
   if (!hasAccess(pathname, userRole)) {

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { PreemLogo } from "@/components/brand/preem-logo";
+import { TenantSwitcher } from "@/components/layout/tenant-switcher";
 
 export interface MobileHeaderProps {
   onMenuClick: () => void;
@@ -37,10 +38,10 @@ export function MobileHeader({
         <Menu className="h-6 w-6" />
       </Button>
 
-      {/* Logo */}
-      <Link href="/" className="flex items-center">
-        <PreemLogo size="sm" />
-      </Link>
+      {/* Center: Tenant Switcher (replaces logo for space) */}
+      <div className="flex-1 flex items-center justify-center">
+        <TenantSwitcher variant="compact" />
+      </div>
 
       {/* Right Actions */}
       <div className="flex items-center gap-2">

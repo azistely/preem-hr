@@ -59,18 +59,11 @@ export default function PayrollRunsPage() {
   const [selectedStatus, setSelectedStatus] = useState<RunStatus | 'all'>('all');
   const [selectedFrequency, setSelectedFrequency] = useState<PaymentFrequency>('all');
 
-  // Get authenticated user from auth context
-  const { data: user } = api.auth.me.useQuery();
-  const tenantId = user?.tenantId;
-
-  // Load payroll runs
+  // Load payroll runs (tenantId comes from backend context)
   const { data: runs, isLoading, refetch } = api.payroll.listRuns.useQuery({
-    tenantId: tenantId!,
     status: selectedStatus === 'all' ? undefined : selectedStatus,
     limit: 50,
     offset: 0,
-  }, {
-    enabled: !!tenantId, // Only run query when tenantId is available
   });
 
   // Filter runs by payment frequency (client-side for now)

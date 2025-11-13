@@ -263,6 +263,7 @@ export const dashboardRouter = router({
    * HR Manager Dashboard
    */
   getHRDashboard: hrManagerProcedure.query(async ({ ctx }) => {
+    // Use activeTenantId for multi-tenant switching support
     const tenantId = ctx.user.tenantId;
 
     // Get total employee count

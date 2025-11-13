@@ -13,7 +13,7 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter as router, publicProcedure, hrManagerProcedure } from '../api/trpc';
+import { createTRPCRouter as router, publicProcedure, protectedProcedure, hrManagerProcedure } from '../api/trpc';
 import {
   getTenantSector,
   getSectorsByCountry,
@@ -30,14 +30,10 @@ export const sectorsRouter = router({
    *
    * Use case: Display sector info in tenant settings
    */
-  getTenantSector: publicProcedure
-    .input(
-      z.object({
-        tenantId: z.string().uuid(),
-      })
-    )
-    .query(async ({ input }) => {
-      return getTenantSector(input.tenantId);
+  getTenantSector: protectedProcedure
+    .query(async ({ ctx }) => {
+      // Use tenantId from context (automatically uses activeTenantId if set)
+      return getTenantSector(ctx.user.tenantId);
     }),
 
   /**
@@ -61,14 +57,10 @@ export const sectorsRouter = router({
    * Use case: Display rate in payroll breakdown
    * Rates: SERVICES 2%, COMMERCE 2%, TRANSPORT 3%, INDUSTRIE 4%, CONSTRUCTION 5%
    */
-  getWorkAccidentRate: publicProcedure
-    .input(
-      z.object({
-        tenantId: z.string().uuid(),
-      })
-    )
-    .query(async ({ input }) => {
-      const rate = await getWorkAccidentRate(input.tenantId);
+  getWorkAccidentRate: protectedProcedure
+    .query(async ({ ctx }) => {
+      // Use tenantId from context (automatically uses activeTenantId if set)
+      const rate = await getWorkAccidentRate(ctx.user.tenantId);
       if (rate === null) {
         throw new Error('Tenant sector not configured');
       }
@@ -81,14 +73,10 @@ export const sectorsRouter = router({
    * Use case: Validation in salary components settings
    * Example: TRANSPORT sector requires PRIME_TRANSPORT
    */
-  getRequiredComponents: publicProcedure
-    .input(
-      z.object({
-        tenantId: z.string().uuid(),
-      })
-    )
-    .query(async ({ input }) => {
-      const components = await getRequiredComponents(input.tenantId);
+  getRequiredComponents: protectedProcedure
+    .query(async ({ ctx }) => {
+      // Use tenantId from context (automatically uses activeTenantId if set)
+      const components = await getRequiredComponents(ctx.user.tenantId);
       return { requiredComponents: components };
     }),
 
@@ -97,16 +85,16 @@ export const sectorsRouter = router({
    *
    * Use case: Show warning in settings if components missing
    */
-  validateRequiredComponents: publicProcedure
+  validateRequiredComponents: protectedProcedure
     .input(
       z.object({
-        tenantId: z.string().uuid(),
         activatedComponents: z.array(z.string()),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // Use tenantId from context (automatically uses activeTenantId if set)
       return validateRequiredComponents(
-        input.tenantId,
+        ctx.user.tenantId,
         input.activatedComponents
       );
     }),
@@ -121,12 +109,12 @@ export const sectorsRouter = router({
   updateTenantSector: hrManagerProcedure
     .input(
       z.object({
-        tenantId: z.string().uuid(),
         sectorCode: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
-      return updateTenantSector(input.tenantId, input.sectorCode);
+    .mutation(async ({ input, ctx }) => {
+      // Use tenantId from context (automatically uses activeTenantId if set)
+      return updateTenantSector(ctx.user.tenantId, input.sectorCode);
     }),
 
   /**

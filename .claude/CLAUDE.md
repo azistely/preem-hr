@@ -168,6 +168,101 @@ gap-8  // Between major page sections
 - Error messages reference country-specific rules ("inférieur au SMIG de Côte d'Ivoire (75,000 FCFA)")
 - Use database-driven `calculatePayrollV2()` for all payroll (supports countryCode param)
 
+## 🔒 Tenant Isolation (CRITICAL SECURITY)
+
+**Context:** Preem HR is a multi-tenant system where users can belong to multiple companies and switch between them.
+
+**Architecture:**
+- User's `active_tenant_id` determines which tenant data they see
+- Backend context automatically sets `ctx.user.tenantId` to the active tenant
+- This pattern protects ALL 391+ usage points automatically
+
+### Mandatory Rules for tRPC Endpoints
+
+**✅ ALWAYS DO THIS:**
+```typescript
+// Correct Pattern - Tenant from authenticated context
+someEndpoint: protectedProcedure
+  .input(z.object({
+    // NO tenantId field - it comes from ctx
+    employeeId: z.string().uuid(),
+  }))
+  .query(async ({ ctx, input }) => {
+    const tenantId = ctx.user.tenantId; // ✅ From authenticated context
+
+    // Query MUST filter by tenantId
+    const data = await db.query.employees.findFirst({
+      where: and(
+        eq(employees.id, input.employeeId),
+        eq(employees.tenantId, tenantId) // ✅ CRITICAL: Always filter
+      ),
+    });
+
+    return data;
+  })
+```
+
+**❌ NEVER DO THIS:**
+```typescript
+// VULNERABLE - Frontend can pass ANY tenantId
+badEndpoint: publicProcedure
+  .input(z.object({
+    tenantId: z.string().uuid(), // ❌ SECURITY HOLE
+    employeeId: z.string().uuid(),
+  }))
+  .query(async ({ input }) => {
+    // ❌ Using user-provided tenantId = DATA LEAK
+    return await db.query.employees.findFirst({
+      where: and(
+        eq(employees.id, input.employeeId),
+        eq(employees.tenantId, input.tenantId), // ❌ VULNERABLE
+      ),
+    });
+  })
+```
+
+### Implementation Checklist (tRPC Endpoints)
+
+When creating ANY tRPC endpoint that accesses tenant data:
+
+1. [ ] **Use `protectedProcedure`** (never `publicProcedure` for tenant data)
+2. [ ] **NO `tenantId` in input schema** (except `tenant.ts` admin operations)
+3. [ ] **Get tenantId from context:** `const tenantId = ctx.user.tenantId`
+4. [ ] **Filter ALL queries by tenantId** (employees, payroll, etc.)
+5. [ ] **Test with multiple tenants** to verify no data leakage
+
+### Exception: Admin Operations
+
+**Only `server/routers/tenant.ts` may accept `tenantId` in input:**
+- `switchTenant` - User chooses which tenant to activate
+- `addUserToTenant` - Admin grants tenant access
+- `removeUserFromTenant` - Admin revokes tenant access
+
+These endpoints MUST validate:
+- User has access to the tenant (via `user_tenants` table)
+- User has required role (super_admin/tenant_admin)
+
+### Frontend Best Practices
+
+**✅ DO:**
+```typescript
+// Let backend determine tenantId from session
+const { data: employees } = api.employees.list.useQuery({
+  status: 'active',
+  // NO tenantId parameter
+});
+```
+
+**❌ DON'T:**
+```typescript
+// Don't pass tenantId from frontend
+const { data: user } = api.auth.me.useQuery();
+const { data: employees } = api.employees.list.useQuery({
+  tenantId: user?.tenantId, // ❌ Could be stale/cached
+  status: 'active',
+});
+```
+
 ## 🚫 Common Mistakes to Avoid
 
 1. **Don't assume users understand HR terms** - Explain or hide complexity
@@ -178,6 +273,7 @@ gap-8  // Between major page sections
 6. **Don't skip loading states** - Show feedback for operations > 300ms
 7. **Don't hardcode country rules** - Use database config (tax_systems, social_security_schemes)
 8. **Don't make users select country repeatedly** - Use tenant.countryCode context
+9. **🔒 NEVER accept tenantId in tRPC input schemas** - Use `ctx.user.tenantId` (CRITICAL SECURITY)
 
 ## 📋 Implementation Checklist
 
@@ -200,6 +296,13 @@ When implementing a new UI feature:
 4. [ ] Family deductions loaded from family_deduction_rules table
 5. [ ] Sector rates auto-detected from employee.sector field
 6. [ ] Use `calculatePayrollV2()` with countryCode parameter
+
+**For tRPC Endpoints (SECURITY CRITICAL):**
+1. [ ] Uses `protectedProcedure` (never `publicProcedure` for tenant data)
+2. [ ] NO `tenantId` in input schema (use `ctx.user.tenantId` instead)
+3. [ ] All database queries filter by `tenantId`
+4. [ ] Tested with multiple tenants to verify no data leakage
+5. [ ] ESLint passes (no-tenantid-in-input rule enforced)
 
 ## 🎯 Success Metrics
 

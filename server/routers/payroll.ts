@@ -76,13 +76,11 @@ const calculatePayrollV2InputSchema = calculateGrossInputSchema.extend({
 });
 
 const createPayrollRunInputSchema = z.object({
-  tenantId: z.string().uuid(),
   countryCode: z.string().length(2, { message: 'Code pays invalide' }),
   periodStart: z.date(),
   periodEnd: z.date(),
   paymentDate: z.date(),
   name: z.string().optional(),
-  createdBy: z.string().uuid(),
   paymentFrequency: z.enum(['MONTHLY', 'WEEKLY', 'BIWEEKLY', 'DAILY']).default('MONTHLY'),
   closureSequence: z.number().int().min(1).max(4).optional(),
 });
@@ -1309,22 +1307,24 @@ export const payrollRouter = createTRPCRouter({
    * Returns existing run details if found, null otherwise.
    * Used to prevent duplicates and guide users to existing runs.
    */
-  checkExistingRun: publicProcedure
+  checkExistingRun: protectedProcedure
     .input(
       z.object({
-        tenantId: z.string().uuid(),
         periodStart: z.date(),
         periodEnd: z.date(),
         paymentFrequency: z.enum(['MONTHLY', 'WEEKLY', 'BIWEEKLY', 'DAILY']).optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // Use tenantId from context (automatically uses activeTenantId if set)
+      const tenantId = ctx.user.tenantId;
+
       const periodStartStr = input.periodStart.toISOString().split('T')[0];
       const periodEndStr = input.periodEnd.toISOString().split('T')[0];
 
       const existing = await db.query.payrollRuns.findFirst({
         where: and(
-          eq(payrollRuns.tenantId, input.tenantId),
+          eq(payrollRuns.tenantId, tenantId),
           // Only check for conflicts with same payment frequency
           input.paymentFrequency ? eq(payrollRuns.paymentFrequency, input.paymentFrequency) : undefined,
           or(
@@ -1374,8 +1374,13 @@ export const payrollRouter = createTRPCRouter({
    */
   createRun: hrManagerProcedure
     .input(createPayrollRunInputSchema)
-    .mutation(async ({ input }) => {
-      return await createPayrollRun(input);
+    .mutation(async ({ input, ctx }) => {
+      // Inject tenantId and createdBy from context (automatically uses activeTenantId if set)
+      return await createPayrollRun({
+        ...input,
+        tenantId: ctx.user.tenantId,
+        createdBy: ctx.user.id,
+      });
     }),
 
   /**
@@ -1484,10 +1489,9 @@ export const payrollRouter = createTRPCRouter({
    * });
    * ```
    */
-  listRuns: publicProcedure
+  listRuns: protectedProcedure
     .input(
       z.object({
-        tenantId: z.string().uuid(),
         status: z
           .enum(['draft', 'calculating', 'calculated', 'approved', 'paid', 'failed'])
           .optional(),
@@ -1495,10 +1499,13 @@ export const payrollRouter = createTRPCRouter({
         offset: z.number().min(0).default(0),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // Use tenantId from context (automatically uses activeTenantId if set)
+      const tenantId = ctx.user.tenantId;
+
       const where = input.status
-        ? [eq(payrollRuns.tenantId, input.tenantId), eq(payrollRuns.status, input.status)]
-        : [eq(payrollRuns.tenantId, input.tenantId)];
+        ? [eq(payrollRuns.tenantId, tenantId), eq(payrollRuns.status, input.status)]
+        : [eq(payrollRuns.tenantId, tenantId)];
 
       const runs = await db.query.payrollRuns.findMany({
         where: (table, { and }) => and(...where.map((w) => w)),
