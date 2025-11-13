@@ -10,16 +10,20 @@
  * 3. Calculates contribution totals by scheme
  * 4. Returns structured data for form display and PDF export
  *
- * SALARY BRACKETS (from official CNPS form):
+ * EMPLOYEE CATEGORIZATION:
  * =============================================
- * HOURLY/DAILY WORKERS:
- * - Category 1: ≤ 3,231 FCFA/day
- * - Category 2: > 3,231 FCFA/day
+ * DAILY/HOURLY WORKERS (Journalier/Horaire):
+ * - All CDDTI contract employees
+ * - Categorized by daily wage:
+ *   - Category 1: ≤ 3,231 FCFA/day
+ *   - Category 2: > 3,231 FCFA/day
  *
- * MONTHLY WORKERS:
- * - Category 1: < 70,000 FCFA/month
- * - Category 2: 70,000 - 1,647,315 FCFA/month
- * - Category 3: > 1,647,315 FCFA/month
+ * MONTHLY WORKERS (Mensuel):
+ * - All non-CDDTI employees (CDI, CDD, etc.)
+ * - Categorized by monthly salary:
+ *   - Category 1: < 70,000 FCFA/month
+ *   - Category 2: 70,000 - 1,647,315 FCFA/month
+ *   - Category 3: > 1,647,315 FCFA/month
  *
  * CONTRIBUTION SCHEMES:
  * =============================================
@@ -47,7 +51,8 @@ import {
   socialSecuritySchemes,
   contributionTypes,
 } from '@/lib/db/schema';
-import { and, eq, gte, lte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, inArray, sql, desc } from 'drizzle-orm';
+import * as schema from '@/drizzle/schema';
 
 // ========================================
 // Types
@@ -165,18 +170,21 @@ function toNumber(value: string | number | { toString(): string } | null | undef
 }
 
 /**
- * Categorize employee by salary and work regime
+ * Categorize employee by contract type and salary
+ *
+ * IMPORTANT: CDDTI employees are always daily/hourly workers (journalier/horaire)
+ * All other employees are monthly workers (mensuel)
  */
 function categorizeEmployee(
-  salaryRegime: string | null,
+  contractType: string | null,
   grossSalary: number,
   daysWorked: number | null,
 ): {
   isDailyWorker: boolean;
   category: 'daily_1' | 'daily_2' | 'monthly_1' | 'monthly_2' | 'monthly_3';
 } {
-  const regime = salaryRegime?.toUpperCase();
-  const isDailyWorker = regime === 'DAILY' || regime === 'HOURLY';
+  // CDDTI employees are always daily/hourly workers
+  const isDailyWorker = contractType?.toUpperCase() === 'CDDTI';
 
   if (isDailyWorker) {
     const days = daysWorked || 1;
@@ -187,7 +195,7 @@ function categorizeEmployee(
     };
   }
 
-  // Monthly workers
+  // Monthly workers (all non-CDDTI employees)
   if (grossSalary < MONTHLY_SALARY_BRACKET_1) {
     return { isDailyWorker: false, category: 'monthly_1' };
   } else if (grossSalary <= MONTHLY_SALARY_BRACKET_2) {
@@ -259,14 +267,19 @@ export async function generateCNPSDeclaration(
 
   const runIds = runs.map((r) => r.id);
 
-  // 4. Query all line items for these runs with employee data
+  // 4. Query all line items for these runs with employee data and current employment contract
   const lineItems = await db
     .select({
       lineItem: payrollLineItems,
       employee: employees,
+      contract: schema.employmentContracts,
     })
     .from(payrollLineItems)
     .leftJoin(employees, eq(payrollLineItems.employeeId, employees.id))
+    .leftJoin(
+      schema.employmentContracts,
+      eq(schema.employmentContracts.id, employees.currentContractId)
+    )
     .where(
       and(
         inArray(payrollLineItems.payrollRunId, runIds),
@@ -295,7 +308,7 @@ export async function generateCNPSDeclaration(
   };
 
   // 7. Process each line item (with CNPS filter)
-  for (const { lineItem, employee } of lineItems) {
+  for (const { lineItem, employee, contract } of lineItems) {
     // Apply CNPS number filter
     if (cnpsFilter === 'with_cnps' && (!employee?.cnpsNumber || employee.cnpsNumber.trim() === '')) {
       continue; // Skip employees without CNPS number
@@ -308,9 +321,10 @@ export async function generateCNPSDeclaration(
     const brutImposable = toNumber(lineItem.brutImposable) || grossSalary;
     const contributionDetails = lineItem.contributionDetails as any;
 
-    // Categorize employee
+    // Categorize employee (CDDTI = daily/hourly, all others = monthly)
+    // Use contract type from employment_contracts table (active contract)
     const { category } = categorizeEmployee(
-      employee?.salaryRegime || null,
+      contract?.contractType || null,
       grossSalary,
       toNumber(lineItem.daysWorked),
     );
@@ -331,29 +345,40 @@ export async function generateCNPSDeclaration(
       'pension',
       'employee',
     );
-    contributions.maternity_employer += extractContribution(
-      contributionDetails,
-      'maternity',
-      'employer',
-    );
-    contributions.family_employer += extractContribution(
+
+    // IMPORTANT: Family benefits includes both maternity (0.75%) and family (5%) = 5.75% total
+    // During payroll, this is stored as a single "family_benefits" contribution
+    // We need to split it proportionally for the CNPS declaration
+    const familyBenefitsCombined = extractContribution(
       contributionDetails,
       'family_benefits',
       'employer',
     );
+    // Split: Maternity = 0.75%, Family = 5%, Total = 5.75%
+    contributions.maternity_employer += familyBenefitsCombined * (0.75 / 5.75);
+    contributions.family_employer += familyBenefitsCombined * (5.0 / 5.75);
+
     contributions.work_accident_employer += extractContribution(
       contributionDetails,
       'work_accidents',
       'employer',
+    ) || extractContribution(
+      contributionDetails,
+      'work_accident',
+      'employer',
     );
     contributions.cmu_employer += extractContribution(
       contributionDetails,
-      'cmu',
+      'cmu_employer_base',
+      'employer',
+    ) + extractContribution(
+      contributionDetails,
+      'cmu_employer_family',
       'employer',
     );
     contributions.cmu_employee += extractContribution(
       contributionDetails,
-      'cmu',
+      'cmu_employee',
       'employee',
     );
   }
@@ -367,13 +392,24 @@ export async function generateCNPSDeclaration(
   });
 
   const getRate = (code: string): number => {
+    // Special handling for maternity and family benefits
+    // In the database, they're combined as "family_benefits" at 5.75%
+    // But CNPS declaration needs them split:
+    if (code === 'maternity') return 0.75; // 0.75%
+    if (code === 'family_benefits') return 5.0; // 5%
+
     const contribution = scheme?.contributionTypes.find((c) => c.code === code);
-    return contribution ? toNumber(contribution.rate) * 100 : 0; // Convert to percentage
+    if (!contribution) return 0;
+
+    // Use employerRate for employer-only contributions, otherwise sum both
+    const employerRate = contribution.employerRate ? toNumber(contribution.employerRate) : 0;
+    const employeeRate = contribution.employeeRate ? toNumber(contribution.employeeRate) : 0;
+    return (employerRate + employeeRate) * 100; // Convert to percentage
   };
 
   const getPlafond = (code: string): number | null => {
     const contribution = scheme?.contributionTypes.find((c) => c.code === code);
-    return contribution?.monthlyPlafond ? toNumber(contribution.monthlyPlafond) : null;
+    return contribution?.ceilingAmount ? toNumber(contribution.ceilingAmount) : null;
   };
 
   // 9. Build result structure
@@ -513,10 +549,10 @@ export async function generateCNPSDeclaration(
         totalAmount: Math.round(contributions.family_employer),
       },
       workAccidents: {
-        code: 'work_accidents',
+        code: 'work_accident',
         name: 'Accidents du Travail',
-        rate: getRate('work_accidents'),
-        plafond: getPlafond('work_accidents'),
+        rate: getRate('work_accident'),
+        plafond: getPlafond('work_accident'),
         employerAmount: Math.round(contributions.work_accident_employer),
         employeeAmount: 0,
         totalAmount: Math.round(contributions.work_accident_employer),

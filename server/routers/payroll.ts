@@ -2853,7 +2853,7 @@ export const payrollRouter = createTRPCRouter({
         month: z.number().min(1).max(12),
         year: z.number().min(2020).max(2100),
         countryCode: z.string().length(2),
-        cnpsFilter: z.enum(['all', 'with_cnps', 'without_cnps']).optional().default('with_cnps'),
+        cnpsFilter: z.enum(['all', 'with_cnps', 'without_cnps']).optional().default('all'),
       }),
     )
     .query(async ({ ctx, input }) => {

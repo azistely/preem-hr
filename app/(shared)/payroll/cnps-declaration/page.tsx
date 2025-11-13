@@ -84,7 +84,7 @@ export default function CNPSDeclarationPage() {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [countryCode] = useState<string>('CI'); // Default to Côte d'Ivoire
-  const [cnpsFilter, setCnpsFilter] = useState<'all' | 'with_cnps' | 'without_cnps'>('with_cnps');
+  const [cnpsFilter, setCnpsFilter] = useState<'all' | 'with_cnps' | 'without_cnps'>('all');
   const [isEditMode, setIsEditMode] = useState(false);
   const [editReason, setEditReason] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);

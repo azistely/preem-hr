@@ -266,6 +266,13 @@ export const hrManagerNavigation: NavigationSection[] = [
         icon: Calculator,
         description: 'Simuler un calcul de paie',
       },
+      {
+        id: 'cnps-declaration',
+        label: 'Déclaration CNPS',
+        href: '/payroll/cnps-declaration',
+        icon: FileText,
+        description: 'Déclaration mensuelle CNPS',
+      },
     ],
   },
   {

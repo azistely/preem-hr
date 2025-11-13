@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../api/trpc';
 import { importLeavePlan } from '@/features/time-off/services/leave-planning-import.service';
 import { generateLeavePlanningTemplate } from '@/scripts/generate-leave-planning-template';
-import { db } from '@/db';
+import { db } from '@/lib/db';
 import { leavePlanningPeriods, timeOffRequests, tenants, employees, timeOffPolicies } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { eachDayOfInterval, isWeekend } from 'date-fns';
