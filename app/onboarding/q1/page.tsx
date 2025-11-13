@@ -81,8 +81,8 @@ export default function OnboardingQ1Page() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
 
-  // Get user info for pre-filling
-  const { data: user } = api.auth.me.useQuery();
+  // Get current tenant info for pre-filling
+  const { data: currentTenant } = api.tenant.getCurrent.useQuery();
 
   // Load existing locations
   const { data: existingLocations } = api.locations.list.useQuery();
@@ -94,13 +94,21 @@ export default function OnboardingQ1Page() {
   const { register, handleSubmit, watch, setValue, formState: { errors }, trigger } = useForm<CompanySetupFormData>({
     resolver: zodResolver(companySetupSchema),
     defaultValues: {
-      countryCode: 'CI', // Default to Côte d'Ivoire
-      legalName: user?.companyName || '',
+      countryCode: currentTenant?.countryCode || 'CI', // Use tenant country or default to CI
+      legalName: currentTenant?.name || '',
       cgeciSectorCode: '',
       workAccidentRate: 0.02, // Default 2%
       locations: [],
     },
   });
+
+  // Populate form with tenant data when it loads
+  useEffect(() => {
+    if (currentTenant) {
+      setValue('countryCode', currentTenant.countryCode || 'CI', { shouldValidate: false });
+      setValue('legalName', currentTenant.name || '', { shouldValidate: false });
+    }
+  }, [currentTenant, setValue]);
 
   // Populate form with existing locations when they load
   useEffect(() => {
@@ -401,7 +409,7 @@ export default function OnboardingQ1Page() {
                             <SelectTrigger className="w-full mt-1 min-h-[48px]">
                               <SelectValue placeholder="Sélectionnez la ville du site" />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent position="popper" className="max-h-[300px] overflow-y-auto">
                               {CI_CITIES.map((city) => (
                                 <SelectItem key={city.value} value={city.value}>
                                   {city.label}
@@ -423,7 +431,7 @@ export default function OnboardingQ1Page() {
                               <SelectTrigger className="w-full mt-1 min-h-[48px]">
                                 <SelectValue placeholder="Précisez la commune (optionnel)" />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent position="popper" className="max-h-[300px] overflow-y-auto">
                                 {ABIDJAN_COMMUNES.map((commune) => (
                                   <SelectItem key={commune.value} value={commune.value}>
                                     {commune.label}
