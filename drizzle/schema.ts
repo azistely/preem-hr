@@ -1183,6 +1183,35 @@ export const payrollValidationIssues = pgTable("payroll_validation_issues", {
 	check("valid_category", sql`category = ANY (ARRAY['overtime'::text, 'comparison'::text, 'prorata'::text, 'deduction'::text, 'bonus'::text])`),
 ]);
 
+export const cnpsDeclarationEdits = pgTable("cnps_declaration_edits", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tenantId: uuid("tenant_id").notNull(),
+	month: integer().notNull(),
+	year: integer().notNull(),
+	countryCode: text("country_code").notNull(),
+	originalData: jsonb("original_data").notNull(),
+	edits: jsonb().notNull(),
+	editReason: text("edit_reason"),
+	editedBy: uuid("edited_by").notNull(),
+	editedAt: timestamp("edited_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_cnps_declaration_edits_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_cnps_declaration_edits_period").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.year.asc().nullsLast().op("int4_ops"), table.month.asc().nullsLast().op("int4_ops"), table.countryCode.asc().nullsLast().op("text_ops")),
+	index("idx_cnps_declaration_edits_created_at").using("btree", table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.tenantId],
+			foreignColumns: [tenants.id],
+			name: "cnps_declaration_edits_tenant_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.countryCode],
+			foreignColumns: [countries.code],
+			name: "cnps_declaration_edits_country_code_fkey"
+		}),
+	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text)) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text))`  }),
+]);
+
 export const bankingProfessionalLevels = pgTable("banking_professional_levels", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	conventionId: uuid("convention_id").notNull(),

@@ -207,6 +207,7 @@ export const hrManagerMobileSections: NavSection[] = [
       { icon: History, label: "Historique paies", href: "/payroll/runs" },
       { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice", href: "/payroll/calculator" },
+      { icon: FileText, label: "Déclaration CNPS", href: "/payroll/cnps-declaration" },
     ],
   },
   {
@@ -305,6 +306,7 @@ export const hrManagerDesktopSections: NavSection[] = [
       { icon: History, label: "Historique paies", href: "/payroll/runs" },
       { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice paie", href: "/payroll/calculator" },
+      { icon: FileText, label: "Déclaration CNPS", href: "/payroll/cnps-declaration" },
     ],
   },
   {

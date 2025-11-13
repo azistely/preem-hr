@@ -241,15 +241,15 @@ function formatPeriod(periodStart: Date): string {
  * @returns Excel file as ArrayBuffer
  */
 export const generateCNPSExcel = (data: CNPSExportData): ArrayBuffer => {
-  // Export all employees (CNPS number can be filled later)
-  const employeesWithCNPS = data.employees.filter((emp) => emp.cnpsNumber);
+  // Filter to only include employees with CNPS numbers
+  const validEmployees = data.employees.filter((emp) => emp.cnpsNumber);
 
   console.log('[CNPS Export Service] Input employees:', data.employees.length);
-  console.log('[CNPS Export Service] Employees with CNPS#:', employeesWithCNPS.length);
-  console.log('[CNPS Export Service] Employees without CNPS (will have blank):', data.employees.length - employeesWithCNPS.length);
+  console.log('[CNPS Export Service] Employees with CNPS#:', validEmployees.length);
+  console.log('[CNPS Export Service] Employees without CNPS (excluded):', data.employees.length - validEmployees.length);
 
-  // Transform employee data to CNPS rows (include all employees)
-  const rows: CNPSRow[] = data.employees.map((emp) => {
+  // Transform employee data to CNPS rows (only valid employees)
+  const rows: CNPSRow[] = validEmployees.map((emp) => {
     // Step 1: Determine TYPE SALARIE (applies CDDTI 21-day rule)
     const salaryTypeCode = getSalaryTypeCode(
       emp.salaryRegime,
@@ -343,11 +343,20 @@ export const validateCNPSExportData = (data: CNPSExportData): {
     return { errors, warnings };
   }
 
-  // Warn about missing CNPS numbers (but allow export)
+  // Check if employees have CNPS numbers
+  const employeesWithCNPS = data.employees.filter((emp) => emp.cnpsNumber);
+  if (employeesWithCNPS.length === 0) {
+    errors.push(
+      "Aucun employé avec numéro CNPS - impossible de générer l'export. " +
+        "Veuillez d'abord enregistrer vos employés à la CNPS."
+    );
+  }
+
+  // Warn about missing CNPS numbers
   const employeesWithoutCNPS = data.employees.filter((emp) => !emp.cnpsNumber);
-  if (employeesWithoutCNPS.length > 0) {
+  if (employeesWithoutCNPS.length > 0 && employeesWithCNPS.length > 0) {
     warnings.push(
-      `${employeesWithoutCNPS.length} employé(s) sans numéro CNPS (colonne vide dans l'export)`
+      `${employeesWithoutCNPS.length} employé(s) sans numéro CNPS seront exclus de l'export`
     );
   }
 
@@ -379,12 +388,12 @@ export const validateCNPSExportData = (data: CNPSExportData): {
  * @returns Summary object with counts and totals
  */
 export const getCNPSExportSummary = (data: CNPSExportData) => {
-  const employeesWithCNPS = data.employees.filter((emp) => emp.cnpsNumber);
+  const validEmployees = data.employees.filter((emp) => emp.cnpsNumber);
 
-  const totalGross = data.employees.reduce((sum, emp) => sum + emp.grossSalary, 0);
+  const totalGross = validEmployees.reduce((sum, emp) => sum + emp.grossSalary, 0);
 
-  // Count by contract type
-  const byContractType = data.employees.reduce(
+  // Count by contract type (only valid employees)
+  const byContractType = validEmployees.reduce(
     (acc, emp) => {
       const type = emp.contractType?.toUpperCase() || 'OTHER';
       acc[type] = (acc[type] || 0) + 1;
@@ -394,7 +403,7 @@ export const getCNPSExportSummary = (data: CNPSExportData) => {
   );
 
   // Count CDDTI by classification (for verification)
-  const cddtiEmployees = data.employees.filter(
+  const cddtiEmployees = validEmployees.filter(
     (emp) => emp.contractType?.toUpperCase() === 'CDDTI'
   );
   const cddtiJournalier = cddtiEmployees.filter(
@@ -405,9 +414,7 @@ export const getCNPSExportSummary = (data: CNPSExportData) => {
   ).length;
 
   return {
-    employeeCount: data.employees.length,
-    employeesWithCNPS: employeesWithCNPS.length,
-    employeesWithoutCNPS: data.employees.length - employeesWithCNPS.length,
+    employeeCount: validEmployees.length,
     totalGross: formatCurrency(totalGross),
     byContractType,
     cddtiStats: {

@@ -152,3 +152,53 @@ export const payrollLineItems = pgTable('payroll_line_items', {
     withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
   }),
 ]);
+
+/**
+ * CNPS Declaration Edits Table
+ *
+ * Stores manual edits made by users to CNPS monthly contribution declarations.
+ * Allows tracking of changes from automatically calculated values for audit purposes.
+ *
+ * Each declaration can have multiple edits (users can revise their changes).
+ * The most recent edit (by createdAt DESC) is used for PDF export.
+ */
+export const cnpsDeclarationEdits = pgTable('cnps_declaration_edits', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Declaration identifier (month + year + country)
+  month: integer('month').notNull(), // 1-12
+  year: integer('year').notNull(),
+  countryCode: text('country_code').notNull().references(() => countries.code),
+
+  // Original calculated data (for reference and revert)
+  originalData: jsonb('original_data').notNull(),
+  // Stores complete CNPSDeclarationData from calculator
+
+  // User edits (only modified fields)
+  edits: jsonb('edits').notNull(),
+  // Example: {
+  //   "monthlyWorkers.category1.employeeCount": 10,
+  //   "contributions.retirement.employerAmount": 125000,
+  //   "customAdjustments": [
+  //     { "field": "totalEmployerContributions", "reason": "Manual correction for late employee" }
+  //   ]
+  // }
+
+  // Edit metadata
+  editReason: text('edit_reason'), // Optional reason for the edit
+  editedBy: uuid('edited_by').notNull(), // References users(id)
+  editedAt: timestamp('edited_at').notNull().defaultNow(),
+
+  // Audit trail
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => [
+  // RLS Policy: Tenant Isolation
+  pgPolicy('tenant_isolation', {
+    as: 'permissive',
+    for: 'all',
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);

@@ -103,6 +103,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/payroll/runs/new': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/payroll/calculator': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/payroll/dashboard': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/payroll/cnps-declaration': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/positions': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/positions/new': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/positions/org-chart': ['hr_manager', 'tenant_admin', 'super_admin'],

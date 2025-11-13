@@ -20,7 +20,7 @@ import {
   calculatePayrollRun,
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
-import { payrollRuns, payrollLineItems, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions } from '@/lib/db/schema';
+import { payrollRuns, payrollLineItems, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions, cnpsDeclarationEdits } from '@/lib/db/schema';
 import { salaryComponentTemplates, taxSystems, timeOffRequests, timeOffBalances, timeOffPolicies } from '@/drizzle/schema';
 import { eq, and, lte, gte, or, isNull, asc, desc, sql, inArray } from 'drizzle-orm';
 import { ruleLoader } from '@/features/payroll/services/rule-loader';
@@ -2836,6 +2836,182 @@ export const payrollRouter = createTRPCRouter({
         avgCostPerEmployee: employeeCount > 0 ? (totalGross + totalEmployerContributions) / employeeCount : 0,
         periodStart: startDate,
         periodEnd: endDate,
+      };
+    }),
+
+  /**
+   * Get CNPS Monthly Contribution Declaration Data
+   *
+   * Aggregates payroll data for a specified month to generate the official
+   * CNPS contribution declaration form.
+   *
+   * @security Tenant isolated - uses ctx.user.tenantId
+   */
+  getCNPSDeclarationData: protectedProcedure
+    .input(
+      z.object({
+        month: z.number().min(1).max(12),
+        year: z.number().min(2020).max(2100),
+        countryCode: z.string().length(2),
+        cnpsFilter: z.enum(['all', 'with_cnps', 'without_cnps']).optional().default('with_cnps'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { month, year, countryCode, cnpsFilter } = input;
+      const tenantId = ctx.user.tenantId;
+
+      // Import the calculator service
+      const { generateCNPSDeclaration } = await import(
+        '@/features/payroll/services/cnps-contribution-calculator'
+      );
+
+      // Generate declaration data
+      const declarationData = await generateCNPSDeclaration({
+        tenantId,
+        month,
+        year,
+        countryCode,
+        cnpsFilter,
+      });
+
+      // Check if user has made any edits for this period
+      const existingEdit = await db.query.cnpsDeclarationEdits.findFirst({
+        where: and(
+          eq(cnpsDeclarationEdits.tenantId, tenantId),
+          eq(cnpsDeclarationEdits.month, month),
+          eq(cnpsDeclarationEdits.year, year),
+          eq(cnpsDeclarationEdits.countryCode, countryCode),
+        ),
+        orderBy: desc(cnpsDeclarationEdits.createdAt),
+      });
+
+      return {
+        data: declarationData,
+        hasEdits: !!existingEdit,
+        lastEdit: existingEdit
+          ? {
+              id: existingEdit.id,
+              edits: existingEdit.edits,
+              editReason: existingEdit.editReason,
+              editedAt: existingEdit.editedAt,
+              editedBy: existingEdit.editedBy,
+            }
+          : null,
+      };
+    }),
+
+  /**
+   * Save CNPS Declaration Edits
+   *
+   * Stores user modifications to the automatically calculated declaration.
+   * Creates an audit trail of all changes.
+   *
+   * @security Tenant isolated - uses ctx.user.tenantId
+   */
+  saveCNPSDeclarationEdits: protectedProcedure
+    .input(
+      z.object({
+        month: z.number().min(1).max(12),
+        year: z.number().min(2020).max(2100),
+        countryCode: z.string().length(2),
+        originalData: z.any(), // Complete CNPSDeclarationData
+        edits: z.any(), // Modified fields only
+        editReason: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { month, year, countryCode, originalData, edits, editReason } = input;
+      const tenantId = ctx.user.tenantId;
+      const userId = ctx.user.id;
+
+      // Insert new edit record
+      const [newEdit] = await db
+        .insert(cnpsDeclarationEdits)
+        .values({
+          tenantId,
+          month,
+          year,
+          countryCode,
+          originalData,
+          edits,
+          editReason: editReason || null,
+          editedBy: userId,
+          editedAt: new Date(),
+        })
+        .returning();
+
+      return {
+        success: true,
+        editId: newEdit.id,
+        message: 'Modifications enregistrées avec succès',
+      };
+    }),
+
+  /**
+   * Export CNPS Declaration as PDF
+   *
+   * Generates a PDF matching the official CNPS contribution form format.
+   * Uses edited data if available, otherwise uses calculated data.
+   *
+   * @security Tenant isolated - uses ctx.user.tenantId
+   * @returns Base64-encoded PDF
+   */
+  exportCNPSDeclarationPDF: protectedProcedure
+    .input(
+      z.object({
+        month: z.number().min(1).max(12),
+        year: z.number().min(2020).max(2100),
+        countryCode: z.string().length(2),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { month, year, countryCode } = input;
+      const tenantId = ctx.user.tenantId;
+
+      // Get declaration data (with edits if available)
+      const { generateCNPSDeclaration } = await import(
+        '@/features/payroll/services/cnps-contribution-calculator'
+      );
+
+      let declarationData = await generateCNPSDeclaration({
+        tenantId,
+        month,
+        year,
+        countryCode,
+      });
+
+      // Check for user edits
+      const existingEdit = await db.query.cnpsDeclarationEdits.findFirst({
+        where: and(
+          eq(cnpsDeclarationEdits.tenantId, tenantId),
+          eq(cnpsDeclarationEdits.month, month),
+          eq(cnpsDeclarationEdits.year, year),
+          eq(cnpsDeclarationEdits.countryCode, countryCode),
+        ),
+        orderBy: desc(cnpsDeclarationEdits.createdAt),
+      });
+
+      // Apply edits if they exist
+      if (existingEdit && existingEdit.edits) {
+        const edits = existingEdit.edits as any;
+        // Deep merge edits into declarationData
+        declarationData = {
+          ...declarationData,
+          ...edits,
+        };
+      }
+
+      // Generate PDF
+      const { generateCNPSDeclarationPDF } = await import('@/lib/pdf/cnps-declaration-pdf');
+      const pdfBuffer = await generateCNPSDeclarationPDF(declarationData);
+
+      // Convert to base64
+      const pdfBase64 = pdfBuffer.toString('base64');
+
+      return {
+        filename: `declaration-cnps-${year}-${String(month).padStart(2, '0')}.pdf`,
+        content: pdfBase64,
+        mimeType: 'application/pdf',
       };
     }),
 });
