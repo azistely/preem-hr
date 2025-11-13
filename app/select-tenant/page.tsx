@@ -7,7 +7,7 @@
  * Follows HCI principles: large touch targets, clear visual hierarchy, zero learning curve.
  */
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { trpc } from '@/lib/trpc/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,7 +46,7 @@ function getCountryName(code: string): string {
   return names[code] || code;
 }
 
-export default function SelectTenantPage() {
+function SelectTenantContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get('redirect') || '/admin/dashboard';
@@ -222,5 +222,26 @@ export default function SelectTenantPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading fallback for Suspense
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="text-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+        <p className="text-lg text-muted-foreground">Chargement...</p>
+      </div>
+    </div>
+  );
+}
+
+// Wrap in Suspense boundary for useSearchParams
+export default function SelectTenantPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <SelectTenantContent />
+    </Suspense>
   );
 }
