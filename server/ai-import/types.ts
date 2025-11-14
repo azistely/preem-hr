@@ -170,6 +170,32 @@ export interface RecordMatch {
 
   /** Overall confidence in this match (0-100) */
   matchConfidence: number;
+
+  /**
+   * Duplicate detection - if this entity matches an existing employee in the database
+   */
+  duplicate?: {
+    /** Existing employee ID in database */
+    existingEmployeeId: string;
+
+    /** Existing employee number for display */
+    existingEmployeeNumber?: string;
+
+    /** Existing employee name for display */
+    existingEmployeeName: string;
+
+    /** How duplicate was detected */
+    matchMethod: 'employeeNumber' | 'email' | 'cnpsNumber' | 'fuzzyName';
+
+    /** Confidence that this is the same person (0-100) */
+    matchConfidence: number;
+
+    /** Recommended action */
+    recommendedAction: 'update' | 'skip' | 'ask_user';
+
+    /** Reasoning for recommendation (in French) */
+    reasoning: string;
+  };
 }
 
 // ============================================================================
@@ -319,6 +345,24 @@ export interface EnhancedImportSummary {
 
   /** Number requiring user input */
   conflictsRequiringUser: number;
+
+  /** Duplicate detection statistics */
+  duplicates?: {
+    /** Total number of duplicates found */
+    total: number;
+
+    /** Entities that will UPDATE existing employees */
+    willUpdate: number;
+
+    /** Entities that will be SKIPPED (exact duplicates) */
+    willSkip: number;
+
+    /** Entities requiring USER decision */
+    requiresUserDecision: number;
+
+    /** NEW entities (not duplicates) */
+    newEntities: number;
+  };
 }
 
 // ============================================================================
@@ -347,6 +391,29 @@ export interface ImportContext {
     uploadedAt: Date;
     size: number;
     hash?: string;
+  }>;
+
+  /**
+   * Existing employees in the database (for duplicate detection)
+   *
+   * This context is CRITICAL for production use - it enables:
+   * - Duplicate detection ("Jean Kouassi already exists as #1234")
+   * - Update vs Insert decisions
+   * - Intelligent matching across files
+   * - User trust ("50 nouveaux + 20 mises à jour")
+   */
+  existingEmployees?: Array<{
+    id: string;
+    employeeNumber?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    cnpsNumber?: string;
+    phoneNumber?: string;
+    hireDate?: Date;
+    position?: string;
+    department?: string;
+    status: string;
   }>;
 
   /** Streaming progress callback */
