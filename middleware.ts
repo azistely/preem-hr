@@ -63,6 +63,9 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/admin/shift-planning': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/documents': ['hr_manager', 'tenant_admin', 'super_admin'],
 
+  // AI Import System (HR Manager+)
+  '/import/ai': ['hr_manager', 'tenant_admin', 'super_admin'],
+
   // Automation Hub (HR Manager+)
   '/automation': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/automation/reminders': ['hr_manager', 'tenant_admin', 'super_admin'],
