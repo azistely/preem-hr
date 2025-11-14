@@ -281,6 +281,44 @@ export interface EntityProvenance {
 
   /** Field categories for UI display */
   categories: Record<string, string[]>;
+
+  /**
+   * Employee Linking (Referential Integrity)
+   *
+   * CRITICAL: Every non-employee entity MUST be linked to a valid employee.
+   * - For employees: undefined (they are the anchor)
+   * - For payslips/contracts/leaves/etc.: MUST have this field
+   * - If no employee match found: entity is REJECTED
+   */
+  linkedEmployee?: {
+    /** Existing employee ID (if matching database employee) */
+    employeeId?: string;
+
+    /** Employee number for display */
+    employeeNumber?: string;
+
+    /** Employee name for display */
+    employeeName: string;
+
+    /** Is this employee NEW (being created in this import)? */
+    isNew: boolean;
+
+    /** How employee was matched */
+    matchMethod: 'employeeNumber' | 'email' | 'cnpsNumber' | 'fuzzyName' | 'fileReference';
+
+    /** Confidence in match (0-100) */
+    matchConfidence: number;
+  };
+
+  /**
+   * Rejection reason (if entity was rejected)
+   *
+   * Entities are rejected when:
+   * - No employee match found ("Employé non trouvé")
+   * - Data validation failed
+   * - Business rule violations
+   */
+  rejectionReason?: string;
 }
 
 export interface CompleteEntity<T = Record<string, any>> {
@@ -302,14 +340,47 @@ export interface EntityPreview {
   /** Display name in French */
   entityName: string;
 
-  /** Number of entities */
+  /** Number of VALID entities (linked to employees) */
   count: number;
 
   /** Completeness percentage */
   completeness: number;
 
-  /** Example entities (2-3) */
-  examples: Array<{
+  /**
+   * For NON-EMPLOYEE entities: Group by employee
+   *
+   * Instead of showing "50 payslips", show:
+   * - "Jean Kouassi (#1234): 3 payslips"
+   * - "Marie Traoré (NOUVEAU): 2 payslips"
+   */
+  byEmployee?: Array<{
+    /** Employee ID (if existing) or undefined (if new) */
+    employeeId?: string;
+
+    /** Employee number for display */
+    employeeNumber?: string;
+
+    /** Employee name */
+    employeeName: string;
+
+    /** Is this employee NEW (being created in this import)? */
+    isNew: boolean;
+
+    /** Number of entities for this employee */
+    entityCount: number;
+
+    /** Example entities for this employee (1-2) */
+    examples: Array<{
+      description: string;
+      categories: Record<string, Record<string, any>>;
+      sources: Record<string, string>;
+    }>;
+  }>;
+
+  /**
+   * For EMPLOYEE entities only: Example employees
+   */
+  examples?: Array<{
     /** Description (e.g., "KOUASSI Jean - EMP001") */
     description: string;
 
@@ -322,6 +393,23 @@ export interface EntityPreview {
 
   /** Number of unresolved conflicts */
   unresolvedConflicts: number;
+
+  /**
+   * REJECTED entities (no employee match found)
+   *
+   * Example: "5 payslips ignorés (employé non trouvé)"
+   */
+  rejected?: {
+    /** Number of rejected entities */
+    count: number;
+
+    /** Rejection reasons */
+    reasons: Array<{
+      reason: string;
+      count: number;
+      examples: string[]; // First 2-3 descriptions
+    }>;
+  };
 }
 
 export interface EnhancedImportSummary {

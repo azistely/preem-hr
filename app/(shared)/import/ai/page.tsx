@@ -792,6 +792,7 @@ export default function AIImportPage() {
                   </div>
 
                   {/* Examples with Provenance */}
+                  {entity.examples && entity.examples.length > 0 && (
                   <div className="space-y-3 mt-4">
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="sm" className="w-full justify-between">
@@ -843,6 +844,7 @@ export default function AIImportPage() {
                       ))}
                     </CollapsibleContent>
                   </div>
+                  )}
                 </div>
               </Collapsible>
             ))}
