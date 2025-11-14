@@ -1,29 +1,29 @@
 /**
- * AI-Powered Import Page - Multi-File Batch Import
+ * AI-Powered Import Page V2 - Cross-File Entity Building
  *
  * USER TASK: "Import ALL my company data from Excel files"
  *
  * What Users Can Do:
  * ✅ Upload multiple Excel files at once (employees, payroll, attendance, etc.)
- * ✅ AI automatically understands what each file contains
+ * ✅ AI automatically builds complete entities from multiple sources
+ * ✅ See exactly what will be created (entity-based preview)
+ * ✅ Review conflicts and get AI recommendations
  * ✅ Import everything with one click
- * ✅ No templates needed, no manual mapping
  *
  * HCI Principles for Low Digital Literacy:
  * 1. Task-Oriented: "Importer vos données" not "Configure AI import"
- * 2. Show What's Possible: Visual examples of what works
- * 3. Zero Learning: Drop files, AI handles rest
- * 4. Reassurance: "AI s'occupe de tout" messaging
- * 5. Progress Visibility: Clear steps with checkmarks
- * 6. Error Prevention: Validate before accepting files
- * 7. Immediate Feedback: Toast + visual updates
+ * 2. Entity-Based: Show "50 employés" not "3 files, 5 sheets"
+ * 3. Provenance: Show where data came from (file citations)
+ * 4. Zero Learning: Drop files, AI handles rest
+ * 5. Progress Visibility: 9 phases with real-time updates
+ * 6. Conflict Resolution: AI explains choices, user confirms only when needed
  *
  * Flow:
  * 1. UPLOAD - Drop multiple files, show previews
- * 2. ANALYZE - One button: AI analyzes all files/sheets in parallel
- * 3. CONFIRM - Review only low-confidence detections
- * 4. IMPORT - One button: Import everything
- * 5. RESULTS - Show what was imported, grouped by task
+ * 2. ANALYZE - AI builds entity graph across all files
+ * 3. CONFIRM - Review entity preview and conflicts
+ * 4. IMPORT - Execute import in dependency order
+ * 5. RESULTS - Show what was imported, grouped by entity type
  */
 
 'use client';
@@ -48,6 +48,9 @@ import {
   Trash2,
   Plus,
   ArrowRight,
+  AlertTriangle,
+  Info,
+  TrendingUp,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -63,7 +66,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
-import type { ImportAnalysisResult } from '@/server/ai-import/coordinator';
+import type { EnhancedImportSummary, EntityPreview } from '@/server/ai-import/types';
 
 // ============================================================================
 // Types
@@ -75,27 +78,33 @@ interface UploadedFile {
   id: string;
   name: string;
   size: number;
-  status: 'uploading' | 'ready' | 'analyzing' | 'analyzed' | 'error';
-  analysis?: ImportAnalysisResult;
+  status: 'uploading' | 'ready' | 'error';
   error?: string;
 }
 
-interface FileAnalysisResult {
-  fileId: string;
-  fileName: string;
-  analysis: ImportAnalysisResult;
+interface MultiFileAnalysisResult {
+  analysisId: string;
+  summary: EnhancedImportSummary;
+  entityGraph: {
+    entities: Record<string, any>;
+    crossReferences: any[];
+  };
+  conflicts: {
+    total: number;
+    autoResolved: number;
+    requiresUser: number;
+  };
+  needsConfirmation: boolean;
+  confirmationReasons: string[];
+  processingTimeMs: number;
 }
 
-interface BatchImportResult {
-  totalFiles: number;
-  totalSheets: number;
-  totalRecords: number;
-  fileResults: Array<{
-    fileName: string;
-    sheetsImported: number;
-    recordsImported: number;
-    errors: string[];
-  }>;
+interface ImportResult {
+  success: boolean;
+  totalRecordsImported: number;
+  entitiesByType: Record<string, number>;
+  errors: string[];
+  summary: string;
 }
 
 // ============================================================================
@@ -105,15 +114,17 @@ interface BatchImportResult {
 export default function AIImportPage() {
   const [currentStep, setCurrentStep] = useState<WizardStep>('welcome');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [confirmedSheets, setConfirmedSheets] = useState<Record<string, string[]>>({}); // fileId -> sheet names
-  const [importResult, setImportResult] = useState<BatchImportResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<MultiFileAnalysisResult | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // tRPC mutations/queries
+  // tRPC mutations
   const uploadMutation = trpc.aiImport.uploadFile.useMutation();
-  const utils = trpc.useUtils();
-  const importMutation = trpc.aiImport.executeImport.useMutation();
+  const analyzeMultiFileMutation = trpc.aiImport.analyzeMultiFile.useMutation();
+  const executeImportMutation = trpc.aiImport.executeMultiFileImport.useMutation();
 
   // ============================================================================
   // Multi-File Upload Handlers
@@ -259,7 +270,7 @@ export default function AIImportPage() {
   }, []);
 
   // ============================================================================
-  // Batch Analysis Handler
+  // V2 Multi-File Analysis Handler
   // ============================================================================
 
   const handleAnalyzeAll = useCallback(async () => {
@@ -267,79 +278,36 @@ export default function AIImportPage() {
 
     if (filesToAnalyze.length === 0) return;
 
-    toast.loading(`Analyse de ${filesToAnalyze.length} fichier(s)...`, { id: 'analyze-all' });
+    setIsAnalyzing(true);
+    setAnalysisProgress(0);
 
-    // Set all files to analyzing status
-    setUploadedFiles((prev) =>
-      prev.map((f) =>
-        f.status === 'ready'
-          ? { ...f, status: 'analyzing' }
-          : f
-      )
-    );
+    toast.loading(`Analyse intelligente de ${filesToAnalyze.length} fichier(s)...`, {
+      id: 'analyze-all',
+    });
 
     try {
-      // Analyze all files in parallel
-      const analysisPromises = filesToAnalyze.map(async (file) => {
-        try {
-          const analysisData = await utils.aiImport.analyzeFile.fetch({
-            fileId: file.id,
-            countryCode: 'CI',
-          });
+      // Simulate progress updates (in production, use Server-Sent Events)
+      const progressInterval = setInterval(() => {
+        setAnalysisProgress((prev) => Math.min(prev + 5, 90));
+      }, 500);
 
-          if (!analysisData) {
-            throw new Error('Aucune donnée retournée');
-          }
-
-          return {
-            fileId: file.id,
-            fileName: file.name,
-            analysis: analysisData,
-          } as FileAnalysisResult;
-        } catch (error) {
-          // Mark file as error
-          setUploadedFiles((prev) =>
-            prev.map((f) =>
-              f.id === file.id
-                ? {
-                    ...f,
-                    status: 'error',
-                    error: error instanceof Error ? error.message : 'Erreur d\'analyse',
-                  }
-                : f
-            )
-          );
-          return null;
-        }
+      // Call V2 multi-file analysis
+      const result = await analyzeMultiFileMutation.mutateAsync({
+        fileIds: filesToAnalyze.map((f) => f.id),
+        countryCode: 'CI',
       });
 
-      const results = await Promise.all(analysisPromises);
-      const successfulResults = results.filter((r): r is FileAnalysisResult => r !== null);
+      clearInterval(progressInterval);
+      setAnalysisProgress(100);
 
-      // Update files with analysis results
-      setUploadedFiles((prev) =>
-        prev.map((f) => {
-          const result = successfulResults.find((r) => r.fileId === f.id);
-          if (result) {
-            return {
-              ...f,
-              status: 'analyzed',
-              analysis: result.analysis,
-            };
-          }
-          return f;
-        })
-      );
-
-      // Check if any files need confirmation
-      const needsConfirmation = successfulResults.some((r) => r.analysis.needsConfirmation);
+      setAnalysisResult(result);
 
       toast.success('Analyse terminée', {
         id: 'analyze-all',
-        description: `${successfulResults.length} fichier(s) analysé(s)`,
+        description: `${result.summary.entities.length} type(s) d'entités identifié(s)`,
       });
 
-      if (needsConfirmation) {
+      if (result.needsConfirmation) {
         setCurrentStep('confirm');
       } else {
         setCurrentStep('import');
@@ -349,57 +317,31 @@ export default function AIImportPage() {
         id: 'analyze-all',
         description: error instanceof Error ? error.message : 'Erreur inconnue',
       });
+    } finally {
+      setIsAnalyzing(false);
     }
-  }, [uploadedFiles, utils.aiImport.analyzeFile]);
+  }, [uploadedFiles, analyzeMultiFileMutation]);
 
   // ============================================================================
-  // Batch Import Handler
+  // V2 Multi-File Import Handler
   // ============================================================================
 
   const handleImportAll = useCallback(async () => {
-    const filesToImport = uploadedFiles.filter((f) => f.status === 'analyzed');
+    if (!analysisResult) return;
 
-    if (filesToImport.length === 0) return;
-
-    toast.loading(`Import de ${filesToImport.length} fichier(s)...`, { id: 'import-all' });
+    toast.loading('Import en cours...', { id: 'import-all' });
 
     try {
-      // Import all files in sequence (to avoid DB contention)
-      const importPromises = filesToImport.map(async (file) => {
-        const result = await importMutation.mutateAsync({
-          fileId: file.id,
-          countryCode: 'CI',
-          confirmedSheets: confirmedSheets[file.id] || undefined,
-        });
-
-        // Collect all errors from sheet details
-        const allErrors = result.details
-          ?.flatMap((detail) => detail.errors.map((err) => err.message))
-          .filter(Boolean) || [];
-
-        return {
-          fileName: file.name,
-          sheetsImported: result.details?.length || 0,
-          recordsImported: result.totalRecordsImported,
-          errors: allErrors,
-        };
+      const result = await executeImportMutation.mutateAsync({
+        analysisId: analysisResult.analysisId,
+        allowPartialImport: false,
       });
 
-      const results = await Promise.all(importPromises);
-
-      const totalRecords = results.reduce((sum, r) => sum + r.recordsImported, 0);
-      const totalSheets = results.reduce((sum, r) => sum + r.sheetsImported, 0);
-
-      setImportResult({
-        totalFiles: filesToImport.length,
-        totalSheets,
-        totalRecords,
-        fileResults: results,
-      });
+      setImportResult(result);
 
       toast.success('Import terminé', {
         id: 'import-all',
-        description: `${totalRecords} enregistrement(s) importé(s)`,
+        description: result.summary,
       });
 
       setCurrentStep('results');
@@ -409,7 +351,7 @@ export default function AIImportPage() {
         description: error instanceof Error ? error.message : 'Erreur inconnue',
       });
     }
-  }, [uploadedFiles, confirmedSheets, importMutation]);
+  }, [analysisResult, executeImportMutation]);
 
   // ============================================================================
   // Render Helpers
@@ -426,9 +368,19 @@ export default function AIImportPage() {
           Importer vos données d'entreprise
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Déposez tous vos fichiers Excel. L'IA s'occupe du reste.
+          Déposez tous vos fichiers Excel. L'IA construit automatiquement vos données complètes.
         </p>
       </div>
+
+      {/* What's New in V2 */}
+      <Alert className="border-primary bg-primary/5">
+        <TrendingUp className="w-4 h-4 text-primary" />
+        <AlertTitle className="text-primary">Nouveau : Construction cross-fichiers</AlertTitle>
+        <AlertDescription>
+          L'IA fusionne intelligemment les données de plusieurs fichiers pour créer des entités
+          complètes. Par exemple : employés.xlsx + salaires.xlsx = employés avec leurs salaires.
+        </AlertDescription>
+      </Alert>
 
       {/* What You Can Do */}
       <Card>
@@ -443,9 +395,9 @@ export default function AIImportPage() {
             <div className="flex gap-3">
               <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">Import automatique</p>
+                <p className="font-medium">Fusion intelligente</p>
                 <p className="text-sm text-muted-foreground">
-                  Déposez vos fichiers Excel de SAGE, CIEL ou tout autre système
+                  L'IA combine automatiquement les données de plusieurs fichiers
                 </p>
               </div>
             </div>
@@ -453,9 +405,9 @@ export default function AIImportPage() {
             <div className="flex gap-3">
               <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">IA intelligente</p>
+                <p className="font-medium">Détection de conflits</p>
                 <p className="text-sm text-muted-foreground">
-                  L'IA identifie automatiquement employés, paie, congés, etc.
+                  Résolution automatique des incohérences entre fichiers
                 </p>
               </div>
             </div>
@@ -463,9 +415,9 @@ export default function AIImportPage() {
             <div className="flex gap-3">
               <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">Plusieurs fichiers</p>
+                <p className="font-medium">Provenance complète</p>
                 <p className="text-sm text-muted-foreground">
-                  Upload multiple: employés.xlsx, paie.xlsx, congés.xlsx...
+                  Savoir d'où vient chaque donnée (source citations)
                 </p>
               </div>
             </div>
@@ -473,9 +425,9 @@ export default function AIImportPage() {
             <div className="flex gap-3">
               <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">Zéro configuration</p>
+                <p className="font-medium">Aperçu exact</p>
                 <p className="text-sm text-muted-foreground">
-                  Pas de modèle à télécharger, pas de mapping manuel
+                  Voir exactement ce qui sera créé avant d'importer
                 </p>
               </div>
             </div>
@@ -483,7 +435,7 @@ export default function AIImportPage() {
         </CardContent>
       </Card>
 
-      {/* Examples of What Works */}
+      {/* Examples */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -571,7 +523,8 @@ export default function AIImportPage() {
         <CardHeader>
           <CardTitle>Déposez vos fichiers Excel</CardTitle>
           <CardDescription>
-            Vous pouvez déposer plusieurs fichiers à la fois. L'IA analysera chaque fichier automatiquement.
+            Vous pouvez déposer plusieurs fichiers à la fois. L'IA construira automatiquement les
+            entités complètes en fusionnant les données de tous les fichiers.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -605,9 +558,7 @@ export default function AIImportPage() {
                 <Upload className="w-8 h-8 text-primary" />
               </div>
               <div>
-                <p className="text-lg font-medium">
-                  Glissez vos fichiers ici
-                </p>
+                <p className="text-lg font-medium">Glissez vos fichiers ici</p>
                 <p className="text-sm text-muted-foreground mt-1">
                   ou cliquez pour sélectionner (max 50 MB par fichier)
                 </p>
@@ -621,9 +572,7 @@ export default function AIImportPage() {
           {/* Uploaded Files List */}
           {uploadedFiles.length > 0 && (
             <div className="space-y-2">
-              <p className="text-sm font-medium">
-                {uploadedFiles.length} fichier(s) uploadé(s)
-              </p>
+              <p className="text-sm font-medium">{uploadedFiles.length} fichier(s) uploadé(s)</p>
 
               <div className="space-y-2">
                 {uploadedFiles.map((file) => (
@@ -672,28 +621,47 @@ export default function AIImportPage() {
             </div>
           )}
 
+          {/* Analysis Progress */}
+          {isAnalyzing && (
+            <div className="space-y-3 p-4 rounded-lg border bg-primary/5">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">Analyse en cours...</p>
+                  <p className="text-xs text-muted-foreground">
+                    Construction du graphe d'entités et détection des conflits
+                  </p>
+                </div>
+              </div>
+              <Progress value={analysisProgress} className="h-2" />
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex items-center gap-3 pt-4">
-            {uploadedFiles.some((f) => f.status === 'ready') && (
+            {uploadedFiles.some((f) => f.status === 'ready') && !isAnalyzing && (
               <Button
                 size="lg"
                 className="min-h-[56px] flex-1"
                 onClick={handleAnalyzeAll}
               >
                 <Brain className="mr-2 w-5 h-5" />
-                Analyser tous les fichiers ({uploadedFiles.filter(f => f.status === 'ready').length})
+                Analyser tous les fichiers (
+                {uploadedFiles.filter((f) => f.status === 'ready').length})
               </Button>
             )}
 
-            <Button
-              variant="outline"
-              size="lg"
-              className="min-h-[56px]"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Plus className="mr-2 w-5 h-5" />
-              Ajouter d'autres fichiers
-            </Button>
+            {!isAnalyzing && (
+              <Button
+                variant="outline"
+                size="lg"
+                className="min-h-[56px]"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Plus className="mr-2 w-5 h-5" />
+                Ajouter d'autres fichiers
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -703,24 +671,16 @@ export default function AIImportPage() {
         <Sparkles className="w-4 h-4" />
         <AlertTitle>L'IA s'occupe de tout</AlertTitle>
         <AlertDescription>
-          Une fois l'analyse lancée, l'IA identifiera automatiquement le type de données dans chaque
-          fichier et chaque feuille Excel. Aucune configuration nécessaire.
+          L'analyse V2 construit automatiquement le graphe d'entités, fusionne les données de
+          plusieurs fichiers, détecte et résout les conflits. Vous verrez un aperçu exact de ce
+          qui sera créé.
         </AlertDescription>
       </Alert>
     </div>
   );
 
   const renderConfirmStep = () => {
-    // Find files with low-confidence sheets
-    const filesNeedingConfirmation = uploadedFiles.filter(
-      (f) => f.status === 'analyzed' && f.analysis?.needsConfirmation
-    );
-
-    if (filesNeedingConfirmation.length === 0) {
-      // Skip to import if no confirmation needed
-      setCurrentStep('import');
-      return null;
-    }
+    if (!analysisResult) return null;
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
@@ -751,91 +711,183 @@ export default function AIImportPage() {
           </div>
         </div>
 
-        {/* User-Friendly Summary - Show what will be created */}
-        {filesNeedingConfirmation.map((file) => file.analysis?.summary && (
-          <Card key={file.id}>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet className="w-5 h-5 text-primary" />
-                <div className="flex-1">
-                  <CardTitle className="text-lg">{file.name}</CardTitle>
-                  <CardDescription className="text-base mt-1">
-                    {file.analysis.summary.overallSummary}
-                  </CardDescription>
+        {/* Overall Summary */}
+        <Alert className="border-primary bg-primary/5">
+          <Info className="w-4 h-4 text-primary" />
+          <AlertTitle className="text-primary">Aperçu de l'import</AlertTitle>
+          <AlertDescription className="text-base">
+            {analysisResult.summary.overallSummary}
+          </AlertDescription>
+        </Alert>
+
+        {/* Processing Stats */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-primary">
+                  {analysisResult.summary.entities.length}
                 </div>
+                <p className="text-sm text-muted-foreground mt-1">Types d'entités</p>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Entities to Create */}
-              <div className="space-y-3">
-                {file.analysis.summary.entities.map((entity, idx) => (
-                  <div key={idx} className="border rounded-lg p-4 bg-card">
-                    {/* Entity Header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-semibold text-primary">
-                        {entity.count} {entity.entityName}
-                      </h4>
-                      <Badge variant="outline" className="text-xs">
-                        Feuille: {entity.sheetName}
-                      </Badge>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-600">
+                  {analysisResult.conflicts.autoResolved}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Conflits résolus</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold">
+                  {(analysisResult.processingTimeMs / 1000).toFixed(1)}s
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Temps d'analyse</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Entity-Based Preview */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Ce qui sera créé</CardTitle>
+            <CardDescription>
+              Aperçu exact des entités qui seront importées avec provenance des données
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {analysisResult.summary.entities.map((entity, idx) => (
+              <Collapsible key={idx}>
+                <div className="border rounded-lg p-4 bg-card">
+                  {/* Entity Header */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Users className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-lg text-primary">
+                          {entity.count} {entity.entityName}
+                        </h4>
+                        <p className="text-sm text-muted-foreground">
+                          Complétude moyenne: {entity.completeness}%
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Examples */}
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground font-medium">
-                        Exemples:
-                      </p>
+                    {entity.unresolvedConflicts > 0 && (
+                      <Badge variant="destructive">
+                        {entity.unresolvedConflicts} conflit(s)
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Examples with Provenance */}
+                  <div className="space-y-3 mt-4">
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" size="sm" className="w-full justify-between">
+                        <span className="flex items-center gap-2">
+                          <FileText className="w-4 h-4" />
+                          Voir {entity.examples.length} exemple(s)
+                        </span>
+                        <ChevronDown className="w-4 h-4" />
+                      </Button>
+                    </CollapsibleTrigger>
+
+                    <CollapsibleContent className="space-y-3">
                       {entity.examples.map((example, exIdx) => (
-                        <div key={exIdx} className="bg-muted/50 rounded p-2 text-sm">
-                          <p className="font-medium mb-1">{example.description}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {Object.entries(example.keyFields).map(([key, value]) => (
-                              <Badge key={key} variant="secondary" className="text-xs">
-                                {key}: {value}
-                              </Badge>
-                            ))}
+                        <div key={exIdx} className="bg-muted/50 rounded-lg p-3 space-y-2">
+                          {/* Description */}
+                          <p className="font-medium">{example.description}</p>
+
+                          {/* Categorized Fields */}
+                          {Object.entries(example.categories).map(([category, fields]) => (
+                            <div key={category} className="space-y-1">
+                              <p className="text-xs font-medium text-muted-foreground uppercase">
+                                {category}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {Object.entries(fields as Record<string, any>).map(([key, value]) => (
+                                  <Badge key={key} variant="secondary" className="text-xs">
+                                    {key}: {String(value)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* Provenance (Sources) */}
+                          <div className="pt-2 border-t">
+                            <p className="text-xs font-medium text-muted-foreground mb-1">
+                              Sources:
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {Object.values(example.sources).map((source, srcIdx) => (
+                                <Badge key={srcIdx} variant="outline" className="text-xs">
+                                  <FileSpreadsheet className="w-3 h-3 mr-1" />
+                                  {String(source)}
+                                </Badge>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       ))}
-                    </div>
+                    </CollapsibleContent>
                   </div>
+                </div>
+              </Collapsible>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Conflicts Requiring User Confirmation */}
+        {analysisResult.conflicts.requiresUser > 0 && (
+          <Alert variant="destructive">
+            <AlertTriangle className="w-4 h-4" />
+            <AlertTitle>Conflits nécessitant votre confirmation</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc list-inside space-y-1 mt-2">
+                {analysisResult.confirmationReasons.map((reason, idx) => (
+                  <li key={idx}>{reason}</li>
                 ))}
-              </div>
+              </ul>
+              <p className="mt-3 text-sm">
+                L'IA a détecté des incohérences critiques. Veuillez vérifier les exemples
+                ci-dessus avant de continuer.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
 
-              {/* Warnings */}
-              {file.analysis.summary.warnings.length > 0 && (
-                <Alert variant="destructive">
-                  <AlertCircle className="w-4 h-4" />
-                  <AlertTitle>Points d'attention</AlertTitle>
-                  <AlertDescription>
-                    <ul className="list-disc list-inside space-y-1">
-                      {file.analysis.summary.warnings.map((warning, idx) => (
-                        <li key={idx}>{warning}</li>
-                      ))}
-                    </ul>
-                  </AlertDescription>
-                </Alert>
-              )}
+        {/* Warnings */}
+        {analysisResult.summary.warnings.length > 0 && (
+          <Alert>
+            <Info className="w-4 h-4" />
+            <AlertTitle>Points d'attention</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc list-inside space-y-1">
+                {analysisResult.summary.warnings.map((warning, idx) => (
+                  <li key={idx}>{warning}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
 
-              {/* Estimated Time */}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="w-4 h-4" />
-                <span>Temps estimé: {file.analysis.summary.estimatedTime}</span>
-              </div>
-
-              {/* Low Confidence Notice - Optional Technical Details */}
-              {file.analysis.lowConfidenceSheets.length > 0 && (
-                <Alert>
-                  <AlertCircle className="w-4 h-4" />
-                  <AlertTitle>Vérification recommandée</AlertTitle>
-                  <AlertDescription>
-                    L'IA a détecté {file.analysis.lowConfidenceSheets.length} feuille(s) avec une confiance inférieure à 90%. Vérifiez que les exemples ci-dessus correspondent bien à vos données.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+        {/* Estimated Time */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Clock className="w-4 h-4" />
+          <span>Temps estimé d'import: {analysisResult.summary.estimatedTime}</span>
+        </div>
 
         {/* Actions */}
         <div className="flex items-center gap-3">
@@ -853,7 +905,7 @@ export default function AIImportPage() {
   };
 
   const renderImportStep = () => {
-    const filesToImport = uploadedFiles.filter((f) => f.status === 'analyzed');
+    if (!analysisResult) return null;
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
@@ -877,87 +929,48 @@ export default function AIImportPage() {
           </div>
         </div>
 
-        {/* User-Friendly Summary */}
-        {filesToImport.map((file) => file.analysis?.summary && (
-          <Card key={file.id}>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet className="w-5 h-5 text-primary" />
-                <div className="flex-1">
-                  <CardTitle className="text-lg">{file.name}</CardTitle>
-                  <CardDescription className="text-base mt-1">
-                    {file.analysis.summary.overallSummary}
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Entities to Create */}
-              <div className="space-y-3">
-                {file.analysis.summary.entities.map((entity, idx) => (
-                  <div key={idx} className="border rounded-lg p-4 bg-card">
-                    {/* Entity Header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-semibold text-primary">
+        {/* Import Summary */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Prêt pour l'import</CardTitle>
+            <CardDescription className="text-base">
+              {analysisResult.summary.overallSummary}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Entity List */}
+            <div className="space-y-2">
+              {analysisResult.summary.entities.map((entity, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between p-3 rounded-lg border bg-card"
+                >
+                  <div className="flex items-center gap-3">
+                    <Users className="w-5 h-5 text-primary" />
+                    <div>
+                      <p className="font-medium">
                         {entity.count} {entity.entityName}
-                      </h4>
-                      <Badge variant="outline" className="text-xs">
-                        Feuille: {entity.sheetName}
-                      </Badge>
-                    </div>
-
-                    {/* Examples */}
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground font-medium">
-                        Exemples:
                       </p>
-                      {entity.examples.map((example, exIdx) => (
-                        <div key={exIdx} className="bg-muted/50 rounded p-2 text-sm">
-                          <p className="font-medium mb-1">{example.description}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {Object.entries(example.keyFields).map(([key, value]) => (
-                              <Badge key={key} variant="secondary" className="text-xs">
-                                {key}: {value}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                      <p className="text-xs text-muted-foreground">
+                        Complétude: {entity.completeness}%
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
+                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                </div>
+              ))}
+            </div>
 
-              {/* Warnings */}
-              {file.analysis.summary.warnings.length > 0 && (
-                <Alert variant="destructive">
-                  <AlertCircle className="w-4 h-4" />
-                  <AlertTitle>Points d'attention</AlertTitle>
-                  <AlertDescription>
-                    <ul className="list-disc list-inside space-y-1">
-                      {file.analysis.summary.warnings.map((warning, idx) => (
-                        <li key={idx}>{warning}</li>
-                      ))}
-                    </ul>
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* Estimated Time */}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock className="w-4 h-4" />
-                <span>Temps estimé: {file.analysis.summary.estimatedTime}</span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+            {/* Estimated Time */}
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="w-4 h-4" />
+              <span>Temps estimé: {analysisResult.summary.estimatedTime}</span>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Action */}
-        <Button
-          size="lg"
-          className="min-h-[56px] w-full"
-          onClick={handleImportAll}
-        >
+        <Button size="lg" className="min-h-[56px] w-full" onClick={handleImportAll}>
           <Zap className="mr-2 w-5 h-5" />
           Lancer l'import
         </Button>
@@ -968,7 +981,7 @@ export default function AIImportPage() {
   const renderResultsStep = () => {
     if (!importResult) return null;
 
-    const hasErrors = importResult.fileResults.some((r) => r.errors.length > 0);
+    const hasErrors = importResult.errors.length > 0;
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
@@ -988,7 +1001,7 @@ export default function AIImportPage() {
               Import réussi !
             </AlertTitle>
             <AlertDescription className="text-green-800 dark:text-green-200">
-              Toutes vos données ont été importées avec succès.
+              {importResult.summary}
             </AlertDescription>
           </Alert>
         )}
@@ -999,94 +1012,53 @@ export default function AIImportPage() {
             <CardTitle>Résumé de l'import</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Big Numbers */}
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="text-center p-4 rounded-lg bg-primary/5">
-                <div className="text-4xl font-bold text-primary">
-                  {importResult.totalRecords.toLocaleString()}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  enregistrements importés
-                </div>
+            {/* Big Number */}
+            <div className="text-center p-6 rounded-lg bg-primary/5">
+              <div className="text-5xl font-bold text-primary">
+                {importResult.totalRecordsImported.toLocaleString()}
               </div>
-
-              <div className="text-center p-4 rounded-lg bg-secondary">
-                <div className="text-4xl font-bold">
-                  {importResult.totalFiles}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  fichiers traités
-                </div>
-              </div>
-
-              <div className="text-center p-4 rounded-lg bg-secondary">
-                <div className="text-4xl font-bold">
-                  {importResult.totalSheets}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  feuilles importées
-                </div>
+              <div className="text-sm text-muted-foreground mt-2">
+                enregistrements importés
               </div>
             </div>
 
             <Separator />
 
-            {/* File-by-File Results */}
+            {/* Entity-by-Entity Results */}
             <div className="space-y-3">
-              <p className="font-medium">Détails par fichier:</p>
+              <p className="font-medium">Détails par type d'entité:</p>
 
-              {importResult.fileResults.map((result, idx) => (
-                <Collapsible key={idx}>
-                  <div className="flex items-start gap-3 p-4 rounded-lg border bg-card">
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-3">
-                        <FileSpreadsheet className="w-4 h-4 text-green-600" />
-                        <p className="font-medium">{result.fileName}</p>
-                        {result.errors.length > 0 && (
-                          <Badge variant="destructive">
-                            {result.errors.length} erreur(s)
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>{result.recordsImported} enregistrements</span>
-                        <span>•</span>
-                        <span>{result.sheetsImported} feuille(s)</span>
-                      </div>
-
-                      {result.errors.length > 0 && (
-                        <>
-                          <CollapsibleTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 p-0">
-                              <ChevronDown className="w-4 h-4 mr-1" />
-                              Voir les erreurs
-                            </Button>
-                          </CollapsibleTrigger>
-
-                          <CollapsibleContent className="pt-2">
-                            <div className="space-y-1">
-                              {result.errors.map((error, errorIdx) => (
-                                <p
-                                  key={errorIdx}
-                                  className="text-sm text-destructive"
-                                >
-                                  • {error}
-                                </p>
-                              ))}
-                            </div>
-                          </CollapsibleContent>
-                        </>
-                      )}
+              {Object.entries(importResult.entitiesByType).map(([entityType, count]) => (
+                <div
+                  key={entityType}
+                  className="flex items-center justify-between p-4 rounded-lg border bg-card"
+                >
+                  <div className="flex items-center gap-3">
+                    <Users className="w-5 h-5 text-green-600" />
+                    <div>
+                      <p className="font-medium">{entityType}</p>
+                      <p className="text-sm text-muted-foreground">{count} enregistrement(s)</p>
                     </div>
-
-                    {result.errors.length === 0 && (
-                      <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-                    )}
                   </div>
-                </Collapsible>
+                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                </div>
               ))}
             </div>
+
+            {/* Errors */}
+            {importResult.errors.length > 0 && (
+              <Alert variant="destructive">
+                <AlertCircle className="w-4 h-4" />
+                <AlertTitle>Erreurs rencontrées</AlertTitle>
+                <AlertDescription>
+                  <ul className="list-disc list-inside space-y-1 mt-2">
+                    {importResult.errors.map((error, idx) => (
+                      <li key={idx}>{error}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
 
@@ -1099,7 +1071,7 @@ export default function AIImportPage() {
             onClick={() => {
               setCurrentStep('welcome');
               setUploadedFiles([]);
-              setConfirmedSheets({});
+              setAnalysisResult(null);
               setImportResult(null);
             }}
           >
@@ -1131,9 +1103,9 @@ export default function AIImportPage() {
           <Sparkles className="w-6 h-6 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Import Intelligent</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Import Intelligent V2</h1>
           <p className="text-muted-foreground">
-            Import automatique avec IA - Zéro configuration
+            Import multi-fichiers avec fusion cross-source et résolution de conflits
           </p>
         </div>
       </div>
@@ -1146,14 +1118,14 @@ export default function AIImportPage() {
       {currentStep === 'results' && renderResultsStep()}
 
       {/* Back to Welcome */}
-      {currentStep !== 'welcome' && (
+      {currentStep !== 'welcome' && currentStep !== 'results' && (
         <div className="flex justify-center pt-4">
           <Button
             variant="ghost"
             onClick={() => {
               setCurrentStep('welcome');
               setUploadedFiles([]);
-              setConfirmedSheets({});
+              setAnalysisResult(null);
               setImportResult(null);
             }}
           >
