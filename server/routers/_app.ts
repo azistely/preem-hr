@@ -52,6 +52,7 @@ import { shiftPlanningRouter } from './shift-planning';
 import { acpRouter } from './acp';
 import { leavePlanningRouter } from './leave-planning';
 import { notificationsRouter } from './notifications';
+import { aiImportRouter } from './ai-import';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -72,6 +73,7 @@ export const appRouter = createTRPCRouter({
   dependents: dependentsRouter,
   benefits: benefitsRouter,
   employeeImport: employeeImportRouter,
+  aiImport: aiImportRouter,
   contracts: contractsRouter,
   payroll: payrollRouter,
   payrollReview: payrollReviewRouter,
