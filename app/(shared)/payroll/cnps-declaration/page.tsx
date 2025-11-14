@@ -550,29 +550,80 @@ export default function CNPSDeclarationPage() {
             </CardContent>
           </Card>
 
-          {/* Contribution Breakdown */}
+          {/* Non-Contributing Employees */}
           <Card>
             <CardHeader>
-              <CardTitle>Décompte des cotisations dues</CardTitle>
+              <CardTitle>Employés non soumis à cotisations</CardTitle>
               <CardDescription>
-                Détail des cotisations par régime
+                Employés exclus de certains régimes de cotisations
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[40%]">Régime</TableHead>
-                    <TableHead className="text-right">Taux</TableHead>
-                    <TableHead className="text-right">Employeur</TableHead>
-                    <TableHead className="text-right">Salarié</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="w-[70%]"></TableHead>
+                    <TableHead className="text-right w-[15%]">Nombre</TableHead>
+                    <TableHead className="text-right w-[15%]">Salaires Bruts</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="font-medium">
+                      Personnes ne cotisant pas au Régime de la Retraite
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {data.nonContributingEmployees?.noRetirement?.count || 0}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(data.nonContributingEmployees?.noRetirement?.grossSalary || 0)}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">
+                      Personnes pour qui l'employeur ne cotise pas au Régime des Prestations Familiales
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {data.nonContributingEmployees?.noFamilyBenefits?.count || 0}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(data.nonContributingEmployees?.noFamilyBenefits?.grossSalary || 0)}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Contribution Breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Décompte des cotisations dues</CardTitle>
+              <CardDescription>
+                Bases brutes imposables et montants des cotisations cumulés
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[25%]">Rubriques</TableHead>
+                    <TableHead className="text-right w-[20%]">
+                      Salaires soumis à cotisations
+                    </TableHead>
+                    <TableHead className="text-right w-[10%]">Taux</TableHead>
+                    <TableHead className="text-right w-[15%]">Employeur</TableHead>
+                    <TableHead className="text-right w-[15%]">Salarié</TableHead>
+                    <TableHead className="text-right w-[15%]">Montants</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow>
                     <TableCell className="font-medium">
                       {data.contributions.retirement.name}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatCurrency(data.contributions.retirement.contributionBase || data.totalContributionBase)}
                     </TableCell>
                     <TableCell className="text-right">
                       {data.contributions.retirement.rate.toFixed(2)}%
@@ -592,6 +643,9 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="font-medium">
                       {data.contributions.maternity.name}
                     </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatCurrency(data.contributions.maternity.contributionBase || data.totalContributionBase)}
+                    </TableCell>
                     <TableCell className="text-right">
                       {data.contributions.maternity.rate.toFixed(2)}%
                     </TableCell>
@@ -610,6 +664,9 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="font-medium">
                       {data.contributions.familyBenefits.name}
                     </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatCurrency(data.contributions.familyBenefits.contributionBase || data.totalContributionBase)}
+                    </TableCell>
                     <TableCell className="text-right">
                       {data.contributions.familyBenefits.rate.toFixed(2)}%
                     </TableCell>
@@ -627,6 +684,9 @@ export default function CNPSDeclarationPage() {
                   <TableRow>
                     <TableCell className="font-medium">
                       {data.contributions.workAccidents.name}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatCurrency(data.contributions.workAccidents.contributionBase || data.totalContributionBase)}
                     </TableCell>
                     <TableCell className="text-right">
                       {data.contributions.workAccidents.rate.toFixed(2)}%
@@ -647,6 +707,9 @@ export default function CNPSDeclarationPage() {
                       <TableCell className="font-medium">
                         {data.contributions.cmu.name}
                       </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {formatCurrency(data.contributions.cmu.contributionBase || data.totalContributionBase)}
+                      </TableCell>
                       <TableCell className="text-right">
                         {data.contributions.cmu.rate.toFixed(2)}%
                       </TableCell>
@@ -665,6 +728,9 @@ export default function CNPSDeclarationPage() {
                   {/* Total Row */}
                   <TableRow className="bg-primary/10 font-bold text-primary">
                     <TableCell>TOTAL COTISATIONS</TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(data.totalContributionBase)}
+                    </TableCell>
                     <TableCell />
                     <TableCell className="text-right">
                       {formatCurrency(data.totalEmployerContributions)}
@@ -678,6 +744,13 @@ export default function CNPSDeclarationPage() {
                   </TableRow>
                 </TableBody>
               </Table>
+              <div className="mt-3 text-sm text-muted-foreground">
+                <p>
+                  <strong>Note:</strong> La colonne "Salaires soumis à cotisations" représente les bases brutes imposables
+                  cumulées pour tout le personnel. La colonne "Montants" correspond aux retenues
+                  cumulées (employeur + salarié) pour la période.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
