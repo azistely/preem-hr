@@ -444,7 +444,7 @@ export default function CNPSDeclarationPage() {
             <CardHeader>
               <CardTitle>Salariés bruts soumis à cotisations</CardTitle>
               <CardDescription>
-                Catégorisation des employés par régime de salaire
+                Catégorisation des employés par régime de salaire avec bases de cotisation par régime
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -453,8 +453,16 @@ export default function CNPSDeclarationPage() {
                   <TableRow>
                     <TableHead className="w-[50%]">Catégorie de salariés</TableHead>
                     <TableHead className="text-right">Nombre</TableHead>
-                    <TableHead className="text-right">Salaire Brut</TableHead>
-                    <TableHead className="text-right">Base Cotisations</TableHead>
+                    <TableHead className="text-right">
+                      <div className="text-xs">Salaires soumis à cotisations</div>
+                      <div className="font-semibold">Régime de Retraite</div>
+                      <div className="text-xs text-muted-foreground">(Plafond: 1.647.315 F)</div>
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <div className="text-xs">Salaires soumis à cotisations</div>
+                      <div className="font-semibold">Prestations Familiales</div>
+                      <div className="text-xs text-muted-foreground">(Plafond: 75.000 F)</div>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -466,11 +474,11 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="text-right">
                       {data.dailyWorkers.category1.employeeCount}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.dailyWorkers.category1.totalGross)}
+                    <TableCell className="text-right bg-blue-50 font-medium">
+                      {formatCurrency(data.dailyWorkers.category1.retirementBase || 0)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.dailyWorkers.category1.contributionBase)}
+                    <TableCell className="text-right bg-green-50 font-medium">
+                      {formatCurrency(data.dailyWorkers.category1.otherRegimesBase || 0)}
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -480,11 +488,11 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="text-right">
                       {data.dailyWorkers.category2.employeeCount}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.dailyWorkers.category2.totalGross)}
+                    <TableCell className="text-right bg-blue-50 font-medium">
+                      {formatCurrency(data.dailyWorkers.category2.retirementBase || 0)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.dailyWorkers.category2.contributionBase)}
+                    <TableCell className="text-right bg-green-50 font-medium">
+                      {formatCurrency(data.dailyWorkers.category2.otherRegimesBase || 0)}
                     </TableCell>
                   </TableRow>
 
@@ -496,11 +504,11 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="text-right">
                       {data.monthlyWorkers.category1.employeeCount}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.monthlyWorkers.category1.totalGross)}
+                    <TableCell className="text-right bg-blue-50 font-medium">
+                      {formatCurrency(data.monthlyWorkers.category1.retirementBase || 0)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.monthlyWorkers.category1.contributionBase)}
+                    <TableCell className="text-right bg-green-50 font-medium">
+                      {formatCurrency(data.monthlyWorkers.category1.otherRegimesBase || 0)}
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -510,11 +518,11 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="text-right">
                       {data.monthlyWorkers.category2.employeeCount}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.monthlyWorkers.category2.totalGross)}
+                    <TableCell className="text-right bg-blue-50 font-medium">
+                      {formatCurrency(data.monthlyWorkers.category2.retirementBase || 0)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.monthlyWorkers.category2.contributionBase)}
+                    <TableCell className="text-right bg-green-50 font-medium">
+                      {formatCurrency(data.monthlyWorkers.category2.otherRegimesBase || 0)}
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -524,11 +532,11 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="text-right">
                       {data.monthlyWorkers.category3.employeeCount}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.monthlyWorkers.category3.totalGross)}
+                    <TableCell className="text-right bg-blue-50 font-medium">
+                      {formatCurrency(data.monthlyWorkers.category3.retirementBase || 0)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.monthlyWorkers.category3.contributionBase)}
+                    <TableCell className="text-right bg-green-50 font-medium">
+                      {formatCurrency(data.monthlyWorkers.category3.otherRegimesBase || 0)}
                     </TableCell>
                   </TableRow>
 
@@ -538,11 +546,23 @@ export default function CNPSDeclarationPage() {
                     <TableCell className="text-right">
                       {data.totalEmployeeCount}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.totalGrossSalary)}
+                    <TableCell className="text-right bg-blue-100">
+                      {formatCurrency(
+                        (data.dailyWorkers.category1.retirementBase || 0) +
+                        (data.dailyWorkers.category2.retirementBase || 0) +
+                        (data.monthlyWorkers.category1.retirementBase || 0) +
+                        (data.monthlyWorkers.category2.retirementBase || 0) +
+                        (data.monthlyWorkers.category3.retirementBase || 0)
+                      )}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(data.totalContributionBase)}
+                    <TableCell className="text-right bg-green-100">
+                      {formatCurrency(
+                        (data.dailyWorkers.category1.otherRegimesBase || 0) +
+                        (data.dailyWorkers.category2.otherRegimesBase || 0) +
+                        (data.monthlyWorkers.category1.otherRegimesBase || 0) +
+                        (data.monthlyWorkers.category2.otherRegimesBase || 0) +
+                        (data.monthlyWorkers.category3.otherRegimesBase || 0)
+                      )}
                     </TableCell>
                   </TableRow>
                 </TableBody>

@@ -65,7 +65,9 @@ export interface SalaryBracket {
   category: string; // Label for the bracket
   employeeCount: number;
   totalGross: number;
-  contributionBase: number; // Amount subject to contributions (may be capped)
+  contributionBase: number; // Retirement contribution base (plafond: 1.647.315 F)
+  retirementBase: number; // Explicit retirement base (plafond: 1.647.315 F)
+  otherRegimesBase: number; // Base for maternity/family/work accidents (plafond: 75.000 F)
 }
 
 /**
@@ -291,11 +293,11 @@ export async function generateCNPSDeclaration(
 
   // 5. Initialize salary bracket accumulators
   const brackets = {
-    daily_1: { count: 0, gross: 0, base: 0 },
-    daily_2: { count: 0, gross: 0, base: 0 },
-    monthly_1: { count: 0, gross: 0, base: 0 },
-    monthly_2: { count: 0, gross: 0, base: 0 },
-    monthly_3: { count: 0, gross: 0, base: 0 },
+    daily_1: { count: 0, gross: 0, base: 0, retirementBase: 0, otherRegimesBase: 0 },
+    daily_2: { count: 0, gross: 0, base: 0, retirementBase: 0, otherRegimesBase: 0 },
+    monthly_1: { count: 0, gross: 0, base: 0, retirementBase: 0, otherRegimesBase: 0 },
+    monthly_2: { count: 0, gross: 0, base: 0, retirementBase: 0, otherRegimesBase: 0 },
+    monthly_3: { count: 0, gross: 0, base: 0, retirementBase: 0, otherRegimesBase: 0 },
   };
 
   // 6. Initialize contribution accumulators
@@ -336,11 +338,6 @@ export async function generateCNPSDeclaration(
       toNumber(lineItem.daysWorked),
     );
 
-    // Update bracket totals
-    brackets[category].count += 1;
-    brackets[category].gross += grossSalary;
-    brackets[category].base += Math.min(brutImposable, MONTHLY_SALARY_BRACKET_2);
-
     // Calculate regime-specific contribution bases
     // Régime de Retraite: plafond = 1.647.315 F (for all employees)
     const pensionBase = Math.min(brutImposable, MONTHLY_SALARY_BRACKET_2);
@@ -357,6 +354,13 @@ export async function generateCNPSDeclaration(
       // Monthly workers: fixed 75.000 F if they earn at least 75.000 F
       otherRegimesBase = brutImposable >= OTHER_REGIMES_PLAFOND ? OTHER_REGIMES_PLAFOND : brutImposable;
     }
+
+    // Update bracket totals
+    brackets[category].count += 1;
+    brackets[category].gross += grossSalary;
+    brackets[category].base += pensionBase; // Keep legacy base as retirement base
+    brackets[category].retirementBase += pensionBase;
+    brackets[category].otherRegimesBase += otherRegimesBase;
 
     contributions.maternity_base += otherRegimesBase;
     contributions.family_base += otherRegimesBase;
@@ -499,18 +503,24 @@ export async function generateCNPSDeclaration(
         employeeCount: brackets.daily_1.count,
         totalGross: Math.round(brackets.daily_1.gross),
         contributionBase: Math.round(brackets.daily_1.base),
+        retirementBase: Math.round(brackets.daily_1.retirementBase),
+        otherRegimesBase: Math.round(brackets.daily_1.otherRegimesBase),
       },
       category2: {
         category: 'Horaires, journaliers et occasionnels supérieurs à 3231 F par jour',
         employeeCount: brackets.daily_2.count,
         totalGross: Math.round(brackets.daily_2.gross),
         contributionBase: Math.round(brackets.daily_2.base),
+        retirementBase: Math.round(brackets.daily_2.retirementBase),
+        otherRegimesBase: Math.round(brackets.daily_2.otherRegimesBase),
       },
       total: {
         category: 'Total horaires/journaliers',
         employeeCount: brackets.daily_1.count + brackets.daily_2.count,
         totalGross: Math.round(brackets.daily_1.gross + brackets.daily_2.gross),
         contributionBase: Math.round(brackets.daily_1.base + brackets.daily_2.base),
+        retirementBase: Math.round(brackets.daily_1.retirementBase + brackets.daily_2.retirementBase),
+        otherRegimesBase: Math.round(brackets.daily_1.otherRegimesBase + brackets.daily_2.otherRegimesBase),
       },
     },
 
@@ -520,18 +530,24 @@ export async function generateCNPSDeclaration(
         employeeCount: brackets.monthly_1.count,
         totalGross: Math.round(brackets.monthly_1.gross),
         contributionBase: Math.round(brackets.monthly_1.base),
+        retirementBase: Math.round(brackets.monthly_1.retirementBase),
+        otherRegimesBase: Math.round(brackets.monthly_1.otherRegimesBase),
       },
       category2: {
         category: 'Mensuels supérieurs à 70.000 F par mois et inférieurs ou égaux à 1.647.315 F par mois',
         employeeCount: brackets.monthly_2.count,
         totalGross: Math.round(brackets.monthly_2.gross),
         contributionBase: Math.round(brackets.monthly_2.base),
+        retirementBase: Math.round(brackets.monthly_2.retirementBase),
+        otherRegimesBase: Math.round(brackets.monthly_2.otherRegimesBase),
       },
       category3: {
         category: 'Mensuels supérieurs à 1.647.315 F par mois',
         employeeCount: brackets.monthly_3.count,
         totalGross: Math.round(brackets.monthly_3.gross),
         contributionBase: Math.round(brackets.monthly_3.base),
+        retirementBase: Math.round(brackets.monthly_3.retirementBase),
+        otherRegimesBase: Math.round(brackets.monthly_3.otherRegimesBase),
       },
       total: {
         category: 'Total mensuels',
@@ -542,6 +558,12 @@ export async function generateCNPSDeclaration(
         ),
         contributionBase: Math.round(
           brackets.monthly_1.base + brackets.monthly_2.base + brackets.monthly_3.base,
+        ),
+        retirementBase: Math.round(
+          brackets.monthly_1.retirementBase + brackets.monthly_2.retirementBase + brackets.monthly_3.retirementBase,
+        ),
+        otherRegimesBase: Math.round(
+          brackets.monthly_1.otherRegimesBase + brackets.monthly_2.otherRegimesBase + brackets.monthly_3.otherRegimesBase,
         ),
       },
     },
