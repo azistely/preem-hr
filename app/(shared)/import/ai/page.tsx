@@ -51,6 +51,7 @@ import {
   AlertTriangle,
   Info,
   TrendingUp,
+  Settings,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -64,6 +65,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
 import type { EnhancedImportSummary, EntityPreview } from '@/server/ai-import/types';
@@ -74,12 +76,21 @@ import type { EnhancedImportSummary, EntityPreview } from '@/server/ai-import/ty
 
 type WizardStep = 'welcome' | 'upload' | 'analyze' | 'confirm' | 'import' | 'results';
 
+interface SheetMetadata {
+  name: string;
+  rowCount: number;
+  selected: boolean; // User selection state
+}
+
 interface UploadedFile {
   id: string;
   name: string;
   size: number;
-  status: 'uploading' | 'ready' | 'error';
+  status: 'uploading' | 'ready' | 'loading_metadata' | 'error';
   error?: string;
+  sheets?: SheetMetadata[]; // Available sheets with selection state
+  totalSheets?: number;
+  totalRows?: number;
 }
 
 // Entity with source tracking
@@ -107,15 +118,31 @@ interface AIFirstAnalysisResult {
         contracts?: Array<EntityWithSource>;
         timeEntries?: Array<EntityWithSource>;
         leaves?: Array<EntityWithSource>;
+        benefits?: Array<EntityWithSource>;
+        documents?: Array<EntityWithSource>;
+        payrollLineItems?: Array<EntityWithSource>;
+        dependents?: Array<EntityWithSource>;
+        terminations?: Array<EntityWithSource>;
+        overtimeEntries?: Array<EntityWithSource>;
       };
       matchConfidence: number;
       matchReason: string;
     }>;
+    tenantData?: {
+      tenant?: EntityWithSource;
+      salaryComponents?: Array<EntityWithSource>;
+    };
     rejected: {
       payslips?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
       contracts?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
       timeEntries?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
       leaves?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      benefits?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      documents?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      payrollLineItems?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      dependents?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      terminations?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      overtimeEntries?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
     };
     summary: {
       totalEmployees: number;
@@ -123,6 +150,7 @@ interface AIFirstAnalysisResult {
       existingEmployees: number;
       totalEntities: number;
       rejectedEntities: number;
+      tenantEntities?: number;
     };
   };
   processingTimeMs: number;
@@ -154,6 +182,7 @@ export default function AIImportPage() {
   const uploadMutation = trpc.aiImport.uploadFile.useMutation();
   const analyzeWithAIMutation = trpc.aiImport.analyzeWithAI.useMutation();
   const executeImportMutation = trpc.aiImport.executeMultiFileImport.useMutation();
+  const utils = trpc.useUtils();
 
   // ============================================================================
   // Multi-File Upload Handlers
@@ -227,18 +256,56 @@ export default function AIImportPage() {
             fileType: file.type,
           });
 
-          // Update with real ID
+          // Update with real ID and mark as loading metadata
           setUploadedFiles((prev) =>
             prev.map((f) =>
               f.id === tempId
                 ? {
                     ...f,
                     id: result.fileId,
-                    status: 'ready',
+                    status: 'loading_metadata',
                   }
                 : f
             )
           );
+
+          // Fetch sheet metadata
+          try {
+            const metadata = await utils.client.aiImport.getFileMetadata.query({
+              fileId: result.fileId,
+            });
+
+            // Update with sheets (all unchecked by default)
+            setUploadedFiles((prev) =>
+              prev.map((f) =>
+                f.id === result.fileId
+                  ? {
+                      ...f,
+                      status: 'ready',
+                      sheets: metadata.sheets.map(sheet => ({
+                        ...sheet,
+                        selected: false, // Default: unchecked
+                      })),
+                      totalSheets: metadata.totalSheets,
+                      totalRows: metadata.totalRows,
+                    }
+                  : f
+              )
+            );
+          } catch (metadataError) {
+            console.error('Failed to load metadata:', metadataError);
+            // Mark as ready even if metadata fails (fallback)
+            setUploadedFiles((prev) =>
+              prev.map((f) =>
+                f.id === result.fileId
+                  ? {
+                      ...f,
+                      status: 'ready',
+                    }
+                  : f
+              )
+            );
+          }
 
           return result.fileId;
         } catch (error) {
@@ -298,21 +365,60 @@ export default function AIImportPage() {
     toast.success('Fichier retiré');
   }, []);
 
+  // Toggle sheet selection
+  const toggleSheet = useCallback((fileId: string, sheetName: string, selected: boolean) => {
+    setUploadedFiles((prev) =>
+      prev.map((f) =>
+        f.id === fileId && f.sheets
+          ? {
+              ...f,
+              sheets: f.sheets.map((s) =>
+                s.name === sheetName ? { ...s, selected } : s
+              ),
+            }
+          : f
+      )
+    );
+  }, []);
+
+  // Select/deselect all sheets in a file
+  const toggleAllSheets = useCallback((fileId: string, selected: boolean) => {
+    setUploadedFiles((prev) =>
+      prev.map((f) =>
+        f.id === fileId && f.sheets
+          ? {
+              ...f,
+              sheets: f.sheets.map((s) => ({ ...s, selected })),
+            }
+          : f
+      )
+    );
+  }, []);
+
   // ============================================================================
   // V2 Multi-File Analysis Handler
   // ============================================================================
 
   const handleAnalyzeAll = useCallback(async () => {
-    const filesToAnalyze = uploadedFiles.filter((f) => f.status === 'ready');
+    // Only analyze files that have at least one selected sheet
+    const filesToAnalyze = uploadedFiles.filter(
+      (f) => f.status === 'ready' && f.sheets && f.sheets.some(s => s.selected)
+    );
 
     if (filesToAnalyze.length === 0) return;
 
     setIsAnalyzing(true);
     setAnalysisProgress(0);
 
-    toast.loading(`Analyse AI de ${filesToAnalyze.length} fichier(s)...`, {
-      id: 'analyze-all',
-    });
+    const totalSelectedSheets = filesToAnalyze.reduce(
+      (acc, f) => acc + (f.sheets?.filter(s => s.selected).length || 0),
+      0
+    );
+
+    toast.loading(
+      `Analyse AI: ${filesToAnalyze.length} fichier(s), ${totalSelectedSheets} feuille(s)...`,
+      { id: 'analyze-all' }
+    );
 
     try {
       // Simulate progress updates (in production, use Server-Sent Events)
@@ -320,9 +426,12 @@ export default function AIImportPage() {
         setAnalysisProgress((prev) => Math.min(prev + 5, 90));
       }, 500);
 
-      // Call AI-first analysis (single AI call)
+      // Call AI-first analysis (single AI call) with selected sheets
       const result = await analyzeWithAIMutation.mutateAsync({
-        fileIds: filesToAnalyze.map((f) => f.id),
+        fileSheets: filesToAnalyze.map((f) => ({
+          fileId: f.id,
+          sheetNames: f.sheets?.filter(s => s.selected).map(s => s.name) || [],
+        })),
         countryCode: 'CI',
       });
 
@@ -602,49 +711,126 @@ export default function AIImportPage() {
             <div className="space-y-2">
               <p className="text-sm font-medium">{uploadedFiles.length} fichier(s) uploadé(s)</p>
 
-              <div className="space-y-2">
-                {uploadedFiles.map((file) => (
-                  <div
-                    key={file.id}
-                    className="flex items-center gap-3 p-3 rounded-lg border bg-card"
-                  >
-                    {/* Icon */}
-                    <FileSpreadsheet className="w-5 h-5 text-green-600 shrink-0" />
+              <div className="space-y-3">
+                {uploadedFiles.map((file) => {
+                  const selectedSheets = file.sheets?.filter(s => s.selected).length || 0;
+                  const totalSheets = file.sheets?.length || 0;
 
-                    {/* File Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{file.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {(file.size / 1024).toFixed(0)} Ko
-                      </p>
-                    </div>
+                  return (
+                    <Card key={file.id} className="overflow-hidden">
+                      <div className="flex items-center gap-3 p-3">
+                        {/* Icon */}
+                        <FileSpreadsheet className="w-5 h-5 text-green-600 shrink-0" />
 
-                    {/* Status */}
-                    <div className="flex items-center gap-2">
-                      {file.status === 'uploading' && (
-                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                      )}
-                      {file.status === 'ready' && (
-                        <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      )}
-                      {file.status === 'error' && (
-                        <AlertCircle className="w-4 h-4 text-destructive" />
-                      )}
+                        {/* File Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{file.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(file.size / 1024).toFixed(0)} Ko
+                            {file.totalSheets && ` • ${file.totalSheets} feuille(s)`}
+                            {selectedSheets > 0 && ` • ${selectedSheets} sélectionnée(s)`}
+                          </p>
+                        </div>
 
-                      {/* Remove Button */}
-                      {file.status !== 'uploading' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={() => removeFile(file.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        {/* Status */}
+                        <div className="flex items-center gap-2">
+                          {file.status === 'uploading' && (
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          )}
+                          {file.status === 'loading_metadata' && (
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                          )}
+                          {file.status === 'ready' && file.sheets && (
+                            <Badge variant={selectedSheets > 0 ? "default" : "outline"} className="text-xs">
+                              {selectedSheets}/{totalSheets}
+                            </Badge>
+                          )}
+                          {file.status === 'error' && (
+                            <AlertCircle className="w-4 h-4 text-destructive" />
+                          )}
+
+                          {/* Remove Button */}
+                          {file.status !== 'uploading' && file.status !== 'loading_metadata' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => removeFile(file.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Sheet Selection (only show if metadata loaded) */}
+                      {file.status === 'ready' && file.sheets && file.sheets.length > 0 && (
+                        <Collapsible defaultOpen>
+                          <CollapsibleTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-between border-t rounded-none px-3 h-9"
+                            >
+                              <span className="text-xs font-normal">
+                                Sélectionnez les feuilles à analyser
+                              </span>
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="px-3 py-2 border-t bg-muted/30">
+                            <div className="space-y-2">
+                              {/* Select/Deselect All */}
+                              <div className="flex items-center gap-2 pb-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={() => toggleAllSheets(file.id, true)}
+                                >
+                                  Tout sélectionner
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={() => toggleAllSheets(file.id, false)}
+                                >
+                                  Tout désélectionner
+                                </Button>
+                              </div>
+
+                              {/* Sheet Checkboxes */}
+                              {file.sheets.map((sheet) => (
+                                <div
+                                  key={sheet.name}
+                                  className="flex items-center gap-2 py-1 hover:bg-muted/50 rounded px-2"
+                                >
+                                  <Checkbox
+                                    id={`${file.id}-${sheet.name}`}
+                                    checked={sheet.selected}
+                                    onCheckedChange={(checked) =>
+                                      toggleSheet(file.id, sheet.name, checked === true)
+                                    }
+                                  />
+                                  <label
+                                    htmlFor={`${file.id}-${sheet.name}`}
+                                    className="flex-1 text-sm cursor-pointer"
+                                  >
+                                    {sheet.name}
+                                    <span className="text-xs text-muted-foreground ml-2">
+                                      ({sheet.rowCount} lignes)
+                                    </span>
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
                       )}
-                    </div>
-                  </div>
-                ))}
+                    </Card>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -667,17 +853,29 @@ export default function AIImportPage() {
 
           {/* Actions */}
           <div className="flex items-center gap-3 pt-4">
-            {uploadedFiles.some((f) => f.status === 'ready') && !isAnalyzing && (
-              <Button
-                size="lg"
-                className="min-h-[56px] flex-1"
-                onClick={handleAnalyzeAll}
-              >
-                <Brain className="mr-2 w-5 h-5" />
-                Analyser tous les fichiers (
-                {uploadedFiles.filter((f) => f.status === 'ready').length})
-              </Button>
-            )}
+            {(() => {
+              const totalSelectedSheets = uploadedFiles.reduce(
+                (acc, f) => acc + (f.sheets?.filter(s => s.selected).length || 0),
+                0
+              );
+              const hasSelectedSheets = totalSelectedSheets > 0;
+
+              return (
+                uploadedFiles.some((f) => f.status === 'ready') && !isAnalyzing && (
+                  <Button
+                    size="lg"
+                    className="min-h-[56px] flex-1"
+                    onClick={handleAnalyzeAll}
+                    disabled={!hasSelectedSheets}
+                  >
+                    <Brain className="mr-2 w-5 h-5" />
+                    {hasSelectedSheets
+                      ? `Analyser ${totalSelectedSheets} feuille${totalSelectedSheets > 1 ? 's' : ''}`
+                      : 'Sélectionnez des feuilles pour analyser'}
+                  </Button>
+                )
+              );
+            })()}
 
             {!isAnalyzing && (
               <Button
@@ -718,7 +916,14 @@ export default function AIImportPage() {
       const contracts = emp.relatedEntities.contracts?.length || 0;
       const timeEntries = emp.relatedEntities.timeEntries?.length || 0;
       const leaves = emp.relatedEntities.leaves?.length || 0;
-      return sum + payslips + contracts + timeEntries + leaves;
+      const benefits = emp.relatedEntities.benefits?.length || 0;
+      const documents = emp.relatedEntities.documents?.length || 0;
+      const payrollLineItems = emp.relatedEntities.payrollLineItems?.length || 0;
+      const dependents = emp.relatedEntities.dependents?.length || 0;
+      const terminations = emp.relatedEntities.terminations?.length || 0;
+      const overtimeEntries = emp.relatedEntities.overtimeEntries?.length || 0;
+      return sum + payslips + contracts + timeEntries + leaves + benefits + documents +
+        payrollLineItems + dependents + terminations + overtimeEntries;
     }, 0);
 
     return (
@@ -813,7 +1018,15 @@ export default function AIImportPage() {
               const contractsCount = employee.relatedEntities.contracts?.length || 0;
               const timeEntriesCount = employee.relatedEntities.timeEntries?.length || 0;
               const leavesCount = employee.relatedEntities.leaves?.length || 0;
-              const totalRelated = payslipsCount + contractsCount + timeEntriesCount + leavesCount;
+              const benefitsCount = employee.relatedEntities.benefits?.length || 0;
+              const documentsCount = employee.relatedEntities.documents?.length || 0;
+              const payrollLineItemsCount = employee.relatedEntities.payrollLineItems?.length || 0;
+              const dependentsCount = employee.relatedEntities.dependents?.length || 0;
+              const terminationsCount = employee.relatedEntities.terminations?.length || 0;
+              const overtimeEntriesCount = employee.relatedEntities.overtimeEntries?.length || 0;
+              const totalRelated = payslipsCount + contractsCount + timeEntriesCount + leavesCount +
+                benefitsCount + documentsCount + payrollLineItemsCount + dependentsCount +
+                terminationsCount + overtimeEntriesCount;
 
               return (
                 <Collapsible key={idx}>
@@ -876,6 +1089,36 @@ export default function AIImportPage() {
                                   {leavesCount} congé(s)
                                 </Badge>
                               )}
+                              {benefitsCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {benefitsCount} avantage(s)
+                                </Badge>
+                              )}
+                              {documentsCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {documentsCount} document(s)
+                                </Badge>
+                              )}
+                              {payrollLineItemsCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {payrollLineItemsCount} ligne(s) paie
+                                </Badge>
+                              )}
+                              {dependentsCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {dependentsCount} ayant(s) droit
+                                </Badge>
+                              )}
+                              {terminationsCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {terminationsCount} sortie(s)
+                                </Badge>
+                              )}
+                              {overtimeEntriesCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {overtimeEntriesCount} heure(s) sup
+                                </Badge>
+                              )}
                             </div>
                           )}
                         </div>
@@ -932,6 +1175,159 @@ export default function AIImportPage() {
                             </div>
                           </div>
                         )}
+                        {timeEntriesCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Pointages:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.timeEntries?.slice(0, 3).map((entry, tIdx) => (
+                                <div key={tIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {entry.data.date} - {entry.data.hoursWorked}h
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({entry.sourceFile} › {entry.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                              {timeEntriesCount > 3 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{timeEntriesCount - 3} autre(s)
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {leavesCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Congés:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.leaves?.map((leave, lIdx) => (
+                                <div key={lIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {leave.data.leaveType} - {leave.data.startDate}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({leave.sourceFile} › {leave.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {benefitsCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Avantages:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.benefits?.map((benefit, bIdx) => (
+                                <div key={bIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {benefit.data.benefitType} - {benefit.data.amount.toLocaleString()} FCFA
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({benefit.sourceFile} › {benefit.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {documentsCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Documents:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.documents?.map((doc, dIdx) => (
+                                <div key={dIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {doc.data.documentType}
+                                    {doc.data.reference && ` - ${doc.data.reference}`}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({doc.sourceFile} › {doc.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {payrollLineItemsCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Lignes de paie:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.payrollLineItems?.slice(0, 3).map((item, iIdx) => (
+                                <div key={iIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {item.data.description} - {item.data.amount.toLocaleString()} FCFA
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({item.sourceFile} › {item.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                              {payrollLineItemsCount > 3 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{payrollLineItemsCount - 3} autre(s)
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {dependentsCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Ayants droit:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.dependents?.map((dep, depIdx) => (
+                                <div key={depIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {dep.data.firstName} {dep.data.lastName} - {dep.data.relationship}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({dep.sourceFile} › {dep.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {terminationsCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Sorties:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.terminations?.map((term, termIdx) => (
+                                <div key={termIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {term.data.reason} - {term.data.terminationDate}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({term.sourceFile} › {term.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {overtimeEntriesCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Heures supplémentaires:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.overtimeEntries?.slice(0, 3).map((ot, otIdx) => (
+                                <div key={otIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {ot.data.date} - {ot.data.overtimeHours}h
+                                    {ot.data.rate && ` (×${ot.data.rate})`}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({ot.sourceFile} › {ot.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                              {overtimeEntriesCount > 3 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{overtimeEntriesCount - 3} autre(s)
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </CollapsibleContent>
                     )}
 
@@ -977,6 +1373,12 @@ export default function AIImportPage() {
                         {entityType === 'contracts' && `${entities.length} contrat(s)`}
                         {entityType === 'timeEntries' && `${entities.length} pointage(s)`}
                         {entityType === 'leaves' && `${entities.length} congé(s)`}
+                        {entityType === 'benefits' && `${entities.length} avantage(s)`}
+                        {entityType === 'documents' && `${entities.length} document(s)`}
+                        {entityType === 'payrollLineItems' && `${entities.length} ligne(s) de paie`}
+                        {entityType === 'dependents' && `${entities.length} ayant(s) droit`}
+                        {entityType === 'terminations' && `${entities.length} sortie(s)`}
+                        {entityType === 'overtimeEntries' && `${entities.length} heure(s) supplémentaires`}
                       </p>
                       <div className="space-y-1">
                         {entities.slice(0, 3).map((rejected, idx) => (
@@ -1034,7 +1436,7 @@ export default function AIImportPage() {
   const renderImportStep = () => {
     if (!analysisResult) return null;
 
-    const { employees, summary } = analysisResult.result;
+    const { employees, summary, tenantData } = analysisResult.result;
 
     // Calculate actual entity counts
     const entityCounts = {
@@ -1123,6 +1525,31 @@ export default function AIImportPage() {
               </div>
               <CheckCircle2 className="w-5 h-5 text-green-600" />
             </div>
+
+            {/* Tenant Data */}
+            {summary.tenantEntities && summary.tenantEntities > 0 && (
+              <div className="flex items-center justify-between p-4 rounded-lg bg-purple-50 border border-purple-200">
+                <div className="flex items-center gap-3">
+                  <Settings className="w-5 h-5 text-purple-600" />
+                  <div>
+                    <p className="font-medium">
+                      {summary.tenantEntities} donnée(s) tenant
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {tenantData?.tenant && 'Info société'}
+                      {tenantData?.tenant && tenantData?.salaryComponents && ', '}
+                      {tenantData?.salaryComponents && `${tenantData.salaryComponents.length} rubrique(s) paie`}
+                    </p>
+                    {tenantData?.tenant && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        <strong>{tenantData.tenant.data.name}</strong> ({tenantData.tenant.data.countryCode})
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <CheckCircle2 className="w-5 h-5 text-purple-600" />
+              </div>
+            )}
 
             {summary.rejectedEntities > 0 && (
               <Alert>

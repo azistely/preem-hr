@@ -102,14 +102,27 @@ const analyzeMultiFileSchema = z.object({
     .array(z.string().min(1))
     .min(1, 'Au moins un fichier requis')
     .max(10, 'Maximum 10 fichiers')
-    .describe('Array of file IDs from Supabase Storage'),
+    .optional()
+    .describe('(Legacy) Array of file IDs from Supabase Storage - use fileSheets instead'),
+  fileSheets: z
+    .array(z.object({
+      fileId: z.string().min(1).describe('File ID from Supabase Storage'),
+      sheetNames: z.array(z.string()).min(1, 'Au moins une feuille requise').describe('Selected sheet names to analyze'),
+    }))
+    .optional()
+    .describe('Array of files with selected sheets - replaces fileIds'),
   countryCode: z
     .string()
     .length(2)
     .optional()
     .default('CI')
     .describe('Country code for context-aware processing (CI, SN, etc.)'),
-});
+}).refine(
+  (data) => data.fileIds || data.fileSheets,
+  {
+    message: 'Either fileIds or fileSheets must be provided',
+  }
+);
 
 const executeMultiFileImportSchema = z.object({
   analysisId: z
@@ -332,6 +345,61 @@ export const aiImportRouter = createTRPCRouter({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Erreur lors de l\'upload du fichier',
         });
+      }
+    }),
+
+  /**
+   * Get file metadata (sheet names and row counts) for sheet selection
+   *
+   * Returns lightweight metadata WITHOUT analyzing or loading full data:
+   * - Sheet names
+   * - Row counts per sheet
+   * - Total sheets
+   *
+   * SECURITY: Uses ctx.user.tenantId for file access verification
+   */
+  getFileMetadata: protectedProcedure
+    .input(z.object({
+      fileId: z.string().min(1, 'ID de fichier requis'),
+    }))
+    .query(async ({ ctx, input }) => {
+      let tempFilePath: string | null = null;
+
+      try {
+        const tenantId = ctx.user.tenantId;
+
+        // Download file from storage
+        tempFilePath = await downloadFileFromStorage(input.fileId, tenantId);
+
+        // Parse Excel to get sheet metadata (no AI, just XLSX parsing)
+        const { parseExcel } = await import('../ai-import/tools/parse-excel');
+        const result = await parseExcel({
+          filePath: tempFilePath,
+          maxSampleRows: 0, // Don't load sample data, just metadata
+        });
+
+        // Return lightweight metadata
+        return {
+          fileId: input.fileId,
+          sheets: result.sheets.map(sheet => ({
+            name: sheet.name,
+            rowCount: sheet.rowCount,
+          })),
+          totalSheets: result.totalSheets,
+          totalRows: result.totalRows,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+
+        console.error('[AI-IMPORT] Metadata extraction error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Erreur lors de la lecture du fichier',
+        });
+      } finally {
+        if (tempFilePath) {
+          cleanupTempFile(tempFilePath);
+        }
       }
     }),
 
@@ -572,7 +640,7 @@ export const aiImportRouter = createTRPCRouter({
 
         // Download all files from storage
         const filePaths = await Promise.all(
-          input.fileIds.map(async (fileId) => {
+          input.fileIds!.map(async (fileId) => {
             const tempPath = await downloadFileFromStorage(fileId, tenantId);
             tempFilePaths.push(tempPath);
 
@@ -743,25 +811,32 @@ export const aiImportRouter = createTRPCRouter({
       try {
         const tenantId = ctx.user.tenantId;
 
+        // Handle both legacy fileIds and new fileSheets
+        const fileSelections = input.fileSheets || input.fileIds!.map(id => ({
+          fileId: id,
+          sheetNames: [], // Empty means all sheets
+        }));
+
         // Download all files from storage
         const filePaths = await Promise.all(
-          input.fileIds.map(async (fileId) => {
-            const tempPath = await downloadFileFromStorage(fileId, tenantId);
+          fileSelections.map(async (selection) => {
+            const tempPath = await downloadFileFromStorage(selection.fileId, tenantId);
             tempFilePaths.push(tempPath);
 
             // Get file metadata
             const { data: metadata } = await supabase.storage
               .from(STORAGE_BUCKET)
-              .list(fileId.split('/').slice(0, -1).join('/'), {
-                search: fileId.split('/').pop(),
+              .list(selection.fileId.split('/').slice(0, -1).join('/'), {
+                search: selection.fileId.split('/').pop(),
               });
 
             const file = metadata?.[0];
 
             return {
               path: tempPath,
-              name: file?.name || fileId.split('/').pop() || 'unknown.xlsx',
+              name: file?.name || selection.fileId.split('/').pop() || 'unknown.xlsx',
               uploadedAt: file?.created_at ? new Date(file.created_at) : new Date(),
+              selectedSheets: selection.sheetNames.length > 0 ? selection.sheetNames : undefined, // undefined = all sheets
             };
           })
         );
