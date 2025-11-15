@@ -647,6 +647,41 @@ ${entityDefinitions}
 
 ---
 
+**RÈGLES MÉTIER IMPORTANTES:**
+
+Ces règles définissent comment classifier certains éléments de paie dans le contexte RH d'Afrique de l'Ouest (notamment Côte d'Ivoire et Sénégal).
+
+1. **Toutes les Primes, Bonus, et Gratifications sont des composantes du SALAIRE:**
+   - ❌ N'EST PAS un "Benefit" (employee_benefits)
+   - ❌ N'EST PAS un "Payroll Line Item" (payroll_line_items)
+   - ✅ TOUTES sont des composantes du salaire (employee_salaries)
+   - Classification correcte:
+     - **TOUJOURS inclure dans le montant brut (grossSalary) du payslip**
+     - Exemple: Salaire base 450,000 + Prime transport 50,000 + Prime ancienneté 75,000 → grossSalary: 575,000
+   - Exemples de primes/bonus à inclure dans grossSalary:
+     - Prime de transport, Indemnité transport
+     - Prime d'ancienneté, Prime de responsabilité
+     - Prime de rendement, Prime de performance
+     - Bonus annuel, 13ème mois
+     - Gratification, Prime exceptionnelle
+   - Raison: Toutes ces primes font partie de la rémunération brute, soumises aux cotisations sociales et à l'impôt
+   - Note: payroll_line_items est réservé aux historiques détaillés de paie, PAS aux bulletins courants
+
+2. **Avantages en nature (UNIQUEMENT ceux-ci sont des Benefits):**
+   - ✅ SONT des "Benefits" (employee_benefits)
+   - Types d'avantages en nature:
+     - Logement (Housing) → employee_benefits (benefitType: "Logement")
+     - Voiture de fonction (Company car) → employee_benefits (benefitType: "Voiture")
+     - Téléphone → employee_benefits (benefitType: "Téléphone")
+   - Raison: Ce sont des avantages en nature, pas des éléments du salaire brut en espèces
+
+**Règle de distinction rapide:**
+- Primes/Bonus/Gratifications (argent) → TOUJOURS dans employee_salaries.grossSalary
+- Avantages en nature (logement, voiture, téléphone) → employee_benefits
+- payroll_line_items → UNIQUEMENT pour historiques détaillés de paie (pas pour bulletins courants)
+
+---
+
 **TA MISSION:**
 
 Analyse toutes ces données Excel et organise-les par employé. Pour chaque ligne de données:
