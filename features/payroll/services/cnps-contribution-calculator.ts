@@ -76,6 +76,7 @@ export interface ContributionScheme {
   name: string; // French label
   rate: number; // Percentage rate
   plafond: number | null; // Ceiling amount (null if no ceiling)
+  contributionBase: number; // Base amount subject to this specific contribution
   employerAmount: number;
   employeeAmount: number;
   totalAmount: number;
@@ -151,8 +152,9 @@ export interface GenerateDeclarationInput {
 // ========================================
 
 const DAILY_WAGE_THRESHOLD = 3231; // FCFA per day
-const MONTHLY_SALARY_BRACKET_1 = 70000; // FCFA
-const MONTHLY_SALARY_BRACKET_2 = 1647315; // FCFA (CNPS plafond)
+const MONTHLY_SALARY_BRACKET_1 = 70000; // FCFA (SMIG - minimum wage)
+const MONTHLY_SALARY_BRACKET_2 = 1647315; // FCFA (CNPS plafond for retirement)
+const OTHER_REGIMES_PLAFOND = 75000; // FCFA (plafond for maternity, family, work accidents)
 
 // ========================================
 // Helper Functions
@@ -300,11 +302,16 @@ export async function generateCNPSDeclaration(
   const contributions = {
     pension_employer: 0,
     pension_employee: 0,
+    pension_base: 0, // Base for retirement (plafond: 1.647.315 F)
     maternity_employer: 0,
+    maternity_base: 0, // Base for maternity (plafond: 75.000 F)
     family_employer: 0,
+    family_base: 0, // Base for family benefits (plafond: 75.000 F)
     work_accident_employer: 0,
+    work_accident_base: 0, // Base for work accidents (plafond: 75.000 F)
     cmu_employer: 0,
     cmu_employee: 0,
+    cmu_base: 0,
   };
 
   // 7. Process each line item (with CNPS filter)
@@ -323,7 +330,7 @@ export async function generateCNPSDeclaration(
 
     // Categorize employee (CDDTI = daily/hourly, all others = monthly)
     // Use contract type from employment_contracts table (active contract)
-    const { category } = categorizeEmployee(
+    const { category, isDailyWorker } = categorizeEmployee(
       contract?.contractType || null,
       grossSalary,
       toNumber(lineItem.daysWorked),
@@ -333,6 +340,28 @@ export async function generateCNPSDeclaration(
     brackets[category].count += 1;
     brackets[category].gross += grossSalary;
     brackets[category].base += Math.min(brutImposable, MONTHLY_SALARY_BRACKET_2);
+
+    // Calculate regime-specific contribution bases
+    // Régime de Retraite: plafond = 1.647.315 F (for all employees)
+    const pensionBase = Math.min(brutImposable, MONTHLY_SALARY_BRACKET_2);
+    contributions.pension_base += pensionBase;
+
+    // Other regimes: plafond = 75.000 F
+    // - For CDDTI: use actual salary up to 75.000 F
+    // - For monthly workers: use fixed 75.000 F if salary >= 75.000 F
+    let otherRegimesBase: number;
+    if (isDailyWorker) {
+      // CDDTI: sum actual contributions in period, capped at 75.000 F
+      otherRegimesBase = Math.min(brutImposable, OTHER_REGIMES_PLAFOND);
+    } else {
+      // Monthly workers: fixed 75.000 F if they earn at least 75.000 F
+      otherRegimesBase = brutImposable >= OTHER_REGIMES_PLAFOND ? OTHER_REGIMES_PLAFOND : brutImposable;
+    }
+
+    contributions.maternity_base += otherRegimesBase;
+    contributions.family_base += otherRegimesBase;
+    contributions.work_accident_base += otherRegimesBase;
+    contributions.cmu_base += otherRegimesBase; // CMU uses same base as other regimes
 
     // Extract and sum contributions
     contributions.pension_employer += extractContribution(
@@ -524,6 +553,7 @@ export async function generateCNPSDeclaration(
         name: 'Régime de Retraite',
         rate: getRate('pension'),
         plafond: getPlafond('pension'),
+        contributionBase: Math.round(contributions.pension_base),
         employerAmount: Math.round(contributions.pension_employer),
         employeeAmount: Math.round(contributions.pension_employee),
         totalAmount: Math.round(
@@ -535,6 +565,7 @@ export async function generateCNPSDeclaration(
         name: 'Assurance Maternité',
         rate: getRate('maternity'),
         plafond: null,
+        contributionBase: Math.round(contributions.maternity_base),
         employerAmount: Math.round(contributions.maternity_employer),
         employeeAmount: 0,
         totalAmount: Math.round(contributions.maternity_employer),
@@ -544,6 +575,7 @@ export async function generateCNPSDeclaration(
         name: 'Prestations Familiales',
         rate: getRate('family_benefits'),
         plafond: getPlafond('family_benefits'),
+        contributionBase: Math.round(contributions.family_base),
         employerAmount: Math.round(contributions.family_employer),
         employeeAmount: 0,
         totalAmount: Math.round(contributions.family_employer),
@@ -553,6 +585,7 @@ export async function generateCNPSDeclaration(
         name: 'Accidents du Travail',
         rate: getRate('work_accident'),
         plafond: getPlafond('work_accident'),
+        contributionBase: Math.round(contributions.work_accident_base),
         employerAmount: Math.round(contributions.work_accident_employer),
         employeeAmount: 0,
         totalAmount: Math.round(contributions.work_accident_employer),
@@ -564,6 +597,7 @@ export async function generateCNPSDeclaration(
               name: 'CMU (Couverture Maladie Universelle)',
               rate: getRate('cmu'),
               plafond: null,
+              contributionBase: Math.round(contributions.cmu_base),
               employerAmount: Math.round(contributions.cmu_employer),
               employeeAmount: Math.round(contributions.cmu_employee),
               totalAmount: Math.round(contributions.cmu_employer + contributions.cmu_employee),

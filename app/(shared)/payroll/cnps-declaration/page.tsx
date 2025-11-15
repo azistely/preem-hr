@@ -609,7 +609,8 @@ export default function CNPSDeclarationPage() {
                   <TableRow>
                     <TableHead className="w-[25%]">Rubriques</TableHead>
                     <TableHead className="text-right w-[20%]">
-                      Salaires soumis à cotisations
+                      <div>Salaires soumis</div>
+                      <div>à cotisations</div>
                     </TableHead>
                     <TableHead className="text-right w-[10%]">Taux</TableHead>
                     <TableHead className="text-right w-[15%]">Employeur</TableHead>
@@ -618,11 +619,15 @@ export default function CNPSDeclarationPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {/* Régime de Retraite - Plafond: 1.647.315 F */}
                   <TableRow>
                     <TableCell className="font-medium">
                       {data.contributions.retirement.name}
+                      <div className="text-xs text-muted-foreground font-normal">
+                        Plancher: 75.000 F | Plafond: 1.647.315 F
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
+                    <TableCell className="text-right font-medium">
                       {formatCurrency(data.contributions.retirement.contributionBase || data.totalContributionBase)}
                     </TableCell>
                     <TableCell className="text-right">
@@ -639,11 +644,15 @@ export default function CNPSDeclarationPage() {
                     </TableCell>
                   </TableRow>
 
+                  {/* Assurance Maternité - Plafond: 75.000 F */}
                   <TableRow>
                     <TableCell className="font-medium">
                       {data.contributions.maternity.name}
+                      <div className="text-xs text-muted-foreground font-normal">
+                        Plancher: 75.000 F | Plafond: 75.000 F
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
+                    <TableCell className="text-right font-medium">
                       {formatCurrency(data.contributions.maternity.contributionBase || data.totalContributionBase)}
                     </TableCell>
                     <TableCell className="text-right">
@@ -660,11 +669,15 @@ export default function CNPSDeclarationPage() {
                     </TableCell>
                   </TableRow>
 
+                  {/* Prestations Familiales - Plafond: 75.000 F */}
                   <TableRow>
                     <TableCell className="font-medium">
                       {data.contributions.familyBenefits.name}
+                      <div className="text-xs text-muted-foreground font-normal">
+                        Plancher: 75.000 F | Plafond: 75.000 F
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
+                    <TableCell className="text-right font-medium">
                       {formatCurrency(data.contributions.familyBenefits.contributionBase || data.totalContributionBase)}
                     </TableCell>
                     <TableCell className="text-right">
@@ -681,11 +694,15 @@ export default function CNPSDeclarationPage() {
                     </TableCell>
                   </TableRow>
 
+                  {/* Accidents du Travail - Plafond: 75.000 F */}
                   <TableRow>
                     <TableCell className="font-medium">
                       {data.contributions.workAccidents.name}
+                      <div className="text-xs text-muted-foreground font-normal">
+                        Plancher: 75.000 F | Plafond: 75.000 F
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
+                    <TableCell className="text-right font-medium">
                       {formatCurrency(data.contributions.workAccidents.contributionBase || data.totalContributionBase)}
                     </TableCell>
                     <TableCell className="text-right">
@@ -702,12 +719,13 @@ export default function CNPSDeclarationPage() {
                     </TableCell>
                   </TableRow>
 
+                  {/* CMU (if applicable) */}
                   {data.contributions.cmu && (
                     <TableRow>
                       <TableCell className="font-medium">
                         {data.contributions.cmu.name}
                       </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
+                      <TableCell className="text-right font-medium">
                         {formatCurrency(data.contributions.cmu.contributionBase || data.totalContributionBase)}
                       </TableCell>
                       <TableCell className="text-right">
@@ -744,12 +762,27 @@ export default function CNPSDeclarationPage() {
                   </TableRow>
                 </TableBody>
               </Table>
-              <div className="mt-3 text-sm text-muted-foreground">
+              <div className="mt-3 text-sm text-muted-foreground space-y-2">
                 <p>
                   <strong>Note:</strong> La colonne "Salaires soumis à cotisations" représente les bases brutes imposables
                   cumulées pour tout le personnel. La colonne "Montants" correspond aux retenues
                   cumulées (employeur + salarié) pour la période.
                 </p>
+                <p>
+                  <strong>Règle spécifique pour les régimes à plafond = plancher (75.000 F) :</strong>
+                </p>
+                <ul className="list-disc list-inside ml-2 space-y-1">
+                  <li>
+                    <strong>Employés mensuels :</strong> Base fixe de 75.000 F par employé
+                  </li>
+                  <li>
+                    <strong>Journaliers/Occasionnels (CDDTI) :</strong> Somme réelle des contributions dans la période,
+                    plafonnée à 75.000 F par employé
+                  </li>
+                  <li>
+                    <strong>Régime de Retraite :</strong> Base = min(salaire brut, 1.647.315 F) pour tous les employés
+                  </li>
+                </ul>
               </div>
             </CardContent>
           </Card>
