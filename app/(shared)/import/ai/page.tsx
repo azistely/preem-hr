@@ -756,6 +756,79 @@ export default function AIImportPage() {
           </Card>
         </div>
 
+        {/* Duplicate Detection Stats (if employees detected) */}
+        {analysisResult.summary.duplicates && (
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-blue-900">
+                <TrendingUp className="w-5 h-5" />
+                Détection des doublons
+              </CardTitle>
+              <CardDescription>
+                L'IA a comparé les employés du fichier avec votre base de données
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+                <div className="text-center p-3 bg-white rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">
+                    {analysisResult.summary.duplicates.newEntities}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Nouveaux</p>
+                  <p className="text-xs text-muted-foreground">
+                    (seront créés)
+                  </p>
+                </div>
+
+                <div className="text-center p-3 bg-white rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {analysisResult.summary.duplicates.willUpdate}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Mises à jour</p>
+                  <p className="text-xs text-muted-foreground">
+                    (existants)
+                  </p>
+                </div>
+
+                {analysisResult.summary.duplicates.requiresUserDecision > 0 && (
+                  <div className="text-center p-3 bg-white rounded-lg">
+                    <div className="text-2xl font-bold text-amber-600">
+                      {analysisResult.summary.duplicates.requiresUserDecision}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">À confirmer</p>
+                    <p className="text-xs text-muted-foreground">
+                      (correspondance floue)
+                    </p>
+                  </div>
+                )}
+
+                {analysisResult.summary.duplicates.willSkip > 0 && (
+                  <div className="text-center p-3 bg-white rounded-lg">
+                    <div className="text-2xl font-bold text-gray-600">
+                      {analysisResult.summary.duplicates.willSkip}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Ignorés</p>
+                    <p className="text-xs text-muted-foreground">
+                      (doublons exacts)
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Detection Summary */}
+              <Alert className="mt-4 border-blue-200 bg-blue-50">
+                <Brain className="w-4 h-4 text-blue-600" />
+                <AlertTitle className="text-blue-900">Intelligence artificielle</AlertTitle>
+                <AlertDescription className="text-sm text-blue-800">
+                  L'IA a détecté les doublons en comparant les noms, emails, numéros CNPS et employés.
+                  Les correspondances floues tiennent compte des variations d'orthographe courantes
+                  en Afrique de l'Ouest (ordre des noms, accents, etc.)
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Entity-Based Preview */}
         <Card>
           <CardHeader>
