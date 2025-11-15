@@ -37,6 +37,122 @@ export interface SidebarProps {
   className?: string;
 }
 
+// Component to render collapsible nav sections with modern styling
+function CollapsibleNavSection({
+  section,
+  pathname,
+  isCollapsed,
+  defaultOpen = false,
+}: {
+  section: NavSection;
+  pathname: string | null;
+  isCollapsed: boolean;
+  defaultOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
+
+  // If no title, render items without collapsible wrapper (e.g., Dashboard)
+  if (!section.title || isCollapsed) {
+    return (
+      <nav className="space-y-1">
+        {section.items.map((item) => {
+          const isActive =
+            pathname === item.href || pathname?.startsWith(item.href + "/");
+          const Icon = item.icon;
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[44px]",
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
+              title={isCollapsed ? item.label : undefined}
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+              {!isCollapsed && (
+                <>
+                  <span className="flex-1">{item.label}</span>
+                  {item.badge && (
+                    <Badge
+                      variant={isActive ? "secondary" : "default"}
+                      className="h-5 min-w-5 px-1.5 text-xs font-semibold"
+                    >
+                      {item.badge}
+                    </Badge>
+                  )}
+                </>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+    );
+  }
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-1">
+      <CollapsibleTrigger asChild>
+        <button
+          className={cn(
+            "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide transition-all duration-200 min-h-[40px]",
+            "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            isOpen && "text-foreground"
+          )}
+        >
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 transition-transform duration-200",
+              isOpen && "rotate-180"
+            )}
+          />
+          <span className="flex-1 text-left">{section.title}</span>
+          <span className="text-xs font-normal text-muted-foreground">
+            {section.items.length}
+          </span>
+        </button>
+      </CollapsibleTrigger>
+
+      <CollapsibleContent className="space-y-1 pl-2 pt-1">
+        <nav className="space-y-1">
+          {section.items.map((item) => {
+            const isActive =
+              pathname === item.href || pathname?.startsWith(item.href + "/");
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[44px]",
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className="flex-1">{item.label}</span>
+                {item.badge && (
+                  <Badge
+                    variant={isActive ? "secondary" : "default"}
+                    className="h-5 min-w-5 px-1.5 text-xs font-semibold"
+                  >
+                    {item.badge}
+                  </Badge>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 // Component to render nested sections (e.g., Administration with subsections)
 function NestedSection({
   section,
@@ -52,11 +168,15 @@ function NestedSection({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger asChild>
           <button
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold uppercase text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide transition-all duration-200",
+              "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              isOpen && "text-foreground"
+            )}
           >
             <ChevronDown
               className={cn(
-                "h-3 w-3 transition-transform",
+                "h-3 w-3 transition-transform duration-200",
                 isOpen && "rotate-180"
               )}
             />
@@ -68,7 +188,7 @@ function NestedSection({
           {section.children?.map((childSection, index) => (
             <div key={index} className="space-y-2">
               {childSection.title && (
-                <h4 className="px-2 text-xs font-medium text-muted-foreground">
+                <h4 className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {childSection.title}
                 </h4>
               )}
@@ -84,10 +204,10 @@ function NestedSection({
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        "group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors min-h-[44px]",
+                        "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 min-h-[44px]",
                         isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
@@ -99,7 +219,7 @@ function NestedSection({
                               ? "default"
                               : (item.variant === 'destructive' ? "destructive" : "default")
                           }
-                          className="h-5 min-w-5 px-1.5"
+                          className="h-5 min-w-5 px-1.5 text-xs font-semibold"
                         >
                           {item.badge}
                         </Badge>
@@ -214,78 +334,52 @@ export function Sidebar({
 
       {/* Navigation */}
       <ScrollArea className="flex-1">
-        <div className="space-y-4 p-4">
-          {filteredSections.map((section, index) => (
-            <div key={index} className="space-y-2">
-              {!isCollapsed && section.title && (
-                <h3 className="px-2 text-xs font-semibold uppercase text-muted-foreground">
-                  {section.title}
-                </h3>
-              )}
-              <nav className="space-y-1">
-                {section.items.map((item) => {
-                  const isActive =
-                    pathname === item.href ||
-                    pathname?.startsWith(item.href + "/");
-                  const Icon = item.icon;
+        <div className="space-y-2 p-4">
+          {filteredSections.map((section, index) => {
+            // Check if any item in section is active to auto-expand
+            const hasActiveItem = section.items.some(
+              (item) => pathname === item.href || pathname?.startsWith(item.href + "/")
+            );
 
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors min-h-[44px]",
-                        isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                      title={isCollapsed ? item.label : undefined}
-                    >
-                      <Icon className="h-5 w-5 shrink-0" />
-                      {!isCollapsed && (
-                        <>
-                          <span className="flex-1">{item.label}</span>
-                          {item.badge && (
-                            <Badge
-                              variant={isActive ? "secondary" : "default"}
-                              className="h-5 min-w-5 px-1.5"
-                            >
-                              {item.badge}
-                            </Badge>
-                          )}
-                        </>
-                      )}
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
-          ))}
+            return (
+              <CollapsibleNavSection
+                key={index}
+                section={section}
+                pathname={pathname}
+                isCollapsed={isCollapsed}
+                defaultOpen={section.defaultOpen ?? hasActiveItem}
+              />
+            );
+          })}
 
           {/* Advanced Features (Collapsible) */}
           {advancedSections.length > 0 && !isCollapsed && (
-            <div className="space-y-2 border-t-2 border-border pt-4 mt-4">
+            <div className="space-y-2 border-t border-border pt-3 mt-3">
               <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
                 <CollapsibleTrigger asChild>
                   <button
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors min-h-[44px]"
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all duration-200 min-h-[44px]",
+                      "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                      showAdvanced && "bg-accent text-accent-foreground"
+                    )}
                   >
                     <ChevronDown
                       className={cn(
-                        "h-4 w-4 transition-transform",
+                        "h-4 w-4 shrink-0 transition-transform duration-200",
                         showAdvanced && "rotate-180"
                       )}
                     />
                     <span className="flex-1 text-left">Plus d'options</span>
                     {advancedSections.length > 0 && (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs font-normal text-muted-foreground">
                         {advancedSections.reduce((acc, section) => acc + section.items.length, 0)}
                       </span>
                     )}
                   </button>
                 </CollapsibleTrigger>
 
-                <CollapsibleContent className="space-y-4 pt-2">
+                <CollapsibleContent className="space-y-2 pt-2">
                   {advancedSections.map((section, sectionIndex) => {
                     // Check if this section has nested children (like Administration)
                     if (section.children && section.children.length > 0) {
@@ -298,51 +392,19 @@ export function Sidebar({
                       );
                     }
 
-                    // Regular section rendering
-                    return (
-                      <div key={sectionIndex} className="space-y-2">
-                        {section.title && (
-                          <h3 className="px-2 text-xs font-semibold uppercase text-muted-foreground">
-                            {section.title}
-                          </h3>
-                        )}
-                        <nav className="space-y-1">
-                          {section.items.map((item) => {
-                            const isActive =
-                              pathname === item.href ||
-                              pathname?.startsWith(item.href + "/");
-                            const Icon = item.icon;
+                    // Regular section rendering with collapsible
+                    const hasActiveItem = section.items.some(
+                      (item) => pathname === item.href || pathname?.startsWith(item.href + "/")
+                    );
 
-                            return (
-                              <Link
-                                key={item.href}
-                                href={item.href}
-                                className={cn(
-                                  "group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors min-h-[44px]",
-                                  isActive
-                                    ? "bg-primary text-primary-foreground"
-                                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                )}
-                              >
-                                <Icon className="h-4 w-4 shrink-0" />
-                                <span className="flex-1">{item.label}</span>
-                                {item.badge && (
-                                  <Badge
-                                    variant={
-                                      item.variant === 'warning'
-                                        ? "default"
-                                        : (item.variant === 'destructive' ? "destructive" : "default")
-                                    }
-                                    className="h-5 min-w-5 px-1.5"
-                                  >
-                                    {item.badge}
-                                  </Badge>
-                                )}
-                              </Link>
-                            );
-                          })}
-                        </nav>
-                      </div>
+                    return (
+                      <CollapsibleNavSection
+                        key={sectionIndex}
+                        section={section}
+                        pathname={pathname}
+                        isCollapsed={false}
+                        defaultOpen={section.defaultOpen ?? hasActiveItem}
+                      />
                     );
                   })}
                 </CollapsibleContent>

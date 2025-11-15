@@ -73,41 +73,17 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
 
-  // Check if user is authenticated (same pattern as onboarding/page.tsx)
-  const { data: user, isLoading } = api.auth.me.useQuery();
+  // Check auth in background - don't block rendering
+  const { data: user } = api.auth.me.useQuery(undefined, {
+    // Disable automatic retries for better performance
+    retry: false,
+    // Cache for 5 minutes
+    staleTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  // Redirect authenticated users to their dashboard
-  useEffect(() => {
-    if (isLoading || !user) return;
-
-    // If user is authenticated and onboarding complete, redirect to role-specific dashboard
-    if (user.onboardingComplete) {
-      const role = user.role || 'employee';
-
-      switch (role) {
-        case 'super_admin':
-        case 'tenant_admin':
-          router.push('/admin/settings/dashboard');
-          break;
-        case 'hr_manager':
-          router.push('/admin/dashboard');
-          break;
-        case 'manager':
-          router.push('/manager/dashboard');
-          break;
-        default:
-          router.push('/employee/dashboard');
-      }
-      return;
-    }
-
-    // If user is authenticated but onboarding not complete, redirect to onboarding
-    router.push('/onboarding');
-  }, [user, isLoading, router]);
 
   const handleCountryChange = (countryCode: string) => {
     // Route to country-specific page
@@ -118,29 +94,25 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
     }
   };
 
-  // Show loading state while checking authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-preem-teal mx-auto mb-4"></div>
-          <p className="text-lg text-muted-foreground">Chargement...</p>
-        </div>
-      </div>
-    );
-  }
+  // Determine dashboard URL based on user role
+  const getDashboardUrl = () => {
+    if (!user || !user.onboardingComplete) {
+      return '/onboarding';
+    }
 
-  // If user is authenticated, don't render marketing page (redirect will happen)
-  if (user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-preem-teal mx-auto mb-4"></div>
-          <p className="text-lg text-muted-foreground">Redirection...</p>
-        </div>
-      </div>
-    );
-  }
+    const role = user.role || 'employee';
+    switch (role) {
+      case 'super_admin':
+      case 'tenant_admin':
+        return '/admin/settings/dashboard';
+      case 'hr_manager':
+        return '/admin/dashboard';
+      case 'manager':
+        return '/manager/dashboard';
+      default:
+        return '/employee/dashboard';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50">
@@ -166,14 +138,25 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                 </SelectContent>
               </Select>
             )}
-            <Link href="/login">
-              <Button
-                variant="outline"
-                className="min-h-[44px] min-w-[100px] sm:min-w-[120px] border-preem-teal text-preem-teal hover:bg-preem-teal hover:text-white transition-colors text-sm sm:text-base"
-              >
-                Se connecter
-              </Button>
-            </Link>
+            {/* Show different button based on auth state */}
+            {user ? (
+              <Link href={getDashboardUrl()}>
+                <Button
+                  className="min-h-[44px] min-w-[100px] sm:min-w-[120px] bg-preem-teal text-white hover:bg-preem-teal-600 transition-colors text-sm sm:text-base"
+                >
+                  Accéder à mon compte
+                </Button>
+              </Link>
+            ) : (
+              <Link href="/login">
+                <Button
+                  variant="outline"
+                  className="min-h-[44px] min-w-[100px] sm:min-w-[120px] border-preem-teal text-preem-teal hover:bg-preem-teal hover:text-white transition-colors text-sm sm:text-base"
+                >
+                  Se connecter
+                </Button>
+              </Link>
+            )}
           </div>
         </nav>
       </header>

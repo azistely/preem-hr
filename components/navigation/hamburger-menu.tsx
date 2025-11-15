@@ -82,7 +82,7 @@ export function HamburgerMenu({
 
         {/* Navigation */}
         <ScrollArea className="h-[calc(100vh-3.5rem)]">
-          <nav className="space-y-6 p-4">
+          <nav className="space-y-2 p-4">
             {sections.map((section, index) => (
               <NavSectionComponent
                 key={index}
@@ -104,23 +104,16 @@ function NavSectionComponent({
   section: NavSection;
   pathname: string | null;
 }) {
-  const [isOpen, setIsOpen] = React.useState(true);
-
-  // Check if any item in section is active
+  // Check if any item in section is active (auto-expand active sections)
   const hasActiveItem = section.items.some(
     (item) => pathname === item.href || pathname?.startsWith(item.href + "/")
   );
 
-  return (
-    <div className="space-y-2">
-      {/* Section Header */}
-      {section.title && (
-        <h3 className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {section.title}
-        </h3>
-      )}
+  const [isOpen, setIsOpen] = React.useState(section.defaultOpen ?? hasActiveItem);
 
-      {/* Section Items */}
+  // If no title, render items without collapsible wrapper (e.g., Dashboard)
+  if (!section.title) {
+    return (
       <div className="space-y-1">
         {section.items.map((item) => {
           const isActive =
@@ -132,10 +125,10 @@ function NavSectionComponent({
               key={item.href}
               href={item.href}
               className={cn(
-                "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors min-h-[48px]",
+                "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[48px]",
                 isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground hover:bg-muted"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-foreground hover:bg-accent hover:text-accent-foreground"
               )}
             >
               <Icon className="h-5 w-5 shrink-0" />
@@ -143,7 +136,7 @@ function NavSectionComponent({
               {item.badge && (
                 <Badge
                   variant={isActive ? "secondary" : "default"}
-                  className="h-5 min-w-5 px-1.5"
+                  className="h-5 min-w-5 px-1.5 text-xs font-semibold"
                 >
                   {item.badge}
                 </Badge>
@@ -152,7 +145,66 @@ function NavSectionComponent({
           );
         })}
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-1">
+      <CollapsibleTrigger asChild>
+        <button
+          className={cn(
+            "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-bold uppercase tracking-wide transition-all duration-200 min-h-[44px]",
+            "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            isOpen && "text-foreground"
+          )}
+        >
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 transition-transform duration-200",
+              isOpen && "rotate-180"
+            )}
+          />
+          <span className="flex-1 text-left">{section.title}</span>
+          <span className="text-xs font-normal text-muted-foreground">
+            {section.items.length}
+          </span>
+        </button>
+      </CollapsibleTrigger>
+
+      <CollapsibleContent className="space-y-1 pl-2 pt-1">
+        <div className="space-y-1">
+          {section.items.map((item) => {
+            const isActive =
+              pathname === item.href || pathname?.startsWith(item.href + "/");
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[48px]",
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className="flex-1">{item.label}</span>
+                {item.badge && (
+                  <Badge
+                    variant={isActive ? "secondary" : "default"}
+                    className="h-5 min-w-5 px-1.5 text-xs font-semibold"
+                  >
+                    {item.badge}
+                  </Badge>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
