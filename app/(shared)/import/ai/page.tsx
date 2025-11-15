@@ -82,20 +82,49 @@ interface UploadedFile {
   error?: string;
 }
 
-interface MultiFileAnalysisResult {
+// Entity with source tracking
+interface EntityWithSource {
+  data: Record<string, any>;
+  sourceFile: string;
+  sourceSheet: string;
+}
+
+// AI-First Result Structure (employee-centric)
+interface AIFirstAnalysisResult {
   analysisId: string;
-  summary: EnhancedImportSummary;
-  entityGraph: {
-    entities: Record<string, any>;
-    crossReferences: any[];
+  result: {
+    employees: Array<{
+      employeeId?: string;
+      isNew: boolean;
+      firstName: string;
+      lastName: string;
+      email?: string;
+      cnpsNumber?: string;
+      sourceFile: string;
+      sourceSheet: string;
+      relatedEntities: {
+        payslips?: Array<EntityWithSource>;
+        contracts?: Array<EntityWithSource>;
+        timeEntries?: Array<EntityWithSource>;
+        leaves?: Array<EntityWithSource>;
+      };
+      matchConfidence: number;
+      matchReason: string;
+    }>;
+    rejected: {
+      payslips?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      contracts?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      timeEntries?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+      leaves?: Array<{ data: Record<string, any>; sourceFile: string; sourceSheet: string; reason: string }>;
+    };
+    summary: {
+      totalEmployees: number;
+      newEmployees: number;
+      existingEmployees: number;
+      totalEntities: number;
+      rejectedEntities: number;
+    };
   };
-  conflicts: {
-    total: number;
-    autoResolved: number;
-    requiresUser: number;
-  };
-  needsConfirmation: boolean;
-  confirmationReasons: string[];
   processingTimeMs: number;
 }
 
@@ -114,7 +143,7 @@ interface ImportResult {
 export default function AIImportPage() {
   const [currentStep, setCurrentStep] = useState<WizardStep>('welcome');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [analysisResult, setAnalysisResult] = useState<MultiFileAnalysisResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AIFirstAnalysisResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -123,7 +152,7 @@ export default function AIImportPage() {
 
   // tRPC mutations
   const uploadMutation = trpc.aiImport.uploadFile.useMutation();
-  const analyzeMultiFileMutation = trpc.aiImport.analyzeMultiFile.useMutation();
+  const analyzeWithAIMutation = trpc.aiImport.analyzeWithAI.useMutation();
   const executeImportMutation = trpc.aiImport.executeMultiFileImport.useMutation();
 
   // ============================================================================
@@ -281,7 +310,7 @@ export default function AIImportPage() {
     setIsAnalyzing(true);
     setAnalysisProgress(0);
 
-    toast.loading(`Analyse intelligente de ${filesToAnalyze.length} fichier(s)...`, {
+    toast.loading(`Analyse AI de ${filesToAnalyze.length} fichier(s)...`, {
       id: 'analyze-all',
     });
 
@@ -291,8 +320,8 @@ export default function AIImportPage() {
         setAnalysisProgress((prev) => Math.min(prev + 5, 90));
       }, 500);
 
-      // Call V2 multi-file analysis
-      const result = await analyzeMultiFileMutation.mutateAsync({
+      // Call AI-first analysis (single AI call)
+      const result = await analyzeWithAIMutation.mutateAsync({
         fileIds: filesToAnalyze.map((f) => f.id),
         countryCode: 'CI',
       });
@@ -302,16 +331,15 @@ export default function AIImportPage() {
 
       setAnalysisResult(result);
 
+      const { totalEmployees, newEmployees, existingEmployees, rejectedEntities } = result.result.summary;
+
       toast.success('Analyse terminée', {
         id: 'analyze-all',
-        description: `${result.summary.entities.length} type(s) d'entités identifié(s)`,
+        description: `${totalEmployees} employé(s): ${newEmployees} nouveau(x), ${existingEmployees} existant(s)${rejectedEntities > 0 ? `, ${rejectedEntities} rejeté(s)` : ''}`,
       });
 
-      if (result.needsConfirmation) {
-        setCurrentStep('confirm');
-      } else {
-        setCurrentStep('import');
-      }
+      // Always show confirmation for user to review
+      setCurrentStep('confirm');
     } catch (error) {
       toast.error('Erreur d\'analyse', {
         id: 'analyze-all',
@@ -320,7 +348,7 @@ export default function AIImportPage() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [uploadedFiles, analyzeMultiFileMutation]);
+  }, [uploadedFiles, analyzeWithAIMutation]);
 
   // ============================================================================
   // V2 Multi-File Import Handler
@@ -682,6 +710,17 @@ export default function AIImportPage() {
   const renderConfirmStep = () => {
     if (!analysisResult) return null;
 
+    const { employees, rejected, summary } = analysisResult.result;
+
+    // Count total related entities across all employees
+    const totalRelatedEntities = employees.reduce((sum, emp) => {
+      const payslips = emp.relatedEntities.payslips?.length || 0;
+      const contracts = emp.relatedEntities.contracts?.length || 0;
+      const timeEntries = emp.relatedEntities.timeEntries?.length || 0;
+      const leaves = emp.relatedEntities.leaves?.length || 0;
+      return sum + payslips + contracts + timeEntries + leaves;
+    }, 0);
+
     return (
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Progress Header */}
@@ -713,10 +752,14 @@ export default function AIImportPage() {
 
         {/* Overall Summary */}
         <Alert className="border-primary bg-primary/5">
-          <Info className="w-4 h-4 text-primary" />
-          <AlertTitle className="text-primary">Aperçu de l'import</AlertTitle>
+          <Brain className="w-4 h-4 text-primary" />
+          <AlertTitle className="text-primary">Analyse IA terminée</AlertTitle>
           <AlertDescription className="text-base">
-            {analysisResult.summary.overallSummary}
+            L'IA a identifié <strong>{summary.totalEmployees} employé(s)</strong>
+            {summary.newEmployees > 0 && <> dont <strong className="text-green-600">{summary.newEmployees} nouveau(x)</strong></>}
+            {summary.existingEmployees > 0 && <> et <strong className="text-blue-600">{summary.existingEmployees} existant(s)</strong></>}
+            {totalRelatedEntities > 0 && <>, avec <strong>{totalRelatedEntities} entité(s) associée(s)</strong></>}.
+            {summary.rejectedEntities > 0 && <> <strong className="text-amber-600">{summary.rejectedEntities} entité(s) rejetée(s)</strong> (employé non trouvé).</>}
           </AlertDescription>
         </Alert>
 
@@ -725,10 +768,10 @@ export default function AIImportPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
-                <div className="text-3xl font-bold text-primary">
-                  {analysisResult.summary.entities.length}
+                <div className="text-3xl font-bold text-green-600">
+                  {summary.newEmployees}
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">Types d'entités</p>
+                <p className="text-sm text-muted-foreground mt-1">Nouveaux employés</p>
               </div>
             </CardContent>
           </Card>
@@ -736,10 +779,10 @@ export default function AIImportPage() {
           <Card>
             <CardContent className="pt-6">
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">
-                  {analysisResult.conflicts.autoResolved}
+                <div className="text-3xl font-bold text-blue-600">
+                  {summary.existingEmployees}
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">Conflits résolus</p>
+                <p className="text-sm text-muted-foreground mt-1">Employés existants</p>
               </div>
             </CardContent>
           </Card>
@@ -756,216 +799,225 @@ export default function AIImportPage() {
           </Card>
         </div>
 
-        {/* Duplicate Detection Stats (if employees detected) */}
-        {analysisResult.summary.duplicates && (
-          <Card className="border-blue-200 bg-blue-50/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-blue-900">
-                <TrendingUp className="w-5 h-5" />
-                Détection des doublons
-              </CardTitle>
-              <CardDescription>
-                L'IA a comparé les employés du fichier avec votre base de données
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">
-                    {analysisResult.summary.duplicates.newEntities}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">Nouveaux</p>
-                  <p className="text-xs text-muted-foreground">
-                    (seront créés)
-                  </p>
-                </div>
-
-                <div className="text-center p-3 bg-white rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {analysisResult.summary.duplicates.willUpdate}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">Mises à jour</p>
-                  <p className="text-xs text-muted-foreground">
-                    (existants)
-                  </p>
-                </div>
-
-                {analysisResult.summary.duplicates.requiresUserDecision > 0 && (
-                  <div className="text-center p-3 bg-white rounded-lg">
-                    <div className="text-2xl font-bold text-amber-600">
-                      {analysisResult.summary.duplicates.requiresUserDecision}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">À confirmer</p>
-                    <p className="text-xs text-muted-foreground">
-                      (correspondance floue)
-                    </p>
-                  </div>
-                )}
-
-                {analysisResult.summary.duplicates.willSkip > 0 && (
-                  <div className="text-center p-3 bg-white rounded-lg">
-                    <div className="text-2xl font-bold text-gray-600">
-                      {analysisResult.summary.duplicates.willSkip}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">Ignorés</p>
-                    <p className="text-xs text-muted-foreground">
-                      (doublons exacts)
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* AI Detection Summary */}
-              <Alert className="mt-4 border-blue-200 bg-blue-50">
-                <Brain className="w-4 h-4 text-blue-600" />
-                <AlertTitle className="text-blue-900">Intelligence artificielle</AlertTitle>
-                <AlertDescription className="text-sm text-blue-800">
-                  L'IA a détecté les doublons en comparant les noms, emails, numéros CNPS et employés.
-                  Les correspondances floues tiennent compte des variations d'orthographe courantes
-                  en Afrique de l'Ouest (ordre des noms, accents, etc.)
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Entity-Based Preview */}
+        {/* Employee-Centric Preview */}
         <Card>
           <CardHeader>
-            <CardTitle>Ce qui sera créé</CardTitle>
+            <CardTitle>Employés qui seront importés</CardTitle>
             <CardDescription>
-              Aperçu exact des entités qui seront importées avec provenance des données
+              Chaque employé avec ses données associées (bulletins, contrats, etc.)
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {analysisResult.summary.entities.map((entity, idx) => (
-              <Collapsible key={idx}>
-                <div className="border rounded-lg p-4 bg-card">
-                  {/* Entity Header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Users className="w-5 h-5 text-primary" />
+          <CardContent className="space-y-3">
+            {employees.slice(0, 10).map((employee, idx) => {
+              const payslipsCount = employee.relatedEntities.payslips?.length || 0;
+              const contractsCount = employee.relatedEntities.contracts?.length || 0;
+              const timeEntriesCount = employee.relatedEntities.timeEntries?.length || 0;
+              const leavesCount = employee.relatedEntities.leaves?.length || 0;
+              const totalRelated = payslipsCount + contractsCount + timeEntriesCount + leavesCount;
+
+              return (
+                <Collapsible key={idx}>
+                  <div className="border rounded-lg p-4 bg-card hover:bg-accent/5 transition-colors">
+                    {/* Employee Header */}
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3 flex-1">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                          employee.isNew ? 'bg-green-100' : 'bg-blue-100'
+                        }`}>
+                          <Users className={`w-5 h-5 ${
+                            employee.isNew ? 'text-green-600' : 'text-blue-600'
+                          }`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-semibold text-base">
+                              {employee.firstName} {employee.lastName}
+                            </h4>
+                            <Badge variant={employee.isNew ? 'default' : 'secondary'} className="text-xs">
+                              {employee.isNew ? 'NOUVEAU' : 'EXISTANT'}
+                            </Badge>
+                            {employee.matchConfidence < 100 && (
+                              <Badge variant="outline" className="text-xs">
+                                {employee.matchConfidence}% confiance
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-1 text-sm text-muted-foreground">
+                            {employee.email && <span>{employee.email}</span>}
+                            {employee.cnpsNumber && <span>CNPS: {employee.cnpsNumber}</span>}
+                          </div>
+                          {/* Source Tracking */}
+                          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                            <FileSpreadsheet className="w-3 h-3" />
+                            <span>Source: {employee.sourceFile} › {employee.sourceSheet}</span>
+                          </div>
+                          {totalRelated > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {payslipsCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  <Banknote className="w-3 h-3 mr-1" />
+                                  {payslipsCount} bulletin(s)
+                                </Badge>
+                              )}
+                              {contractsCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  <FileText className="w-3 h-3 mr-1" />
+                                  {contractsCount} contrat(s)
+                                </Badge>
+                              )}
+                              {timeEntriesCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  {timeEntriesCount} pointage(s)
+                                </Badge>
+                              )}
+                              {leavesCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {leavesCount} congé(s)
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="font-semibold text-lg text-primary">
-                          {entity.count} {entity.entityName}
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          Complétude moyenne: {entity.completeness}%
-                        </p>
-                      </div>
+
+                      {totalRelated > 0 && (
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="ml-2">
+                            <ChevronDown className="w-4 h-4" />
+                          </Button>
+                        </CollapsibleTrigger>
+                      )}
                     </div>
 
-                    {entity.unresolvedConflicts > 0 && (
-                      <Badge variant="destructive">
-                        {entity.unresolvedConflicts} conflit(s)
-                      </Badge>
-                    )}
-                  </div>
-
-                  {/* Examples with Provenance */}
-                  {entity.examples && entity.examples.length > 0 && (
-                  <div className="space-y-3 mt-4">
-                    <CollapsibleTrigger asChild>
-                      <Button variant="ghost" size="sm" className="w-full justify-between">
-                        <span className="flex items-center gap-2">
-                          <FileText className="w-4 h-4" />
-                          Voir {entity.examples.length} exemple(s)
-                        </span>
-                        <ChevronDown className="w-4 h-4" />
-                      </Button>
-                    </CollapsibleTrigger>
-
-                    <CollapsibleContent className="space-y-3">
-                      {entity.examples.map((example, exIdx) => (
-                        <div key={exIdx} className="bg-muted/50 rounded-lg p-3 space-y-2">
-                          {/* Description */}
-                          <p className="font-medium">{example.description}</p>
-
-                          {/* Categorized Fields */}
-                          {Object.entries(example.categories).map(([category, fields]) => (
-                            <div key={category} className="space-y-1">
-                              <p className="text-xs font-medium text-muted-foreground uppercase">
-                                {category}
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {Object.entries(fields as Record<string, any>).map(([key, value]) => (
-                                  <Badge key={key} variant="secondary" className="text-xs">
-                                    {key}: {String(value)}
+                    {/* Related Entities Details */}
+                    {totalRelated > 0 && (
+                      <CollapsibleContent className="mt-3 pt-3 border-t space-y-2">
+                        {payslipsCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Bulletins de paie:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.payslips?.slice(0, 3).map((payslip, pIdx) => (
+                                <div key={pIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {payslip.data.period || payslip.data.month || `Bulletin ${pIdx + 1}`}
                                   </Badge>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-
-                          {/* Provenance (Sources) */}
-                          <div className="pt-2 border-t">
-                            <p className="text-xs font-medium text-muted-foreground mb-1">
-                              Sources:
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {Object.values(example.sources).map((source, srcIdx) => (
-                                <Badge key={srcIdx} variant="outline" className="text-xs">
-                                  <FileSpreadsheet className="w-3 h-3 mr-1" />
-                                  {String(source)}
+                                  <span className="text-xs text-muted-foreground">
+                                    ({payslip.sourceFile} › {payslip.sourceSheet})
+                                  </span>
+                                </div>
+                              ))}
+                              {payslipsCount > 3 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{payslipsCount - 3} autre(s)
                                 </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {contractsCount > 0 && (
+                          <div className="text-sm">
+                            <p className="font-medium text-xs text-muted-foreground mb-1">Contrats:</p>
+                            <div className="space-y-1">
+                              {employee.relatedEntities.contracts?.map((contract, cIdx) => (
+                                <div key={cIdx} className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="text-xs">
+                                    {contract.data.contractType || contract.data.type || `Contrat ${cIdx + 1}`}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    ({contract.sourceFile} › {contract.sourceSheet})
+                                  </span>
+                                </div>
                               ))}
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </CollapsibleContent>
+                        )}
+                      </CollapsibleContent>
+                    )}
+
+                    {/* Match Reasoning (for low confidence) */}
+                    {employee.matchConfidence < 90 && employee.matchReason && (
+                      <Alert className="mt-3">
+                        <Info className="w-4 h-4" />
+                        <AlertDescription className="text-xs">
+                          {employee.matchReason}
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
-                  )}
-                </div>
-              </Collapsible>
-            ))}
+                </Collapsible>
+              );
+            })}
+
+            {employees.length > 10 && (
+              <div className="text-center py-2 text-sm text-muted-foreground">
+                ... et {employees.length - 10} autre(s) employé(s)
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Conflicts Requiring User Confirmation */}
-        {analysisResult.conflicts.requiresUser > 0 && (
+        {/* Rejected Entities */}
+        {summary.rejectedEntities > 0 && (
           <Alert variant="destructive">
             <AlertTriangle className="w-4 h-4" />
-            <AlertTitle>Conflits nécessitant votre confirmation</AlertTitle>
+            <AlertTitle>{summary.rejectedEntities} entité(s) rejetée(s)</AlertTitle>
             <AlertDescription>
-              <ul className="list-disc list-inside space-y-1 mt-2">
-                {analysisResult.confirmationReasons.map((reason, idx) => (
-                  <li key={idx}>{reason}</li>
-                ))}
-              </ul>
-              <p className="mt-3 text-sm">
-                L'IA a détecté des incohérences critiques. Veuillez vérifier les exemples
-                ci-dessus avant de continuer.
+              <p className="mb-2">
+                Ces entités n'ont pas pu être associées à un employé et seront ignorées lors de l'import:
               </p>
+              <div className="space-y-2">
+                {Object.entries(rejected).map(([entityType, entities]) => {
+                  if (!entities || entities.length === 0) return null;
+
+                  return (
+                    <div key={entityType} className="bg-destructive/10 rounded-lg p-3">
+                      <p className="font-medium text-sm mb-1">
+                        {entityType === 'payslips' && `${entities.length} bulletin(s) de paie`}
+                        {entityType === 'contracts' && `${entities.length} contrat(s)`}
+                        {entityType === 'timeEntries' && `${entities.length} pointage(s)`}
+                        {entityType === 'leaves' && `${entities.length} congé(s)`}
+                      </p>
+                      <div className="space-y-1">
+                        {entities.slice(0, 3).map((rejected, idx) => (
+                          <div key={idx} className="text-xs">
+                            <div className="text-muted-foreground">• {rejected.reason}</div>
+                            <div className="text-muted-foreground/70 ml-3 mt-0.5">
+                              Source: {rejected.sourceFile} › {rejected.sourceSheet}
+                            </div>
+                          </div>
+                        ))}
+                        {entities.length > 3 && (
+                          <div className="text-xs text-muted-foreground">
+                            ... et {entities.length - 3} autre(s)
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <Alert className="mt-3 border-amber-200 bg-amber-50">
+                <Info className="w-4 h-4 text-amber-600" />
+                <AlertDescription className="text-xs text-amber-900">
+                  Pour importer ces entités, assurez-vous d'inclure un fichier avec les employés correspondants,
+                  ou vérifiez que les identifiants (numéro employé, email, CNPS) sont corrects.
+                </AlertDescription>
+              </Alert>
             </AlertDescription>
           </Alert>
         )}
-
-        {/* Warnings */}
-        {analysisResult.summary.warnings.length > 0 && (
-          <Alert>
-            <Info className="w-4 h-4" />
-            <AlertTitle>Points d'attention</AlertTitle>
-            <AlertDescription>
-              <ul className="list-disc list-inside space-y-1">
-                {analysisResult.summary.warnings.map((warning, idx) => (
-                  <li key={idx}>{warning}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Estimated Time */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Clock className="w-4 h-4" />
-          <span>Temps estimé d'import: {analysisResult.summary.estimatedTime}</span>
-        </div>
 
         {/* Actions */}
         <div className="flex items-center gap-3">
+          <Button
+            size="lg"
+            variant="outline"
+            className="min-h-[56px]"
+            onClick={() => setCurrentStep('upload')}
+          >
+            Retour à l'upload
+          </Button>
           <Button
             size="lg"
             className="min-h-[56px] flex-1"
@@ -981,6 +1033,26 @@ export default function AIImportPage() {
 
   const renderImportStep = () => {
     if (!analysisResult) return null;
+
+    const { employees, summary } = analysisResult.result;
+
+    // Calculate actual entity counts
+    const entityCounts = {
+      payslips: employees.reduce((sum, emp) => sum + (emp.relatedEntities.payslips?.length || 0), 0),
+      contracts: employees.reduce((sum, emp) => sum + (emp.relatedEntities.contracts?.length || 0), 0),
+      timeEntries: employees.reduce((sum, emp) => sum + (emp.relatedEntities.timeEntries?.length || 0), 0),
+      leaves: employees.reduce((sum, emp) => sum + (emp.relatedEntities.leaves?.length || 0), 0),
+    };
+
+    // Build entity breakdown text
+    const entityBreakdown = [
+      entityCounts.payslips > 0 && `${entityCounts.payslips} bulletin(s)`,
+      entityCounts.contracts > 0 && `${entityCounts.contracts} contrat(s)`,
+      entityCounts.timeEntries > 0 && `${entityCounts.timeEntries} pointage(s)`,
+      entityCounts.leaves > 0 && `${entityCounts.leaves} congé(s)`,
+    ]
+      .filter(Boolean)
+      .join(', ');
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
@@ -1009,46 +1081,75 @@ export default function AIImportPage() {
           <CardHeader>
             <CardTitle>Prêt pour l'import</CardTitle>
             <CardDescription className="text-base">
-              {analysisResult.summary.overallSummary}
+              {summary.totalEmployees} employé(s) et leurs données associées seront importés
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Entity List */}
-            <div className="space-y-2">
-              {analysisResult.summary.entities.map((entity, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 rounded-lg border bg-card"
-                >
-                  <div className="flex items-center gap-3">
-                    <Users className="w-5 h-5 text-primary" />
-                    <div>
-                      <p className="font-medium">
-                        {entity.count} {entity.entityName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Complétude: {entity.completeness}%
-                      </p>
-                    </div>
-                  </div>
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+            {/* Employee Summary */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-green-600" />
                 </div>
-              ))}
+                <div>
+                  <p className="font-medium">{summary.newEmployees} nouveau(x)</p>
+                  <p className="text-xs text-muted-foreground">Seront créés</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-medium">{summary.existingEmployees} existant(s)</p>
+                  <p className="text-xs text-muted-foreground">Avec nouvelles données</p>
+                </div>
+              </div>
             </div>
 
-            {/* Estimated Time */}
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="w-4 h-4" />
-              <span>Temps estimé: {analysisResult.summary.estimatedTime}</span>
+            {/* Total Entities */}
+            <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="w-5 h-5 text-primary" />
+                <div>
+                  <p className="font-medium">
+                    {summary.totalEntities} entité(s) au total
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {entityBreakdown || 'Aucune entité associée'}
+                  </p>
+                </div>
+              </div>
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
             </div>
+
+            {summary.rejectedEntities > 0 && (
+              <Alert>
+                <Info className="w-4 h-4" />
+                <AlertDescription className="text-sm">
+                  {summary.rejectedEntities} entité(s) seront ignorées (employé non trouvé)
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
 
-        {/* Action */}
-        <Button size="lg" className="min-h-[56px] w-full" onClick={handleImportAll}>
-          <Zap className="mr-2 w-5 h-5" />
-          Lancer l'import
-        </Button>
+        {/* Actions */}
+        <div className="flex items-center gap-3">
+          <Button
+            size="lg"
+            variant="outline"
+            className="min-h-[56px]"
+            onClick={() => setCurrentStep('confirm')}
+          >
+            Retour à la confirmation
+          </Button>
+          <Button size="lg" className="min-h-[56px] flex-1" onClick={handleImportAll}>
+            <Zap className="mr-2 w-5 h-5" />
+            Lancer l'import
+          </Button>
+        </div>
       </div>
     );
   };

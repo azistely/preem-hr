@@ -27,6 +27,13 @@ import type { ImportContext, ProgressUpdate } from './types';
 // Output Schema - Employee-Centric Structure
 // ============================================================================
 
+// Entity with source tracking
+const entityWithSourceSchema = z.object({
+  data: z.record(z.any()).describe('The entity data (payslip, contract, etc.)'),
+  sourceFile: z.string().describe('File name where this entity was found'),
+  sourceSheet: z.string().describe('Sheet name where this entity was found'),
+});
+
 const employeeWithEntitiesSchema = z.object({
   // Employee identity
   employeeId: z.string().uuid().optional().describe('ID if existing employee, undefined if new'),
@@ -39,14 +46,18 @@ const employeeWithEntitiesSchema = z.object({
   email: z.string().email().optional(),
   cnpsNumber: z.string().optional(),
 
-  // Related entities (grouped by type)
+  // Source tracking for employee data
+  sourceFile: z.string().describe('File name where employee data was found'),
+  sourceSheet: z.string().describe('Sheet name where employee data was found'),
+
+  // Related entities (grouped by type) with source tracking
   relatedEntities: z.object({
-    payslips: z.array(z.record(z.any())).optional().describe('Payslip records for this employee'),
-    contracts: z.array(z.record(z.any())).optional().describe('Contract records for this employee'),
-    timeEntries: z.array(z.record(z.any())).optional().describe('Time entry records for this employee'),
-    leaves: z.array(z.record(z.any())).optional().describe('Leave records for this employee'),
-    benefits: z.array(z.record(z.any())).optional().describe('Benefit records for this employee'),
-    documents: z.array(z.record(z.any())).optional().describe('Document records for this employee'),
+    payslips: z.array(entityWithSourceSchema).optional().describe('Payslip records for this employee'),
+    contracts: z.array(entityWithSourceSchema).optional().describe('Contract records for this employee'),
+    timeEntries: z.array(entityWithSourceSchema).optional().describe('Time entry records for this employee'),
+    leaves: z.array(entityWithSourceSchema).optional().describe('Leave records for this employee'),
+    benefits: z.array(entityWithSourceSchema).optional().describe('Benefit records for this employee'),
+    documents: z.array(entityWithSourceSchema).optional().describe('Document records for this employee'),
   }).describe('All entities related to this employee'),
 
   // Match info
@@ -60,18 +71,26 @@ const aiImportResultSchema = z.object({
   rejected: z.object({
     payslips: z.array(z.object({
       data: z.record(z.any()),
+      sourceFile: z.string(),
+      sourceSheet: z.string(),
       reason: z.string().describe('Why this was rejected (e.g., "Employé non trouvé")'),
     })).optional(),
     contracts: z.array(z.object({
       data: z.record(z.any()),
+      sourceFile: z.string(),
+      sourceSheet: z.string(),
       reason: z.string(),
     })).optional(),
     timeEntries: z.array(z.object({
       data: z.record(z.any()),
+      sourceFile: z.string(),
+      sourceSheet: z.string(),
       reason: z.string(),
     })).optional(),
     leaves: z.array(z.object({
       data: z.record(z.any()),
+      sourceFile: z.string(),
+      sourceSheet: z.string(),
       reason: z.string(),
     })).optional(),
   }).describe('Entities that could not be linked to any employee'),
@@ -281,9 +300,15 @@ Analyse toutes ces données Excel et organise-les par employé. Pour chaque lign
    - Chaque employé reçoit toutes ses entités liées
    - Exemple: Jean Kouassi → 3 payslips + 2 contracts + 5 time entries
 
-4. **IMPORTANT - Rejette les orphelins:**
+4. **TRACE LA SOURCE (CRITIQUE):**
+   - Pour CHAQUE employé: indique le fichier (sourceFile) et la feuille (sourceSheet) où tu as trouvé ses données
+   - Pour CHAQUE entité: indique le fichier (sourceFile) et la feuille (sourceSheet) d'origine
+   - Exemple: Si un employé vient de "employes.xlsx" feuille "Personnel" → sourceFile: "employes.xlsx", sourceSheet: "Personnel"
+   - Exemple: Si un bulletin vient de "paie_janvier.xlsx" feuille "Bulletins" → sourceFile: "paie_janvier.xlsx", sourceSheet: "Bulletins"
+
+5. **IMPORTANT - Rejette les orphelins:**
    - Si une entité (payslip, contract, etc.) ne peut pas être liée à un employé → REJETTE-LA
-   - Mets-la dans la section "rejected" avec la raison
+   - Mets-la dans la section "rejected" avec la raison ET les sources
    - Exemple: "Employé EMP999 non trouvé dans la base de données"
 
 ---
@@ -327,13 +352,27 @@ Retourne un JSON structuré avec:
       "lastName": "Kouassi",
       "email": "jean.kouassi@company.ci",
       "cnpsNumber": "1234567890",
+      "sourceFile": "employes.xlsx",
+      "sourceSheet": "Personnel",
       "relatedEntities": {
         "payslips": [
-          { "period": "2024-01", "grossSalary": 500000, "netSalary": 425000 },
-          { "period": "2024-02", "grossSalary": 500000, "netSalary": 425000 }
+          {
+            "data": { "period": "2024-01", "grossSalary": 500000, "netSalary": 425000 },
+            "sourceFile": "paie_janvier_2024.xlsx",
+            "sourceSheet": "Bulletins"
+          },
+          {
+            "data": { "period": "2024-02", "grossSalary": 500000, "netSalary": 425000 },
+            "sourceFile": "paie_fevrier_2024.xlsx",
+            "sourceSheet": "Paie"
+          }
         ],
         "contracts": [
-          { "type": "CDI", "startDate": "2020-01-15", "position": "Développeur" }
+          {
+            "data": { "type": "CDI", "startDate": "2020-01-15", "position": "Développeur" },
+            "sourceFile": "contrats.xlsx",
+            "sourceSheet": "CDI"
+          }
         ]
       },
       "matchConfidence": 100,
@@ -345,9 +384,15 @@ Retourne un JSON structuré avec:
       "firstName": "Marie",
       "lastName": "Traoré",
       "email": "marie.traore@company.ci",
+      "sourceFile": "nouveaux_employes.xlsx",
+      "sourceSheet": "Mars 2024",
       "relatedEntities": {
         "payslips": [
-          { "period": "2024-03", "grossSalary": 300000, "netSalary": 255000 }
+          {
+            "data": { "period": "2024-03", "grossSalary": 300000, "netSalary": 255000 },
+            "sourceFile": "paie_mars_2024.xlsx",
+            "sourceSheet": "Salaires"
+          }
         ]
       },
       "matchConfidence": 100,
@@ -358,6 +403,8 @@ Retourne un JSON structuré avec:
     "payslips": [
       {
         "data": { "employeeNumber": "EMP999", "period": "2024-01" },
+        "sourceFile": "paie_janvier_2024.xlsx",
+        "sourceSheet": "Bulletins",
         "reason": "Employé EMP999 non trouvé dans la base de données ni dans les fichiers"
       }
     ]
