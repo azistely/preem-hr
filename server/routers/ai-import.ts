@@ -27,6 +27,7 @@ import {
   analyzeMultiFileImport,
   executeMultiFileImport,
 } from '../ai-import/coordinator-v2';
+import { analyzeWithAI, type AIImportResult } from '../ai-import/coordinator-ai-first';
 import type {
   MultiFileAnalysisResult,
   ProgressUpdate,
@@ -137,6 +138,7 @@ const executeMultiFileImportSchema = z.object({
 // ============================================================================
 
 const analysisResultsStore = new Map<string, MultiFileAnalysisResult>();
+const aiResultsStore = new Map<string, AIImportResult>();
 
 /**
  * Store analysis result temporarily for subsequent import
@@ -711,6 +713,103 @@ export const aiImportRouter = createTRPCRouter({
           code: 'INTERNAL_SERVER_ERROR',
           message: error instanceof Error ? error.message : 'Erreur lors de l\'importation multi-fichiers',
         });
+      }
+    }),
+
+  // ============================================================================
+  // AI-First Simple Import (Single AI Call)
+  // ============================================================================
+
+  /**
+   * AI-First: Analyze files with ONE AI call
+   *
+   * SIMPLIFIED ARCHITECTURE:
+   * - Parse Excel files (raw data)
+   * - Load existing employees
+   * - ONE AI CALL to Sonnet 4 (does everything)
+   * - Returns employee-centric JSON
+   *
+   * AI handles:
+   * - Data type classification
+   * - Duplicate detection
+   * - Entity linking to employees
+   * - Rejection of orphaned entities
+   */
+  analyzeWithAI: protectedProcedure
+    .input(analyzeMultiFileSchema)
+    .mutation(async ({ ctx, input }) => {
+      const tempFilePaths: string[] = [];
+
+      try {
+        const tenantId = ctx.user.tenantId;
+
+        // Download all files from storage
+        const filePaths = await Promise.all(
+          input.fileIds.map(async (fileId) => {
+            const tempPath = await downloadFileFromStorage(fileId, tenantId);
+            tempFilePaths.push(tempPath);
+
+            // Get file metadata
+            const { data: metadata } = await supabase.storage
+              .from(STORAGE_BUCKET)
+              .list(fileId.split('/').slice(0, -1).join('/'), {
+                search: fileId.split('/').pop(),
+              });
+
+            const file = metadata?.[0];
+
+            return {
+              path: tempPath,
+              name: file?.name || fileId.split('/').pop() || 'unknown.xlsx',
+              uploadedAt: file?.created_at ? new Date(file.created_at) : new Date(),
+            };
+          })
+        );
+
+        // Analyze with AI (single call)
+        const result = await analyzeWithAI({
+          filePaths,
+          context: {
+            tenantId,
+            countryCode: input.countryCode,
+            allowPartialImport: false,
+            dryRun: true,
+            files: filePaths.map((f) => ({
+              fileName: f.name,
+              uploadedAt: f.uploadedAt,
+              size: 0,
+            })),
+            onProgress: (update) => {
+              console.log(`[AI-IMPORT-SIMPLE] ${update.phase}: ${update.message}`);
+            },
+          },
+        });
+
+        // Store result for subsequent import
+        const analysisId = crypto.randomUUID();
+        aiResultsStore.set(analysisId, result.aiResult);
+
+        // Auto-cleanup after 1 hour
+        setTimeout(() => {
+          aiResultsStore.delete(analysisId);
+        }, 60 * 60 * 1000);
+
+        return {
+          analysisId,
+          result: result.aiResult,
+          processingTimeMs: result.processingTimeMs,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+
+        console.error('[AI-IMPORT-SIMPLE] Analysis error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Erreur lors de l\'analyse IA',
+        });
+      } finally {
+        // Cleanup temp files
+        tempFilePaths.forEach(cleanupTempFile);
       }
     }),
 });

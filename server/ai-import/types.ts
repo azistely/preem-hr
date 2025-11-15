@@ -304,7 +304,7 @@ export interface EntityProvenance {
     isNew: boolean;
 
     /** How employee was matched */
-    matchMethod: 'employeeNumber' | 'email' | 'cnpsNumber' | 'fuzzyName' | 'fileReference';
+    matchMethod: 'employeeNumber' | 'email' | 'cnpsNumber' | 'fuzzyName' | 'fileReference' | 'phoneNumber' | 'fullName';
 
     /** Confidence in match (0-100) */
     matchConfidence: number;
@@ -450,6 +450,20 @@ export interface EnhancedImportSummary {
 
     /** NEW entities (not duplicates) */
     newEntities: number;
+  };
+
+  /**
+   * Entity rejection statistics (entities without valid employee links)
+   *
+   * These entities were REJECTED because no matching employee was found.
+   * They will NOT be imported.
+   */
+  rejections?: {
+    /** Total number of rejected entities */
+    total: number;
+
+    /** Rejections grouped by entity type */
+    byEntityType: Record<string, number>;
   };
 }
 

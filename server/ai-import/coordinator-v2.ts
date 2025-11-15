@@ -30,6 +30,12 @@ import { validateData } from './tools/validate-data';
 import { executeImport } from './importers';
 import { loadExistingEmployees } from './tools/load-existing-employees';
 import { detectDuplicateEmployee } from './tools/detect-duplicate-employee';
+import {
+  resolveValidEmployees,
+  findEmployeeForEntity,
+  formatRejectedEntityDescription,
+  type ResolvedEmployee,
+} from './tools/resolve-employees';
 import type {
   ProgressUpdate,
   ImportPhase,
@@ -279,6 +285,37 @@ export async function analyzeMultiFileImport(params: {
     });
   }
 
+  // Phase 4.5: Resolve valid employees (CRITICAL for employee-centric referential integrity)
+  onProgress?.({
+    phase: 'match_records',
+    percent: 60,
+    message: 'Résolution des employés valides...',
+    timestamp: new Date(),
+  });
+
+  const employeeMatchesForResolution = Object.entries(allMatches).find(
+    ([entityType, matches]) =>
+      entityType === 'employees' ||
+      entityGraph.entities[entityType]?.targetTable === 'employees'
+  )?.[1] || [];
+
+  const validEmployees = resolveValidEmployees({
+    existingEmployees,
+    employeeMatches: employeeMatchesForResolution,
+  });
+
+  onProgress?.({
+    phase: 'match_records',
+    percent: 62,
+    message: `${validEmployees.size} employé(s) valide(s) disponible(s) pour référence`,
+    details: {
+      validEmployees: validEmployees.size,
+      existingFromDB: existingEmployees.length,
+      newFromExcel: employeeMatchesForResolution.filter((m) => !m.duplicate).length,
+    },
+    timestamp: new Date(),
+  });
+
   // Phase 5: Detect conflicts
   onProgress?.({
     phase: 'detect_conflicts',
@@ -370,7 +407,7 @@ export async function analyzeMultiFileImport(params: {
     timestamp: new Date(),
   });
 
-  // Phase 7: Build complete entities
+  // Phase 7: Build complete entities with employee linking
   onProgress?.({
     phase: 'build_entities',
     percent: 85,
@@ -379,6 +416,8 @@ export async function analyzeMultiFileImport(params: {
   });
 
   const completeEntities: Record<string, CompleteEntity[]> = {};
+  let totalRejected = 0;
+  const rejectionsByEntityType: Record<string, number> = {};
 
   for (const entityType of entityTypes) {
     const entityNode = entityGraph.entities[entityType];
@@ -398,6 +437,58 @@ export async function analyzeMultiFileImport(params: {
           : [],
       },
     });
+
+    // EMPLOYEE LINKING: For non-employee entities, link to valid employees
+    const isEmployeeEntity = entityType === 'employees' || entityNode.targetTable === 'employees';
+
+    if (!isEmployeeEntity) {
+      let linkedCount = 0;
+      let rejectedCount = 0;
+
+      for (const entity of entities) {
+        // Try to find employee for this entity
+        const employeeMatch = findEmployeeForEntity({
+          entityData: entity.data,
+          validEmployees,
+        });
+
+        if (employeeMatch) {
+          // ✅ LINKED - Add employee reference
+          entity._meta.linkedEmployee = {
+            employeeId: employeeMatch.employee.employeeId,
+            employeeNumber: employeeMatch.employee.employeeNumber,
+            employeeName: employeeMatch.employee.employeeName,
+            isNew: employeeMatch.employee.isNew,
+            matchMethod: employeeMatch.matchMethod,
+            matchConfidence: employeeMatch.matchConfidence,
+          };
+          linkedCount++;
+        } else {
+          // ❌ REJECTED - No employee match found
+          const entityDescription = formatRejectedEntityDescription({
+            entityData: entity.data,
+            entityType: entityNode.displayName,
+          });
+          entity._meta.rejectionReason = `Employé non trouvé pour: ${entityDescription}`;
+          rejectedCount++;
+          totalRejected++;
+        }
+      }
+
+      rejectionsByEntityType[entityType] = rejectedCount;
+
+      onProgress?.({
+        phase: 'build_entities',
+        percent: 85 + ((entityTypes.indexOf(entityType) + 0.5) / entityTypes.length) * 10,
+        message: `${entityNode.displayName}: ${linkedCount} lié(s), ${rejectedCount} rejeté(s)`,
+        details: {
+          entityType: entityNode.displayName,
+          linked: linkedCount,
+          rejected: rejectedCount,
+        },
+        timestamp: new Date(),
+      });
+    }
 
     completeEntities[entityType] = entities;
 
@@ -460,8 +551,15 @@ export async function analyzeMultiFileImport(params: {
     newEntities: employeeMatches.filter((m) => !m.duplicate).length,
   };
 
-  // Build enhanced overall summary with duplicate info
-  let overallSummary = `${parsedFiles.length} fichier(s) analysé(s) → ${entityPreviews.reduce((sum, e) => sum + e.count, 0)} entité(s) unique(s) identifiée(s)`;
+  // Build enhanced overall summary with duplicate info and rejections
+  const totalEntitiesFound = entityPreviews.reduce((sum, e) => sum + e.count, 0);
+  const totalWillImport = totalEntitiesFound - totalRejected;
+
+  let overallSummary = `${parsedFiles.length} fichier(s) analysé(s) → ${totalWillImport} entité(s) seront importée(s)`;
+
+  if (totalRejected > 0) {
+    overallSummary += ` (${totalRejected} rejetée(s) - employé non trouvé)`;
+  }
 
   if (duplicateStats.total > 0) {
     const parts: string[] = [];
@@ -475,19 +573,33 @@ export async function analyzeMultiFileImport(params: {
       parts.push(`${duplicateStats.requiresUserDecision} à confirmer`);
     }
     if (parts.length > 0) {
-      overallSummary += ` (${parts.join(' + ')})`;
+      overallSummary += ` | Employés: ${parts.join(' + ')}`;
     }
   }
 
   const summary: EnhancedImportSummary = {
     overallSummary,
     entities: entityPreviews,
-    warnings: recommendations,
+    warnings: [
+      ...recommendations,
+      ...(totalRejected > 0
+        ? [
+            `⚠️  ${totalRejected} entité(s) rejetée(s) car aucun employé correspondant n'a été trouvé. Ces enregistrements ne seront pas importés.`,
+          ]
+        : []),
+    ],
     estimatedTime: estimateImportTime(entityPreviews),
     totalConflicts: allConflicts.length,
     conflictsAutoResolved: totalAutoResolved,
     conflictsRequiringUser: totalRequiringReview,
     duplicates: duplicateStats.total > 0 ? duplicateStats : undefined,
+    rejections:
+      totalRejected > 0
+        ? {
+            total: totalRejected,
+            byEntityType: rejectionsByEntityType,
+          }
+        : undefined,
   };
 
   const processingTimeMs = Date.now() - startTime;
