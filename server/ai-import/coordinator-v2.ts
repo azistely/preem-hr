@@ -28,6 +28,8 @@ import {
 } from './tools/build-entities';
 import { validateData } from './tools/validate-data';
 import { executeImport } from './importers';
+import { loadExistingEmployees } from './tools/load-existing-employees';
+import { detectDuplicateEmployee } from './tools/detect-duplicate-employee';
 import type {
   ProgressUpdate,
   ImportPhase,
@@ -51,9 +53,29 @@ export async function analyzeMultiFileImport(params: {
   context: ImportContext;
 }): Promise<MultiFileAnalysisResult> {
   const { filePaths, context } = params;
-  const { countryCode = 'CI', onProgress } = context;
+  const { countryCode = 'CI', tenantId, onProgress } = context;
 
   const startTime = Date.now();
+
+  // Phase 0: Load existing employees (CRITICAL RESOURCE for duplicate detection)
+  onProgress?.({
+    phase: 'parse',
+    percent: 2,
+    message: 'Chargement des employés existants...',
+    timestamp: new Date(),
+  });
+
+  const existingEmployees = await loadExistingEmployees({ tenantId });
+
+  onProgress?.({
+    phase: 'parse',
+    percent: 4,
+    message: `${existingEmployees.length} employé(s) existant(s) chargé(s)`,
+    details: {
+      existingEmployeesCount: existingEmployees.length,
+    },
+    timestamp: new Date(),
+  });
 
   // Phase 1: Parse all files
   onProgress?.({
@@ -200,6 +222,47 @@ export async function analyzeMultiFileImport(params: {
       sourceRecords,
       countryCode,
     });
+
+    // DUPLICATE DETECTION: For employee entities, detect duplicates with existing database employees
+    if (entityType === 'employees' || entityNode.targetTable === 'employees') {
+      onProgress?.({
+        phase: 'match_records',
+        percent: 50 + ((i + 0.5) / entityTypes.length) * 10,
+        message: `Détection des doublons pour ${matches.length} employé(s)...`,
+        timestamp: new Date(),
+      });
+
+      for (const match of matches) {
+        // Get employee data from first source record (they should all be matched to same employee)
+        const candidateEmployee = match.sourceRecords[0]?.data || {};
+
+        // Detect if this employee already exists in database
+        const duplicate = await detectDuplicateEmployee({
+          candidateEmployee,
+          existingEmployees,
+          countryCode,
+        });
+
+        // Store duplicate detection result
+        if (duplicate) {
+          match.duplicate = duplicate;
+        }
+      }
+
+      const duplicatesCount = matches.filter((m) => m.duplicate).length;
+      const newCount = matches.length - duplicatesCount;
+
+      onProgress?.({
+        phase: 'match_records',
+        percent: 50 + ((i + 0.8) / entityTypes.length) * 10,
+        message: `${duplicatesCount} doublon(s) détecté(s), ${newCount} nouveau(x)`,
+        details: {
+          duplicates: duplicatesCount,
+          newEmployees: newCount,
+        },
+        timestamp: new Date(),
+      });
+    }
 
     allMatches[entityType] = matches;
 
@@ -381,14 +444,50 @@ export async function analyzeMultiFileImport(params: {
     });
   }
 
+  // Calculate duplicate statistics for employee entities
+  const employeeMatches = Object.entries(allMatches).find(
+    ([entityType, matches]) =>
+      entityType === 'employees' ||
+      entityGraph.entities[entityType]?.targetTable === 'employees'
+  )?.[1] || [];
+
+  const duplicateStats = {
+    total: employeeMatches.filter((m) => m.duplicate).length,
+    willUpdate: employeeMatches.filter((m) => m.duplicate?.recommendedAction === 'update').length,
+    willSkip: employeeMatches.filter((m) => m.duplicate?.recommendedAction === 'skip').length,
+    requiresUserDecision: employeeMatches.filter((m) => m.duplicate?.recommendedAction === 'ask_user')
+      .length,
+    newEntities: employeeMatches.filter((m) => !m.duplicate).length,
+  };
+
+  // Build enhanced overall summary with duplicate info
+  let overallSummary = `${parsedFiles.length} fichier(s) analysé(s) → ${entityPreviews.reduce((sum, e) => sum + e.count, 0)} entité(s) unique(s) identifiée(s)`;
+
+  if (duplicateStats.total > 0) {
+    const parts: string[] = [];
+    if (duplicateStats.newEntities > 0) {
+      parts.push(`${duplicateStats.newEntities} nouveau(x)`);
+    }
+    if (duplicateStats.willUpdate > 0) {
+      parts.push(`${duplicateStats.willUpdate} mise(s) à jour`);
+    }
+    if (duplicateStats.requiresUserDecision > 0) {
+      parts.push(`${duplicateStats.requiresUserDecision} à confirmer`);
+    }
+    if (parts.length > 0) {
+      overallSummary += ` (${parts.join(' + ')})`;
+    }
+  }
+
   const summary: EnhancedImportSummary = {
-    overallSummary: `${parsedFiles.length} fichier(s) analysé(s) → ${entityPreviews.reduce((sum, e) => sum + e.count, 0)} entité(s) unique(s) identifiée(s)`,
+    overallSummary,
     entities: entityPreviews,
     warnings: recommendations,
     estimatedTime: estimateImportTime(entityPreviews),
     totalConflicts: allConflicts.length,
     conflictsAutoResolved: totalAutoResolved,
     conflictsRequiringUser: totalRequiringReview,
+    duplicates: duplicateStats.total > 0 ? duplicateStats : undefined,
   };
 
   const processingTimeMs = Date.now() - startTime;
