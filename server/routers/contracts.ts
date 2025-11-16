@@ -26,6 +26,7 @@ export const contractsRouter = createTRPCRouter({
         cddReason: z.string().nullable().optional(),
         cddtiTaskDescription: z.string().nullable().optional(),
         signedDate: z.string().nullable().optional(),
+        contractFileUrl: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
       })
     )
@@ -71,6 +72,7 @@ export const contractsRouter = createTRPCRouter({
             ? input.cddtiTaskDescription
             : existingContract.cddtiTaskDescription,
           signedDate: input.signedDate !== undefined ? input.signedDate : existingContract.signedDate,
+          contractFileUrl: input.contractFileUrl !== undefined ? input.contractFileUrl : existingContract.contractFileUrl,
           notes: input.notes !== undefined ? input.notes : existingContract.notes,
           updatedAt: new Date().toISOString(),
         })

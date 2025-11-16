@@ -39,6 +39,7 @@ export const timeOffRouter = createTRPCRouter({
         reason: z.string().optional(),
         handoverNotes: z.string().optional(),
         isDeductibleForACP: z.boolean().default(true),
+        justificationDocumentUrl: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -53,6 +54,17 @@ export const timeOffRouter = createTRPCRouter({
           handoverNotes: input.handoverNotes,
           isDeductibleForAcp: input.isDeductibleForACP,
         });
+
+        // Update justification document if provided
+        if (input.justificationDocumentUrl && request.id) {
+          await db
+            .update(timeOffRequests)
+            .set({
+              justificationDocumentUrl: input.justificationDocumentUrl,
+              justificationDocumentUploadedAt: new Date(),
+            })
+            .where(eq(timeOffRequests.id, request.id));
+        }
 
         // Emit event for workflow automation
         // await eventBus.publish('timeoff.requested', {
@@ -145,6 +157,57 @@ export const timeOffRouter = createTRPCRouter({
         }
         throw error;
       }
+    }),
+
+  /**
+   * Update justification document for leave request
+   * Allows uploading/updating justification document after leave is created or approved
+   */
+  updateJustificationDocument: protectedProcedure
+    .input(
+      z.object({
+        requestId: z.string().uuid(),
+        justificationDocumentUrl: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { user } = ctx;
+
+      // Verify the request belongs to the user's tenant
+      const [existingRequest] = await db
+        .select()
+        .from(timeOffRequests)
+        .where(
+          and(
+            eq(timeOffRequests.id, input.requestId),
+            eq(timeOffRequests.tenantId, user.tenantId)
+          )
+        )
+        .limit(1);
+
+      if (!existingRequest) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Demande de congé non trouvée',
+        });
+      }
+
+      // Update the justification document
+      const [updated] = await db
+        .update(timeOffRequests)
+        .set({
+          justificationDocumentUrl: input.justificationDocumentUrl,
+          justificationDocumentUploadedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(timeOffRequests.id, input.requestId),
+            eq(timeOffRequests.tenantId, user.tenantId)
+          )
+        )
+        .returning();
+
+      return updated;
     }),
 
   /**
