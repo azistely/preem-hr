@@ -12,6 +12,17 @@ import { tenants, users, userTenants } from '@/lib/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { seedTimeOffPoliciesForTenant } from '@/features/time-off/services/policy-seeding.service';
+import {
+  TenantSettingsSchema,
+  UpdateCompanyGeneralInfoInputSchema,
+  UpdateCompanyLegalInfoInputSchema,
+  AddFundInputSchema,
+  UpdateFundInputSchema,
+  type TenantSettings,
+  type CompanyGeneralInfo,
+  type CompanyLegalInfo,
+  type FundAccount,
+} from '@/lib/db/schema/tenant-settings.schema';
 
 export const tenantRouter = createTRPCRouter({
   /**
@@ -49,6 +60,9 @@ export const tenantRouter = createTRPCRouter({
         });
       }
 
+      // Parse settings with defaults
+      const settings = (tenant.settings as TenantSettings) || {};
+
       return {
         id: tenant.id,
         name: tenant.name,
@@ -58,6 +72,11 @@ export const tenantRouter = createTRPCRouter({
         timezone: tenant.timezone,
         cgeciSectorCode: tenant.cgeciSectorCode,
         genericSectorCode: tenant.genericSectorCode,
+
+        // Company information from settings
+        company: settings.company || {},
+        legal: settings.legal || {},
+        funds: settings.funds || [],
       };
     }),
 
@@ -495,6 +514,284 @@ export const tenantRouter = createTRPCRouter({
         },
         policiesSeeded,
         message: `Entreprise "${newTenant.name}" créée avec succès`,
+      };
+    }),
+
+  /**
+   * Update company information
+   *
+   * Updates general and/or legal information in tenant settings.
+   * Uses tenant from authenticated context (ctx.user.tenantId).
+   *
+   * @example
+   * ```typescript
+   * await trpc.tenant.updateCompanyInfo.mutate({
+   *   generalInfo: {
+   *     legalName: 'Preem Technologies SARL',
+   *     address: '01 BP 1234 Abidjan 01',
+   *   },
+   *   legalInfo: {
+   *     socialSecurityNumber: '12345678',
+   *     taxId: 'CI202056789',
+   *   },
+   * });
+   * ```
+   */
+  updateCompanyInfo: protectedProcedure
+    .input(z.object({
+      generalInfo: UpdateCompanyGeneralInfoInputSchema.optional(),
+      legalInfo: UpdateCompanyLegalInfoInputSchema.optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Fetch current tenant
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+      });
+
+      if (!tenant) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Entreprise non trouvée',
+        });
+      }
+
+      // Parse existing settings
+      const currentSettings = (tenant.settings as TenantSettings) || {};
+
+      // Merge updates
+      const updatedSettings: TenantSettings = {
+        ...currentSettings,
+        company: input.generalInfo ? {
+          ...currentSettings.company,
+          ...input.generalInfo,
+        } : currentSettings.company,
+        legal: input.legalInfo ? {
+          ...currentSettings.legal,
+          ...input.legalInfo,
+        } : currentSettings.legal,
+      };
+
+      // Update tenant with merged settings
+      await db
+        .update(tenants)
+        .set({
+          settings: updatedSettings,
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, tenantId));
+
+      return {
+        success: true,
+        message: 'Informations de l\'entreprise mises à jour',
+      };
+    }),
+
+  /**
+   * Add a new fund/caisse to the tenant
+   *
+   * Adds a fund account (tax office, social security, insurance, etc.)
+   * to the tenant's settings. Auto-generates UUID for the fund.
+   *
+   * @example
+   * ```typescript
+   * await trpc.tenant.addFund.mutate({
+   *   name: 'CNPS (Caisse Nationale de Prévoyance Sociale)',
+   *   accountNumber: 'CNPS-12345678',
+   *   contact: 'cnps@gouv.ci',
+   *   type: 'social',
+   * });
+   * ```
+   */
+  addFund: protectedProcedure
+    .input(AddFundInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Fetch current tenant
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+      });
+
+      if (!tenant) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Entreprise non trouvée',
+        });
+      }
+
+      // Parse existing settings
+      const currentSettings = (tenant.settings as TenantSettings) || {};
+      const currentFunds = currentSettings.funds || [];
+
+      // Create new fund with UUID
+      const newFund: FundAccount = {
+        ...input,
+        id: crypto.randomUUID(),
+      };
+
+      // Add to funds array
+      const updatedSettings: TenantSettings = {
+        ...currentSettings,
+        funds: [...currentFunds, newFund],
+      };
+
+      // Update tenant
+      await db
+        .update(tenants)
+        .set({
+          settings: updatedSettings,
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, tenantId));
+
+      return {
+        success: true,
+        fund: newFund,
+        message: `Caisse "${newFund.name}" ajoutée`,
+      };
+    }),
+
+  /**
+   * Update an existing fund/caisse
+   *
+   * Updates a fund account by ID. Only updates provided fields.
+   *
+   * @example
+   * ```typescript
+   * await trpc.tenant.updateFund.mutate({
+   *   id: 'uuid-here',
+   *   accountNumber: 'CNPS-87654321',
+   * });
+   * ```
+   */
+  updateFund: protectedProcedure
+    .input(UpdateFundInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Fetch current tenant
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+      });
+
+      if (!tenant) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Entreprise non trouvée',
+        });
+      }
+
+      // Parse existing settings
+      const currentSettings = (tenant.settings as TenantSettings) || {};
+      const currentFunds = currentSettings.funds || [];
+
+      // Find fund to update
+      const fundIndex = currentFunds.findIndex((f) => f.id === input.id);
+
+      if (fundIndex === -1) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Caisse non trouvée',
+        });
+      }
+
+      // Update fund (merge with existing)
+      const updatedFund: FundAccount = {
+        ...currentFunds[fundIndex],
+        ...input,
+        id: input.id, // Preserve ID
+      };
+
+      // Replace in array
+      const updatedFunds = [...currentFunds];
+      updatedFunds[fundIndex] = updatedFund;
+
+      const updatedSettings: TenantSettings = {
+        ...currentSettings,
+        funds: updatedFunds,
+      };
+
+      // Update tenant
+      await db
+        .update(tenants)
+        .set({
+          settings: updatedSettings,
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, tenantId));
+
+      return {
+        success: true,
+        fund: updatedFund,
+        message: `Caisse "${updatedFund.name}" mise à jour`,
+      };
+    }),
+
+  /**
+   * Remove a fund/caisse from the tenant
+   *
+   * Deletes a fund account by ID from the tenant's settings.
+   *
+   * @example
+   * ```typescript
+   * await trpc.tenant.removeFund.mutate({ fundId: 'uuid-here' });
+   * ```
+   */
+  removeFund: protectedProcedure
+    .input(z.object({
+      fundId: z.string().uuid(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Fetch current tenant
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+      });
+
+      if (!tenant) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Entreprise non trouvée',
+        });
+      }
+
+      // Parse existing settings
+      const currentSettings = (tenant.settings as TenantSettings) || {};
+      const currentFunds = currentSettings.funds || [];
+
+      // Find fund to delete
+      const fundToDelete = currentFunds.find((f) => f.id === input.fundId);
+
+      if (!fundToDelete) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Caisse non trouvée',
+        });
+      }
+
+      // Remove from array
+      const updatedFunds = currentFunds.filter((f) => f.id !== input.fundId);
+
+      const updatedSettings: TenantSettings = {
+        ...currentSettings,
+        funds: updatedFunds,
+      };
+
+      // Update tenant
+      await db
+        .update(tenants)
+        .set({
+          settings: updatedSettings,
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, tenantId));
+
+      return {
+        success: true,
+        message: `Caisse "${fundToDelete.name}" supprimée`,
       };
     }),
 });

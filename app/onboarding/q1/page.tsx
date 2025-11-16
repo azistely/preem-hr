@@ -490,7 +490,7 @@ export default function OnboardingQ1Page() {
     <OnboardingQuestion
       title="Configurez votre entreprise"
       subtitle="Informations de base et emplacements de travail"
-      progress={{ current: 1, total: 1 }}
+      progress={{ current: 1, total: 3 }}
     >
       <Wizard
         steps={wizardSteps}

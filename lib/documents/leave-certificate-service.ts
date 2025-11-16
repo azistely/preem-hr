@@ -83,15 +83,19 @@ export async function generateLeaveCertificate(
     throw new Error('Entreprise introuvable');
   }
 
+  // Extract company info from tenant settings
+  const tenantSettings = tenant.settings as any;
+  const companyInfo = tenantSettings?.company || {};
+
   // Prepare certificate data
   const certificateData: LeaveCertificateData = {
     certificateNumber: `CERT-${employee.employeeNumber}-${format(new Date(), 'yyyyMMdd')}`,
     issueDate: format(new Date(), 'dd MMMM yyyy', { locale: fr }),
     tenant: {
-      name: tenant.name,
-      address: 'Adresse de l\'entreprise', // TODO: Add to tenant schema
-      phone: '+225 XX XX XX XX', // TODO: Add to tenant schema
-      email: 'contact@entreprise.com', // TODO: Add to tenant schema
+      name: companyInfo?.legalName || tenant.name,
+      address: companyInfo?.address || 'Adresse de l\'entreprise',
+      phone: companyInfo?.phone || '+225 XX XX XX XX',
+      email: companyInfo?.email || 'contact@entreprise.com',
     },
     employee: {
       firstName: employee.firstName,

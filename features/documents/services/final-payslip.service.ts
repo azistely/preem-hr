@@ -79,10 +79,7 @@ export async function generateFinalPayslip(input: GenerateFinalPayslipInput) {
 
   // 3. Fetch tenant/company info
   const [tenant] = await db
-    .select({
-      name: tenants.name,
-      countryCode: tenants.countryCode,
-    })
+    .select()
     .from(tenants)
     .where(eq(tenants.id, input.tenantId))
     .limit(1);
@@ -90,6 +87,11 @@ export async function generateFinalPayslip(input: GenerateFinalPayslipInput) {
   if (!tenant) {
     throw new Error('Tenant not found');
   }
+
+  // Extract company info from tenant settings
+  const tenantSettings = tenant.settings as any;
+  const companyInfo = tenantSettings?.company || {};
+  const legalInfo = tenantSettings?.legal || {};
 
   // 4. Fetch current position (effectiveTo IS NULL = current assignment)
   const [currentAssignment] = await db
@@ -132,11 +134,11 @@ export async function generateFinalPayslip(input: GenerateFinalPayslipInput) {
 
   const pdfData = {
     // Company info
-    companyName: tenant.name,
-    companyAddress: '', // Address not stored in tenant table
-    companyCity: '', // City not stored in tenant table
+    companyName: companyInfo?.legalName || tenant.name,
+    companyAddress: companyInfo?.address || '',
+    companyCity: '', // TODO: Extract city from address if needed
     companyCountry: countryNames[tenant.countryCode] || tenant.countryCode,
-    companyCNPSNumber: undefined, // CNPS number not stored in tenant table
+    companyCNPSNumber: legalInfo?.socialSecurityNumber || undefined,
 
     // Employee info
     employeeFirstName: employee.firstName,

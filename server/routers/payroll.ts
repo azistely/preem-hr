@@ -2037,10 +2037,17 @@ export const payrollRouter = createTRPCRouter({
         run.tenantId
       );
 
+      // Extract company info from tenant settings
+      const tenantSettings = tenant?.settings as any;
+      const companyInfo = tenantSettings?.company || {};
+      const legalInfo = tenantSettings?.legal || {};
+
       // Prepare payslip data
       const payslipData: PayslipData = {
-        companyName: tenant?.name || 'Company',
-        companyTaxId: tenant?.taxId || undefined,
+        companyName: companyInfo?.legalName || tenant?.name || 'Company',
+        companyAddress: companyInfo?.address || undefined,
+        companyCNPS: legalInfo?.socialSecurityNumber || undefined,
+        companyTaxId: legalInfo?.taxId || tenant?.taxId || undefined,
         employeeName: lineItem.employeeName || employee?.firstName + ' ' + employee?.lastName || 'Unknown',
         employeeNumber: lineItem.employeeNumber || employee?.employeeNumber || '',
         employeeCNPS: employee?.cnpsNumber || undefined,
@@ -2159,6 +2166,11 @@ export const payrollRouter = createTRPCRouter({
       const tenant = await db.query.tenants.findFirst({
         where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
       });
+
+      // Extract company info from tenant settings
+      const tenantSettings = tenant?.settings as any;
+      const companyInfo = tenantSettings?.company || {};
+      const legalInfo = tenantSettings?.legal || {};
 
       // Get all employees
       const employeeIds = lineItems.map(item => item.employeeId);
@@ -2286,8 +2298,10 @@ export const payrollRouter = createTRPCRouter({
           email: employee?.email || undefined,
           phone: employee?.phone || undefined,
 
-          companyName: tenant?.name || '',
-          companyAddress: undefined, // TODO: Add address field to tenants table
+          companyName: companyInfo?.legalName || tenant?.name || '',
+          companyAddress: companyInfo?.address || undefined,
+          companyCNPS: legalInfo?.socialSecurityNumber || undefined,
+          companyTaxId: legalInfo?.taxId || tenant?.taxId || undefined,
           employeeCNPS: employee?.cnpsNumber || undefined,
           periodStart: new Date(run.periodStart),
           periodEnd: new Date(run.periodEnd),
@@ -2387,6 +2401,11 @@ export const payrollRouter = createTRPCRouter({
         where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
       });
 
+      // Extract company info from tenant settings
+      const tenantSettings = tenant?.settings as any;
+      const companyInfo = tenantSettings?.company || {};
+      const legalInfo = tenantSettings?.legal || {};
+
       // Get employees with all required fields for CNPS export
       const employeeIds = lineItems.map((item) => item.employeeId);
       const employees = await db.query.employees.findMany({
@@ -2408,8 +2427,8 @@ export const payrollRouter = createTRPCRouter({
 
       // Prepare export data using new CNPS declaration format
       const exportData: CNPSExportData = {
-        companyName: tenant?.name || 'Company',
-        companyCNPS: tenant?.taxId || undefined,
+        companyName: companyInfo?.legalName || tenant?.name || 'Company',
+        companyCNPS: legalInfo?.socialSecurityNumber || tenant?.taxId || undefined,
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
         employees: lineItems.map((item) => {

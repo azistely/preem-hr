@@ -70,9 +70,7 @@ export async function sendTerminationNotification(input: SendTerminationNotifica
 
   // 3. Fetch tenant/company info
   const [tenant] = await db
-    .select({
-      name: tenants.name,
-    })
+    .select()
     .from(tenants)
     .where(eq(tenants.id, input.tenantId))
     .limit(1);
@@ -80,6 +78,10 @@ export async function sendTerminationNotification(input: SendTerminationNotifica
   if (!tenant) {
     throw new Error('Tenant not found');
   }
+
+  // Extract company info from tenant settings
+  const tenantSettings = tenant.settings as any;
+  const companyInfo = tenantSettings?.company || {};
 
   // 4. Prepare document data based on what's available
   const documents: any = {};
@@ -118,17 +120,18 @@ export async function sendTerminationNotification(input: SendTerminationNotifica
   const emailData = {
     employeeFirstName: employee.firstName,
     employeeLastName: employee.lastName,
-    companyName: tenant.name,
+    companyName: companyInfo?.legalName || tenant.name,
     terminationDate: termination.terminationDate,
     documents,
   };
 
   // 5. Send email to employee
   const employeeEmailHtml = generateEmployeeTerminationEmail(emailData);
+  const companyName = companyInfo?.legalName || tenant.name;
 
   const employeeEmailResult = await sendEmail({
     to: employee.email,
-    subject: `Documents de cessation de contrat - ${tenant.name}`,
+    subject: `Documents de cessation de contrat - ${companyName}`,
     html: employeeEmailHtml,
   });
 
