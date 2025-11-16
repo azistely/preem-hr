@@ -3014,4 +3014,107 @@ export const payrollRouter = createTRPCRouter({
         mimeType: 'application/pdf',
       };
     }),
+
+  /**
+   * Download Historical Payroll Template
+   *
+   * Generates an Excel template for historical payroll import.
+   * Template includes all fields needed for payroll_runs and payroll_line_items.
+   *
+   * @security Tenant isolated - uses ctx.user.tenantId
+   * @returns Base64-encoded Excel file
+   */
+  downloadHistoricalTemplate: protectedProcedure.mutation(async ({ ctx }) => {
+    const { generatePayrollImportTemplate } = await import('@/scripts/generate-payroll-import-template');
+    const buffer = generatePayrollImportTemplate();
+    const base64 = buffer.toString('base64');
+
+    return {
+      filename: 'template_import_paie_historique.xlsx',
+      content: base64,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+  }),
+
+  /**
+   * Upload Historical Payroll File
+   *
+   * Parses and validates uploaded Excel file.
+   * Returns preview of payroll runs and line items with warnings.
+   *
+   * @security Tenant isolated - validates employee IDs belong to ctx.user.tenantId
+   * @returns Preview data with warnings
+   */
+  uploadHistoricalPayroll: protectedProcedure
+    .input(
+      z.object({
+        fileData: z.string(), // Base64 encoded file
+        fileName: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user.tenantId;
+      const { fileData, fileName } = input;
+
+      // Parse Excel file
+      const { parsePayrollImportFile } = await import('@/lib/payroll-import/parser');
+      const parseResult = await parsePayrollImportFile(fileData);
+
+      // Validate that all employees exist (blocking errors)
+      const { validateEmployeesExist } = await import('@/lib/payroll-import/import-service');
+      const validationErrors = await validateEmployeesExist(parseResult.runs, tenantId);
+
+      // Update summary with error count
+      parseResult.summary.errorCount = validationErrors.length;
+
+      return {
+        success: true,
+        runs: parseResult.runs,
+        warnings: parseResult.warnings,
+        validationErrors,
+        summary: parseResult.summary,
+      };
+    }),
+
+  /**
+   * Import Historical Payroll
+   *
+   * Executes the import of historical payroll runs and line items.
+   * Creates payroll_runs with status='approved' and payment_status='paid'.
+   *
+   * @security Tenant isolated - uses ctx.user.tenantId
+   * @returns Import result with created run IDs
+   */
+  importHistoricalPayroll: protectedProcedure
+    .input(
+      z.object({
+        fileData: z.string(), // Base64 encoded file
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user.tenantId;
+      const userId = ctx.user.id;
+      const { fileData } = input;
+
+      // Parse file again (to get fresh data)
+      const { parsePayrollImportFile } = await import('@/lib/payroll-import/parser');
+      const parseResult = await parsePayrollImportFile(fileData);
+
+      // Execute import
+      const { importHistoricalPayroll } = await import('@/lib/payroll-import/import-service');
+      const importResult = await importHistoricalPayroll(
+        parseResult.runs,
+        tenantId,
+        userId
+      );
+
+      if (!importResult.success) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: importResult.message,
+        });
+      }
+
+      return importResult;
+    }),
 });
