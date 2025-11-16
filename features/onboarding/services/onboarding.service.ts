@@ -526,18 +526,24 @@ export async function setCompanyInfo(input: SetCompanyInfoInput) {
     updatedAt: new Date().toISOString(),
   };
 
+  // Update top-level name field for backward compatibility
   if (input.legalName) updates.name = input.legalName;
-  if (input.taxId) updates.taxId = input.taxId;
-  if (input.industry) updates.industry = input.industry;
 
-  // Store additional info in settings
+  // Store ALL company info in settings.company (for company settings page)
   const currentSettings = (tenant.settings as any) || {};
+  const currentCompany = currentSettings.company || {};
+
   updates.settings = {
     ...currentSettings,
     company: {
-      addresses: input.addresses,
-      phone: input.phone,
-      email: input.email,
+      ...currentCompany,
+      legalName: input.legalName || currentCompany.legalName,
+      industry: input.industry || currentCompany.industry,
+      taxId: input.taxId || currentCompany.taxId,
+      address: input.addresses?.[0] || currentCompany.address, // Store first address as primary
+      addresses: input.addresses || currentCompany.addresses, // Keep all addresses for legacy support
+      phone: input.phone || currentCompany.phone,
+      email: input.email || currentCompany.email,
     },
   };
 

@@ -193,49 +193,16 @@ export function LegalInfoForm() {
               )}
             />
 
-            {/* Work Accident Rate */}
-            <FormField
-              control={form.control}
-              name="workAccidentRate"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {countryFields.workAccidentRateLabel}
-                    {countryFields.workAccidentRateRequired && (
-                      <span className="text-destructive ml-1">*</span>
-                    )}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      value={field.value ?? ""}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="10"
-                      placeholder="Ex: 1.2"
-                      disabled={!isEditing}
-                      className="min-h-[48px]"
-                      onChange={(e) => {
-                        const value = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                        field.onChange(value);
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Taux de cotisation accident du travail (0-10%)
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             {/* Action Buttons */}
             <div className="flex gap-4">
               {!isEditing ? (
                 <Button
                   type="button"
-                  onClick={() => setIsEditing(true)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsEditing(true);
+                  }}
                   className="min-h-[44px]"
                 >
                   Modifier

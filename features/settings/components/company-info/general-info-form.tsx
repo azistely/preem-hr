@@ -254,7 +254,11 @@ export function GeneralInfoForm() {
               {!isEditing ? (
                 <Button
                   type="button"
-                  onClick={() => setIsEditing(true)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsEditing(true);
+                  }}
                   className="min-h-[44px]"
                 >
                   Modifier

@@ -262,14 +262,12 @@ export const hrManagerAdvancedSections: NavSection[] = [
       { icon: DollarSign, label: "Historique Salaires", href: "/salaries" },
       { icon: Receipt, label: "Fourchettes par Poste", href: "/salaries/bands" },
       { icon: Upload, label: "Ajuster Plusieurs Salaires", href: "/salaries/bulk-adjustment" },
-      { icon: Package, label: "Éléments de Paie", href: "/settings/salary-components" },
     ],
   },
   {
     title: "Sites et Équipes",
     items: [
       { icon: TrendingUp, label: "Organigramme", href: "/positions/org-chart" },
-      { icon: MapPin, label: "Sites et Établissements", href: "/settings/locations" },
       { icon: MapPin, label: "Zones de Pointage", href: "/admin/geofencing" },
     ],
   },
@@ -285,8 +283,6 @@ export const hrManagerAdvancedSections: NavSection[] = [
     title: "Paramètres de Paie",
     items: [
       { icon: Clock, label: "Heures Supplémentaires", href: "/admin/policies/overtime" },
-      { icon: Building, label: "Secteurs d'Activité", href: "/settings/sectors" },
-      { icon: FileText, label: "Modèles de Bulletins", href: "/settings/payslip-templates" },
       { icon: BarChart3, label: "Suivi des Automatisations", href: "/workflows/analytics" },
     ],
   },
@@ -360,6 +356,13 @@ export const adminMobileSections: NavSection[] = hrManagerMobileSections;
 // Admin advanced features (collapsible) - HCI COMPLIANT
 // Only include pages that actually exist
 export const adminAdvancedSections: NavSection[] = [
+  {
+    title: "Paramètres",
+    items: [
+      { icon: Building, label: "Informations Société", href: "/admin/settings/company" },
+      { icon: DollarSign, label: "Configuration Paie", href: "/settings/payroll" },
+    ],
+  },
   {
     title: "Données et Gestion",
     items: [

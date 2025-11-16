@@ -63,6 +63,19 @@ export const tenantRouter = createTRPCRouter({
       // Parse settings with defaults
       const settings = (tenant.settings as TenantSettings) || {};
 
+      // Backward compatibility: Merge old top-level fields with settings.company
+      // If settings.company is empty, populate from legacy fields
+      const companyInfo = settings.company || {};
+      const mergedCompanyInfo = {
+        legalName: companyInfo.legalName || tenant.name,
+        address: companyInfo.address,
+        phone: companyInfo.phone,
+        email: companyInfo.email,
+        tradeName: companyInfo.tradeName,
+        legalRepresentative: companyInfo.legalRepresentative,
+        foundedDate: companyInfo.foundedDate,
+      };
+
       return {
         id: tenant.id,
         name: tenant.name,
@@ -73,8 +86,8 @@ export const tenantRouter = createTRPCRouter({
         cgeciSectorCode: tenant.cgeciSectorCode,
         genericSectorCode: tenant.genericSectorCode,
 
-        // Company information from settings
-        company: settings.company || {},
+        // Company information from settings (with backward compatibility)
+        company: mergedCompanyInfo,
         legal: settings.legal || {},
         funds: settings.funds || [],
       };
@@ -792,6 +805,178 @@ export const tenantRouter = createTRPCRouter({
       return {
         success: true,
         message: `Caisse "${fundToDelete.name}" supprimée`,
+      };
+    }),
+
+  /**
+   * Get tenant information (alias for getCurrent)
+   *
+   * Returns tenant details including settings.
+   * Used by components that need access to full tenant settings.
+   *
+   * @example
+   * ```typescript
+   * const tenant = await trpc.tenant.getTenant.query();
+   * // tenant = { id, name, countryCode, settings: { documents, company, legal, funds } }
+   * ```
+   */
+  getTenant: protectedProcedure
+    .query(async ({ ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      if (!tenantId) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No active tenant selected',
+        });
+      }
+
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+      });
+
+      if (!tenant) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Tenant not found',
+        });
+      }
+
+      return {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        countryCode: tenant.countryCode,
+        currency: tenant.currency,
+        timezone: tenant.timezone,
+        settings: tenant.settings as TenantSettings,
+      };
+    }),
+
+  /**
+   * Update tenant settings
+   *
+   * Updates the tenant's settings JSONB field.
+   * Used for storing flexible configuration like company documents.
+   *
+   * @example
+   * ```typescript
+   * await trpc.tenant.updateTenantSettings.mutate({
+   *   settings: {
+   *     documents: {
+   *       businessRegistration: 'https://...',
+   *       taxCertificate: 'https://...',
+   *     },
+   *   },
+   * });
+   * ```
+   */
+  updateTenantSettings: protectedProcedure
+    .input(z.object({
+      settings: z.record(z.any()),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Fetch current tenant
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+      });
+
+      if (!tenant) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Entreprise non trouvée',
+        });
+      }
+
+      // Update tenant with new settings
+      await db
+        .update(tenants)
+        .set({
+          settings: input.settings,
+          updatedAt: new Date(),
+        })
+        .where(eq(tenants.id, tenantId));
+
+      return {
+        success: true,
+        message: 'Paramètres mis à jour avec succès',
+      };
+    }),
+
+  /**
+   * Update sector settings (sector, work accident rate, industry)
+   *
+   * Updates sector configuration along with custom work accident rate and industry.
+   * Similar to onboarding Q1 but for settings page.
+   *
+   * @example
+   * ```typescript
+   * await trpc.tenant.updateSectorSettings.mutate({
+   *   cgeciSectorCode: 'COMMERCE',
+   *   workAccidentRate: 2.5,
+   *   industry: 'Vente de vêtements',
+   * });
+   * ```
+   */
+  updateSectorSettings: protectedProcedure
+    .input(z.object({
+      cgeciSectorCode: z.string().optional(),
+      workAccidentRate: z.number().min(0).max(10).optional(),
+      industry: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Fetch current tenant
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+      });
+
+      if (!tenant) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Entreprise non trouvée',
+        });
+      }
+
+      // Parse existing settings
+      const currentSettings = (tenant.settings as TenantSettings) || {};
+
+      // Update settings with sector info
+      const updatedSettings: TenantSettings = {
+        ...currentSettings,
+        company: {
+          ...currentSettings.company,
+          ...(input.industry !== undefined && { industry: input.industry }),
+        },
+        legal: {
+          ...currentSettings.legal,
+          ...(input.workAccidentRate !== undefined && { workAccidentRate: input.workAccidentRate }),
+        },
+      };
+
+      // Prepare tenant updates
+      const tenantUpdates: any = {
+        settings: updatedSettings,
+        updatedAt: new Date(),
+      };
+
+      // If sector is being updated, also update the sector field
+      if (input.cgeciSectorCode) {
+        tenantUpdates.sector = input.cgeciSectorCode;
+      }
+
+      // Update tenant
+      await db
+        .update(tenants)
+        .set(tenantUpdates)
+        .where(eq(tenants.id, tenantId));
+
+      return {
+        success: true,
+        message: 'Configuration du secteur mise à jour',
       };
     }),
 });
