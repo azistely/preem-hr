@@ -114,8 +114,35 @@ export async function createSignatureRequest(
   }
 
   // 2. Download document file from Supabase Storage
-  // Note: file_url is a public Supabase Storage URL
+  // We need to download the file server-side because Dropbox Sign API
+  // cannot access private Supabase Storage buckets
   const fileUrl = document.fileUrl;
+
+  // Extract the storage path from the full URL
+  // URL format: https://[project].supabase.co/storage/v1/object/public/documents/[path]
+  const urlParts = fileUrl.split('/storage/v1/object/public/documents/');
+  const storagePath = urlParts.length > 1 ? urlParts[1] : null;
+
+  if (!storagePath) {
+    throw new Error('Invalid document URL format');
+  }
+
+  // Download file from Supabase Storage using service role (bypasses RLS)
+  const { createClient } = await import('@/lib/supabase/server');
+  const supabase = await createClient();
+
+  const { data: fileData, error: downloadError } = await supabase.storage
+    .from('documents')
+    .download(storagePath);
+
+  if (downloadError || !fileData) {
+    console.error('Failed to download document from storage:', downloadError);
+    throw new Error(`Failed to download document: ${downloadError?.message || 'Unknown error'}`);
+  }
+
+  // Convert Blob to Buffer for Dropbox Sign API
+  const arrayBuffer = await fileData.arrayBuffer();
+  const fileBuffer = Buffer.from(arrayBuffer);
 
   // 3. Prepare signers for Dropbox Sign API
   const signers: dropboxSign.SubSignatureRequestSigner[] = options.signers.map((signer, index) => ({
@@ -124,13 +151,23 @@ export async function createSignatureRequest(
     order: options.signingOrder === 'sequential' ? (signer.order ?? index) : undefined,
   }));
 
-  // 4. Create signature request via API
+  // 4. Create signature request via API using file upload (not URL)
+  // This works with private storage buckets
+  // The SDK expects 'files' as an array of RequestDetailedFile
   const data: dropboxSign.SignatureRequestSendRequest = {
     title: options.title,
     subject: options.subject || 'Signature requise',
     message: options.message || 'Merci de signer ce document.',
     signers,
-    files: [fileUrl as any], // Dropbox Sign API supports URLs despite TypeScript types
+    files: [
+      {
+        value: fileBuffer,
+        options: {
+          filename: document.fileName,
+          contentType: document.mimeType,
+        },
+      }
+    ],
     metadata: {
       document_id: options.documentId, // Link back to our system
       tenant_id: document.tenantId,
@@ -142,12 +179,26 @@ export async function createSignatureRequest(
   };
 
   try {
+    console.log('[Signature Service] Creating signature request with:', {
+      documentId: options.documentId,
+      fileName: document.fileName,
+      fileSize: fileBuffer.length,
+      signerCount: signers.length,
+      testMode: data.testMode,
+    });
+
     const result = await signatureRequestApi.signatureRequestSend(data);
     const signatureRequest = result.body.signatureRequest;
 
     if (!signatureRequest || !signatureRequest.signatureRequestId) {
-      throw new Error('Failed to create signature request');
+      console.error('[Signature Service] Invalid response from Dropbox Sign:', result.body);
+      throw new Error('Failed to create signature request: Invalid response from API');
     }
+
+    console.log('[Signature Service] Signature request created successfully:', {
+      signatureRequestId: signatureRequest.signatureRequestId,
+      status: signatureRequest.isComplete ? 'complete' : 'pending',
+    });
 
     // 5. Update our database with signature request ID
     await db
@@ -178,16 +229,23 @@ export async function createSignatureRequest(
       },
     });
 
-    // 7. Send Inngest event for tracking
-    await inngest.send({
-      name: 'document/signature-requested',
-      data: {
-        documentId: options.documentId,
-        tenantId: document.tenantId,
-        signatureRequestId: signatureRequest.signatureRequestId,
-        signers: options.signers,
-      },
-    });
+    // 7. Send Inngest event for tracking (optional - don't fail if Inngest not configured)
+    try {
+      await inngest.send({
+        name: 'document/signature-requested',
+        data: {
+          documentId: options.documentId,
+          tenantId: document.tenantId,
+          signatureRequestId: signatureRequest.signatureRequestId,
+          signers: options.signers,
+        },
+      });
+    } catch (inngestError) {
+      // Log the error but don't fail the signature request
+      console.warn('[Signature Service] Failed to send Inngest event (non-critical):',
+        inngestError instanceof Error ? inngestError.message : inngestError
+      );
+    }
 
     // 8. Extract signing URLs from response
     const signingUrls = signatureRequest.signatures?.map((sig) => ({
@@ -200,10 +258,25 @@ export async function createSignatureRequest(
       signingUrls,
     };
   } catch (error) {
-    console.error('Failed to create signature request:', error);
-    throw new Error(
-      `Failed to create signature request: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    console.error('[Signature Service] Failed to create signature request:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      // @ts-expect-error - Dropbox Sign errors may have additional properties
+      response: error?.response?.body || error?.response,
+    });
+
+    // Extract more specific error message if available
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      // @ts-expect-error - Dropbox Sign errors may have response.body.error.error_msg
+      if (error.response?.body?.error?.error_msg) {
+        // @ts-expect-error
+        errorMessage = error.response.body.error.error_msg;
+      }
+    }
+
+    throw new Error(`Failed to create signature request: ${errorMessage}`);
   }
 }
 

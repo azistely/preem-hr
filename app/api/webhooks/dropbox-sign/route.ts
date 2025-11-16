@@ -15,11 +15,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
-import { uploadedDocuments, signatureEvents } from '@/drizzle/schema';
+import { db } from '@/lib/db';
+import { uploadedDocuments, signatureEvents } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { inngest } from '@/lib/inngest/client';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
 // =====================================================
 // Types
@@ -187,9 +187,9 @@ export async function POST(req: NextRequest) {
       documentId: document.id,
       tenantId: document.tenantId,
       eventType: mappedEventType,
-      eventTimestamp: new Date(payload.event.event_time * 1000).toISOString(),
-      signerEmail,
-      signerName,
+      eventTimestamp: new Date(payload.event.event_time * 1000).toISOString() as any,
+      signerEmail: signerEmail || null,
+      signerName: signerName || null,
       signatureProvider: 'dropbox_sign',
       providerEventId: payload.event.event_hash, // Use event hash as unique ID
       metadata: {
@@ -208,28 +208,34 @@ export async function POST(req: NextRequest) {
         .update(uploadedDocuments)
         .set({
           signatureStatus: 'signed',
-          signedAt: new Date().toISOString(),
+          signedAt: new Date().toISOString() as any,
           signatureMetadata: {
             signatures: payload.signature_request.signatures,
             completed_at: new Date().toISOString(),
-          },
+          } as any, // Type assertion for JSONB field
         })
         .where(eq(uploadedDocuments.id, document.id));
 
       // Send Inngest event for post-processing (e.g., send notifications)
-      await inngest.send({
-        name: 'document/signature-completed',
-        data: {
-          documentId: document.id,
-          tenantId: document.tenantId,
-          signatureRequestId: payload.signature_request.signature_request_id,
-          signers: payload.signature_request.signatures.map((s) => ({
-            email: s.signer_email_address,
-            name: s.signer_name,
-            signedAt: s.signed_at ? new Date(s.signed_at * 1000).toISOString() : null,
-          })),
-        },
-      });
+      try {
+        await inngest.send({
+          name: 'document/signature-completed',
+          data: {
+            documentId: document.id,
+            tenantId: document.tenantId,
+            signatureRequestId: payload.signature_request.signature_request_id,
+            signers: payload.signature_request.signatures.map((s) => ({
+              email: s.signer_email_address,
+              name: s.signer_name,
+              signedAt: s.signed_at ? new Date(s.signed_at * 1000).toISOString() : null,
+            })),
+          },
+        });
+      } catch (inngestError) {
+        console.warn('[Dropbox Sign Webhook] Failed to send Inngest event (non-critical):',
+          inngestError instanceof Error ? inngestError.message : inngestError
+        );
+      }
     } else if (eventType === 'signature_request_declined') {
       // Signature declined
       await db
@@ -240,16 +246,22 @@ export async function POST(req: NextRequest) {
         .where(eq(uploadedDocuments.id, document.id));
 
       // Send Inngest event
-      await inngest.send({
-        name: 'document/signature-declined',
-        data: {
-          documentId: document.id,
-          tenantId: document.tenantId,
-          signatureRequestId: payload.signature_request.signature_request_id,
-          declinerEmail: signerEmail,
-          declinerName: signerName,
-        },
-      });
+      try {
+        await inngest.send({
+          name: 'document/signature-declined',
+          data: {
+            documentId: document.id,
+            tenantId: document.tenantId,
+            signatureRequestId: payload.signature_request.signature_request_id,
+            declinerEmail: signerEmail,
+            declinerName: signerName,
+          },
+        });
+      } catch (inngestError) {
+        console.warn('[Dropbox Sign Webhook] Failed to send Inngest event (non-critical):',
+          inngestError instanceof Error ? inngestError.message : inngestError
+        );
+      }
     } else if (eventType === 'signature_request_signed') {
       // Individual signer completed (update status to partially_signed or signed)
       const newStatus = calculateSignatureStatus(payload.signature_request.signatures);
@@ -260,7 +272,7 @@ export async function POST(req: NextRequest) {
           signatureMetadata: {
             signatures: payload.signature_request.signatures,
             last_signed_at: new Date().toISOString(),
-          },
+          } as any, // Type assertion for JSONB field
         })
         .where(eq(uploadedDocuments.id, document.id));
     } else if (eventType === 'signature_request_canceled') {
