@@ -73,6 +73,7 @@ export interface UploadDocumentParams {
 export interface UploadResult {
   success: boolean;
   documentId?: string;
+  fileUrl?: string;
   error?: string;
 }
 
@@ -284,9 +285,110 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     return {
       success: true,
       documentId: document.id,
+      fileUrl: document.fileUrl,
     };
   } catch (error) {
     console.error('[Upload Service] Upload document error:', error);
+    return {
+      success: false,
+      error: 'Une erreur est survenue lors du téléchargement',
+    };
+  }
+}
+
+/**
+ * Upload temporary file (for onboarding/hire wizard)
+ *
+ * Simple file upload without database record - just returns URL.
+ * Used when employee doesn't exist yet (hire wizard).
+ * Files stored in temp location and can be cleaned up after 24h.
+ *
+ * @param file - File to upload (browser) OR buffer with metadata (server)
+ * @param tenantId - Tenant ID for storage path
+ * @returns Upload result with file URL
+ */
+export async function uploadTemporaryFile(
+  file: File | { buffer: ArrayBuffer; name: string; type: string; size: number },
+  tenantId: string
+): Promise<UploadResult> {
+  try {
+    // Handle both File objects (browser) and plain objects (server)
+    const fileName = file instanceof File ? file.name : file.name;
+    const fileSize = file instanceof File ? file.size : file.size;
+    const fileType = file instanceof File ? file.type : file.type;
+    const fileBuffer = file instanceof File ? await file.arrayBuffer() : file.buffer;
+
+    // Validate file size
+    if (fileSize > MAX_FILE_SIZE) {
+      return {
+        success: false,
+        error: `Le fichier est trop volumineux (${(fileSize / 1024 / 1024).toFixed(2)} Mo). Taille maximale: 25 Mo.`,
+      };
+    }
+
+    // Validate MIME type
+    const mimeType = fileType as AllowedMimeType;
+    if (!(mimeType in ALLOWED_MIME_TYPES)) {
+      return {
+        success: false,
+        error: `Type de fichier non autorisé: ${fileType}. Formats acceptés: PDF, JPEG, PNG, DOCX.`,
+      };
+    }
+
+    // Validate file extension
+    const extension = `.${fileName.split('.').pop()?.toLowerCase()}`;
+    const allowedExtensions = ALLOWED_MIME_TYPES[mimeType] as readonly string[];
+
+    if (!(allowedExtensions as string[]).includes(extension)) {
+      return {
+        success: false,
+        error: `Extension de fichier non valide: ${extension}. Extensions acceptées pour ${fileType}: ${allowedExtensions.join(', ')}`,
+      };
+    }
+
+    // Generate unique filename
+    const timestamp = Date.now();
+    const sanitizedFileName = sanitizeFilename(fileName);
+    const uniqueFileName = `${timestamp}_${sanitizedFileName}`;
+
+    // Store in temp location
+    const storagePath = `${tenantId}/temp/${uniqueFileName}`;
+
+    // Upload to Supabase Storage
+    const supabase = await createClient();
+
+    const { error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(storagePath, fileBuffer, {
+        contentType: fileType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('[Upload Service] Temp upload error:', {
+        error: uploadError,
+        message: uploadError.message,
+        storagePath,
+        fileType,
+        fileSize,
+      });
+      return {
+        success: false,
+        error: `Échec du téléchargement: ${uploadError.message || 'Erreur inconnue'}`
+      };
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('documents')
+      .getPublicUrl(storagePath);
+
+    return {
+      success: true,
+      fileUrl: urlData.publicUrl,
+    };
+  } catch (error) {
+    console.error('[Upload Service] Temp upload error:', error);
     return {
       success: false,
       error: 'Une erreur est survenue lors du téléchargement',

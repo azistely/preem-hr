@@ -24,10 +24,11 @@ import { eventBus } from '@/lib/event-bus';
 import { TRPCError } from '@trpc/server';
 import { getMinimumWageHelper } from '@/lib/compliance/coefficient-validation.service';
 import { db } from '@/lib/db';
-import { employeeBenefitEnrollments, employees } from '@/drizzle/schema';
+import { employeeBenefitEnrollments, employees, employeeDependents, uploadedDocuments } from '@/drizzle/schema';
+import { createClient } from '@/lib/supabase/server';
 
 // Zod Schemas
-const genderEnum = z.enum(['male', 'female', 'other', 'prefer_not_to_say']);
+const genderEnum = z.enum(['male', 'female']);
 const statusEnum = z.enum(['active', 'terminated', 'suspended']);
 
 // Component schema for validation
@@ -45,13 +46,23 @@ const benefitEnrollmentSchema = z.object({
   effectiveFrom: z.date(),
 });
 
+// Dependent schema for employee creation
+const dependentInputSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  dateOfBirth: z.date(),
+  relationship: z.enum(['child', 'spouse', 'other']),
+  gender: z.enum(['male', 'female']),
+  coverageCertificateUrl: z.string().url().optional(),
+});
+
 const createEmployeeSchema = z.object({
   // Personal info
   firstName: z.string().min(1, 'Le prénom est requis'),
   lastName: z.string().min(1, 'Le nom est requis'),
   preferredName: z.string().optional(),
-  dateOfBirth: z.date().optional(),
-  gender: genderEnum.optional(),
+  dateOfBirth: z.date({ required_error: 'La date de naissance est requise' }),
+  gender: genderEnum,
 
   // Contact
   email: z.string().email('Email invalide'),
@@ -65,9 +76,12 @@ const createEmployeeSchema = z.object({
   postalCode: z.string().optional(),
   countryCode: z.string().length(2).default('CI'),
 
+  // Marital status and dependents
+  maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed'], { required_error: 'La situation matrimoniale est requise' }).default('single'),
+
   // Personnel Record (Registre du Personnel) - Legal fields for CI
-  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO']).optional(),
-  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE']).optional(),
+  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO'], { required_error: 'La zone de nationalité est requise' }),
+  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE'], { required_error: 'Le type d\'employé est requis' }),
   fatherName: z.string().optional(),
   motherName: z.string().optional(),
   placeOfBirth: z.string().optional(),
@@ -104,6 +118,9 @@ const createEmployeeSchema = z.object({
 
   // Benefits enrollment
   benefitEnrollments: z.array(benefitEnrollmentSchema).optional().default([]),
+
+  // Dependents
+  dependents: z.array(dependentInputSchema).optional().default([]),
 
   // Custom fields
   customFields: z.record(z.any()).optional(),
@@ -271,8 +288,8 @@ export const employeesRouter = createTRPCRouter({
     .input(createEmployeeSchema)
     .mutation(async ({ input, ctx }) => {
       try {
-        // Extract benefits enrollments from input
-        const { benefitEnrollments, ...employeeData } = input;
+        // Extract benefits enrollments and dependents from input
+        const { benefitEnrollments, dependents, ...employeeData } = input;
 
         // Create employee
         const employee = await createEmployee({
@@ -296,6 +313,122 @@ export const employeesRouter = createTRPCRouter({
               updatedBy: ctx.user.id,
             });
           }
+        }
+
+        // Create dependents if provided
+        if (dependents && dependents.length > 0) {
+          for (const dependent of dependents) {
+            // Calculate age to determine if document is required
+            const birthDate = new Date(dependent.dateOfBirth);
+            const today = new Date();
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+            }
+
+            // Auto-verify children under 21
+            const isVerified = dependent.relationship === 'child' && age < 21;
+
+            await db.insert(employeeDependents).values({
+              employeeId: employee.id,
+              tenantId: ctx.user.tenantId,
+              firstName: dependent.firstName,
+              lastName: dependent.lastName,
+              dateOfBirth: dependent.dateOfBirth.toISOString().split('T')[0],
+              relationship: dependent.relationship,
+              gender: dependent.gender,
+              isVerified,
+              eligibleForFiscalParts: true,
+              eligibleForCmu: true,
+              coveredByOtherEmployer: false,
+              coverageCertificateUrl: dependent.coverageCertificateUrl,
+              createdBy: ctx.user.id,
+              updatedBy: ctx.user.id,
+            });
+
+            // Convert temporary upload to permanent document record
+            if (dependent.coverageCertificateUrl) {
+              try {
+                const supabase = await createClient();
+                // Extract file path from URL to get metadata
+                const url = new URL(dependent.coverageCertificateUrl);
+                const pathMatch = url.pathname.match(/\/documents\/(.+)$/);
+
+                if (pathMatch) {
+                  const filePath = pathMatch[1];
+
+                  // Get file metadata from storage (for size and mime type)
+                  const { data: fileData, error: fileError } = await supabase.storage
+                    .from('documents')
+                    .list(filePath.substring(0, filePath.lastIndexOf('/')), {
+                      search: filePath.substring(filePath.lastIndexOf('/') + 1),
+                    });
+
+                  if (!fileError && fileData && fileData.length > 0) {
+                    const file = fileData[0];
+
+                    // Use the original filename if provided, otherwise extract from path
+                    const fileName = (dependent as any).coverageCertificateFileName ||
+                                    filePath.substring(filePath.lastIndexOf('/') + 1);
+
+                    // Create permanent document record
+                    await db.insert(uploadedDocuments).values({
+                      tenantId: ctx.user.tenantId,
+                      employeeId: employee.id,
+                      documentCategory: 'medical', // Better categorization as coverage certificate is medical-related
+                      documentSubcategory: 'coverage_certificate',
+                      fileName: fileName,
+                      fileUrl: dependent.coverageCertificateUrl,
+                      fileSize: file.metadata?.size || 0,
+                      mimeType: file.metadata?.mimetype || 'application/octet-stream',
+                      uploadedBy: ctx.user.id,
+                      approvalStatus: 'approved', // HR uploaded during hire wizard
+                      metadata: {
+                        dependentName: `${dependent.firstName} ${dependent.lastName}`,
+                        uploadedDuringHire: true,
+                        documentDescription: `Attestation de couverture - ${dependent.firstName} ${dependent.lastName}`,
+                      },
+                      tags: ['dependent', 'coverage', 'hire_wizard'],
+                    });
+
+                    console.log('[Employee Create] Converted temp upload to permanent document:', {
+                      employeeId: employee.id,
+                      fileName,
+                      dependent: `${dependent.firstName} ${dependent.lastName}`,
+                    });
+                  }
+                }
+              } catch (docError) {
+                // Log error but don't fail employee creation
+                console.error('[Employee Create] Failed to convert temp upload:', docError);
+              }
+            }
+          }
+
+          // Recalculate fiscal parts and dependent count for employee
+          const { calculateFiscalPartsFromDependents, getDependentCounts } = await import('@/features/employees/services/dependent-verification.service');
+
+          const fiscalParts = await calculateFiscalPartsFromDependents(
+            employee.id,
+            ctx.user.tenantId
+          );
+
+          const dependentCounts = await getDependentCounts(
+            employee.id,
+            ctx.user.tenantId
+          );
+
+          // Update employee with calculated values
+          await db
+            .update(employees)
+            .set({
+              fiscalParts: fiscalParts.toString(),
+              dependentChildren: dependentCounts.totalDependents,
+              updatedAt: new Date().toISOString(),
+              updatedBy: ctx.user.id,
+            })
+            .where(eq(employees.id, employee.id));
         }
 
         // Emit employee.hired event

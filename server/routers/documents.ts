@@ -14,7 +14,7 @@ import { generateFinalPayslip } from '@/features/documents/services/final-paysli
 import { bulletinService } from '@/lib/documents/bulletin-service';
 import { certificatService } from '@/lib/documents/certificat-travail-service';
 import { soldeService } from '@/lib/documents/solde-de-tout-compte-service';
-import { uploadDocument, deleteDocument, updateDocumentMetadata, validateFile } from '@/lib/documents/upload-service';
+import { uploadDocument, deleteDocument, updateDocumentMetadata, validateFile, uploadTemporaryFile } from '@/lib/documents/upload-service';
 import {
   createSignatureRequest,
   getSignatureStatus,
@@ -520,6 +520,68 @@ export const documentsRouter = createTRPCRouter({
         return result;
       } catch (error: any) {
         console.error('[Document Upload] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors du téléchargement',
+        });
+      }
+    }),
+
+  /**
+   * Upload temporary file (for hire wizard before employee exists)
+   * Returns just the file URL - no database record created
+   */
+  uploadTemporaryFile: protectedProcedure
+    .input(
+      z.object({
+        fileData: z.string(), // Base64 encoded file
+        fileName: z.string(),
+        fileSize: z.number(),
+        mimeType: z.string(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        console.log('[Temp Upload] Starting upload:', {
+          fileName: input.fileName,
+          fileSize: input.fileSize,
+          mimeType: input.mimeType,
+          tenantId: ctx.user.tenantId,
+          base64Length: input.fileData.length,
+        });
+
+        // Convert base64 to Buffer, then to ArrayBuffer
+        const buffer = Buffer.from(input.fileData, 'base64');
+        const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+
+        console.log('[Temp Upload] Buffer created:', {
+          bufferLength: buffer.length,
+          arrayBufferLength: arrayBuffer.byteLength,
+        });
+
+        // Upload to temp storage with server-side data format
+        const result = await uploadTemporaryFile(
+          {
+            buffer: arrayBuffer,
+            name: input.fileName,
+            type: input.mimeType,
+            size: input.fileSize,
+          },
+          ctx.user.tenantId!
+        );
+
+        if (!result.success) {
+          console.error('[Temp Upload] Upload failed:', result.error);
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: result.error || 'Échec du téléchargement',
+          });
+        }
+
+        console.log('[Temp Upload] Upload successful:', result.fileUrl);
+        return result;
+      } catch (error: any) {
+        console.error('[Temp Upload] Error:', error);
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: error.message || 'Erreur lors du téléchargement',

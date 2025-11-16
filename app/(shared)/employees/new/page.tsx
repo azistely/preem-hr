@@ -20,11 +20,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
-import { Loader2, User, Briefcase, DollarSign, CreditCard, Check, FileText, Heart } from 'lucide-react';
+import { Loader2, User, Briefcase, DollarSign, CreditCard, Check, FileText, Heart, Users } from 'lucide-react';
 import { useCreateEmployee } from '@/features/employees/hooks/use-employee-mutations';
 import { PersonalInfoStep } from '@/features/employees/components/hire-wizard/personal-info-step';
 import { PersonnelRecordStep } from '@/features/employees/components/hire-wizard/personnel-record-step';
 import { EmploymentInfoStep } from '@/features/employees/components/hire-wizard/employment-info-step';
+import { DependentsStep } from '@/features/employees/components/hire-wizard/dependents-step';
 import { BenefitsEnrollmentStep } from '@/features/employees/components/hire-wizard/benefits-enrollment-step';
 import { BankingInfoStep } from '@/features/employees/components/hire-wizard/banking-info-step';
 import { SalaryInfoStep } from '@/features/employees/components/hire-wizard/salary-info-step';
@@ -32,6 +33,7 @@ import { ConfirmationStep } from '@/features/employees/components/hire-wizard/co
 import { buildEmployeeComponents } from '@/features/employees/actions/create-employee.action';
 import Link from 'next/link';
 import { api } from '@/trpc/react';
+import { toast } from 'sonner';
 
 // Component schema
 const componentSchema = z.object({
@@ -48,6 +50,29 @@ const benefitEnrollmentSchema = z.object({
   effectiveFrom: z.date(),
 });
 
+// Dependent schema
+const dependentSchema = z.object({
+  id: z.string().optional(), // Temporary UI ID
+  firstName: z.string().min(1, 'Prénom requis'),
+  lastName: z.string().min(1, 'Nom requis'),
+  dateOfBirth: z.string().min(1, 'Date de naissance requise').or(z.date()), // Accept string or Date
+  relationship: z.enum(['child', 'spouse', 'other']),
+  gender: z.enum(['male', 'female'], { required_error: 'Genre requis' }),
+  // Optional fields
+  documentType: z.string().optional(),
+  documentNumber: z.string().optional(),
+  documentExpiryDate: z.string().optional(),
+  notes: z.string().optional(),
+  cnpsNumber: z.string().optional(),
+  cmuNumber: z.string().optional(),
+  coveredByOtherEmployer: z.boolean().optional(),
+  coverageCertificateType: z.string().optional(),
+  coverageCertificateNumber: z.string().optional(),
+  coverageCertificateUrl: z.string().optional(),
+  coverageCertificateFileName: z.string().optional(),
+  coverageCertificateExpiryDate: z.string().optional(),
+});
+
 // Form schema
 const createEmployeeSchema = z.object({
   // Step 1: Personal info
@@ -56,15 +81,15 @@ const createEmployeeSchema = z.object({
   preferredName: z.string().optional(),
   email: z.string().email('Email invalide').optional().or(z.literal('')),
   phone: z.string().min(1, 'Le numéro de téléphone est requis'),
-  dateOfBirth: z.date().optional(),
-  gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
+  dateOfBirth: z.date({ required_error: 'La date de naissance est requise' }),
+  gender: z.enum(['male', 'female'], { required_error: 'Le genre est requis' }),
   nationalId: z.string().optional(),
-  maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional().default('single'),
+  maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed'], { required_error: 'La situation matrimoniale est requise' }).default('single'),
   taxDependents: z.number().int().min(0).max(10).optional().default(0),
 
   // Step 2: Personnel Record (Registre du Personnel)
-  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO']).optional(),
-  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE']).optional(),
+  nationalityZone: z.enum(['LOCAL', 'CEDEAO', 'HORS_CEDEAO'], { required_error: 'La zone de nationalité est requise' }),
+  employeeType: z.enum(['LOCAL', 'EXPAT', 'DETACHE', 'STAGIAIRE'], { required_error: 'Le type d\'employé est requis' }),
   fatherName: z.string().optional(),
   motherName: z.string().optional(),
   placeOfBirth: z.string().optional(),
@@ -82,14 +107,17 @@ const createEmployeeSchema = z.object({
   paymentFrequency: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']).optional(),
   weeklyHoursRegime: z.enum(['40h', '44h', '48h']).optional().default('40h'),
 
-  // Step 4: Benefits enrollment
+  // Step 4: Dependents
+  dependents: z.array(dependentSchema).optional().default([]),
+
+  // Step 5: Benefits enrollment
   benefitEnrollments: z.array(benefitEnrollmentSchema).optional().default([]),
 
-  // Step 5: Banking info
+  // Step 6: Banking info
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
 
-  // Step 6: Salary info (base salary + components)
+  // Step 7: Salary info (base salary + components)
   baseSalary: z.number().min(0, 'Le salaire de base doit être positif').optional(),
   baseComponents: z.record(z.string(), z.number()).optional(),
   components: z.array(componentSchema).optional().default([]),
@@ -130,24 +158,30 @@ const steps = [
   },
   {
     id: 4,
+    title: 'Personnes à charge',
+    icon: Users,
+    description: 'Conjoint, enfants',
+  },
+  {
+    id: 5,
     title: 'Avantages sociaux',
     icon: Heart,
     description: 'Couverture maladie, CMU',
   },
   {
-    id: 5,
+    id: 6,
     title: 'Informations bancaires',
     icon: CreditCard,
     description: 'Compte, banque',
   },
   {
-    id: 6,
+    id: 7,
     title: 'Salaire et indemnités',
     icon: DollarSign,
     description: 'Salaire de base, primes',
   },
   {
-    id: 7,
+    id: 8,
     title: 'Confirmation',
     icon: Check,
     description: 'Vérifier et confirmer',
@@ -191,8 +225,8 @@ export default function NewEmployeePage() {
       maritalStatus: 'single',
       taxDependents: 0,
       // Step 2: Personnel Record
-      nationalityZone: undefined,
-      employeeType: undefined,
+      nationalityZone: 'LOCAL' as const,
+      employeeType: 'LOCAL' as const,
       fatherName: '',
       motherName: '',
       placeOfBirth: '',
@@ -206,12 +240,14 @@ export default function NewEmployeePage() {
       primaryLocationId: '',
       paymentFrequency: 'WEEKLY',
       weeklyHoursRegime: '40h',
-      // Step 4: Benefits
+      // Step 4: Dependents
+      dependents: [],
+      // Step 5: Benefits
       benefitEnrollments: [],
-      // Step 5: Banking
+      // Step 6: Banking
       bankName: '',
       bankAccount: '',
-      // Step 6: Salary
+      // Step 7: Salary
       baseSalary: 75000,
       baseComponents: {},
       components: [],
@@ -260,6 +296,11 @@ export default function NewEmployeePage() {
         taxDependents: data.taxDependents ?? 0,
         components: allComponents, // ✅ Now includes Code 11!
         rateType: data.rateType ?? 'MONTHLY',
+        // Transform dependents dateOfBirth from string to Date
+        dependents: data.dependents?.map(dep => ({
+          ...dep,
+          dateOfBirth: typeof dep.dateOfBirth === 'string' ? new Date(dep.dateOfBirth) : dep.dateOfBirth,
+        })),
         // Note: primaryLocationId will be added to employee in a future update
       });
     } finally {
@@ -273,10 +314,10 @@ export default function NewEmployeePage() {
     // Validate current step fields
     switch (currentStep) {
       case 1: // Personal Info
-        isValid = await form.trigger(['firstName', 'lastName', 'phone']);
+        isValid = await form.trigger(['firstName', 'lastName', 'phone', 'dateOfBirth', 'gender', 'maritalStatus']);
         break;
       case 2: // Personnel Record
-        isValid = true; // All personnel record fields are optional
+        isValid = await form.trigger(['nationalityZone', 'employeeType']);
         break;
       case 3: // Employment Info
         isValid = await form.trigger(['hireDate', 'contractType', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
@@ -287,13 +328,16 @@ export default function NewEmployeePage() {
           setSelectedLocationId(locationId);
         }
         break;
-      case 4: // Benefits Enrollment
+      case 4: // Dependents
+        isValid = true; // Dependents are optional
+        break;
+      case 5: // Benefits Enrollment
         isValid = true; // Benefits enrollment is optional
         break;
-      case 5: // Banking Info
+      case 6: // Banking Info
         isValid = true; // Banking info is optional
         break;
-      case 6: // Salary Info
+      case 7: // Salary Info
         // Validate form fields first
         isValid = await form.trigger(['baseSalary', 'baseComponents', 'components']);
 
@@ -394,7 +438,7 @@ export default function NewEmployeePage() {
         break;
     }
 
-    if (isValid && currentStep < 7) {
+    if (isValid && currentStep < 8) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -411,6 +455,40 @@ export default function NewEmployeePage() {
     const isValid = await form.trigger();
     if (!isValid) {
       console.warn('[Employee Creation] Submit blocked: form validation failed');
+
+      // Get error fields to help user
+      const errors = form.formState.errors;
+      const errorFields = Object.keys(errors);
+
+      if (errorFields.length > 0) {
+        const firstErrorField = errorFields[0];
+        const firstError = errors[firstErrorField as keyof typeof errors];
+        toast.error('Veuillez corriger les erreurs dans le formulaire', {
+          description: firstError?.message as string || 'Certains champs obligatoires sont manquants ou invalides.',
+        });
+
+        // Navigate to first step with error
+        // Find which step contains the error
+        const stepFieldMap: Record<number, string[]> = {
+          1: ['firstName', 'lastName', 'phone', 'dateOfBirth', 'gender', 'maritalStatus'],
+          2: ['nationalityZone', 'employeeType'],
+          3: ['hireDate', 'contractType', 'positionId', 'coefficient', 'rateType', 'primaryLocationId', 'cddtiTaskDescription'],
+          4: ['dependents'],
+          5: ['benefitEnrollments'],
+          6: ['bankName', 'bankAccount'],
+          7: ['baseSalary', 'baseComponents', 'components'],
+        };
+
+        for (const [step, fields] of Object.entries(stepFieldMap)) {
+          if (fields.some(field => errorFields.includes(field))) {
+            setCurrentStep(Number(step));
+            break;
+          }
+        }
+      } else {
+        toast.error('Le formulaire contient des erreurs. Veuillez vérifier tous les champs.');
+      }
+
       return;
     }
 
@@ -494,10 +572,11 @@ export default function NewEmployeePage() {
               {currentStep === 1 && <PersonalInfoStep form={form} />}
               {currentStep === 2 && <PersonnelRecordStep form={form} />}
               {currentStep === 3 && <EmploymentInfoStep form={form} />}
-              {currentStep === 4 && <BenefitsEnrollmentStep form={form} />}
-              {currentStep === 5 && <BankingInfoStep form={form} />}
-              {currentStep === 6 && <SalaryInfoStep form={form} />}
-              {currentStep === 7 && <ConfirmationStep form={form} />}
+              {currentStep === 4 && <DependentsStep form={form} />}
+              {currentStep === 5 && <BenefitsEnrollmentStep form={form} />}
+              {currentStep === 6 && <BankingInfoStep form={form} />}
+              {currentStep === 7 && <SalaryInfoStep form={form} />}
+              {currentStep === 8 && <ConfirmationStep form={form} />}
             </CardContent>
           </Card>
 
@@ -513,7 +592,7 @@ export default function NewEmployeePage() {
               Précédent
             </Button>
 
-            {currentStep < 7 ? (
+            {currentStep < 8 ? (
               <Button
                 type="button"
                 onClick={nextStep}
