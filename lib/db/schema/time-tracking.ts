@@ -168,10 +168,6 @@ export const timeOffRequests = pgTable('time_off_requests', {
   reviewedAt: timestamp('reviewed_at'),
   reviewNotes: text('review_notes'),
 
-  // Justification document
-  justificationDocumentUrl: text('justification_document_url'),
-  justificationDocumentUploadedAt: timestamp('justification_document_uploaded_at'),
-
   // ACP (Allocations de Congés Payés) tracking
   isDeductibleForAcp: boolean('is_deductible_for_acp').default(true),
   acpAmount: numeric('acp_amount', { precision: 15, scale: 2 }),

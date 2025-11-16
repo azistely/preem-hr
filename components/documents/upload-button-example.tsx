@@ -22,10 +22,13 @@ import { UploadDocumentDialog } from './upload-document-dialog';
 import { api } from '@/trpc/react';
 
 interface UploadButtonProps {
-  employeeId?: string; // If provided, upload for specific employee (HR feature)
+  employeeId?: string | null; // If provided, upload for specific employee (HR feature)
   onUploadSuccess?: () => void;
   variant?: 'default' | 'outline' | 'secondary';
   className?: string;
+  defaultCategory?: string; // Pre-select document category
+  uploadContext?: string; // Upload context identifier (e.g., "company_documents_tab")
+  metadata?: Record<string, any>; // Additional metadata to store with document
 }
 
 export function UploadButton({
@@ -33,6 +36,9 @@ export function UploadButton({
   onUploadSuccess,
   variant = 'default',
   className,
+  defaultCategory,
+  uploadContext,
+  metadata,
 }: UploadButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const utils = api.useUtils();
@@ -62,6 +68,9 @@ export function UploadButton({
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         employeeId={employeeId}
+        defaultCategory={defaultCategory}
+        uploadContext={uploadContext}
+        metadata={metadata}
         onUploadSuccess={handleUploadSuccess}
       />
     </>

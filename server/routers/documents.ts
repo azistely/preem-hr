@@ -598,6 +598,7 @@ export const documentsRouter = createTRPCRouter({
         employeeId: z.string().uuid().optional(),
         documentCategory: z.string().optional(),
         approvalStatus: z.enum(['pending', 'approved', 'rejected']).optional(),
+        uploadContext: z.string().optional(), // Filter by upload context (e.g., "company_documents_tab")
         includeArchived: z.boolean().default(false),
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
@@ -605,7 +606,7 @@ export const documentsRouter = createTRPCRouter({
     )
     .query(async ({ input, ctx }) => {
       try {
-        const { employeeId, documentCategory, approvalStatus, includeArchived, limit, offset } = input;
+        const { employeeId, documentCategory, approvalStatus, uploadContext, includeArchived, limit, offset } = input;
         const isHR = ['hr_manager', 'tenant_admin', 'super_admin'].includes(ctx.user.role);
 
         // Build where conditions
@@ -631,6 +632,11 @@ export const documentsRouter = createTRPCRouter({
 
         if (approvalStatus) {
           conditions.push(eq(uploadedDocuments.approvalStatus, approvalStatus));
+        }
+
+        // Filter by upload context (stored in metadata JSONB field)
+        if (uploadContext) {
+          conditions.push(sql`${uploadedDocuments.metadata}->>'uploadContext' = ${uploadContext}`);
         }
 
         if (!includeArchived) {

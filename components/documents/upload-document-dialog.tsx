@@ -82,6 +82,9 @@ interface UploadDocumentDialogProps {
   onOpenChange: (open: boolean) => void;
   employeeId?: string | null; // If provided, upload for specific employee (HR feature)
   onUploadSuccess?: (result?: { documentId?: string; fileUrl?: string }) => void;
+  defaultCategory?: string; // Pre-select document category
+  uploadContext?: string; // Upload context identifier (e.g., "company_documents_tab", "employee_documents_tab")
+  metadata?: Record<string, any>; // Additional metadata to store with document (e.g., contractId, benefitId)
 }
 
 // =====================================================
@@ -93,6 +96,9 @@ export function UploadDocumentDialog({
   onOpenChange,
   employeeId,
   onUploadSuccess,
+  defaultCategory,
+  uploadContext,
+  metadata,
 }: UploadDocumentDialogProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -122,7 +128,7 @@ export function UploadDocumentDialog({
     resolver: zodResolver(uploadSchema),
     defaultValues: {
       employeeId: employeeId || null,
-      documentCategory: '',
+      documentCategory: defaultCategory || '',
       documentSubcategory: '',
       tags: [],
     },
@@ -207,6 +213,10 @@ export function UploadDocumentDialog({
           documentSubcategory: data.documentSubcategory,
           expiryDate: data.expiryDate,
           tags: data.tags,
+          metadata: {
+            ...metadata, // Include existing metadata (tenantId, etc.)
+            uploadContext, // Add upload context for filtering
+          },
         });
 
         setUploadProgress(100);

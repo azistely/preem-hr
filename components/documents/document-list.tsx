@@ -89,6 +89,7 @@ import { UploadNewVersionDialog } from '@/components/documents/upload-new-versio
 interface DocumentListProps {
   employeeId?: string; // If provided, show documents for specific employee
   showActions?: boolean; // Show HR actions (approve/reject)
+  uploadContext?: string; // If provided, filter by upload context (documents uploaded from this tab)
 }
 
 // =====================================================
@@ -177,7 +178,7 @@ function formatFileSize(bytes: number): string {
 // Main Component
 // =====================================================
 
-export function DocumentList({ employeeId, showActions = false }: DocumentListProps) {
+export function DocumentList({ employeeId, showActions = false, uploadContext }: DocumentListProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -193,6 +194,7 @@ export function DocumentList({ employeeId, showActions = false }: DocumentListPr
     employeeId,
     approvalStatus: statusFilter === 'all' ? undefined : (statusFilter as any),
     documentCategory: categoryFilter === 'all' ? undefined : categoryFilter,
+    uploadContext, // Filter by upload context to show only documents uploaded from this tab
   });
 
   // Fetch categories for filter
@@ -310,7 +312,7 @@ export function DocumentList({ employeeId, showActions = false }: DocumentListPr
           </div>
 
           {/* Quick Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <Label htmlFor="statusFilter" className="text-sm mb-1">
                 Statut

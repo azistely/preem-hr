@@ -47,6 +47,7 @@ import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/lib/trpc/client';
 import { useToast } from '@/hooks/use-toast';
+import { EntityDocumentsSection } from '@/components/documents/entity-documents-section';
 
 // ============================================================================
 // Types & Schema
@@ -64,8 +65,10 @@ interface EditContractDialogProps {
     cddReason?: string | null;
     cddtiTaskDescription?: string | null;
     signedDate?: string | Date | null;
+    contractFileUrl?: string | null;
     notes?: string | null;
   };
+  employeeId?: string; // Employee ID for document uploads
   onSuccess?: () => void;
 }
 
@@ -98,6 +101,7 @@ export function EditContractDialog({
   open,
   onOpenChange,
   contract,
+  employeeId,
   onSuccess,
 }: EditContractDialogProps) {
   const { toast } = useToast();
@@ -182,6 +186,7 @@ export function EditContractDialog({
       cddtiTaskDescription: data.cddtiTaskDescription || null,
       signedDate: data.signedDate ? data.signedDate.toISOString().split('T')[0] : null,
       notes: data.notes || null,
+      // Note: Contract documents are now managed via uploaded_documents table
     });
   };
 
@@ -435,6 +440,16 @@ export function EditContractDialog({
                   <FormMessage />
                 </FormItem>
               )}
+            />
+
+            {/* Contract Document Upload */}
+            <EntityDocumentsSection
+              category="contract"
+              entityId={contract.id}
+              employeeId={employeeId || null}
+              label="Documents du contrat"
+              helperText="Téléchargez les documents liés à ce contrat (contrat signé, avenants, etc.)"
+              allowUpload={true}
             />
 
             {/* Info Alert */}

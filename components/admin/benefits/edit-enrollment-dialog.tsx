@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2, Save } from 'lucide-react';
+import { EntityDocumentsSection } from '@/components/documents/entity-documents-section';
 
 const formSchema = z.object({
   enrollmentDate: z.string().min(1, 'La date d\'inscription est requise'),
@@ -57,6 +58,7 @@ interface EditEnrollmentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  employeeId?: string; // For document uploads
 }
 
 export function EditEnrollmentDialog({
@@ -64,6 +66,7 @@ export function EditEnrollmentDialog({
   open,
   onOpenChange,
   onSuccess,
+  employeeId,
 }: EditEnrollmentDialogProps) {
   const { toast } = useToast();
 
@@ -126,6 +129,7 @@ export function EditEnrollmentDialog({
       enrollmentNumber: values.enrollmentNumber?.trim() || undefined,
       policyNumber: values.policyNumber?.trim() || undefined,
       coverageLevel: values.coverageLevel || undefined,
+      // Note: Enrollment documents are now managed via uploaded_documents table
       notes: values.notes?.trim() || undefined,
     });
   };
@@ -265,6 +269,16 @@ export function EditEnrollmentDialog({
                   <FormMessage />
                 </FormItem>
               )}
+            />
+
+            {/* Enrollment Documents */}
+            <EntityDocumentsSection
+              category="benefit"
+              entityId={enrollmentId!}
+              employeeId={employeeId || null}
+              label="Documents d'inscription"
+              helperText="Certificat d'adhésion, carte CMU, ou autre document d'inscription (optionnel)"
+              allowUpload={true}
             />
 
             <FormField

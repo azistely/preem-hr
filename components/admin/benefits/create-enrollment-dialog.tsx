@@ -39,7 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Check, Heart, Smile, Eye, Shield, PiggyBank, AlertCircle, Car, UtensilsCrossed, Package } from 'lucide-react';
+import { Loader2, Check, Heart, Smile, Eye, Shield, PiggyBank, AlertCircle, Car, UtensilsCrossed, Package, Info } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const formSchema = z.object({
@@ -146,6 +146,8 @@ export function CreateEnrollmentDialog({
       enrollmentNumber: values.enrollmentNumber?.trim() || undefined,
       policyNumber: values.policyNumber?.trim() || undefined,
       coverageLevel: values.coverageLevel || undefined,
+      // Note: Enrollment documents are now managed via uploaded_documents table
+      // Documents can be added after creation via the edit dialog
       notes: values.notes?.trim() || undefined,
       enrollmentStatus: 'active',
     });
@@ -323,6 +325,15 @@ export function CreateEnrollmentDialog({
                 </FormItem>
               )}
             />
+
+            {/* Document Upload Note */}
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Documents d'inscription :</strong> Vous pourrez ajouter des documents
+                (certificat d'adhésion, carte CMU, etc.) après la création via le bouton de modification.
+              </AlertDescription>
+            </Alert>
 
             <FormField
               control={form.control}

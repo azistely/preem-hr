@@ -10,6 +10,7 @@
 
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import { format, differenceInBusinessDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
+import { EntityDocumentsSection } from '@/components/documents/entity-documents-section';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,6 +48,7 @@ interface TimeOffRequest {
   submittedAt: string;
   reviewedAt?: string | null;
   isDeductibleForAcp?: boolean;
+  justificationDocumentUrl?: string | null;
   policy?: {
     id: string;
     name: string;
@@ -117,6 +120,7 @@ export function LeaveRequestList({ requests, employeeId, canApprove = false }: L
     },
   });
 
+
   const getStatusBadge = (status: string) => {
     const badges = {
       pending: { variant: 'outline' as const, label: 'En attente', icon: Clock },
@@ -160,6 +164,7 @@ export function LeaveRequestList({ requests, employeeId, canApprove = false }: L
       isDeductible: isDeductible,
     });
   };
+
 
   if (!requests || requests.length === 0) {
     return (
@@ -265,6 +270,21 @@ export function LeaveRequestList({ requests, employeeId, canApprove = false }: L
                       <p className="text-sm text-muted-foreground">
                         <span className="font-medium">Note de révision:</span> {request.reviewNotes}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Justification Document - Show for all approved requests */}
+                  {request.status === 'approved' && (
+                    <div className="mt-3">
+                      <EntityDocumentsSection
+                        category="leave_justification"
+                        entityId={request.id}
+                        employeeId={employeeId}
+                        label="Document justificatif"
+                        helperText="Certificat médical ou autre document justificatif (optionnel)"
+                        allowUpload={true}
+                        className="bg-muted/30 p-3 rounded-md"
+                      />
                     </div>
                   )}
 

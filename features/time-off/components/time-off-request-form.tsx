@@ -39,7 +39,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
-import { Calendar as CalendarIcon, AlertCircle, Settings } from 'lucide-react';
+import { Calendar as CalendarIcon, AlertCircle, Settings, Info } from 'lucide-react';
 import { fr } from 'date-fns/locale';
 import { differenceInBusinessDays, addDays } from 'date-fns';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -144,6 +144,7 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
       reason: data.reason,
       handoverNotes: data.handoverNotes,
       isDeductibleForACP: data.isDeductibleForACP,
+      // Note: Justification documents can be uploaded after request approval
     });
   };
 
@@ -314,6 +315,15 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
                 </FormItem>
               )}
             />
+
+            {/* Justification Document Note */}
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Documents justificatifs :</strong> Vous pourrez télécharger des documents
+                justificatifs (certificat médical, etc.) après l'approbation de votre demande.
+              </AlertDescription>
+            </Alert>
 
             {/* HR-only: ACP Deductibility */}
             {isHRUser && (
