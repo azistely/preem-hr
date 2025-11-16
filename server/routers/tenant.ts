@@ -11,6 +11,7 @@ import { db } from '@/lib/db';
 import { tenants, users, userTenants } from '@/lib/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { seedTimeOffPoliciesForTenant } from '@/features/time-off/services/policy-seeding.service';
 
 export const tenantRouter = createTRPCRouter({
   /**
@@ -461,6 +462,20 @@ export const tenantRouter = createTRPCRouter({
           role: 'tenant_admin',
         });
 
+      // Seed time-off policies from templates for the tenant's country
+      let policiesSeeded = 0;
+      try {
+        policiesSeeded = await seedTimeOffPoliciesForTenant(
+          newTenant.id,
+          countryCode,
+          ctx.user.id
+        );
+        console.log(`[Tenant Creation] Seeded ${policiesSeeded} time-off policies for ${newTenant.name}`);
+      } catch (error) {
+        // Log error but don't fail tenant creation
+        console.error('[Tenant Creation] Failed to seed time-off policies:', error);
+      }
+
       // Switch user to the new tenant
       await db
         .update(users)
@@ -478,6 +493,7 @@ export const tenantRouter = createTRPCRouter({
           slug: newTenant.slug,
           countryCode: newTenant.countryCode,
         },
+        policiesSeeded,
         message: `Entreprise "${newTenant.name}" créée avec succès`,
       };
     }),

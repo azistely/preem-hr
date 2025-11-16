@@ -206,6 +206,21 @@ export const authRouter = router({
 
         console.log('[Auth] User_tenants record created');
 
+        // 6. Seed time-off policies from templates for the tenant's country
+        let policiesSeeded = 0;
+        try {
+          const { seedTimeOffPoliciesForTenant } = await import('@/features/time-off/services/policy-seeding.service');
+          policiesSeeded = await seedTimeOffPoliciesForTenant(
+            tenant.id,
+            tenant.countryCode,
+            user.id
+          );
+          console.log(`[Auth] Seeded ${policiesSeeded} time-off policies for ${tenant.name}`);
+        } catch (error) {
+          // Log error but don't fail signup
+          console.error('[Auth] Failed to seed time-off policies:', error);
+        }
+
         return {
           success: true,
           user: {

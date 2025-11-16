@@ -115,18 +115,23 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
     ? differenceInBusinessDays(endDate, startDate) + 1
     : 0;
 
-  // Get balance for selected policy
+  // Get selected policy details
+  const selectedPolicyDetails = policies?.find((p) => p.id === selectedPolicy);
+  const isUnpaidLeave = selectedPolicyDetails?.accrualMethod === 'none' || !selectedPolicyDetails?.isPaid;
+
+  // Get balance for selected policy (only for paid leave)
   const selectedBalance = balances?.find((b) => b.policyId === selectedPolicy);
   const availableBalance = selectedBalance
     ? parseFloat(selectedBalance.balance as string) - parseFloat(selectedBalance.pending as string)
     : 0;
 
-  // Check if sufficient balance
-  const hasSufficientBalance = businessDays <= availableBalance;
+  // Check if sufficient balance (skip check for unpaid leave)
+  const hasSufficientBalance = isUnpaidLeave || businessDays <= availableBalance;
 
   // Submit handler
   const onSubmit = async (data: TimeOffRequestForm) => {
-    if (!hasSufficientBalance) {
+    // Skip balance check for unpaid leave
+    if (!isUnpaidLeave && !hasSufficientBalance) {
       toast.error(`Solde insuffisant (disponible: ${availableBalance.toFixed(1)} jours)`);
       return;
     }
@@ -169,6 +174,9 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
                     </FormControl>
                     <SelectContent>
                       {policies?.map((policy) => {
+                        // Check if this is unpaid leave (no balance needed)
+                        const isUnpaid = policy.accrualMethod === 'none' || !policy.isPaid;
+
                         const balance = balances?.find((b) => b.policyId === policy.id);
                         const available = balance
                           ? parseFloat(balance.balance as string) - parseFloat(balance.pending as string)
@@ -178,8 +186,8 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
                           <SelectItem key={policy.id} value={policy.id} className="text-base">
                             <div className="flex justify-between items-center gap-4">
                               <span>{policy.name}</span>
-                              <Badge variant="outline">
-                                {available.toFixed(1)} jours disponibles
+                              <Badge variant={isUnpaid ? "secondary" : "outline"}>
+                                {isUnpaid ? 'Illimité' : `${available.toFixed(1)} jours disponibles`}
                               </Badge>
                             </div>
                           </SelectItem>
