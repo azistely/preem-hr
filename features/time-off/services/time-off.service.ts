@@ -198,7 +198,6 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
   // Create request
   const [request] = await db
     .insert(timeOffRequests)
-    // @ts-expect-error - isDeductibleForAcp field exists in schema but Drizzle type inference doesn't pick it up
     .values({
       tenantId,
       employeeId,

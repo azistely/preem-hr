@@ -349,7 +349,6 @@ describe('ACP Router Integration Tests', () => {
       });
 
       expect(result).toBeDefined();
-      // @ts-expect-error - Field exists in schema but TypeScript type inference truncates it
       expect(result.isDeductibleForAcp).toBe(false);
     });
   });

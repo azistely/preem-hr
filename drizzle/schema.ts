@@ -2648,6 +2648,10 @@ export const timeOffRequests = pgTable("time_off_requests", {
 	certificateGeneratedAt: timestamp('certificate_generated_at', { withTimezone: true, mode: 'string' }),
 	reminder20dSentAt: timestamp('reminder_20d_sent_at', { withTimezone: true, mode: 'string' }),
 	reminder15dSentAt: timestamp('reminder_15d_sent_at', { withTimezone: true, mode: 'string' }),
+	// ACP (Allocations de Congés Payés) deductibility
+	// TRUE = Deduct from paid days (unpaid leave: permission, congé sans solde, grève)
+	// FALSE = Don't deduct from paid days (paid leave: congés annuels, maladie, maternité)
+	isDeductibleForAcp: boolean("is_deductible_for_acp").default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -2655,6 +2659,7 @@ export const timeOffRequests = pgTable("time_off_requests", {
 	index("idx_leave_requests_tenant_status").using("btree", table.tenantId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")),
 	index("idx_timeoff_requests_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops"), table.startDate.desc().nullsFirst().op("uuid_ops")),
 	index("idx_timeoff_requests_status").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("uuid_ops")),
+	index("idx_timeoff_requests_acp_deductible").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops"), table.isDeductibleForAcp.asc().nullsLast().op("bool_ops"), table.startDate.asc().nullsLast().op("date_ops"), table.endDate.asc().nullsLast().op("date_ops")),
 	foreignKey({
 			columns: [table.employeeId],
 			foreignColumns: [employees.id],
@@ -3441,7 +3446,10 @@ export const employees: any = pgTable("employees", {
 	cmuNumber: text("cmu_number"),
 	categoricalSalary: numeric("categorical_salary", { precision: 15, scale:  2 }),
 	salaryPremium: numeric("salary_premium", { precision: 15, scale:  2 }),
+	// Historical leave data (before system implementation)
 	initialLeaveBalance: numeric("initial_leave_balance", { precision: 5, scale:  2 }),
+	historicalUnpaidLeaveDays: numeric("historical_unpaid_leave_days", { precision: 5, scale:  2 }),
+	lastAnnualLeaveEndDate: date("last_annual_leave_end_date"), // Date employee returned from last annual leave (used for ACP reference period)
 	weeklyHoursRegime: varchar("weekly_hours_regime", { length: 10 }).default('40h').notNull(),
 	paymentFrequency: varchar("payment_frequency", { length: 20 }).default('MONTHLY').notNull(),
 	currentContractId: uuid("current_contract_id"),

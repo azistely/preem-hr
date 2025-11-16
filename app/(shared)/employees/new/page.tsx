@@ -84,6 +84,7 @@ const createEmployeeSchema = z.object({
   dateOfBirth: z.date({ required_error: 'La date de naissance est requise' }),
   gender: z.enum(['male', 'female'], { required_error: 'Le genre est requis' }),
   nationalId: z.string().optional(),
+  cnpsNumber: z.string().optional(),
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed'], { required_error: 'La situation matrimoniale est requise' }).default('single'),
   taxDependents: z.number().int().min(0).max(10).optional().default(0),
 
@@ -222,6 +223,7 @@ export default function NewEmployeePage() {
       email: '',
       phone: '',
       nationalId: '',
+      cnpsNumber: '',
       maritalStatus: 'single',
       taxDependents: 0,
       // Step 2: Personnel Record

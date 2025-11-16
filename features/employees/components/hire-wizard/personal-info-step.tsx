@@ -171,23 +171,46 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
         />
       </div>
 
-      <FormField
-        control={form.control}
-        name="nationalId"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Numéro d'identité national (optionnel)</FormLabel>
-            <FormControl>
-              <Input
-                {...field}
-                placeholder="CNI ou passeport"
-                className="min-h-[48px]"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="nationalId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Numéro d'identité national (optionnel)</FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  placeholder="CNI ou passeport"
+                  className="min-h-[48px]"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="cnpsNumber"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Numéro CNPS (optionnel)</FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  placeholder="Ex: 1234567890"
+                  className="min-h-[48px]"
+                />
+              </FormControl>
+              <FormDescription>
+                Numéro de Caisse Nationale de Prévoyance Sociale
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
 
       <FormField
         control={form.control}

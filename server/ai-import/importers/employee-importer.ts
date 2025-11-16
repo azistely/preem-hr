@@ -109,7 +109,11 @@ interface EmployeeImportData {
   // Optional compensation (temporary fields)
   categoricalSalary?: number;
   salaryPremium?: number;
-  initialLeaveBalance?: number;
+
+  // Optional historical leave data (before system implementation)
+  initialLeaveBalance?: number;  // Paid leave balance (annual leave)
+  historicalUnpaidLeaveDays?: number;  // Unpaid leave taken (permission, congé sans solde, etc.)
+  lastAnnualLeaveEndDate?: string;  // Date when employee returned from last annual leave (for ACP reference period)
 
   // Optional document expiry
   nationalIdExpiry?: string;
@@ -419,8 +423,16 @@ export class EmployeeImporter implements DataImporter<EmployeeImportData> {
         ...(cleanedRow.salaryPremium !== undefined && {
           salaryPremium: String(cleanedRow.salaryPremium),
         }),
+
+        // Optional historical leave data
         ...(cleanedRow.initialLeaveBalance !== undefined && {
           initialLeaveBalance: String(cleanedRow.initialLeaveBalance),
+        }),
+        ...(cleanedRow.historicalUnpaidLeaveDays !== undefined && {
+          historicalUnpaidLeaveDays: String(cleanedRow.historicalUnpaidLeaveDays),
+        }),
+        ...(cleanedRow.lastAnnualLeaveEndDate && {
+          lastAnnualLeaveEndDate: cleanedRow.lastAnnualLeaveEndDate,
         }),
 
         // Optional document expiry

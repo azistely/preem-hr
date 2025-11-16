@@ -93,6 +93,7 @@ interface ReferencePeriod {
   start: Date
   end: Date
   numberOfMonths: number
+  usedHistoricalLeaveDate: boolean // True if reference period started from historical leave date (not system leave)
 }
 
 /**
@@ -221,7 +222,8 @@ export async function calculateACP(
     referencePeriod.start,
     referencePeriod.end,
     referencePeriod.numberOfMonths,
-    config.defaultPaidDaysPerMonth
+    config.defaultPaidDaysPerMonth,
+    referencePeriod.usedHistoricalLeaveDate
   )
 
   // Handle zero paid days edge case
@@ -311,6 +313,11 @@ export async function calculateACP(
  *
  * Convention: Period starts from last leave return date (or hire date)
  * and ends the day before leave departure
+ *
+ * Logic: Use the MOST RECENT annual leave end date, comparing:
+ * 1. Historical last annual leave end date (from employee import)
+ * 2. Most recent approved leave in system (from time_off_requests)
+ * 3. Hire date (fallback if no leave found)
  */
 async function determineReferencePeriod(
   employeeId: string,
@@ -322,8 +329,23 @@ async function determineReferencePeriod(
   const end = new Date(acpPaymentDate)
   end.setDate(end.getDate() - 1) // Day before departure
 
+  let usedHistoricalLeaveDate = false
+
   if (referencePeriodType === 'since_last_leave') {
-    // Find most recent approved leave that ended before this payment date
+    // Get historical last annual leave date (from employee import)
+    const employeeData = await db
+      .select({
+        lastAnnualLeaveEndDate: sql<string>`last_annual_leave_end_date`,
+      })
+      .from(employees)
+      .where(eq(employees.id, employeeId))
+      .limit(1)
+
+    const historicalDate = employeeData[0]?.lastAnnualLeaveEndDate
+      ? new Date(employeeData[0].lastAnnualLeaveEndDate)
+      : null
+
+    // Get most recent approved leave in system
     const lastLeave = await db
       .select()
       .from(timeOffRequests)
@@ -337,13 +359,35 @@ async function determineReferencePeriod(
       .orderBy(desc(timeOffRequests.endDate))
       .limit(1)
 
-    if (lastLeave.length > 0) {
-      // Start from day after last leave ended
-      start = new Date(lastLeave[0].endDate)
+    const systemDate = lastLeave.length > 0
+      ? new Date(lastLeave[0].endDate)
+      : null
+
+    // Use the MOST RECENT date (comparing historical vs system)
+    if (systemDate && historicalDate) {
+      // Both exist - use the more recent one
+      if (historicalDate >= systemDate) {
+        start = new Date(historicalDate)
+        usedHistoricalLeaveDate = true
+      } else {
+        start = new Date(systemDate)
+        usedHistoricalLeaveDate = false
+      }
+      start.setDate(start.getDate() + 1) // Day after return
+    } else if (systemDate) {
+      // Only system leave exists
+      start = new Date(systemDate)
       start.setDate(start.getDate() + 1)
+      usedHistoricalLeaveDate = false
+    } else if (historicalDate) {
+      // Only historical leave exists
+      start = new Date(historicalDate)
+      start.setDate(start.getDate() + 1)
+      usedHistoricalLeaveDate = true
     } else {
-      // No previous leave, start from hire date
+      // No leave found - start from hire date
       start = new Date(hireDate)
+      usedHistoricalLeaveDate = false
     }
   } else {
     // Default: use hire date
@@ -365,6 +409,7 @@ async function determineReferencePeriod(
     start,
     end,
     numberOfMonths: Math.round(numberOfMonths * 10) / 10, // Round to 1 decimal
+    usedHistoricalLeaveDate,
   }
 }
 
@@ -409,6 +454,16 @@ async function loadSalaryHistory(
 
 /**
  * Calculate total paid days in reference period
+ *
+ * Formula: Total Paid Days = (Months × 30) - Non-Deductible Absences
+ *
+ * Non-deductible absences = Absences that REDUCE paid days count:
+ * - Unpaid leave (permission, congé sans solde, grève)
+ * - Unjustified absence
+ * - Disciplinary suspension
+ *
+ * Historical unpaid leave days are ONLY counted if the reference period
+ * started from the historical leave date (not from a newer system leave).
  */
 async function calculatePaidDays(
   employeeId: string,
@@ -416,7 +471,8 @@ async function calculatePaidDays(
   periodStart: Date,
   periodEnd: Date,
   numberOfMonths: number,
-  defaultDaysPerMonth: number
+  defaultDaysPerMonth: number,
+  usedHistoricalLeaveDate: boolean
 ): Promise<{
   totalPaidDays: number
   nonDeductibleDays: number
@@ -424,11 +480,12 @@ async function calculatePaidDays(
   // Calculate base days (months × 30)
   const baseDays = numberOfMonths * defaultDaysPerMonth
 
-  // Get non-deductible absences (unpaid leave, permissions, etc.)
+  // Get deductible absences (unpaid leave, permissions, etc.)
+  // is_deductible_for_acp = TRUE means these absences REDUCE the paid days count
   const startStr = periodStart.toISOString().split('T')[0]
   const endStr = periodEnd.toISOString().split('T')[0]
 
-  const nonDeductibleLeave = await db
+  const deductibleLeave = await db
     .select()
     .from(timeOffRequests)
     .where(
@@ -436,16 +493,34 @@ async function calculatePaidDays(
         eq(timeOffRequests.employeeId, employeeId),
         eq(timeOffRequests.tenantId, tenantId),
         eq(timeOffRequests.status, 'approved'),
-        // is_deductible_for_acp column will be added by migration
-        // For now, we'll add it manually or default to true
+        eq(timeOffRequests.isDeductibleForAcp, true), // ✅ Filter unpaid leave
         gte(timeOffRequests.startDate, startStr),
         lte(timeOffRequests.endDate, endStr)
       )
     )
 
-  // Sum non-deductible days
-  // TODO: Filter by is_deductible_for_acp = FALSE once migration is applied
-  const nonDeductibleDays = 0 // Will be calculated once field is available
+  // Sum deductible days from time_off_requests
+  let nonDeductibleDays = deductibleLeave.reduce(
+    (sum, req) => sum + Number(req.totalDays),
+    0
+  )
+
+  // Add historical unpaid leave days from employee record (before system implementation)
+  // ONLY if the reference period started from the historical leave date
+  // (If a newer system leave exists, historical unpaid days are before the reference period)
+  if (usedHistoricalLeaveDate) {
+    const employee = await db
+      .select({
+        historicalUnpaidLeaveDays: sql<string>`historical_unpaid_leave_days`,
+      })
+      .from(employees)
+      .where(eq(employees.id, employeeId))
+      .limit(1)
+
+    if (employee[0]?.historicalUnpaidLeaveDays) {
+      nonDeductibleDays += Number(employee[0].historicalUnpaidLeaveDays)
+    }
+  }
 
   const totalPaidDays = baseDays - nonDeductibleDays
 

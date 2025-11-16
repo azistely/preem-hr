@@ -69,6 +69,7 @@ import {
 import { TimeOffRequestForm } from '@/features/time-off/components/time-off-request-form';
 import { UserPlus } from 'lucide-react';
 import { LeavePlanningPanel } from '@/components/admin/leave-planning-panel';
+import { AbsenceTrackingPanel } from '@/components/admin/absence-tracking-panel';
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'cancelled';
 type PolicyTypeFilter = 'all' | 'annual_leave' | 'sick_leave' | 'maternity' | 'paternity' | 'unpaid';
@@ -92,7 +93,7 @@ const policyTypeLabels: Record<PolicyTypeFilter, string> = {
 
 export default function TimeOffAdminPage() {
   // Tab state
-  const [currentTab, setCurrentTab] = useState<'list' | 'calendar' | 'planning'>('list');
+  const [currentTab, setCurrentTab] = useState<'list' | 'calendar' | 'planning' | 'tracking'>('list');
 
   // Filters state
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
@@ -112,7 +113,7 @@ export default function TimeOffAdminPage() {
 
   // Handle tab change: adjust status filter based on view
   const handleTabChange = (tab: string) => {
-    setCurrentTab(tab as 'list' | 'calendar' | 'planning');
+    setCurrentTab(tab as 'list' | 'calendar' | 'planning' | 'tracking');
 
     // Calendar view should show all approved AND planned leaves (to see who's away)
     // List view should show pending requests (for processing)
@@ -403,9 +404,9 @@ export default function TimeOffAdminPage() {
         </div>
       </div>
 
-      {/* Tabs: List View vs Calendar View vs Planning */}
+      {/* Tabs: List View vs Calendar View vs Planning vs Tracking */}
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full max-w-3xl grid-cols-3">
+        <TabsList className="grid w-full max-w-4xl grid-cols-4">
           <TabsTrigger value="list" className="flex items-center gap-2">
             <List className="h-4 w-4" />
             Liste
@@ -417,6 +418,10 @@ export default function TimeOffAdminPage() {
           <TabsTrigger value="planning" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Planification
+          </TabsTrigger>
+          <TabsTrigger value="tracking" className="flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Suivi
           </TabsTrigger>
         </TabsList>
 
@@ -728,6 +733,11 @@ export default function TimeOffAdminPage() {
         {/* Planning View */}
         <TabsContent value="planning" className="space-y-6 mt-6">
           <LeavePlanningPanel />
+        </TabsContent>
+
+        {/* Tracking View - Suivi des absences */}
+        <TabsContent value="tracking" className="space-y-6 mt-6">
+          <AbsenceTrackingPanel />
         </TabsContent>
       </Tabs>
     </div>

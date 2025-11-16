@@ -863,4 +863,143 @@ export const timeOffRouter = createTRPCRouter({
 
       return conflictsByRequestId;
     }),
+
+  /**
+   * Get absence summary by employee, type, and reason
+   * Used for HR reporting and tracking
+   */
+  getAbsenceSummary: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        employeeId: z.string().uuid().optional(), // Filter by specific employee
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Build where conditions
+      const whereConditions = [
+        eq(timeOffRequests.tenantId, tenantId),
+        eq(timeOffRequests.status, 'approved'), // Only count approved absences
+      ];
+
+      // Add date range filters
+      if (input.startDate) {
+        whereConditions.push(gte(timeOffRequests.startDate, input.startDate.toISOString().split('T')[0]));
+      }
+      if (input.endDate) {
+        whereConditions.push(lte(timeOffRequests.endDate, input.endDate.toISOString().split('T')[0]));
+      }
+
+      // Add employee filter
+      if (input.employeeId) {
+        whereConditions.push(eq(timeOffRequests.employeeId, input.employeeId));
+      }
+
+      // Get all approved time-off requests with employee and policy info
+      const requests = await db
+        .select({
+          id: timeOffRequests.id,
+          employeeId: timeOffRequests.employeeId,
+          employeeFirstName: employees.firstName,
+          employeeLastName: employees.lastName,
+          employeeNumber: employees.employeeNumber,
+          policyId: timeOffRequests.policyId,
+          policyName: timeOffPolicies.name,
+          policyType: timeOffPolicies.policyType,
+          totalDays: timeOffRequests.totalDays,
+          reason: timeOffRequests.reason,
+          startDate: timeOffRequests.startDate,
+          endDate: timeOffRequests.endDate,
+        })
+        .from(timeOffRequests)
+        .innerJoin(employees, eq(timeOffRequests.employeeId, employees.id))
+        .innerJoin(timeOffPolicies, eq(timeOffRequests.policyId, timeOffPolicies.id))
+        .where(and(...whereConditions))
+        .orderBy(employees.lastName, employees.firstName);
+
+      // Group by employee
+      const employeeSummaries = new Map<string, {
+        employeeId: string;
+        employeeFirstName: string;
+        employeeLastName: string;
+        employeeNumber: string;
+        totalDays: number;
+        byPolicyType: Map<string, {
+          policyType: string;
+          policyName: string;
+          totalDays: number;
+          byReason: Map<string, {
+            reason: string;
+            totalDays: number;
+            count: number;
+          }>;
+        }>;
+      }>();
+
+      for (const req of requests) {
+        const empKey = req.employeeId;
+
+        if (!employeeSummaries.has(empKey)) {
+          employeeSummaries.set(empKey, {
+            employeeId: req.employeeId,
+            employeeFirstName: req.employeeFirstName,
+            employeeLastName: req.employeeLastName,
+            employeeNumber: req.employeeNumber,
+            totalDays: 0,
+            byPolicyType: new Map(),
+          });
+        }
+
+        const empSummary = employeeSummaries.get(empKey)!;
+        const days = Number(req.totalDays);
+        empSummary.totalDays += days;
+
+        // Group by policy type
+        if (!empSummary.byPolicyType.has(req.policyType)) {
+          empSummary.byPolicyType.set(req.policyType, {
+            policyType: req.policyType,
+            policyName: req.policyName,
+            totalDays: 0,
+            byReason: new Map(),
+          });
+        }
+
+        const policyTypeSummary = empSummary.byPolicyType.get(req.policyType)!;
+        policyTypeSummary.totalDays += days;
+
+        // Group by reason within policy type
+        const reasonKey = req.reason || 'Non spécifié';
+        if (!policyTypeSummary.byReason.has(reasonKey)) {
+          policyTypeSummary.byReason.set(reasonKey, {
+            reason: reasonKey,
+            totalDays: 0,
+            count: 0,
+          });
+        }
+
+        const reasonSummary = policyTypeSummary.byReason.get(reasonKey)!;
+        reasonSummary.totalDays += days;
+        reasonSummary.count += 1;
+      }
+
+      // Convert Maps to arrays for JSON serialization
+      const result = Array.from(employeeSummaries.values()).map((emp) => ({
+        employeeId: emp.employeeId,
+        employeeFirstName: emp.employeeFirstName,
+        employeeLastName: emp.employeeLastName,
+        employeeNumber: emp.employeeNumber,
+        totalDays: emp.totalDays,
+        byPolicyType: Array.from(emp.byPolicyType.values()).map((policy) => ({
+          policyType: policy.policyType,
+          policyName: policy.policyName,
+          totalDays: policy.totalDays,
+          byReason: Array.from(policy.byReason.values()),
+        })),
+      }));
+
+      return result;
+    }),
 });
