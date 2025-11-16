@@ -81,7 +81,7 @@ interface UploadDocumentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employeeId?: string | null; // If provided, upload for specific employee (HR feature)
-  onUploadSuccess?: () => void;
+  onUploadSuccess?: (result?: { documentId?: string; fileUrl?: string }) => void;
 }
 
 // =====================================================
@@ -103,11 +103,11 @@ export function UploadDocumentDialog({
 
   // Upload mutation
   const uploadMutation = api.documents.uploadDocument.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       setUploadStatus('success');
       setUploadProgress(100);
       setTimeout(() => {
-        onUploadSuccess?.();
+        onUploadSuccess?.(result);
         handleClose();
       }, 2000);
     },

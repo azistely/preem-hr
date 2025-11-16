@@ -83,8 +83,14 @@ export function LoginFormClient() {
       // Call Server Action
       const result = await login(formData);
 
-      // Handle error (success redirects automatically)
-      if (!result.success) {
+      // Handle result
+      if (result.success) {
+        // ✅ FIX: Handle redirect on client side after cookies are set
+        // This ensures auth cookies are committed before navigation
+        toast.success('Connexion réussie!');
+        // Use window.location for full page reload to ensure cookies are fresh
+        window.location.href = result.redirectUrl;
+      } else {
         setError(result.error);
         toast.error('Erreur de connexion', {
           description: result.error,

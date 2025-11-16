@@ -24,11 +24,13 @@ import {
   Eye,
   Users,
   DollarSign,
-  Clock
+  Clock,
+  Upload
 } from 'lucide-react';
 import { api } from '@/trpc/react';
 
 import { Button } from '@/components/ui/button';
+import { ImportHistoricalPayrollDialog } from '@/features/payroll/components/import-historical-payroll-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -58,6 +60,7 @@ export default function PayrollRunsPage() {
   const router = useRouter();
   const [selectedStatus, setSelectedStatus] = useState<RunStatus | 'all'>('all');
   const [selectedFrequency, setSelectedFrequency] = useState<PaymentFrequency>('all');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   // Load payroll runs (tenantId comes from backend context)
   const { data: runs, isLoading, refetch } = api.payroll.listRuns.useQuery({
@@ -108,10 +111,16 @@ export default function PayrollRunsPage() {
             Gérez vos cycles de paie et traitez les salaires
           </p>
         </div>
-        <Button onClick={handleCreateRun} size="lg" className="gap-2">
-          <Plus className="h-5 w-5" />
-          Nouvelle Paie
-        </Button>
+        <div className="flex gap-3">
+          <Button onClick={() => setImportDialogOpen(true)} variant="outline" size="lg" className="gap-2">
+            <Upload className="h-5 w-5" />
+            Importer Historique
+          </Button>
+          <Button onClick={handleCreateRun} size="lg" className="gap-2">
+            <Plus className="h-5 w-5" />
+            Nouvelle Paie
+          </Button>
+        </div>
       </div>
 
       {/* Payment Frequency Tabs */}
@@ -351,6 +360,15 @@ export default function PayrollRunsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Import Historical Payroll Dialog */}
+      <ImportHistoricalPayrollDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onSuccess={() => {
+          refetch();
+        }}
+      />
     </div>
   );
 }

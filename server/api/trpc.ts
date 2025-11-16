@@ -46,7 +46,8 @@ export const publicProcedure = t.procedure;
  * Protected procedure - requires authentication
  */
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
-  if (!ctx.user) {
+  // Check if user exists (ctx.user is now nullable after context update)
+  if (!ctx.user || !ctx.hasRealSession) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Non authentifié'
@@ -58,6 +59,7 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
       // Infers the `user` as non-nullable
       user: ctx.user,
       db: ctx.db,
+      hasRealSession: ctx.hasRealSession,
     },
   });
 });

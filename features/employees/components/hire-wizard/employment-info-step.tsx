@@ -18,13 +18,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
-import { CalendarIcon, Plus, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { Plus, Loader2 } from 'lucide-react';
 import { usePositions } from '@/features/employees/hooks/use-positions';
 import { trpc } from '@/lib/trpc/client';
 import {
@@ -149,36 +145,17 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
         render={({ field }) => (
           <FormItem className="flex flex-col">
             <FormLabel>Date d'embauche *</FormLabel>
-            <Popover>
-              <PopoverTrigger asChild>
-                <FormControl>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      'min-h-[48px] pl-3 text-left font-normal',
-                      !field.value && 'text-muted-foreground'
-                    )}
-                  >
-                    {field.value ? (
-                      format(field.value, 'PPP', { locale: fr })
-                    ) : (
-                      <span>Sélectionner une date</span>
-                    )}
-                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                  </Button>
-                </FormControl>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={field.value}
-                  onSelect={field.onChange}
-                  disabled={(date) => date > new Date()}
-                  initialFocus
-                  locale={fr}
-                />
-              </PopoverContent>
-            </Popover>
+            <FormControl>
+              <DatePicker
+                value={field.value || null}
+                onChange={field.onChange}
+                placeholder="Sélectionner une date"
+                fromYear={2000}
+                toYear={new Date().getFullYear()}
+                disabled={(date) => date > new Date()}
+                allowManualInput={true}
+              />
+            </FormControl>
             <FormDescription>
               Habituellement le premier jour de travail
             </FormDescription>
@@ -359,12 +336,24 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
                 </SelectTrigger>
               </FormControl>
               <SelectContent>
-                {locations?.map((location: any) => (
-                  <SelectItem key={location.id} value={location.id}>
-                    {location.name}
-                    {location.city && ` - ${location.city}`}
-                  </SelectItem>
-                ))}
+                {locations?.map((location: any) => {
+                  // Build display label: "Location Name - Commune, City" or "Location Name - City"
+                  let label = location.locationName || location.name || '';
+
+                  if (location.commune && location.city) {
+                    label += ` - ${location.commune}, ${location.city}`;
+                  } else if (location.commune) {
+                    label += ` - ${location.commune}`;
+                  } else if (location.city) {
+                    label += ` - ${location.city}`;
+                  }
+
+                  return (
+                    <SelectItem key={location.id} value={location.id}>
+                      {label}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             <FormDescription>

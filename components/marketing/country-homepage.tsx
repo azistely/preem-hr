@@ -79,6 +79,10 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
     retry: false,
     // Cache for 5 minutes
     staleTime: 5 * 60 * 1000,
+    // ✅ PERFORMANCE: Don't refetch on window focus (marketing page doesn't need real-time auth status)
+    refetchOnWindowFocus: false,
+    // ✅ PERFORMANCE: Don't refetch on reconnect (auth status doesn't change when network reconnects)
+    refetchOnReconnect: false,
   });
 
   useEffect(() => {

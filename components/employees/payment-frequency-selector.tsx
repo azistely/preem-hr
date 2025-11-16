@@ -18,7 +18,7 @@ import {
 import { cn } from '@/lib/utils';
 
 export type PaymentFrequency = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
-export type WeeklyHoursRegime = '40h' | '44h' | '48h';
+export type WeeklyHoursRegime = '40h' | '44h' | '48h' | '52h' | '56h';
 
 interface PaymentFrequencySelectorProps {
   frequency: PaymentFrequency;
@@ -55,6 +55,8 @@ const WEEKLY_HOURS_OPTIONS = [
   { value: '40h' as const, label: '40 heures/semaine' },
   { value: '44h' as const, label: '44 heures/semaine' },
   { value: '48h' as const, label: '48 heures/semaine' },
+  { value: '52h' as const, label: '52 heures/semaine' },
+  { value: '56h' as const, label: '56 heures/semaine' },
 ];
 
 export function PaymentFrequencySelector({

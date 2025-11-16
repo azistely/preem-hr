@@ -48,7 +48,7 @@ const editEmployeeSchema = z.object({
   email: z.string().email('Email invalide'),
   phone: z.string().optional(),
   nationalId: z.string().optional(),
-  gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
+  gender: z.enum(['male', 'female']).optional(),
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
   city: z.string().optional(),

@@ -35,7 +35,6 @@ export function PersonnelRecordStep({ form }: PersonnelRecordStepProps) {
         <Info className="h-4 w-4" />
         <AlertDescription>
           Ces informations sont requises pour le registre du personnel et les documents officiels en Côte d'Ivoire.
-          Tous les champs sont optionnels mais recommandés pour la conformité légale.
         </AlertDescription>
       </Alert>
 
@@ -45,7 +44,7 @@ export function PersonnelRecordStep({ form }: PersonnelRecordStepProps) {
           name="nationalityZone"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Zone de nationalité (optionnel)</FormLabel>
+              <FormLabel>Zone de nationalité *</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
                   <SelectTrigger className="min-h-[48px]">
@@ -71,7 +70,7 @@ export function PersonnelRecordStep({ form }: PersonnelRecordStepProps) {
           name="employeeType"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Type d'employé (optionnel)</FormLabel>
+              <FormLabel>Type d'employé *</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
                   <SelectTrigger className="min-h-[48px]">

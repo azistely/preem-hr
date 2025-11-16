@@ -10,7 +10,7 @@ import { cache } from 'react';
 import 'server-only';
 import { db } from '@/lib/db';
 import { sql, eq } from 'drizzle-orm';
-import { users } from '@/drizzle/schema';
+import { users, tenants } from '@/drizzle/schema';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
@@ -35,10 +35,14 @@ const DEV_MOCK_TENANT = {
 const DEV_MOCK_USER = {
   id: 'cb127444-aac4-45a5-8682-93d5f7ef5775',
   email: 'admin@preem.hr',
+  firstName: 'Admin',
+  lastName: 'Preem',
   role: 'tenant_admin' as UserRole,
   tenantId: '00000000-0000-0000-0000-000000000001',
   activeTenantId: '00000000-0000-0000-0000-000000000001',
   employeeId: null as string | null,
+  companyName: 'Dev Company',
+  onboardingComplete: true,
 };
 
 /**
@@ -81,20 +85,36 @@ async function getUserFromSession() {
 
     const authUser = session.user;
 
-    // Fetch user details from database (including active tenant)
+    // ✅ OPTIMIZATION: Fetch user + tenant in parallel (single round-trip)
+    // This avoids auth.me needing to re-query the same data
     const t4 = Date.now();
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, authUser.id),
-      columns: {
-        id: true,
-        email: true,
-        role: true,
-        tenantId: true,
-        activeTenantId: true,
-        employeeId: true,
-      },
-    });
-    console.log(`[Context] DB query took ${Date.now() - t4}ms`);
+    const [user, tenant] = await Promise.all([
+      db.query.users.findFirst({
+        where: eq(users.id, authUser.id),
+        columns: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          tenantId: true,
+          activeTenantId: true,
+          employeeId: true,
+        },
+      }),
+      // Fetch tenant info to avoid second query in auth.me
+      db.query.tenants.findFirst({
+        where: eq(tenants.id, authUser.app_metadata?.tenant_id || ''),
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          countryCode: true,
+          settings: true,
+        },
+      }),
+    ]);
+    console.log(`[Context] Parallel DB queries took ${Date.now() - t4}ms`);
 
     if (!user) {
       console.warn('[Context] User authenticated but not found in database:', authUser.id);
@@ -105,12 +125,17 @@ async function getUserFromSession() {
     return {
       id: user.id,
       email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
       role: user.role as UserRole,
       // TENANT ISOLATION FIX: Always use effective tenant (activeTenantId if set, otherwise tenantId)
       // This ensures ctx.user.tenantId throughout the codebase reflects the currently active tenant
       tenantId: user.activeTenantId || user.tenantId,
       activeTenantId: user.activeTenantId, // Keep for audit trail
       employeeId: user.employeeId,
+      // Include tenant info to avoid re-querying
+      companyName: tenant?.name || '',
+      onboardingComplete: (tenant?.settings as any)?.onboarding?.onboarding_complete || false,
     };
   } catch (error) {
     console.error('[Context] Error extracting user from session:', error);
@@ -128,6 +153,7 @@ export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) =
 
   // Extract user from Supabase session (production) or use dev mock
   const user = await getUserFromSession();
+  const hasRealSession = user !== null;
 
   // Set PostgreSQL session variables for RLS policies
   // This allows RLS policies to access tenant_id via current_setting()
@@ -151,7 +177,8 @@ export const createTRPCContext = cache(async (opts?: CreateNextContextOptions) =
   }
 
   return {
-    user: user || DEV_MOCK_USER, // Use dev mock only for local development
+    user: user || DEV_MOCK_USER, // Use dev mock for backward compatibility
+    hasRealSession, // Track if user has a real authenticated session
     db,
   };
 });

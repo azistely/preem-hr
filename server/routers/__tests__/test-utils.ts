@@ -83,9 +83,14 @@ export function createTestContext(user: typeof testHRManager | typeof testEmploy
       tenantId: user.tenantId,
       activeTenantId: user.tenantId, // Set active tenant same as tenant for tests
       email: user.email,
+      firstName: user.id === testHRManager.id ? 'Test' : 'Employee',
+      lastName: user.id === testHRManager.id ? 'HR Manager' : 'User',
       role: user.role,
       employeeId: user.id === testEmployee.id ? testEmployeeRecord.id : null,
+      companyName: 'Test Company',
+      onboardingComplete: true,
     },
+    hasRealSession: true, // Tests always use real authenticated sessions
   };
 }
 

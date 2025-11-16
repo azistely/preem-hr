@@ -20,13 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
-import { CalendarIcon } from 'lucide-react';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { DatePicker } from '@/components/ui/date-picker';
 
 interface PersonalInfoStepProps {
   form: UseFormReturn<any>;
@@ -137,7 +131,7 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
           name="gender"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Genre (optionnel)</FormLabel>
+              <FormLabel>Genre *</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
                   <SelectTrigger className="min-h-[48px]">
@@ -147,8 +141,6 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
                 <SelectContent>
                   <SelectItem value="male">Homme</SelectItem>
                   <SelectItem value="female">Femme</SelectItem>
-                  <SelectItem value="other">Autre</SelectItem>
-                  <SelectItem value="prefer_not_to_say">Préfère ne pas dire</SelectItem>
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -161,37 +153,18 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
           name="dateOfBirth"
           render={({ field }) => (
             <FormItem className="flex flex-col">
-              <FormLabel>Date de naissance (optionnel)</FormLabel>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <FormControl>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'min-h-[48px] pl-3 text-left font-normal',
-                        !field.value && 'text-muted-foreground'
-                      )}
-                    >
-                      {field.value ? (
-                        format(field.value, 'PPP', { locale: fr })
-                      ) : (
-                        <span>Sélectionner une date</span>
-                      )}
-                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </FormControl>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={field.value}
-                    onSelect={field.onChange}
-                    disabled={(date) => date > new Date() || date < new Date('1940-01-01')}
-                    initialFocus
-                    locale={fr}
-                  />
-                </PopoverContent>
-              </Popover>
+              <FormLabel>Date de naissance *</FormLabel>
+              <FormControl>
+                <DatePicker
+                  value={field.value || null}
+                  onChange={field.onChange}
+                  placeholder="Sélectionner une date"
+                  fromYear={1940}
+                  toYear={new Date().getFullYear()}
+                  disabled={(date) => date > new Date() || date < new Date('1940-01-01')}
+                  allowManualInput={true}
+                />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}
@@ -216,61 +189,35 @@ export function PersonalInfoStep({ form }: PersonalInfoStepProps) {
         )}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <FormField
-          control={form.control}
-          name="maritalStatus"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Situation matrimoniale</FormLabel>
-              <Select
-                onValueChange={field.onChange}
-                defaultValue={field.value || 'single'}
-              >
-                <FormControl>
-                  <SelectTrigger className="min-h-[48px]">
-                    <SelectValue placeholder="Sélectionner" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="single">Célibataire</SelectItem>
-                  <SelectItem value="married">Marié(e)</SelectItem>
-                  <SelectItem value="divorced">Divorcé(e)</SelectItem>
-                  <SelectItem value="widowed">Veuf/Veuve</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                Utilisé pour les déductions familiales
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="taxDependents"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Nombre d'enfants à charge</FormLabel>
+      <FormField
+        control={form.control}
+        name="maritalStatus"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Situation matrimoniale *</FormLabel>
+            <Select
+              onValueChange={field.onChange}
+              defaultValue={field.value || 'single'}
+            >
               <FormControl>
-                <Input
-                  {...field}
-                  type="number"
-                  min={0}
-                  max={10}
-                  className="min-h-[48px]"
-                  onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                />
+                <SelectTrigger className="min-h-[48px]">
+                  <SelectValue placeholder="Sélectionner" />
+                </SelectTrigger>
               </FormControl>
-              <FormDescription>
-                Enfants de moins de 21 ans ou avec certificat scolaire
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
+              <SelectContent>
+                <SelectItem value="single">Célibataire</SelectItem>
+                <SelectItem value="married">Marié(e)</SelectItem>
+                <SelectItem value="divorced">Divorcé(e)</SelectItem>
+                <SelectItem value="widowed">Veuf/Veuve</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              Utilisé pour les déductions familiales
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   );
 }

@@ -292,80 +292,78 @@ export const authRouter = router({
   /**
    * Get current authenticated user with full details
    *
-   * OPTIMIZATION: Parallel queries instead of sequential (2x speedup)
-   * Includes available tenants for tenant switching
+   * ✅ MAJOR OPTIMIZATION: Context already has user + tenant data!
+   * BEFORE: 4 DB queries (user, tenant, available_tenants join)
+   * AFTER: 0 DB queries for basic info, 1 optional query for availableTenants
+   *
+   * NOTE: Uses publicProcedure to allow unauthenticated access on marketing pages
+   * Returns null if not authenticated, allowing graceful handling in UI
    */
-  me: protectedProcedure.query(async ({ ctx }) => {
-    // ✅ PARALLEL QUERY OPTIMIZATION: Fetch user, current tenant, and available tenants in parallel
-    // Use activeTenantId if available, otherwise fall back to tenantId
-    const effectiveTenantId = ctx.user.tenantId;
+  me: publicProcedure
+    .input(z.object({
+      includeAvailableTenants: z.boolean().optional().default(false),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      // Return null if no real session (for marketing pages, login page, etc.)
+      console.log('[auth.me] hasRealSession:', ctx.hasRealSession, 'user.id:', ctx.user?.id);
 
-    const [user, currentTenant, availableTenants] = await Promise.all([
-      db.query.users.findFirst({
-        where: eq(users.id, ctx.user.id),
-      }),
-      // Pre-fetch current tenant in parallel
-      effectiveTenantId
-        ? db.query.tenants.findFirst({
-            where: eq(tenants.id, effectiveTenantId),
+      if (!ctx.hasRealSession || !ctx.user) {
+        console.log('[auth.me] No real session, returning null');
+        return null;
+      }
+
+      // ✅ OPTIMIZATION: Use data from context (already fetched during context creation)
+      // Context has: id, email, firstName, lastName, role, tenantId, activeTenantId,
+      // employeeId, companyName, onboardingComplete
+      const baseResponse = {
+        id: ctx.user.id,
+        email: ctx.user.email,
+        firstName: ctx.user.firstName,
+        lastName: ctx.user.lastName,
+        role: ctx.user.role,
+        tenantId: ctx.user.tenantId,
+        activeTenantId: ctx.user.activeTenantId,
+        employeeId: ctx.user.employeeId,
+        companyName: ctx.user.companyName,
+        onboardingComplete: ctx.user.onboardingComplete,
+        // Basic tenant info from context
+        currentTenant: ctx.user.tenantId ? {
+          id: ctx.user.tenantId,
+          name: ctx.user.companyName,
+          slug: '', // Not critical for most use cases
+          countryCode: '', // Fetch if needed
+        } : null,
+        // Empty by default - only fetch when explicitly requested
+        availableTenants: [] as any[],
+      };
+
+      // ✅ LAZY LOAD: Only fetch availableTenants when explicitly requested
+      // Most users only have 1 tenant, so this avoids an expensive join on every page load
+      if (input?.includeAvailableTenants) {
+        const availableTenants = await db
+          .select({
+            tenantId: userTenants.tenantId,
+            tenantName: tenants.name,
+            tenantSlug: tenants.slug,
+            tenantCountryCode: tenants.countryCode,
+            tenantStatus: tenants.status,
+            userRole: userTenants.role,
           })
-        : Promise.resolve(null),
-      // Fetch all tenants user has access to
-      db
-        .select({
-          tenantId: userTenants.tenantId,
-          tenantName: tenants.name,
-          tenantSlug: tenants.slug,
-          tenantCountryCode: tenants.countryCode,
-          tenantStatus: tenants.status,
-          userRole: userTenants.role,
-        })
-        .from(userTenants)
-        .innerJoin(tenants, eq(userTenants.tenantId, tenants.id))
-        .where(eq(userTenants.userId, ctx.user.id))
-        .orderBy(tenants.name),
-    ]);
+          .from(userTenants)
+          .innerJoin(tenants, eq(userTenants.tenantId, tenants.id))
+          .where(eq(userTenants.userId, ctx.user.id))
+          .orderBy(tenants.name);
 
-    if (!user) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Utilisateur non trouvé',
-      });
-    }
+        baseResponse.availableTenants = availableTenants.map((t) => ({
+          id: t.tenantId,
+          name: t.tenantName,
+          slug: t.tenantSlug,
+          countryCode: t.tenantCountryCode,
+          status: t.tenantStatus,
+          userRole: t.userRole,
+        }));
+      }
 
-    // ✅ OPTIMIZATION: Include onboarding status to avoid second query
-    // Extract onboarding state from tenant settings (already fetched in parallel)
-    const onboardingSettings = currentTenant ? (currentTenant.settings as any)?.onboarding : null;
-    const onboardingComplete = onboardingSettings?.onboarding_complete || false;
-
-    return {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-      tenantId: user.tenantId,
-      activeTenantId: user.activeTenantId,
-      employeeId: user.employeeId,
-      companyName: currentTenant?.name || '',
-      // Include onboarding status to avoid separate query
-      onboardingComplete,
-      // Available tenants for tenant switching
-      availableTenants: availableTenants.map((t) => ({
-        id: t.tenantId,
-        name: t.tenantName,
-        slug: t.tenantSlug,
-        countryCode: t.tenantCountryCode,
-        status: t.tenantStatus,
-        userRole: t.userRole,
-      })),
-      // Current tenant details
-      currentTenant: currentTenant ? {
-        id: currentTenant.id,
-        name: currentTenant.name,
-        slug: currentTenant.slug,
-        countryCode: currentTenant.countryCode,
-      } : null,
-    };
-  }),
+      return baseResponse;
+    }),
 });

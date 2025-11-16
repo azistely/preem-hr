@@ -8,7 +8,6 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { loginRateLimiter, getClientIp } from '@/lib/rate-limit';
 import { headers } from 'next/headers';
@@ -46,7 +45,7 @@ function getSafeRedirectUrl(redirectUrl?: string): string {
  * Result type for login action
  */
 export type LoginResult =
-  | { success: true }
+  | { success: true; redirectUrl: string }
   | { success: false; error: string };
 
 /**
@@ -114,6 +113,11 @@ export async function login(formData: FormData): Promise<LoginResult> {
   // Revalidate the layout to update auth state
   revalidatePath('/', 'layout');
 
-  // Redirect to requested page or onboarding
-  redirect(safeRedirectUrl);
+  // ✅ FIX: Return success with redirect URL instead of using redirect()
+  // Using redirect() in server actions prevents cookies from being committed
+  // Let the client handle the redirect after cookies are set
+  return {
+    success: true,
+    redirectUrl: safeRedirectUrl,
+  };
 }
