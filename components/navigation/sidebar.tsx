@@ -12,6 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { cn } from "@/lib/utils";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 import { TenantSwitcher } from "@/components/layout/tenant-switcher";
+import NProgress from "nprogress";
 
 export interface NavSection {
   title: string;
@@ -64,8 +65,10 @@ function CollapsibleNavSection({
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => NProgress.start()}
               className={cn(
                 "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[44px]",
+                "active:scale-[0.98] active:opacity-90",
                 isActive
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -127,8 +130,10 @@ function CollapsibleNavSection({
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => NProgress.start()}
                 className={cn(
                   "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[44px]",
+                  "active:scale-[0.98] active:opacity-90",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -203,8 +208,10 @@ function NestedSection({
                     <Link
                       key={item.href}
                       href={item.href}
+                      onClick={() => NProgress.start()}
                       className={cn(
                         "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 min-h-[44px]",
+                        "active:scale-[0.98] active:opacity-90",
                         isActive
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -246,7 +253,8 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isCollapsed, setIsCollapsed] = React.useState(false);
+  const [isCollapsed, setIsCollapsed] = React.useState(true); // Start collapsed
+  const [isHovered, setIsHovered] = React.useState(false); // Track hover state
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
@@ -278,19 +286,24 @@ export function Sidebar({
       .filter((section) => section.items.length > 0);
   }, [sections, searchQuery]);
 
+  // Determine if sidebar should show as collapsed (considering both collapsed state and hover)
+  const showCollapsed = isCollapsed && !isHovered;
+
   // Only show on desktop
   return (
     <aside
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "hidden lg:flex lg:flex-col border-r bg-background transition-all duration-300",
-        isCollapsed ? "w-16" : "w-64",
+        showCollapsed ? "w-16" : "w-64",
         className
       )}
     >
       {/* Header with Tenant Switcher */}
       <div className="border-b">
         <div className="flex h-14 items-center justify-between px-4">
-          {!isCollapsed && (
+          {!showCollapsed && (
             <h2 className="text-lg font-semibold">Preem HR</h2>
           )}
           {collapsible && (
@@ -298,19 +311,19 @@ export function Sidebar({
               variant="ghost"
               size="icon"
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className={cn("h-8 w-8", isCollapsed && "mx-auto")}
+              className={cn("h-8 w-8", showCollapsed && "mx-auto")}
             >
               <ChevronLeft
                 className={cn(
                   "h-4 w-4 transition-transform",
-                  isCollapsed && "rotate-180"
+                  showCollapsed && "rotate-180"
                 )}
               />
             </Button>
           )}
         </div>
         {/* Tenant Switcher */}
-        {!isCollapsed && (
+        {!showCollapsed && (
           <div className="px-4 pb-3">
             <TenantSwitcher variant="full" className="w-full justify-start" />
           </div>
@@ -318,7 +331,7 @@ export function Sidebar({
       </div>
 
       {/* Search */}
-      {showSearch && !isCollapsed && (
+      {showSearch && !showCollapsed && (
         <div className="border-b p-4">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -346,14 +359,14 @@ export function Sidebar({
                 key={index}
                 section={section}
                 pathname={pathname}
-                isCollapsed={isCollapsed}
+                isCollapsed={showCollapsed}
                 defaultOpen={section.defaultOpen ?? hasActiveItem}
               />
             );
           })}
 
           {/* Advanced Features (Collapsible) */}
-          {advancedSections.length > 0 && !isCollapsed && (
+          {advancedSections.length > 0 && !showCollapsed && (
             <div className="space-y-2 border-t border-border pt-3 mt-3">
               <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
                 <CollapsibleTrigger asChild>
@@ -423,7 +436,7 @@ export function Sidebar({
           className="w-full justify-start gap-3 min-h-[44px] text-muted-foreground hover:text-foreground"
         >
           <LogOut className="h-5 w-5 shrink-0" />
-          {!isCollapsed && (
+          {!showCollapsed && (
             <span>{isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}</span>
           )}
         </Button>

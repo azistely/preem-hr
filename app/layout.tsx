@@ -5,6 +5,7 @@ import { TRPCReactProvider } from '@/trpc/react';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as SonnerToaster } from 'sonner';
 import { WhatsAppSupportButton } from '@/components/whatsapp-support-button';
+import { NavigationProgressBar } from '@/components/navigation/progress-bar';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -21,6 +22,7 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body className={inter.className} suppressHydrationWarning>
+        <NavigationProgressBar />
         <TRPCReactProvider>{children}</TRPCReactProvider>
         <Toaster />
         <SonnerToaster position="top-right" richColors />
