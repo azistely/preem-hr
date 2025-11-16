@@ -35,6 +35,8 @@ export interface DependentFormData {
   documentType?: string;
   documentNumber?: string;
   documentExpiryDate?: string;
+  documentUrl?: string;
+  documentFileName?: string;
   notes?: string;
   // CMU tracking fields
   cnpsNumber?: string;
@@ -65,6 +67,7 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
     documentType: data?.documentType || '',
     documentNumber: data?.documentNumber || '',
     documentExpiryDate: data?.documentExpiryDate || '',
+    documentUrl: data?.documentUrl || '',
     notes: data?.notes || '',
     // CMU tracking fields
     cnpsNumber: data?.cnpsNumber || '',
@@ -77,7 +80,8 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
     ...(data?.id && { id: data.id }),
   });
 
-  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showCoverageUploadDialog, setShowCoverageUploadDialog] = useState(false);
+  const [showDocumentUploadDialog, setShowDocumentUploadDialog] = useState(false);
 
   // Update form data when data prop changes (when editing different dependents)
   useEffect(() => {
@@ -91,6 +95,7 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
         documentType: data.documentType || '',
         documentNumber: data.documentNumber || '',
         documentExpiryDate: data.documentExpiryDate || '',
+        documentUrl: data.documentUrl || '',
         notes: data.notes || '',
         // CMU tracking fields
         cnpsNumber: data.cnpsNumber || '',
@@ -405,7 +410,7 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => setShowUploadDialog(true)}
+                            onClick={() => setShowCoverageUploadDialog(true)}
                             className="w-full"
                           >
                             <Upload className="mr-2 h-4 w-4" />
@@ -416,7 +421,7 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => setShowUploadDialog(true)}
+                          onClick={() => setShowCoverageUploadDialog(true)}
                           className="w-full min-h-[48px]"
                         >
                           <Upload className="mr-2 h-4 w-4" />
@@ -425,9 +430,10 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
                       )}
 
                       <UploadDocumentDialog
-                        open={showUploadDialog}
-                        onOpenChange={setShowUploadDialog}
+                        open={showCoverageUploadDialog}
+                        onOpenChange={setShowCoverageUploadDialog}
                         employeeId={employeeId}
+                        defaultCategory="coverage_certificate"
                         onUploadSuccess={(result) => {
                           if (result?.fileUrl) {
                             setFormData(prev => ({
@@ -435,7 +441,7 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
                               coverageCertificateUrl: result.fileUrl,
                             }));
                           }
-                          setShowUploadDialog(false);
+                          setShowCoverageUploadDialog(false);
                         }}
                       />
                     </>
@@ -569,6 +575,80 @@ export function DependentForm({ data, onSubmit, onCancel, isSubmitting, employee
                   }
                 />
               </div>
+            </div>
+
+            {/* School Certificate Upload */}
+            <div className="space-y-2">
+              <Label>Certificat de scolarité</Label>
+
+              {employeeId ? (
+                <>
+                  {formData.documentUrl ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <FileText className="h-4 w-4 text-green-600" />
+                        <span className="text-sm text-green-900 flex-1">
+                          Document uploadé
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.open(formData.documentUrl, '_blank')}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowDocumentUploadDialog(true)}
+                        className="w-full"
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        Remplacer le document
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowDocumentUploadDialog(true)}
+                      className="w-full min-h-[48px]"
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      Uploader le certificat
+                    </Button>
+                  )}
+
+                  <UploadDocumentDialog
+                    open={showDocumentUploadDialog}
+                    onOpenChange={setShowDocumentUploadDialog}
+                    employeeId={employeeId}
+                    defaultCategory="school_certificate"
+                    onUploadSuccess={(result) => {
+                      if (result?.fileUrl) {
+                        setFormData(prev => ({
+                          ...prev,
+                          documentUrl: result.fileUrl,
+                        }));
+                      }
+                      setShowDocumentUploadDialog(false);
+                    }}
+                  />
+                </>
+              ) : (
+                <TempFileUpload
+                  onUploadSuccess={(fileUrl, fileName) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      documentUrl: fileUrl,
+                      documentFileName: fileName,
+                    }));
+                  }}
+                />
+              )}
             </div>
           </>
         )}
