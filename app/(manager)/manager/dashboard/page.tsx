@@ -9,6 +9,8 @@ import { TeamOverview } from "@/components/dashboard/manager/team-overview";
 import { ApprovalQueue } from "@/components/dashboard/manager/approval-queue";
 import { Skeleton } from "@/components/ui/skeleton";
 
+export const dynamic = 'force-dynamic';
+
 export default function ManagerDashboardPage() {
   const { data: dashboardData, isLoading } = api.dashboard.getManagerDashboard.useQuery();
 

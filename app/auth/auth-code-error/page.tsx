@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PreemLogo } from '@/components/brand/preem-logo';
 
+export const dynamic = 'force-dynamic';
+
 export default function AuthCodeErrorPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center p-4">

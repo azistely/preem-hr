@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import { Suspense } from 'react';
 import './globals.css';
 import { TRPCReactProvider } from '@/trpc/react';
 import { Toaster } from '@/components/ui/toaster';
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body className={inter.className} suppressHydrationWarning>
-        <NavigationProgressBar />
+        <Suspense fallback={null}>
+          <NavigationProgressBar />
+        </Suspense>
         <TRPCReactProvider>{children}</TRPCReactProvider>
         <Toaster />
         <SonnerToaster position="top-right" richColors />
