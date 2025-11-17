@@ -13,6 +13,8 @@ import { createTRPCRouter, publicProcedure, employeeProcedure, managerProcedure,
 import * as timeEntryService from '@/features/time-tracking/services/time-entry.service';
 import * as geofenceService from '@/features/time-tracking/services/geofence.service';
 import * as overtimeService from '@/features/time-tracking/services/overtime.service';
+import * as approvalValidationService from '@/features/time-tracking/services/approval-validation.service';
+import * as employeeProtectionService from '@/features/time-tracking/services/employee-protection.service';
 import { TRPCError } from '@trpc/server';
 import type { TimeEntryWithEmployee } from '@/lib/types/extended-models';
 import { getShiftLengthHelper } from '@/lib/compliance/shift-validation.service';
@@ -915,5 +917,50 @@ export const timeTrackingRouter = createTRPCRouter({
         }));
 
       return employeesNeedingHours;
+    }),
+
+  /**
+   * Get employees approaching overtime limits (≥80% of 75h/year)
+   * Used by compliance dashboard
+   */
+  getEmployeesApproachingLimits: hrManagerProcedure
+    .input(
+      z.object({
+        warningThreshold: z.number().min(0).max(1).default(0.8),
+        countryCode: z.string().length(2).default('CI'),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return await approvalValidationService.getEmployeesApproachingLimits(
+        ctx.user.tenantId,
+        input.warningThreshold,
+        input.countryCode
+      );
+    }),
+
+  /**
+   * Get protected employees (minors, pregnant women)
+   * Used by compliance dashboard
+   */
+  getProtectedEmployees: hrManagerProcedure.query(async ({ ctx }) => {
+    return await employeeProtectionService.getProtectedEmployees(ctx.user.tenantId);
+  }),
+
+  /**
+   * Validate time entry approval (check all compliance rules)
+   * Returns warnings/errors for HR before approval
+   */
+  validateTimeEntryApproval: hrManagerProcedure
+    .input(
+      z.object({
+        entryId: z.string().uuid(),
+        countryCode: z.string().length(2).default('CI'),
+      })
+    )
+    .query(async ({ input }) => {
+      return await approvalValidationService.validateTimeEntryApproval(
+        input.entryId,
+        input.countryCode
+      );
     }),
 });

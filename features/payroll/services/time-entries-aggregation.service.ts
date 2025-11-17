@@ -14,14 +14,14 @@ import { startOfMonth, endOfMonth, parseISO } from 'date-fns';
 
 /**
  * Overtime breakdown structure from time_entries table
- * Based on database JSONB structure: {regular, night_work, saturday, sunday, ...}
+ * Based on database JSONB structure: {regular, night_work, sunday, night_sunday_holiday, ...}
  */
 export interface OvertimeBreakdown {
   regular?: number;
   night_work?: number;
-  saturday?: number;
   sunday?: number;
   public_holiday?: number;
+  night_sunday_holiday?: number; // Night work on Sunday/holiday (2.00× multiplier)
   hours_41_to_46?: number;
   hours_above_46?: number;
 }
@@ -33,9 +33,9 @@ export interface AggregatedTimeEntryHours {
   // Total hours by category
   totalHours: number;
   regularHours: number;
-  saturdayHours: number;
   sundayHours: number;
   nightHours: number;
+  nightSundayHours: number; // Night work on Sunday/holiday (2.00× multiplier)
   publicHolidayHours: number;
 
   // Overtime tiers (for non-daily workers)
@@ -114,9 +114,9 @@ export async function aggregateTimeEntriesForPayroll(
   // Initialize accumulators
   let totalHours = 0;
   let regularHours = 0;
-  let saturdayHours = 0;
   let sundayHours = 0;
   let nightHours = 0;
+  let nightSundayHours = 0;
   let publicHolidayHours = 0;
   let overtime_41_to_46 = 0;
   let overtime_above_46 = 0;
@@ -144,17 +144,17 @@ export async function aggregateTimeEntriesForPayroll(
         regularHours += breakdown.regular;
       }
 
-      // Special hour categories (Saturday, Sunday, Night)
-      if (breakdown.saturday) {
-        saturdayHours += breakdown.saturday;
-      }
-
+      // Special hour categories (Sunday, Night, Night+Sunday)
       if (breakdown.sunday) {
         sundayHours += breakdown.sunday;
       }
 
       if (breakdown.night_work) {
         nightHours += breakdown.night_work;
+      }
+
+      if (breakdown.night_sunday_holiday) {
+        nightSundayHours += breakdown.night_sunday_holiday;
       }
 
       if (breakdown.public_holiday) {
@@ -180,9 +180,9 @@ export async function aggregateTimeEntriesForPayroll(
     totalHours,
     breakdown: {
       regular: regularHours,
-      saturday: saturdayHours,
       sunday: sundayHours,
       night: nightHours,
+      nightSunday: nightSundayHours,
       publicHoliday: publicHolidayHours,
       overtime_41_to_46,
       overtime_above_46,
@@ -193,9 +193,9 @@ export async function aggregateTimeEntriesForPayroll(
   return {
     totalHours,
     regularHours,
-    saturdayHours,
     sundayHours,
     nightHours,
+    nightSundayHours,
     publicHolidayHours,
     overtime_41_to_46,
     overtime_above_46,

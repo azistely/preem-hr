@@ -40,9 +40,10 @@ export interface DailyWorkersGrossInput {
   presenceDays?: number;       // IMPORTANT: Actual days present (for transport), NOT equivalent days (hours ÷ 8)
 
   // Overtime configuration
-  saturdayHours?: number;   // Hours worked on Saturday
-  sundayHours?: number;     // Hours worked on Sunday/holiday
-  nightHours?: number;      // Hours worked at night (21h-5h)
+  sundayHours?: number;     // Daytime hours on Sunday/holiday (1.75×)
+  nightHours?: number;      // Night hours weekday 21h-5h (1.75×)
+  nightSundayHours?: number; // Night hours on Sunday/holiday (2.00×)
+  // Note: Saturday is a normal working day (no special parameter)
 }
 
 /**
@@ -51,11 +52,11 @@ export interface DailyWorkersGrossInput {
 export interface DailyWorkersGrossResult {
   // Base components
   regularGross: number;           // Regular hours × hourly rate
-  overtimeGross1: number;         // First 8 OT hours × 1.15
-  overtimeGross2: number;         // Beyond 8 OT hours × 1.50
-  saturdayGross: number;          // Saturday hours × 1.40
-  sundayGross: number;            // Sunday/holiday × 1.40
-  nightGross: number;             // Night hours × 1.75
+  overtimeGross1: number;         // Hours 41-46 (6 hours) × 1.15
+  overtimeGross2: number;         // Hours 47+ × 1.50
+  sundayGross: number;            // Sunday/holiday daytime × 1.75
+  nightGross: number;             // Night hours weekday × 1.75
+  nightSundayGross: number;       // Night hours Sunday/holiday × 2.00
 
   // Subtotal before CDDTI components
   brutBase: number;
@@ -131,7 +132,8 @@ export function calculateDailyWorkersGross(
   // ========================================
   // STEP 2: Classify hours into regular and overtime
   // ========================================
-  const weeklyHours = input.hoursWorked - (input.saturdayHours || 0) - (input.sundayHours || 0) - (input.nightHours || 0);
+  // Exclude Sunday/holiday and night hours from weekly OT calculation
+  const weeklyHours = input.hoursWorked - (input.sundayHours || 0) - (input.nightHours || 0) - (input.nightSundayHours || 0);
   const overtimeBreakdown = classifyOvertime(weeklyHours, input.weeklyHoursRegime);
 
   // ========================================
@@ -140,11 +142,11 @@ export function calculateDailyWorkersGross(
   const regularGross = Math.round(hourlyRate * overtimeBreakdown.regularHours);
   const overtimeGross1 = Math.round(hourlyRate * 1.15 * overtimeBreakdown.hours_threshold_to_plus8);
   const overtimeGross2 = Math.round(hourlyRate * 1.50 * overtimeBreakdown.hours_above_plus8);
-  const saturdayGross = Math.round(hourlyRate * 1.40 * (input.saturdayHours || 0));
-  const sundayGross = Math.round(hourlyRate * 1.40 * (input.sundayHours || 0));
+  const sundayGross = Math.round(hourlyRate * 1.75 * (input.sundayHours || 0));
   const nightGross = Math.round(hourlyRate * 1.75 * (input.nightHours || 0));
+  const nightSundayGross = Math.round(hourlyRate * 2.00 * (input.nightSundayHours || 0));
 
-  const brutBase = regularGross + overtimeGross1 + overtimeGross2 + saturdayGross + sundayGross + nightGross;
+  const brutBase = regularGross + overtimeGross1 + overtimeGross2 + sundayGross + nightGross + nightSundayGross;
 
   // ========================================
   // STEP 4: Add CDDTI-specific components
@@ -227,32 +229,32 @@ export function calculateDailyWorkersGross(
     });
   }
 
-  // Saturday hours
-  if (saturdayGross > 0) {
-    components.push({
-      code: '43',
-      name: 'Heures samedi (1.40×)',
-      amount: saturdayGross,
-      sourceType: 'standard',
-    });
-  }
-
-  // Sunday/holiday hours
+  // Sunday/holiday daytime hours
   if (sundayGross > 0) {
     components.push({
       code: '44',
-      name: 'Heures dimanche/férié (1.40×)',
+      name: 'Heures dimanche/férié (1.75×)',
       amount: sundayGross,
       sourceType: 'standard',
     });
   }
 
-  // Night hours
+  // Night hours weekday
   if (nightGross > 0) {
     components.push({
       code: '45',
       name: 'Heures de nuit (1.75×)',
       amount: nightGross,
+      sourceType: 'standard',
+    });
+  }
+
+  // Night hours on Sunday/holiday
+  if (nightSundayGross > 0) {
+    components.push({
+      code: '46',
+      name: 'Heures de nuit dimanche/férié (2.00×)',
+      amount: nightSundayGross,
       sourceType: 'standard',
     });
   }
@@ -301,9 +303,9 @@ export function calculateDailyWorkersGross(
     regularGross,
     overtimeGross1,
     overtimeGross2,
-    saturdayGross,
     sundayGross,
     nightGross,
+    nightSundayGross,
     brutBase,
     gratification,
     congesPayes,

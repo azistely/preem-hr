@@ -452,9 +452,9 @@ export async function calculatePayrollRun(
         }
 
         // CDDTI workers: Load total hours and special hours breakdown from time entries
-        let saturdayHours = 0;
         let sundayHours = 0;
         let nightHours = 0;
+        let nightSundayHours = 0;
 
         if (contractType === 'CDDTI') {
           // Use aggregation service to extract hours breakdown from time entries
@@ -467,16 +467,16 @@ export async function calculatePayrollRun(
 
           // Set hours from aggregated data
           hoursWorkedThisMonth = aggregatedHours.totalHours;
-          saturdayHours = aggregatedHours.saturdayHours;
           sundayHours = aggregatedHours.sundayHours;
           nightHours = aggregatedHours.nightHours;
+          nightSundayHours = aggregatedHours.nightSundayHours || 0;
 
           // ✅ IMPORTANT: Use presence days for transport allowance
           // Per user feedback (2025-11-03): Transport is based on presence days, NOT hours
           // Rule: 1 day on site = 1 full transport allowance, even if only 1 hour worked
           daysWorkedThisMonth = aggregatedHours.daysWorked;
 
-          console.log(`[PAYROLL DEBUG] CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${hoursWorkedThisMonth} hours worked (${saturdayHours} Sat, ${sundayHours} Sun, ${nightHours} night), ${daysWorkedThisMonth} days present, ${aggregatedHours.entryCount} time entries`);
+          console.log(`[PAYROLL DEBUG] CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${hoursWorkedThisMonth} hours worked (${sundayHours} Sun, ${nightHours} night weekday, ${nightSundayHours} night Sun/holiday), ${daysWorkedThisMonth} days present, ${aggregatedHours.entryCount} time entries`);
 
           // Skip CDDTI workers with 0 hours worked (no salary to pay)
           if (hoursWorkedThisMonth === 0) {
@@ -523,10 +523,10 @@ export async function calculatePayrollRun(
           hoursWorkedThisMonth, // CRITICAL: Pass actual hours worked for CDDTI workers
           paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
           weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
-          // Special hours from time entries (Saturday, Sunday, Night) - automatically extracted
-          saturdayHours, // Hours worked on Saturday (1.40× multiplier)
-          sundayHours, // Hours worked on Sunday/holiday (1.40× multiplier)
-          nightHours, // Hours worked at night 21h-5h (1.75× multiplier)
+          // Special hours from time entries (Sunday, Night) - automatically extracted
+          sundayHours, // Hours worked on Sunday/holiday daytime (1.75× multiplier)
+          nightHours, // Hours worked at night 21h-5h weekday (1.75× multiplier)
+          nightSundayHours, // Hours worked at night on Sunday/holiday (2.00× multiplier)
           // Dynamic CMU calculation using verified dependents from employee_dependents table
           // This ensures consistency with fiscal parts calculation (same "personnes à charge" source)
           maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,

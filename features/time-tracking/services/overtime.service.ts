@@ -3,11 +3,13 @@
  *
  * Detects and classifies overtime hours based on country-specific rules.
  * Supports:
- * - Weekly hour thresholds (40h, 46h+)
- * - Night work detection (21h-6h)
- * - Weekend work
- * - Public holidays
+ * - Weekly hour thresholds (40h, 41-46h, 46h+)
+ * - Night work detection (21h-5h) on weekdays
+ * - Sunday work (daytime 1.75×, night 2.00×)
+ * - Public holidays (daytime 1.75×, night 2.00×)
  * - Country-specific multipliers
+ *
+ * Note: Saturday is a normal working day (no special premium)
  */
 
 import { db } from '@/db';
@@ -16,12 +18,18 @@ import { and, eq, gte, lte, or, isNull, sql } from 'drizzle-orm';
 import {
   startOfWeek,
   endOfWeek,
+  startOfDay,
+  endOfDay,
+  startOfYear,
+  endOfYear,
   format,
   parseISO,
   getDay,
   getHours,
   getMinutes,
   addHours,
+  differenceInYears,
+  isAfter,
 } from 'date-fns';
 import { isPublicHoliday } from './holiday.service';
 
@@ -29,10 +37,11 @@ export interface OvertimeBreakdown {
   regular: number; // Regular hours (up to 40)
   hours_41_to_46?: number; // Hours 41-46 (CI: x1.15)
   hours_above_46?: number; // Hours 46+ (CI: x1.50)
-  night_work?: number; // Night hours (21h-6h, CI: x1.75)
-  saturday?: number; // Saturday hours (CI: x1.50)
-  sunday?: number; // Sunday hours (CI: x1.75)
-  public_holiday?: number; // Public holiday hours (CI: x2.00)
+  night_work?: number; // Night hours weekday (21h-5h, CI: x1.75)
+  sunday?: number; // Sunday daytime hours (CI: x1.75)
+  public_holiday?: number; // Public holiday daytime hours (CI: x1.75)
+  night_sunday_holiday?: number; // Night hours on Sunday/holiday (21h-5h, CI: x2.00)
+  // Note: Saturday is a normal working day (no special premium)
 }
 
 export interface OvertimeRule {
@@ -217,34 +226,45 @@ export async function classifyOvertimeHours(
     regular: 0,
   };
 
-  // Check if this is a public holiday (highest priority - 2.00x)
+  // Priority 1: Check for night hours on Sunday/holiday (highest - 2.00x)
   const isHoliday = await isPublicHoliday(clockIn, countryCode);
-  if (isHoliday) {
-    breakdown.public_holiday = totalHours;
-    // Holiday work takes precedence over everything else
+  const isSundayDay = isSunday(clockIn);
+
+  if (isHoliday || isSundayDay) {
+    // Check if any hours fall during night time (21h-5h)
+    const nightHours = calculateHoursInRange(clockIn, clockOut, 21, 5);
+
+    if (nightHours > 0) {
+      breakdown.night_sunday_holiday = nightHours;
+
+      // Any remaining hours (daytime) go to public_holiday or sunday
+      const daytimeHours = totalHours - nightHours;
+      if (daytimeHours > 0) {
+        if (isHoliday) {
+          breakdown.public_holiday = daytimeHours;
+        } else {
+          breakdown.sunday = daytimeHours;
+        }
+      }
+
+      // Night + Sunday/holiday takes precedence over everything
+      return breakdown;
+    }
+
+    // If no night hours, all hours are daytime Sunday/holiday (1.75x)
+    if (isHoliday) {
+      breakdown.public_holiday = totalHours;
+    } else {
+      breakdown.sunday = totalHours;
+    }
     return breakdown;
   }
 
-  // Detect Sunday work (1.75x) - higher than Saturday
-  if (isSunday(clockIn)) {
-    breakdown.sunday = totalHours;
-    // Sunday work takes precedence over other overtime classifications
-    return breakdown;
-  }
-
-  // Detect Saturday work (1.50x)
-  if (isSaturday(clockIn)) {
-    breakdown.saturday = totalHours;
-    // Saturday work takes precedence over weekday overtime
-    return breakdown;
-  }
-
-  // Detect night work (1.75x) - can overlap with weekday overtime
-  const nightRule = rules.find((r) => r.ruleType === 'night_work');
-  if (nightRule && nightRule.appliesFromTime && nightRule.appliesToTime) {
-    const [fromHour] = nightRule.appliesFromTime.split(':').map(Number);
-    const [toHour] = nightRule.appliesToTime.split(':').map(Number);
-    breakdown.night_work = calculateHoursInRange(clockIn, clockOut, fromHour, toHour);
+  // Priority 2: Detect night work on weekdays (21h-5h, 1.75x)
+  // Note: Night hours can overlap with weekday overtime tiers
+  const nightHoursWeekday = calculateHoursInRange(clockIn, clockOut, 21, 5);
+  if (nightHoursWeekday > 0) {
+    breakdown.night_work = nightHoursWeekday;
   }
 
   // Classify by weekly thresholds (Côte d'Ivoire rules)
@@ -277,6 +297,29 @@ export async function classifyOvertimeHours(
       (breakdown.hours_41_to_46 || 0) + (breakdown.hours_above_46 || 0),
       countryCode
     );
+
+    // Validate max daily overtime (3h max in CI) - Article 23
+    await validateDailyOvertimeLimit(
+      employeeId,
+      clockIn,
+      (breakdown.hours_41_to_46 || 0) + (breakdown.hours_above_46 || 0),
+      countryCode
+    );
+
+    // Validate max yearly overtime (75h max in CI) - Article 23
+    const yearlyCheck = await validateYearlyOvertimeLimit(
+      employeeId,
+      clockIn.getFullYear(),
+      (breakdown.hours_41_to_46 || 0) + (breakdown.hours_above_46 || 0),
+      countryCode
+    );
+
+    if (!yearlyCheck.allowed) {
+      throw new Error(yearlyCheck.error);
+    }
+    if (yearlyCheck.warning) {
+      console.warn(`[Yearly OT Warning] Employee ${employeeId}: ${yearlyCheck.warning}`);
+    }
   }
 
   // For Senegal or other countries, apply their specific rules
@@ -346,9 +389,9 @@ export async function getOvertimeSummary(
     hours_41_to_46: 0,
     hours_above_46: 0,
     night_work: 0,
-    saturday: 0,
     sunday: 0,
     public_holiday: 0,
+    night_sunday_holiday: 0,
   };
 
   for (const entry of entries) {
@@ -358,9 +401,9 @@ export async function getOvertimeSummary(
       breakdown.hours_41_to_46 = (breakdown.hours_41_to_46 || 0) + (entryBreakdown.hours_41_to_46 || 0);
       breakdown.hours_above_46 = (breakdown.hours_above_46 || 0) + (entryBreakdown.hours_above_46 || 0);
       breakdown.night_work = (breakdown.night_work || 0) + (entryBreakdown.night_work || 0);
-      breakdown.saturday = (breakdown.saturday || 0) + (entryBreakdown.saturday || 0);
       breakdown.sunday = (breakdown.sunday || 0) + (entryBreakdown.sunday || 0);
       breakdown.public_holiday = (breakdown.public_holiday || 0) + (entryBreakdown.public_holiday || 0);
+      breakdown.night_sunday_holiday = (breakdown.night_sunday_holiday || 0) + (entryBreakdown.night_sunday_holiday || 0);
     }
   }
 
@@ -368,9 +411,9 @@ export async function getOvertimeSummary(
   const totalOvertimeHours = (breakdown.hours_41_to_46 || 0) +
     (breakdown.hours_above_46 || 0) +
     (breakdown.night_work || 0) +
-    (breakdown.saturday || 0) +
     (breakdown.sunday || 0) +
-    (breakdown.public_holiday || 0);
+    (breakdown.public_holiday || 0) +
+    (breakdown.night_sunday_holiday || 0);
 
   return {
     totalOvertimeHours,
@@ -503,4 +546,128 @@ export async function getWeeklyOvertimeUsage(
     remaining: parseFloat(remaining.toFixed(2)),
     percentage: parseFloat(percentage.toFixed(1)),
   };
+}
+
+/**
+ * Validate daily overtime limit (Convention Collective Article 23)
+ * Maximum 3 hours/day for CI
+ */
+export async function validateDailyOvertimeLimit(
+  employeeId: string,
+  date: Date,
+  additionalOvertimeHours: number,
+  countryCode: string
+): Promise<void> {
+  const dayStart = startOfDay(date);
+  const dayEnd = endOfDay(date);
+
+  // Get existing overtime for this specific day (APPROVED only)
+  const entries = await db.query.timeEntries.findMany({
+    where: and(
+      eq(timeEntries.employeeId, employeeId),
+      gte(timeEntries.clockIn, format(dayStart, "yyyy-MM-dd'T'HH:mm:ssXXX")),
+      lte(timeEntries.clockIn, format(dayEnd, "yyyy-MM-dd'T'HH:mm:ssXXX")),
+      eq(timeEntries.status, 'approved')
+    ),
+  });
+
+  // Sum existing overtime hours for the day
+  const existingOvertimeHours = entries.reduce((sum, entry) => {
+    const breakdown = entry.overtimeBreakdown as OvertimeBreakdown;
+    if (breakdown) {
+      return (
+        sum +
+        (breakdown.hours_41_to_46 || 0) +
+        (breakdown.hours_above_46 || 0)
+      );
+    }
+    return sum;
+  }, 0);
+
+  // Daily limit for CI (3h/day as per Convention Collective Article 23)
+  const dailyLimit = 3;
+  const totalDailyOvertime = existingOvertimeHours + additionalOvertimeHours;
+
+  if (totalDailyOvertime > dailyLimit) {
+    throw new Error(
+      `Dépassement de la limite journalière d'heures supplémentaires. ` +
+        `Maximum: ${dailyLimit}h/jour. ` +
+        `Déjà effectué: ${existingOvertimeHours.toFixed(1)}h. ` +
+        `Demandé: ${additionalOvertimeHours.toFixed(1)}h. ` +
+        `Total: ${totalDailyOvertime.toFixed(1)}h. ` +
+        `(Convention Collective Article 23)`
+    );
+  }
+}
+
+/**
+ * Get total overtime hours for a calendar year
+ */
+export async function getYearlyOvertimeHours(
+  employeeId: string,
+  year: number
+): Promise<number> {
+  const yearStart = startOfYear(new Date(year, 0, 1));
+  const yearEnd = endOfYear(new Date(year, 11, 31));
+
+  const entries = await db.query.timeEntries.findMany({
+    where: and(
+      eq(timeEntries.employeeId, employeeId),
+      gte(timeEntries.clockIn, format(yearStart, "yyyy-MM-dd'T'HH:mm:ssXXX")),
+      lte(timeEntries.clockIn, format(yearEnd, "yyyy-MM-dd'T'HH:mm:ssXXX")),
+      eq(timeEntries.status, 'approved')
+    ),
+  });
+
+  return entries.reduce((sum, entry) => {
+    const breakdown = entry.overtimeBreakdown as OvertimeBreakdown;
+    if (breakdown) {
+      return (
+        sum +
+        (breakdown.hours_41_to_46 || 0) +
+        (breakdown.hours_above_46 || 0)
+      );
+    }
+    return sum;
+  }, 0);
+}
+
+/**
+ * Validate yearly overtime limit (Convention Collective Article 23)
+ * Maximum 75 hours/year for CI
+ */
+export async function validateYearlyOvertimeLimit(
+  employeeId: string,
+  year: number,
+  additionalOvertimeHours: number,
+  countryCode: string
+): Promise<{ allowed: boolean; warning?: string; error?: string }> {
+  const existingYearlyHours = await getYearlyOvertimeHours(employeeId, year);
+  const yearlyLimit = 75; // Convention Collective Article 23
+  const totalYearlyOvertime = existingYearlyHours + additionalOvertimeHours;
+
+  // Hard block at limit
+  if (totalYearlyOvertime > yearlyLimit) {
+    return {
+      allowed: false,
+      error:
+        `Dépassement de la limite annuelle d'heures supplémentaires. ` +
+        `Maximum: ${yearlyLimit}h/an. ` +
+        `Déjà effectué en ${year}: ${existingYearlyHours.toFixed(1)}h. ` +
+        `Demandé: ${additionalOvertimeHours.toFixed(1)}h. ` +
+        `Total: ${totalYearlyOvertime.toFixed(1)}h. ` +
+        `(Convention Collective Article 23)`,
+    };
+  }
+
+  // Warning at 80% usage (60h)
+  const usagePercent = (totalYearlyOvertime / yearlyLimit) * 100;
+  if (usagePercent >= 80) {
+    return {
+      allowed: true,
+      warning: `⚠️ Attention: ${totalYearlyOvertime.toFixed(1)}h/${yearlyLimit}h annuelles (${usagePercent.toFixed(0)}%)`,
+    };
+  }
+
+  return { allowed: true };
 }

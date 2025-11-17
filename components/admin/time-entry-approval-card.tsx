@@ -22,6 +22,9 @@ import {
   Clock,
   TrendingUp,
   AlertCircle,
+  AlertTriangle,
+  Info,
+  Shield,
 } from 'lucide-react';
 import {
   Card,
@@ -49,6 +52,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
+import { api } from '@/trpc/react';
 
 export interface TimeEntry {
   id: string;
@@ -96,6 +102,17 @@ export function TimeEntryApprovalCard({
 
   const employeeName = `${entry.employee.firstName} ${entry.employee.lastName}`;
   const initials = `${entry.employee.firstName[0]}${entry.employee.lastName[0]}`;
+
+  // Fetch validation data for pending entries
+  const { data: validation } = api.timeTracking.validateTimeEntryApproval.useQuery(
+    {
+      entryId: entry.id,
+      countryCode: 'CI',
+    },
+    {
+      enabled: entry.status === 'pending' && !!entry.clockOut,
+    }
+  );
 
   const clockInDate = new Date(entry.clockIn);
   const clockOutDate = entry.clockOut ? new Date(entry.clockOut) : null;
@@ -256,6 +273,147 @@ export function TimeEntryApprovalCard({
             </div>
           )}
 
+          {/* Validation Warnings & Errors */}
+          {validation && entry.status === 'pending' && (
+            <div className="space-y-3">
+              {/* Error Messages */}
+              {validation.messages
+                .filter((m) => m.severity === 'error')
+                .map((msg, idx) => (
+                  <Alert key={idx} variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Validation bloquée</AlertTitle>
+                    <AlertDescription className="text-sm">
+                      {msg.message}
+                    </AlertDescription>
+                  </Alert>
+                ))}
+
+              {/* Warning Messages */}
+              {validation.messages
+                .filter((m) => m.severity === 'warning')
+                .map((msg, idx) => (
+                  <Alert
+                    key={idx}
+                    className="border-orange-200 bg-orange-50 text-orange-900"
+                  >
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Attention</AlertTitle>
+                    <AlertDescription className="text-sm">
+                      {msg.message}
+                    </AlertDescription>
+                  </Alert>
+                ))}
+
+              {/* Employee Protection Status */}
+              {validation.protectionStatus.category !== 'NONE' && (
+                <Alert className="border-purple-200 bg-purple-50 text-purple-900">
+                  <Shield className="h-4 w-4" />
+                  <AlertTitle>Employé protégé</AlertTitle>
+                  <AlertDescription className="space-y-1 text-sm">
+                    <p className="font-medium">
+                      {validation.protectionStatus.category === 'MINOR' &&
+                        `Mineur (${validation.protectionStatus.age} ans)`}
+                      {validation.protectionStatus.category === 'PREGNANT' &&
+                        'Femme enceinte'}
+                      {validation.protectionStatus.category ===
+                        'PREGNANT_WITH_EXEMPTION' &&
+                        'Femme enceinte (exemption médicale)'}
+                    </p>
+                    {validation.protectionStatus.restrictions.map((r, idx) => (
+                      <p key={idx} className="text-xs">
+                        • {r}
+                      </p>
+                    ))}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Overtime Usage Indicators */}
+              {(validation.overtimeUsage.yearlyPercentage >= 50 ||
+                validation.messages.some(
+                  (m) =>
+                    m.type === 'DAILY_OT_LIMIT' ||
+                    m.type === 'WEEKLY_OT_LIMIT' ||
+                    m.type === 'YEARLY_OT_LIMIT'
+                )) && (
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <Info className="h-4 w-4" />
+                    Voir l'utilisation des heures supplémentaires
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-3 space-y-3">
+                    {/* Daily Usage */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium">
+                          Aujourd'hui: {validation.overtimeUsage.dailyUsed.toFixed(1)}h / {validation.overtimeUsage.dailyLimit}h
+                        </span>
+                        <span
+                          className={
+                            validation.overtimeUsage.dailyPercentage >= 80
+                              ? 'text-orange-600 font-medium'
+                              : 'text-muted-foreground'
+                          }
+                        >
+                          {validation.overtimeUsage.dailyPercentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      <Progress
+                        value={validation.overtimeUsage.dailyPercentage}
+                        className="h-1.5"
+                      />
+                    </div>
+
+                    {/* Weekly Usage */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium">
+                          Cette semaine: {validation.overtimeUsage.weeklyUsed.toFixed(1)}h / {validation.overtimeUsage.weeklyLimit}h
+                        </span>
+                        <span
+                          className={
+                            validation.overtimeUsage.weeklyPercentage >= 80
+                              ? 'text-orange-600 font-medium'
+                              : 'text-muted-foreground'
+                          }
+                        >
+                          {validation.overtimeUsage.weeklyPercentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      <Progress
+                        value={validation.overtimeUsage.weeklyPercentage}
+                        className="h-1.5"
+                      />
+                    </div>
+
+                    {/* Yearly Usage */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium">
+                          Cette année: {validation.overtimeUsage.yearlyUsed.toFixed(1)}h / {validation.overtimeUsage.yearlyLimit}h
+                        </span>
+                        <span
+                          className={
+                            validation.overtimeUsage.yearlyPercentage >= 80
+                              ? 'text-orange-600 font-medium'
+                              : 'text-muted-foreground'
+                          }
+                        >
+                          {validation.overtimeUsage.yearlyPercentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      <Progress
+                        value={validation.overtimeUsage.yearlyPercentage}
+                        className="h-1.5"
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </div>
+          )}
+
           {/* Photos */}
           {(entry.clockInPhotoUrl || entry.clockOutPhotoUrl) && (
             <div className="flex gap-2">
@@ -301,7 +459,17 @@ export function TimeEntryApprovalCard({
                 className="min-h-[44px] flex-1"
                 variant="default"
                 onClick={handleApprove}
-                disabled={isLoading || isSubmitting || entry.status !== 'pending'}
+                disabled={
+                  isLoading ||
+                  isSubmitting ||
+                  entry.status !== 'pending' ||
+                  (validation && !validation.canApprove)
+                }
+                title={
+                  validation && !validation.canApprove
+                    ? 'Impossible d\'approuver: des erreurs de validation bloquent cette action'
+                    : undefined
+                }
               >
                 <Check className="mr-2 h-5 w-5" />
                 Approuver

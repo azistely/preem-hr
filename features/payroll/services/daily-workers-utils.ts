@@ -148,19 +148,20 @@ export function getOvertimeThreshold(weeklyHoursRegime: WeeklyHoursRegime): numb
  * Overtime classification for weekly hours
  */
 export interface OvertimeBreakdown {
-  regularHours: number;           // Up to threshold
-  hours_threshold_to_plus8: number; // First 8 hours of OT (1.15×)
-  hours_above_plus8: number;       // Beyond 8 hours OT (1.50×)
-  // Note: Saturday, Sunday, holiday, night hours handled separately
+  regularHours: number;             // Up to 40h/week (or sector threshold)
+  hours_threshold_to_plus8: number; // Hours 41-46 (6 hours max, 1.15×)
+  hours_above_plus8: number;        // Hours 47+ (1.50×)
+  // Note: Sunday, holiday, night hours handled separately in time tracking
+  // Saturday is a normal working day (no special premium)
 }
 
 /**
  * Classify weekly hours into regular and overtime
  *
- * Rules:
+ * Rules (Côte d'Ivoire labor law):
  * - Regular: Up to threshold (based on weekly_hours_regime)
- * - First 8 OT hours: 1.15× multiplier
- * - Beyond 8 OT hours: 1.50× multiplier
+ * - Hours 41-46 (6 hours): 1.15× multiplier
+ * - Hours 47+ : 1.50× multiplier
  *
  * @param totalWeeklyHours - Total hours worked in week
  * @param weeklyHoursRegime - Employee's weekly hours regime
@@ -168,9 +169,9 @@ export interface OvertimeBreakdown {
  *
  * @example
  * ```ts
- * // Standard 40h worker who worked 52 hours
- * classifyOvertime(52, '40h')
- * // { regularHours: 40, hours_threshold_to_plus8: 8, hours_above_plus8: 4 }
+ * // Standard 40h worker who worked 50 hours
+ * classifyOvertime(50, '40h')
+ * // { regularHours: 40, hours_threshold_to_plus8: 6, hours_above_plus8: 4 }
  *
  * // Agricultural 48h worker who worked 52 hours
  * classifyOvertime(52, '48h')
@@ -185,11 +186,11 @@ export function classifyOvertime(
   const regularHours = Math.min(totalWeeklyHours, threshold);
   const overtimeHours = Math.max(0, totalWeeklyHours - threshold);
 
-  // First 8 hours of overtime: 1.15×
-  const hours_threshold_to_plus8 = Math.min(overtimeHours, 8);
+  // Hours 41-46 (first 6 hours of overtime): 1.15×
+  const hours_threshold_to_plus8 = Math.min(overtimeHours, 6);
 
-  // Beyond 8 hours of overtime: 1.50×
-  const hours_above_plus8 = Math.max(0, overtimeHours - 8);
+  // Hours 47+ (beyond 6 hours of overtime): 1.50×
+  const hours_above_plus8 = Math.max(0, overtimeHours - 6);
 
   return {
     regularHours,

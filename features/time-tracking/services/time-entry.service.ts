@@ -14,6 +14,7 @@ import { and, eq, isNull, desc, sql } from 'drizzle-orm';
 import { validateGeofence, type GeoLocation } from './geofence.service';
 import { classifyOvertimeHours } from './overtime.service';
 import { validateShiftLength } from '@/lib/compliance/shift-validation.service';
+import { validateProtectedEmployeeRestrictions } from './employee-protection.service';
 
 export interface ClockInInput {
   employeeId: string;
@@ -253,11 +254,52 @@ export async function getTimeEntries(
 
 /**
  * Approve time entry
+ *
+ * Validates employee protection restrictions before approval:
+ * - Minors (<18) cannot work nights (21h-5h)
+ * - Pregnant women cannot work nights without medical exemption
  */
 export async function approveTimeEntry(
   entryId: string,
   approvedBy: string
 ) {
+  // Fetch time entry to validate protection restrictions
+  const entry = await db.query.timeEntries.findFirst({
+    where: eq(timeEntries.id, entryId),
+    columns: {
+      id: true,
+      employeeId: true,
+      clockIn: true,
+      clockOut: true,
+      status: true,
+    },
+  });
+
+  if (!entry) {
+    throw new Error(`Pointage introuvable: ${entryId}`);
+  }
+
+  if (!entry.clockOut) {
+    throw new Error(`Impossible d'approuver un pointage non terminé`);
+  }
+
+  // Validate employee protection restrictions (minors, pregnant women)
+  const protectionValidation = await validateProtectedEmployeeRestrictions(
+    entry.employeeId,
+    new Date(entry.clockIn),
+    new Date(entry.clockOut)
+  );
+
+  if (!protectionValidation.allowed) {
+    throw new Error(protectionValidation.error);
+  }
+
+  // Log warning if pregnant employee with exemption
+  if (protectionValidation.warning) {
+    console.warn(`[Employee Protection] ${protectionValidation.warning}`);
+  }
+
+  // Proceed with approval
   const [approvedEntry] = await db
     .update(timeEntries)
     .set({

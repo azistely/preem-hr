@@ -70,9 +70,10 @@ export interface PayrollCalculationInputV2 extends PayrollCalculationInput {
   weeklyHoursRegime?: '40h' | '44h' | '48h' | '52h' | '56h'; // For hourly divisor and OT threshold
   employeeType?: 'LOCAL' | 'EXPAT' | 'DETACHE' | 'STAGIAIRE'; // For contribution employeur + ITS employer rate
   contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE'; // For CDDTI-specific components
-  saturdayHours?: number; // Hours worked on Saturday (1.40× multiplier)
-  sundayHours?: number; // Hours worked on Sunday/holiday (1.40× multiplier)
-  nightHours?: number; // Hours worked at night 21h-5h (1.75× multiplier)
+  sundayHours?: number; // Daytime hours on Sunday/holiday (1.75×)
+  nightHours?: number; // Night hours weekday 21h-5h (1.75×)
+  nightSundayHours?: number; // Night hours on Sunday/holiday (2.00×)
+  // Note: Saturday is a normal working day (no special parameter needed)
   dailyTransportRate?: number; // Transport rate per day (FCFA)
 
   // Banking convention support (GAP-CONV-BANK-001)
@@ -864,9 +865,9 @@ export async function calculatePayrollV2(
         contractType: input.contractType || 'CDD',
         dailyTransportRate,
         presenceDays: input.daysWorkedThisMonth, // ✅ Pass actual presence days for transport
-        saturdayHours: input.saturdayHours,
         sundayHours: input.sundayHours,
         nightHours: input.nightHours,
+        nightSundayHours: input.nightSundayHours,
       };
 
       journalierGrossResult = calculateDailyWorkersGross(dailyWorkersInput);
@@ -1073,8 +1074,8 @@ export async function calculatePayrollV2(
         proratedSalary: journalierGrossResult.brutBase,
         allowances: journalierGrossResult.totalBrut - journalierGrossResult.brutBase,
         overtimePay: journalierGrossResult.overtimeGross1 + journalierGrossResult.overtimeGross2 +
-                     journalierGrossResult.saturdayGross + journalierGrossResult.sundayGross +
-                     journalierGrossResult.nightGross,
+                     journalierGrossResult.sundayGross + journalierGrossResult.nightGross +
+                     journalierGrossResult.nightSundayGross,
         bonuses: 0,
         daysWorked: journalierEquivalentDays,
         daysInPeriod: 30,
@@ -1084,8 +1085,8 @@ export async function calculatePayrollV2(
           allowances: journalierGrossResult.gratification + journalierGrossResult.congesPayes +
                       journalierGrossResult.indemnitPrecarite + journalierGrossResult.transportAllowance,
           overtime: journalierGrossResult.overtimeGross1 + journalierGrossResult.overtimeGross2 +
-                    journalierGrossResult.saturdayGross + journalierGrossResult.sundayGross +
-                    journalierGrossResult.nightGross,
+                    journalierGrossResult.sundayGross + journalierGrossResult.nightGross +
+                    journalierGrossResult.nightSundayGross,
           bonuses: 0,
         },
       };

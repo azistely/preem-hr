@@ -56,11 +56,14 @@ import {
   ArrowLeft,
   Save,
   X,
+  Shield,
+  Upload,
 } from 'lucide-react';
 import { useUpdateEmployee } from '@/features/employees/hooks/use-employees';
 import { useToast } from '@/hooks/use-toast';
 import { CoefficientSelector } from '@/components/employees/coefficient-selector';
 import { ContractInfoCard } from '@/components/contracts/contract-info-card';
+import { UploadDocumentDialog } from '@/components/documents/upload-document-dialog';
 import { trpc } from '@/lib/trpc/client';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -126,6 +129,13 @@ const editEmployeeSchema = z.object({
   motherName: z.string().optional(),
   placeOfBirth: z.string().optional(),
   emergencyContactName: z.string().optional(),
+
+  // Employee Protection / Labor Law Compliance (Tab 1 - Essential)
+  isPregnant: z.boolean().optional(),
+  pregnancyStartDate: z.date().optional(),
+  expectedDeliveryDate: z.date().optional(),
+  medicalExemptionNightWork: z.boolean().optional(),
+  medicalExemptionExpiryDate: z.date().optional(),
 });
 
 type EditEmployeeFormValues = z.infer<typeof editEmployeeSchema>;
@@ -141,6 +151,8 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('essential');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [pregnancyCertDialogOpen, setPregnancyCertDialogOpen] = useState(false);
+  const [exemptionCertDialogOpen, setExemptionCertDialogOpen] = useState(false);
 
   // Next.js 15: Unwrap async params
   const resolvedParams = React.use(params);
@@ -584,6 +596,199 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                             )}
                           />
                         </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+
+                    {/* Labor Protection Section */}
+                    <Collapsible>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-between min-h-[44px] mt-4"
+                          type="button"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Shield className="h-4 w-4" />
+                            Protection du travail (optionnel)
+                          </span>
+                          <ChevronDown className="h-4 w-4 transition-transform" />
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-4 mt-4">
+                        <Alert className="border-purple-200 bg-purple-50">
+                          <Info className="h-4 w-4 text-purple-600" />
+                          <AlertDescription className="text-sm text-purple-900">
+                            Ces informations permettent de respecter le code du travail concernant le travail de nuit (21h-5h) pour les femmes enceintes.
+                          </AlertDescription>
+                        </Alert>
+
+                        {/* Pregnancy Status */}
+                        <FormField
+                          control={form.control}
+                          name="isPregnant"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                              <div className="space-y-0.5">
+                                <FormLabel className="text-base">Femme enceinte</FormLabel>
+                                <FormDescription>
+                                  L'employée est actuellement enceinte
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <input
+                                  type="checkbox"
+                                  checked={field.value}
+                                  onChange={field.onChange}
+                                  className="h-5 w-5"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Pregnancy Details (shown only if pregnant) */}
+                        {form.watch('isPregnant') && (
+                          <div className="space-y-4 pl-4 border-l-2 border-purple-200">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <FormField
+                                control={form.control}
+                                name="pregnancyStartDate"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Date de début de grossesse</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="date"
+                                        {...field}
+                                        value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value || ''}
+                                        onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                                        className="min-h-[48px]"
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name="expectedDeliveryDate"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Date d'accouchement prévue</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="date"
+                                        {...field}
+                                        value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value || ''}
+                                        onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                                        className="min-h-[48px]"
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      Congé de maternité: 14 semaines (Code du Travail)
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+
+                            {/* Pregnancy Certificate Upload */}
+                            <div className="rounded-lg border p-4 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-purple-600" />
+                                <p className="text-sm font-medium">Certificat médical de grossesse</p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="w-full min-h-[44px]"
+                                onClick={() => setPregnancyCertDialogOpen(true)}
+                              >
+                                <Upload className="h-4 w-4 mr-2" />
+                                Télécharger le certificat
+                              </Button>
+                              <p className="text-xs text-muted-foreground">
+                                Le certificat médical sera versionnée et peut être signé électroniquement
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Medical Exemption for Night Work */}
+                        <FormField
+                          control={form.control}
+                          name="medicalExemptionNightWork"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                              <div className="space-y-0.5">
+                                <FormLabel className="text-base">Exemption médicale travail de nuit</FormLabel>
+                                <FormDescription>
+                                  Certificat médical autorisant le travail de nuit (21h-5h)
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <input
+                                  type="checkbox"
+                                  checked={field.value}
+                                  onChange={field.onChange}
+                                  className="h-5 w-5"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Medical Exemption Details (shown only if exemption checked) */}
+                        {form.watch('medicalExemptionNightWork') && (
+                          <div className="space-y-4 pl-4 border-l-2 border-blue-200">
+                            <FormField
+                              control={form.control}
+                              name="medicalExemptionExpiryDate"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Date d'expiration du certificat</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="date"
+                                      {...field}
+                                      value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value || ''}
+                                      onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                                      className="min-h-[48px]"
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    Le certificat doit être renouvelé régulièrement
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            {/* Medical Exemption Certificate Upload */}
+                            <div className="rounded-lg border p-4 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-blue-600" />
+                                <p className="text-sm font-medium">Certificat médical d'exemption</p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="w-full min-h-[44px]"
+                                onClick={() => setExemptionCertDialogOpen(true)}
+                              >
+                                <Upload className="h-4 w-4 mr-2" />
+                                Télécharger le certificat
+                              </Button>
+                              <p className="text-xs text-muted-foreground">
+                                Le certificat sera lié à la date d'expiration et suivi automatiquement
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </CollapsibleContent>
                     </Collapsible>
                   </CardContent>
@@ -1501,6 +1706,43 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
           </Button>
         </div>
       </div>
+
+      {/* Pregnancy Certificate Upload Dialog */}
+      <UploadDocumentDialog
+        open={pregnancyCertDialogOpen}
+        onOpenChange={setPregnancyCertDialogOpen}
+        employeeId={employeeId}
+        defaultCategory="PREGNANCY_CERTIFICATE"
+        uploadContext="employee_protection_pregnancy"
+        metadata={{
+          pregnancyStartDate: form.watch('pregnancyStartDate'),
+          expectedDeliveryDate: form.watch('expectedDeliveryDate'),
+        }}
+        onUploadSuccess={(result) => {
+          toast({
+            title: 'Certificat téléchargé',
+            description: 'Le certificat médical de grossesse a été enregistré avec succès.',
+          });
+        }}
+      />
+
+      {/* Medical Exemption Certificate Upload Dialog */}
+      <UploadDocumentDialog
+        open={exemptionCertDialogOpen}
+        onOpenChange={setExemptionCertDialogOpen}
+        employeeId={employeeId}
+        defaultCategory="NIGHT_WORK_EXEMPTION_CERTIFICATE"
+        uploadContext="employee_protection_night_work"
+        metadata={{
+          expiryDate: form.watch('medicalExemptionExpiryDate'),
+        }}
+        onUploadSuccess={(result) => {
+          toast({
+            title: 'Certificat téléchargé',
+            description: 'Le certificat médical d\'exemption a été enregistré avec succès.',
+          });
+        }}
+      />
     </div>
   );
 }

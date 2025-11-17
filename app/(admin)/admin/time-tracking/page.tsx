@@ -28,6 +28,7 @@ import {
 } from '@/components/admin/time-entry-approval-card';
 import { CompactTimeEntry } from '@/components/admin/compact-time-entry';
 import { DailyWorkersQuickEntry } from '@/components/admin/daily-workers-quick-entry';
+import { ComplianceOverview } from '@/components/admin/compliance-overview';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -56,6 +57,7 @@ import {
   TrendingUp,
   AlertCircle,
   LayoutList,
+  Shield,
 } from 'lucide-react';
 import {
   Collapsible,
@@ -64,7 +66,7 @@ import {
 } from '@/components/ui/collapsible';
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month';
-type StatusFilter = 'pending' | 'approved' | 'rejected';
+type StatusFilter = 'pending' | 'approved' | 'rejected' | 'compliance';
 
 export default function TimeTrackingAdminPage() {
   const { toast } = useToast();
@@ -127,14 +129,16 @@ export default function TimeTrackingAdminPage() {
 
   const dateRange = getDateRange();
 
-  // Fetch entries based on current tab
+  // Fetch entries based on current tab (skip for compliance tab)
   const {
     data: entries,
     isLoading,
     refetch,
   } = api.timeTracking.getAllEntries.useQuery({
-    status: statusTab,
+    status: statusTab === 'compliance' ? 'pending' : statusTab,
     ...dateRange,
+  }, {
+    enabled: statusTab !== 'compliance',
   });
 
   // Fetch summary
@@ -145,6 +149,16 @@ export default function TimeTrackingAdminPage() {
     api.timeTracking.getEmployeesNeedingHours.useQuery({
       date: new Date(),
     });
+
+  // Fetch compliance data
+  const { data: employeesAtRisk } =
+    api.timeTracking.getEmployeesApproachingLimits.useQuery({
+      warningThreshold: 0.8,
+      countryCode: 'CI',
+    });
+
+  const { data: protectedEmployees } =
+    api.timeTracking.getProtectedEmployees.useQuery();
 
   // Mutations
   const approveMutation = api.timeTracking.approveEntry.useMutation({
@@ -590,9 +604,18 @@ export default function TimeTrackingAdminPage() {
         )}
       </div>
 
+      {/* Compliance Overview */}
+      {employeesAtRisk && protectedEmployees && (
+        <ComplianceOverview
+          employeesAtRisk={employeesAtRisk}
+          protectedEmployees={protectedEmployees}
+          isLoading={!employeesAtRisk || !protectedEmployees}
+        />
+      )}
+
       {/* Tabs for status filtering */}
       <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as StatusFilter)}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="pending" className="gap-2">
             <Clock className="h-4 w-4" />
             À approuver
@@ -610,18 +633,43 @@ export default function TimeTrackingAdminPage() {
             <XCircle className="h-4 w-4" />
             À corriger
           </TabsTrigger>
+          <TabsTrigger value="compliance" className="gap-2">
+            <Shield className="h-4 w-4" />
+            Conformité
+            {employeesAtRisk && protectedEmployees && (employeesAtRisk.length + protectedEmployees.length) > 0 && (
+              <Badge variant="secondary" className="ml-1 bg-orange-100 text-orange-900">
+                {employeesAtRisk.length + protectedEmployees.length}
+              </Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
+        {/* Compliance Tab Content */}
+        <TabsContent value="compliance" className="mt-6">
+          {employeesAtRisk && protectedEmployees ? (
+            <ComplianceOverview
+              employeesAtRisk={employeesAtRisk}
+              protectedEmployees={protectedEmployees}
+              isLoading={!employeesAtRisk || !protectedEmployees}
+            />
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Status Tabs Content (pending, approved, rejected) */}
         <TabsContent value={statusTab} className="mt-6">
           {/* Loading state */}
-          {isLoading && (
+          {isLoading && statusTab !== 'compliance' && (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           )}
 
           {/* Empty state */}
-          {!isLoading && entries && entries.length === 0 && (
+          {!isLoading && entries && entries.length === 0 && statusTab !== 'compliance' && (
             <div className="text-center py-12 rounded-lg border border-dashed">
               {statusTab === 'pending' && (
                 <>
@@ -660,7 +708,7 @@ export default function TimeTrackingAdminPage() {
           )}
 
           {/* Entries list */}
-          {!isLoading && entries && entries.length > 0 && (
+          {!isLoading && entries && entries.length > 0 && statusTab !== 'compliance' && (
             <div className="space-y-4">
               {/* View mode toggle and count */}
               <div className="flex items-center justify-between">

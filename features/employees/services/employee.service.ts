@@ -154,6 +154,13 @@ export interface UpdateEmployeeInput {
 
   // Custom fields
   customFields?: Record<string, any>;
+
+  // Employee Protection / Labor Law Compliance (Part 8)
+  isPregnant?: boolean;
+  pregnancyStartDate?: Date;
+  expectedDeliveryDate?: Date;
+  medicalExemptionNightWork?: boolean;
+  medicalExemptionExpiryDate?: Date;
 }
 
 export interface ListEmployeesInput {
@@ -666,6 +673,19 @@ export async function updateEmployee(input: UpdateEmployeeInput) {
 
   // Note: Contract fields (contractType, contractStartDate, contractEndDate) are now managed
   // via the employment_contracts table. Use the contract management API to update contracts.
+
+  // Employee Protection / Labor Law Compliance (Part 8)
+  if (input.isPregnant !== undefined) updateValues.isPregnant = input.isPregnant;
+  if (input.pregnancyStartDate !== undefined) {
+    updateValues.pregnancyStartDate = input.pregnancyStartDate ? input.pregnancyStartDate.toISOString().split('T')[0] : null;
+  }
+  if (input.expectedDeliveryDate !== undefined) {
+    updateValues.expectedDeliveryDate = input.expectedDeliveryDate ? input.expectedDeliveryDate.toISOString().split('T')[0] : null;
+  }
+  if (input.medicalExemptionNightWork !== undefined) updateValues.medicalExemptionNightWork = input.medicalExemptionNightWork;
+  if (input.medicalExemptionExpiryDate !== undefined) {
+    updateValues.medicalExemptionExpiryDate = input.medicalExemptionExpiryDate ? input.medicalExemptionExpiryDate.toISOString().split('T')[0] : null;
+  }
 
   // Custom fields
   if (input.customFields !== undefined) updateValues.customFields = input.customFields;

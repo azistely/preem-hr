@@ -249,6 +249,13 @@ const updateEmployeeSchema = z.object({
 
   // Custom Fields
   customFields: z.record(z.any()).optional(),
+
+  // Employee Protection / Labor Law Compliance (Part 8)
+  isPregnant: z.boolean().optional(),
+  pregnancyStartDate: z.date().optional(),
+  expectedDeliveryDate: z.date().optional(),
+  medicalExemptionNightWork: z.boolean().optional(),
+  medicalExemptionExpiryDate: z.date().optional(),
 });
 
 const listEmployeesSchema = z.object({

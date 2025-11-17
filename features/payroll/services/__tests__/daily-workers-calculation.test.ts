@@ -120,28 +120,7 @@ describe('Daily Workers Payroll Calculation', () => {
       expect(result.overtimeBreakdown.hours_above_plus8).toBe(0);
     });
 
-    it('calculates Saturday hours with 1.40× multiplier', () => {
-      const input: DailyWorkersGrossInput = {
-        categoricalSalary: 100_000,
-        hoursWorked: 48,
-        weeklyHoursRegime: '40h',
-        contractType: 'CDDTI',
-        dailyTransportRate: 500,
-        saturdayHours: 8, // 8h on Saturday
-      };
-
-      const result = calculateDailyWorkersGross(input);
-
-      const hourlyRate = 100_000 / 173.33;
-
-      // Saturday premium
-      expect(result.saturdayGross).toBeCloseTo(8 * hourlyRate * 1.40, 0);
-
-      // Regular weekday hours (40h, not 48h)
-      expect(result.overtimeBreakdown.regularHours).toBe(40);
-    });
-
-    it('calculates Sunday/holiday hours with 1.40× multiplier', () => {
+    it('calculates Sunday/holiday hours with 1.75× multiplier', () => {
       const input: DailyWorkersGrossInput = {
         categoricalSalary: 100_000,
         hoursWorked: 48,
@@ -155,7 +134,7 @@ describe('Daily Workers Payroll Calculation', () => {
 
       const hourlyRate = 100_000 / 173.33;
 
-      expect(result.sundayGross).toBeCloseTo(8 * hourlyRate * 1.40, 0);
+      expect(result.sundayGross).toBeCloseTo(8 * hourlyRate * 1.75, 0);
     });
 
     it('calculates night hours with 1.75× multiplier', () => {
