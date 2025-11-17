@@ -65,8 +65,8 @@ export interface SalaryBracket {
   category: string; // Label for the bracket
   employeeCount: number;
   totalGross: number;
-  contributionBase: number; // Retirement contribution base (plafond: 1.647.315 F)
-  retirementBase: number; // Explicit retirement base (plafond: 1.647.315 F)
+  contributionBase: number; // Retirement contribution base (plafond: 3.375.000 F)
+  retirementBase: number; // Explicit retirement base (plafond: 3.375.000 F)
   otherRegimesBase: number; // Base for maternity/family/work accidents (plafond: 75.000 F)
 }
 
@@ -153,9 +153,9 @@ export interface GenerateDeclarationInput {
 // Constants
 // ========================================
 
-const DAILY_WAGE_THRESHOLD = 3231; // FCFA per day
-const MONTHLY_SALARY_BRACKET_1 = 70000; // FCFA (SMIG - minimum wage)
-const MONTHLY_SALARY_BRACKET_2 = 1647315; // FCFA (CNPS plafond for retirement)
+const DAILY_WAGE_THRESHOLD = 3462; // FCFA per day
+const MONTHLY_SALARY_BRACKET_1 = 75000; // FCFA (SMIG - minimum wage)
+const MONTHLY_SALARY_BRACKET_2 = 3375000; // FCFA (CNPS plafond for retirement)
 const OTHER_REGIMES_PLAFOND = 75000; // FCFA (plafond for maternity, family, work accidents)
 
 // ========================================
@@ -304,7 +304,7 @@ export async function generateCNPSDeclaration(
   const contributions = {
     pension_employer: 0,
     pension_employee: 0,
-    pension_base: 0, // Base for retirement (plafond: 1.647.315 F)
+    pension_base: 0, // Base for retirement (plafond: 3.375.000 F)
     maternity_employer: 0,
     maternity_base: 0, // Base for maternity (plafond: 75.000 F)
     family_employer: 0,
@@ -339,7 +339,7 @@ export async function generateCNPSDeclaration(
     );
 
     // Calculate regime-specific contribution bases
-    // Régime de Retraite: plafond = 1.647.315 F (for all employees)
+    // Régime de Retraite: plafond = 3.375.000 F (for all employees)
     const pensionBase = Math.min(brutImposable, MONTHLY_SALARY_BRACKET_2);
     contributions.pension_base += pensionBase;
 
@@ -499,7 +499,7 @@ export async function generateCNPSDeclaration(
     // Employee categorization
     dailyWorkers: {
       category1: {
-        category: 'Horaires, journaliers et occasionnels inférieurs ou égaux à 3231 F par jour',
+        category: 'Horaires, journaliers et occasionnels inférieurs ou égaux à 3462 F par jour',
         employeeCount: brackets.daily_1.count,
         totalGross: Math.round(brackets.daily_1.gross),
         contributionBase: Math.round(brackets.daily_1.base),
@@ -507,7 +507,7 @@ export async function generateCNPSDeclaration(
         otherRegimesBase: Math.round(brackets.daily_1.otherRegimesBase),
       },
       category2: {
-        category: 'Horaires, journaliers et occasionnels supérieurs à 3231 F par jour',
+        category: 'Horaires, journaliers et occasionnels supérieurs à 3462 F par jour',
         employeeCount: brackets.daily_2.count,
         totalGross: Math.round(brackets.daily_2.gross),
         contributionBase: Math.round(brackets.daily_2.base),
@@ -526,7 +526,7 @@ export async function generateCNPSDeclaration(
 
     monthlyWorkers: {
       category1: {
-        category: 'Mensuels inférieurs ou égaux à 70.000 F par mois',
+        category: 'Mensuels inférieurs ou égaux à 75.000 F par mois',
         employeeCount: brackets.monthly_1.count,
         totalGross: Math.round(brackets.monthly_1.gross),
         contributionBase: Math.round(brackets.monthly_1.base),
@@ -534,7 +534,7 @@ export async function generateCNPSDeclaration(
         otherRegimesBase: Math.round(brackets.monthly_1.otherRegimesBase),
       },
       category2: {
-        category: 'Mensuels supérieurs à 70.000 F par mois et inférieurs ou égaux à 1.647.315 F par mois',
+        category: 'Mensuels supérieurs à 75.000 F par mois et inférieurs ou égaux à 3.375.000 F par mois',
         employeeCount: brackets.monthly_2.count,
         totalGross: Math.round(brackets.monthly_2.gross),
         contributionBase: Math.round(brackets.monthly_2.base),
@@ -542,7 +542,7 @@ export async function generateCNPSDeclaration(
         otherRegimesBase: Math.round(brackets.monthly_2.otherRegimesBase),
       },
       category3: {
-        category: 'Mensuels supérieurs à 1.647.315 F par mois',
+        category: 'Mensuels supérieurs à 3.375.000 F par mois',
         employeeCount: brackets.monthly_3.count,
         totalGross: Math.round(brackets.monthly_3.gross),
         contributionBase: Math.round(brackets.monthly_3.base),

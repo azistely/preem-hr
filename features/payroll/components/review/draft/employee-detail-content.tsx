@@ -34,8 +34,8 @@ import { Separator } from '@/components/ui/separator';
 import { api } from '@/trpc/react';
 import { TimeEntryRow } from './time-entry-row';
 import { TimeEntryDetailModal } from './time-entry-detail-modal';
-import { PayVariablesDialog } from './pay-variables-dialog';
 import { OvertimeBreakdownCard } from '../overtime-breakdown-card';
+import { PayrollRunVariablesList } from '../../payroll-run-variables-list';
 
 interface EmployeeDetailContentProps {
   employeeId: string;
@@ -53,7 +53,6 @@ export function EmployeeDetailContent({
   periodEnd,
 }: EmployeeDetailContentProps) {
   const [selectedTimeEntry, setSelectedTimeEntry] = useState<any | null>(null);
-  const [showPayVariablesDialog, setShowPayVariablesDialog] = useState(false);
   const { toast } = useToast();
 
   // Get employee details
@@ -70,20 +69,6 @@ export function EmployeeDetailContent({
       enabled: employee?.paymentFrequency !== 'MONTHLY',
     }
   );
-
-  // Get pay variables for this period
-  const { data: payVariablesData, refetch: refetchPayVariables } = api.payroll.getEmployeePayVariables.useQuery(
-    {
-      runId,
-      employeeId,
-    }
-  );
-
-  // Parse pay variables from earnings and deductions details
-  const payVariables = [
-    ...(Array.isArray(payVariablesData?.earningsDetails) ? payVariablesData.earningsDetails : []),
-    ...(Array.isArray(payVariablesData?.deductionsDetails) ? payVariablesData.deductionsDetails : []),
-  ].filter((item: any) => item && typeof item === 'object');
 
   const paymentFrequency = employee?.paymentFrequency || 'MONTHLY';
   const isMonthlyWorker = paymentFrequency === 'MONTHLY';
@@ -185,25 +170,6 @@ export function EmployeeDetailContent({
     },
   });
 
-  const addPayVariable = api.payroll.addPayVariable.useMutation({
-    onSuccess: async () => {
-      await refetchPayVariables();
-      toast({
-        title: 'Variable ajoutée',
-        description: 'La variable de paie a été ajoutée avec succès.',
-        duration: 3000,
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: 'Erreur',
-        description: error.message || 'Impossible d\'ajouter la variable de paie.',
-        variant: 'destructive',
-        duration: 3000,
-      });
-    },
-  });
-
   const bulkApprove = api.timeTracking.bulkApprove.useMutation({
     onSuccess: async (_, variables) => {
       await refetchTimeEntries();
@@ -232,18 +198,6 @@ export function EmployeeDetailContent({
       entryId,
       rejectionReason: 'Rejeté depuis la révision de paie',
     });
-  };
-
-  const handleAddPayVariable = async (data: any) => {
-    await addPayVariable.mutateAsync({
-      runId,
-      employeeId,
-      category: data.type,
-      description: data.description,
-      amount: data.amount,
-      taxable: data.taxable,
-    });
-    setShowPayVariablesDialog(false);
   };
 
   const handleBulkApprove = async () => {
@@ -383,55 +337,14 @@ export function EmployeeDetailContent({
         />
       )}
 
-      {/* Pay Variables */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <DollarSign className="h-4 w-4" />
-            Variables de Paie
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {payVariables.length > 0 ? (
-            <div className="space-y-2">
-              {payVariables.map((variable: any) => (
-                <div
-                  key={variable.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div>
-                    <div className="font-medium">{variable.description}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {variable.category}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold">
-                      {variable.amount.toLocaleString('fr-FR')} FCFA
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {variable.taxable ? 'Imposable' : 'Exonéré'}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-4 text-muted-foreground text-sm">
-              Aucune variable de paie
-            </div>
-          )}
-
-          <Button
-            onClick={() => setShowPayVariablesDialog(true)}
-            variant="outline"
-            className="w-full min-h-[48px] gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Ajouter Bonus/Prime
-          </Button>
-        </CardContent>
-      </Card>
+      {/* Pay Variables - Date Range Filtered */}
+      <PayrollRunVariablesList
+        employeeId={employeeId}
+        employeeName={employeeName}
+        employeeNumber={employee?.employeeNumber || ''}
+        runPeriodStart={format(periodStart, 'yyyy-MM-dd')}
+        runPeriodEnd={format(periodEnd, 'yyyy-MM-dd')}
+      />
 
       {/* Monthly Worker Info */}
       {isMonthlyWorker && (
@@ -464,14 +377,6 @@ export function EmployeeDetailContent({
           }}
         />
       )}
-
-      {/* Pay Variables Dialog */}
-      <PayVariablesDialog
-        open={showPayVariablesDialog}
-        onClose={() => setShowPayVariablesDialog(false)}
-        employeeName={employeeName}
-        onSubmit={handleAddPayVariable}
-      />
     </div>
   );
 }

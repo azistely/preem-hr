@@ -162,8 +162,10 @@ export default function VariableInputsPage() {
               <ul className="list-disc list-inside space-y-1 text-blue-800">
                 <li>Les composants variables changent chaque mois (contrairement aux composants fixes)</li>
                 <li>Saisissez les montants pour le mois sélectionné</li>
-                <li>Les valeurs sont automatiquement incluses dans le calcul de paie</li>
-                <li>Utilisez "Copier du mois précédent" pour les primes récurrentes</li>
+                <li><strong>Date d&apos;entrée :</strong> Détermine dans quelle paie la variable sera incluse</li>
+                <li><strong>Employés mensuels :</strong> Une seule saisie par mois suffit</li>
+                <li><strong>Employés hebdomadaires/quinzaines :</strong> Utilisez la page de révision de paie pour plus de contrôle</li>
+                <li>Utilisez &quot;Copier du mois précédent&quot; pour les primes récurrentes</li>
               </ul>
             </div>
           </div>

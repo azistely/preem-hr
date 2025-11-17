@@ -15,7 +15,7 @@ import { variablePayInputs } from '@/lib/db/schema/variable-pay-inputs';
 import { employees } from '@/lib/db/schema/employees';
 import { employeeSalaries } from '@/lib/db/schema/salaries';
 import { salaryComponentDefinitions } from '@/lib/db/schema/payroll-config';
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, sql, desc, gte, lte } from 'drizzle-orm';
 
 /**
  * Input for bulk upsert operation
@@ -230,6 +230,57 @@ export async function getVariablePayInputsForEmployee(
         eq(variablePayInputs.tenantId, tenantId),
         eq(variablePayInputs.employeeId, employeeId),
         eq(variablePayInputs.period, period)
+      )
+    )
+    .groupBy(variablePayInputs.componentCode)
+    .execute();
+
+  return results;
+}
+
+/**
+ * Get variable pay inputs for a specific date range
+ *
+ * Used by multi-frequency payroll (daily, weekly, bi-weekly) to prevent
+ * duplicating variables across multiple runs in the same period.
+ *
+ * Entry date determines which run gets the variable:
+ * - Weekly run Oct 1-7 → Only includes variables with entry_date Oct 1-7
+ * - Weekly run Oct 8-14 → Only includes variables with entry_date Oct 8-14
+ *
+ * @param tenantId - Tenant ID
+ * @param employeeId - Employee ID
+ * @param startDate - Start date of payroll run (inclusive) - YYYY-MM-DD
+ * @param endDate - End date of payroll run (inclusive) - YYYY-MM-DD
+ * @returns Aggregated variable pay inputs (one row per component with summed amount)
+ */
+export async function getVariablePayInputsForDateRange(
+  tenantId: string,
+  employeeId: string,
+  startDate: Date | string,
+  endDate: Date | string
+) {
+  // Convert Date objects to strings if needed
+  const startDateStr = startDate instanceof Date
+    ? startDate.toISOString().split('T')[0]
+    : startDate;
+  const endDateStr = endDate instanceof Date
+    ? endDate.toISOString().split('T')[0]
+    : endDate;
+
+  // SUM all entries per component where entry_date is in range
+  const results = await db
+    .select({
+      componentCode: variablePayInputs.componentCode,
+      amount: sql<string>`SUM(${variablePayInputs.amount})`.as('total_amount'),
+    })
+    .from(variablePayInputs)
+    .where(
+      and(
+        eq(variablePayInputs.tenantId, tenantId),
+        eq(variablePayInputs.employeeId, employeeId),
+        gte(variablePayInputs.entryDate, startDateStr),
+        lte(variablePayInputs.entryDate, endDateStr)
       )
     )
     .groupBy(variablePayInputs.componentCode)

@@ -456,7 +456,7 @@ export default function CNPSDeclarationPage() {
                     <TableHead className="text-right">
                       <div className="text-xs">Salaires soumis à cotisations</div>
                       <div className="font-semibold">Régime de Retraite</div>
-                      <div className="text-xs text-muted-foreground">(Plafond: 1.647.315 F)</div>
+                      <div className="text-xs text-muted-foreground">(Plafond: 3.375.000 F)</div>
                     </TableHead>
                     <TableHead className="text-right">
                       <div className="text-xs">Salaires soumis à cotisations</div>
@@ -639,12 +639,12 @@ export default function CNPSDeclarationPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {/* Régime de Retraite - Plafond: 1.647.315 F */}
+                  {/* Régime de Retraite - Plafond: 3.375.000 F */}
                   <TableRow>
                     <TableCell className="font-medium">
                       {data.contributions.retirement.name}
                       <div className="text-xs text-muted-foreground font-normal">
-                        Plancher: 75.000 F | Plafond: 1.647.315 F
+                        Plancher: 75.000 F | Plafond: 3.375.000 F
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">
@@ -800,7 +800,7 @@ export default function CNPSDeclarationPage() {
                     plafonnée à 75.000 F par employé
                   </li>
                   <li>
-                    <strong>Régime de Retraite :</strong> Base = min(salaire brut, 1.647.315 F) pour tous les employés
+                    <strong>Régime de Retraite :</strong> Base = min(salaire brut, 3.375.000 F) pour tous les employés
                   </li>
                 </ul>
               </div>

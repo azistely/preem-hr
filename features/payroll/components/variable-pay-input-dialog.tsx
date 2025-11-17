@@ -55,16 +55,43 @@ import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/trpc/client';
 
 /**
- * Form validation schema
+ * Form validation schema factory
+ * Creates schema with optional date range validation
  */
-const schema = z.object({
-  componentCode: z.string().min(1, 'Code composant requis').max(50, 'Code trop long'),
-  amount: z.number().min(0, 'Le montant doit être positif ou zéro'),
-  entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide (format: AAAA-MM-JJ)'),
-  notes: z.string().max(500, 'Notes trop longues').optional(),
-});
+const createSchema = (minDate?: string, maxDate?: string) => {
+  const baseDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide (format: AAAA-MM-JJ)');
 
-type FormValues = z.infer<typeof schema>;
+  // Base schema
+  const baseSchema = z.object({
+    componentCode: z.string().min(1, 'Code composant requis').max(50, 'Code trop long'),
+    amount: z.number().min(0, 'Le montant doit être positif ou zéro'),
+    entryDate: baseDateSchema,
+    notes: z.string().max(500, 'Notes trop longues').optional(),
+  });
+
+  // Add date range validation if constraints provided
+  if (minDate || maxDate) {
+    return baseSchema.refine(
+      (data) => {
+        if (minDate && data.entryDate < minDate) return false;
+        if (maxDate && data.entryDate > maxDate) return false;
+        return true;
+      },
+      {
+        message: minDate && maxDate
+          ? `La date doit être entre le ${minDate} et le ${maxDate}`
+          : minDate
+          ? `La date doit être après le ${minDate}`
+          : `La date doit être avant le ${maxDate}`,
+        path: ['entryDate'],
+      }
+    );
+  }
+
+  return baseSchema;
+};
+
+type FormValues = z.infer<ReturnType<typeof createSchema>>;
 
 /**
  * Get badge variant and label for calculation method
@@ -89,6 +116,8 @@ interface VariablePayInputDialogProps {
   employeeNumber: string;
   employeeId: string;
   period: string;
+  minDate?: string; // YYYY-MM-DD format - Minimum allowed entry date
+  maxDate?: string; // YYYY-MM-DD format - Maximum allowed entry date
 }
 
 export function VariablePayInputDialog({
@@ -100,6 +129,8 @@ export function VariablePayInputDialog({
   employeeNumber,
   employeeId,
   period,
+  minDate,
+  maxDate,
 }: VariablePayInputDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -112,12 +143,15 @@ export function VariablePayInputDialog({
 
   const catalogueComponents = catalogueData?.components ?? [];
 
+  // Create schema with date range validation
+  const schema = createSchema(minDate, maxDate);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       componentCode: initialValues?.componentCode ?? '',
       amount: initialValues?.amount ?? 0,
-      entryDate: period, // Default to period start (first day of month)
+      entryDate: initialValues?.entryDate ?? (minDate || period), // Default to minDate if provided, else period
       notes: initialValues?.notes ?? '',
     },
   });
@@ -128,11 +162,11 @@ export function VariablePayInputDialog({
       form.reset({
         componentCode: initialValues?.componentCode ?? '',
         amount: initialValues?.amount ?? 0,
-        entryDate: period, // Default to period start (first day of month)
+        entryDate: initialValues?.entryDate ?? (minDate || period), // Default to minDate if provided, else period
         notes: initialValues?.notes ?? '',
       });
     }
-  }, [open, initialValues, form, period]);
+  }, [open, initialValues, form, period, minDate]);
 
   const handleSubmit = async (values: FormValues) => {
     setIsSubmitting(true);
@@ -245,11 +279,17 @@ export function VariablePayInputDialog({
                     <Input
                       type="date"
                       className="min-h-[48px]"
+                      min={minDate}
+                      max={maxDate}
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    Pour un versement mensuel, laisser le 1er du mois. Pour un suivi journalier, sélectionner la date précise.
+                    {minDate && maxDate ? (
+                      `Doit être entre le ${new Date(minDate).toLocaleDateString('fr-FR')} et le ${new Date(maxDate).toLocaleDateString('fr-FR')}`
+                    ) : (
+                      'Pour un versement mensuel, laisser le 1er du mois. Pour un suivi journalier, sélectionner la date précise.'
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

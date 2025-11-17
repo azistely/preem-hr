@@ -171,6 +171,15 @@ export function VariablePayEmployeesTable({
     return inputs.reduce((sum, input) => sum + input.amount, 0);
   };
 
+  // Calculate last day of the period month (YYYY-MM-01 → YYYY-MM-DD)
+  const getLastDayOfMonth = (period: string): string => {
+    const date = new Date(period);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  };
+
   if (isLoading) {
     return (
       <Card className="p-12 flex items-center justify-center">
@@ -337,6 +346,8 @@ export function VariablePayEmployeesTable({
           employeeNumber={dialogState.employeeNumber}
           employeeId={dialogState.employeeId}
           period={period}
+          minDate={period} // Start of period month (YYYY-MM-01)
+          maxDate={getLastDayOfMonth(period)} // End of period month (YYYY-MM-DD)
           initialValues={
             dialogState.inputId
               ? {

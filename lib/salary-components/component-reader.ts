@@ -9,7 +9,10 @@ import type {
   SalaryComponentInstance,
   CIComponentMetadata,
 } from '@/features/employees/types/salary-components';
-import { getVariablePayInputsForEmployee } from '@/features/payroll/services/variable-pay-inputs.service';
+import {
+  getVariablePayInputsForEmployee,
+  getVariablePayInputsForDateRange
+} from '@/features/payroll/services/variable-pay-inputs.service';
 
 export interface EmployeeSalaryData {
   components: SalaryComponentInstance[];
@@ -288,37 +291,56 @@ export function getTotalGrossFromComponents(
 // ============================================================================
 
 /**
- * Get employee salary components for a specific period (async version)
+ * Get employee salary components for a specific period or date range (async version)
  *
  * Merges fixed components from employee_salaries.components with
- * variable pay inputs for the period.
+ * variable pay inputs for the period or date range.
  *
  * Architecture:
  * - Fixed components (housing, transport) → employee_salaries.components
  * - Variable components (commissions, bonuses) → variable_pay_inputs table
  * - Payroll calculation → uses this merged result
  *
+ * Multi-frequency payroll support:
+ * - Monthly: Pass period only (YYYY-MM-01)
+ * - Weekly/Bi-weekly/Daily: Pass period start and end dates to prevent duplication
+ *
  * @param salaryData Employee salary record with fixed components
  * @param employeeId Employee ID
- * @param period Period in YYYY-MM-01 format
+ * @param periodOrStartDate Period (YYYY-MM-01) OR start date (YYYY-MM-DD) for date-range filtering
  * @param tenantId Tenant ID for security
+ * @param endDate Optional end date (YYYY-MM-DD) for date-range filtering (multi-frequency payroll)
  * @returns Components breakdown with variable inputs merged
  */
 export async function getEmployeeSalaryComponentsForPeriod(
   salaryData: EmployeeSalaryData,
   employeeId: string,
-  period: string, // YYYY-MM-01
-  tenantId: string
+  periodOrStartDate: string, // YYYY-MM-01 or YYYY-MM-DD
+  tenantId: string,
+  endDate?: string // Optional: YYYY-MM-DD for date-range filtering
 ): Promise<ComponentsBreakdown> {
   // Start with fixed components
   const fixedComponents = salaryData.components as SalaryComponentInstance[];
 
-  // Fetch variable inputs for this period
-  const variableInputs = await getVariablePayInputsForEmployee(
-    tenantId,
-    employeeId,
-    period
-  );
+  // Fetch variable inputs (date range mode for multi-frequency, period mode for monthly)
+  let variableInputs;
+  if (endDate) {
+    // Date range mode (weekly/bi-weekly/daily payroll)
+    // Only includes variables where entry_date is in [periodOrStartDate, endDate]
+    variableInputs = await getVariablePayInputsForDateRange(
+      tenantId,
+      employeeId,
+      periodOrStartDate,
+      endDate
+    );
+  } else {
+    // Period mode (monthly payroll - backward compatible)
+    variableInputs = await getVariablePayInputsForEmployee(
+      tenantId,
+      employeeId,
+      periodOrStartDate
+    );
+  }
 
   // Merge: If a component has a variable input, use that amount instead
   const mergedComponents = fixedComponents.map((component) => {
