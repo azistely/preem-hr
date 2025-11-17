@@ -3460,13 +3460,12 @@ export const employees: any = pgTable("employees", {
 	acpNotes: text("acp_notes"),
 
 	// Employee Protection fields (for labor law compliance)
+	// Note: Medical certificates are stored in uploaded_documents table with versioning/signatures
 	isPregnant: boolean("is_pregnant").default(false),
 	pregnancyStartDate: date("pregnancy_start_date"),
 	expectedDeliveryDate: date("expected_delivery_date"),
 	medicalExemptionNightWork: boolean("medical_exemption_night_work").default(false),
 	medicalExemptionExpiryDate: date("medical_exemption_expiry_date"),
-	medicalExemptionDocumentUrl: text("medical_exemption_document_url"),
-	medicalExemptionNotes: text("medical_exemption_notes"),
 }, (table) => [
 	index("idx_employees_cgeci_category").using("btree", table.categoryCode.asc().nullsLast().op("text_ops"), table.sectorCodeCgeci.asc().nullsLast().op("text_ops")).where(sql`(category_code IS NOT NULL)`),
 	index("idx_employees_cmu_number").using("btree", table.cmuNumber.asc().nullsLast().op("text_ops")),
