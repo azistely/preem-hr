@@ -65,11 +65,13 @@ export interface TimeEntry {
   clockInPhotoUrl?: string | null;
   clockOutPhotoUrl?: string | null;
   overtimeBreakdown: {
+    regular?: number;
     hours_41_to_46?: number;
     hours_above_46?: number;
-    weekend?: number;
+    saturday?: number;
+    sunday?: number;
     night_work?: number;
-    holiday?: number;
+    public_holiday?: number;
   } | null;
   notes?: string | null;
   status: string;
@@ -102,9 +104,10 @@ export function TimeEntryApprovalCard({
   const overtimeHours =
     (entry.overtimeBreakdown?.hours_41_to_46 || 0) +
     (entry.overtimeBreakdown?.hours_above_46 || 0) +
-    (entry.overtimeBreakdown?.weekend || 0) +
+    (entry.overtimeBreakdown?.saturday || 0) +
+    (entry.overtimeBreakdown?.sunday || 0) +
     (entry.overtimeBreakdown?.night_work || 0) +
-    (entry.overtimeBreakdown?.holiday || 0);
+    (entry.overtimeBreakdown?.public_holiday || 0);
 
   const handleApprove = async () => {
     if (!onApprove) return;
@@ -228,9 +231,14 @@ export function TimeEntryApprovalCard({
                       (+50%)
                     </p>
                   ) : null}
-                  {entry.overtimeBreakdown?.weekend ? (
+                  {entry.overtimeBreakdown?.saturday ? (
                     <p className="text-xs">
-                      Week-end: {entry.overtimeBreakdown.weekend}h (+50%)
+                      Samedi: {entry.overtimeBreakdown.saturday}h (+50%)
+                    </p>
+                  ) : null}
+                  {entry.overtimeBreakdown?.sunday ? (
+                    <p className="text-xs">
+                      Dimanche: {entry.overtimeBreakdown.sunday}h (+75%)
                     </p>
                   ) : null}
                   {entry.overtimeBreakdown?.night_work ? (
@@ -238,9 +246,9 @@ export function TimeEntryApprovalCard({
                       Nuit: {entry.overtimeBreakdown.night_work}h (+75%)
                     </p>
                   ) : null}
-                  {entry.overtimeBreakdown?.holiday ? (
+                  {entry.overtimeBreakdown?.public_holiday ? (
                     <p className="text-xs">
-                      Jour férié: {entry.overtimeBreakdown.holiday}h (+100%)
+                      Jour férié: {entry.overtimeBreakdown.public_holiday}h (+100%)
                     </p>
                   ) : null}
                 </CollapsibleContent>

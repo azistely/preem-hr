@@ -68,9 +68,10 @@ export function CompactTimeEntry({
   const overtimeHours =
     (entry.overtimeBreakdown?.hours_41_to_46 || 0) +
     (entry.overtimeBreakdown?.hours_above_46 || 0) +
-    (entry.overtimeBreakdown?.weekend || 0) +
+    (entry.overtimeBreakdown?.saturday || 0) +
+    (entry.overtimeBreakdown?.sunday || 0) +
     (entry.overtimeBreakdown?.night_work || 0) +
-    (entry.overtimeBreakdown?.holiday || 0);
+    (entry.overtimeBreakdown?.public_holiday || 0);
 
   const handleApprove = async () => {
     if (!onApprove) return;
@@ -231,14 +232,17 @@ export function CompactTimeEntry({
                   {entry.overtimeBreakdown?.hours_above_46 ? (
                     <p>Heures 46+: {entry.overtimeBreakdown.hours_above_46}h (+50%)</p>
                   ) : null}
-                  {entry.overtimeBreakdown?.weekend ? (
-                    <p>Week-end: {entry.overtimeBreakdown.weekend}h (+50%)</p>
+                  {entry.overtimeBreakdown?.saturday ? (
+                    <p>Samedi: {entry.overtimeBreakdown.saturday}h (+50%)</p>
+                  ) : null}
+                  {entry.overtimeBreakdown?.sunday ? (
+                    <p>Dimanche: {entry.overtimeBreakdown.sunday}h (+75%)</p>
                   ) : null}
                   {entry.overtimeBreakdown?.night_work ? (
                     <p>Nuit: {entry.overtimeBreakdown.night_work}h (+75%)</p>
                   ) : null}
-                  {entry.overtimeBreakdown?.holiday ? (
-                    <p>Jour férié: {entry.overtimeBreakdown.holiday}h (+100%)</p>
+                  {entry.overtimeBreakdown?.public_holiday ? (
+                    <p>Jour férié: {entry.overtimeBreakdown.public_holiday}h (+100%)</p>
                   ) : null}
                 </div>
               </div>

@@ -247,9 +247,10 @@ export default function TimeTrackingAdminPage() {
         sum +
         (Number(breakdown.hours_41_to_46) || 0) +
         (Number(breakdown.hours_above_46) || 0) +
-        (Number(breakdown.weekend) || 0) +
+        (Number(breakdown.saturday) || 0) +
+        (Number(breakdown.sunday) || 0) +
         (Number(breakdown.night_work) || 0) +
-        (Number(breakdown.holiday) || 0)
+        (Number(breakdown.public_holiday) || 0)
       );
     }, 0);
 
@@ -266,9 +267,10 @@ export default function TimeTrackingAdminPage() {
           return sum + (
             (Number(breakdown.hours_41_to_46) || 0) +
             (Number(breakdown.hours_above_46) || 0) +
-            (Number(breakdown.weekend) || 0) +
+            (Number(breakdown.saturday) || 0) +
+            (Number(breakdown.sunday) || 0) +
             (Number(breakdown.night_work) || 0) +
-            (Number(breakdown.holiday) || 0)
+            (Number(breakdown.public_holiday) || 0)
           );
         }, 0)
       : 0;
