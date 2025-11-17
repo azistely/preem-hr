@@ -28,6 +28,7 @@ import {
 } from '@/features/employees/services/dependent-verification.service';
 import type { PayrollRunSummary } from '../types';
 import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
+import { aggregateTimeEntriesForPayroll } from './time-entries-aggregation.service';
 import { buildCalculationContext } from '../types/calculation-context';
 
 export interface CreatePayrollRunInput {
@@ -366,17 +367,14 @@ export async function calculatePayrollRun(
           new Date(run.periodEnd)
         );
 
-        // Convert period to YYYY-MM-01 format
-        const periodDate = new Date(run.periodStart);
-        const periodKey = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}-01`;
-
-        // Get components with variable inputs merged
+        // Get components with variable inputs merged (date-range mode for multi-frequency payroll)
         const { getEmployeeSalaryComponentsForPeriod } = await import('@/lib/salary-components/component-reader');
         const breakdown = await getEmployeeSalaryComponentsForPeriod(
           currentSalary as any,
           employee.id,
-          periodKey,
-          run.tenantId
+          run.periodStart, // Start date (YYYY-MM-DD)
+          run.tenantId,
+          run.periodEnd    // End date (YYYY-MM-DD) - prevents variable duplication for multi-frequency
         );
 
         // Extract base salary components (database-driven, multi-country)
@@ -453,39 +451,32 @@ export async function calculatePayrollRun(
           }
         }
 
-        // CDDTI workers: Load total hours from time entries (regardless of rateType)
+        // CDDTI workers: Load total hours and special hours breakdown from time entries
+        let saturdayHours = 0;
+        let sundayHours = 0;
+        let nightHours = 0;
+
         if (contractType === 'CDDTI') {
-          const entries = await db
-            .select()
-            .from(timeEntries)
-            .where(
-              and(
-                eq(timeEntries.employeeId, employee.id),
-                eq(timeEntries.tenantId, run.tenantId),
-                eq(timeEntries.status, 'approved'), // Only count approved entries
-                sql`${timeEntries.clockIn} >= ${run.periodStart}`,
-                sql`${timeEntries.clockIn} < ${run.periodEnd}`
-              )
-            );
+          // Use aggregation service to extract hours breakdown from time entries
+          const aggregatedHours = await aggregateTimeEntriesForPayroll(
+            employee.id,
+            run.tenantId,
+            run.periodStart, // Already in YYYY-MM-DD format
+            run.periodEnd    // Already in YYYY-MM-DD format
+          );
 
-          // Sum total hours worked from all entries
-          hoursWorkedThisMonth = entries.reduce((total, entry) => {
-            const hours = entry.totalHours ? parseFloat(String(entry.totalHours)) : 0;
-            return total + hours;
-          }, 0);
+          // Set hours from aggregated data
+          hoursWorkedThisMonth = aggregatedHours.totalHours;
+          saturdayHours = aggregatedHours.saturdayHours;
+          sundayHours = aggregatedHours.sundayHours;
+          nightHours = aggregatedHours.nightHours;
 
-          // ✅ IMPORTANT: Calculate presence days for transport allowance
+          // ✅ IMPORTANT: Use presence days for transport allowance
           // Per user feedback (2025-11-03): Transport is based on presence days, NOT hours
           // Rule: 1 day on site = 1 full transport allowance, even if only 1 hour worked
-          const uniqueDays = new Set(
-            entries.map(entry => {
-              const date = new Date(entry.clockIn);
-              return date.toISOString().split('T')[0]; // Get YYYY-MM-DD
-            })
-          );
-          daysWorkedThisMonth = uniqueDays.size;
+          daysWorkedThisMonth = aggregatedHours.daysWorked;
 
-          console.log(`[PAYROLL DEBUG] CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${hoursWorkedThisMonth} hours worked, ${daysWorkedThisMonth} days present, ${entries.length} time entries`);
+          console.log(`[PAYROLL DEBUG] CDDTI worker ${employee.id} (${employee.firstName} ${employee.lastName}): ${hoursWorkedThisMonth} hours worked (${saturdayHours} Sat, ${sundayHours} Sun, ${nightHours} night), ${daysWorkedThisMonth} days present, ${aggregatedHours.entryCount} time entries`);
 
           // Skip CDDTI workers with 0 hours worked (no salary to pay)
           if (hoursWorkedThisMonth === 0) {
@@ -532,6 +523,10 @@ export async function calculatePayrollRun(
           hoursWorkedThisMonth, // CRITICAL: Pass actual hours worked for CDDTI workers
           paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
           weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
+          // Special hours from time entries (Saturday, Sunday, Night) - automatically extracted
+          saturdayHours, // Hours worked on Saturday (1.40× multiplier)
+          sundayHours, // Hours worked on Sunday/holiday (1.40× multiplier)
+          nightHours, // Hours worked at night 21h-5h (1.75× multiplier)
           // Dynamic CMU calculation using verified dependents from employee_dependents table
           // This ensures consistency with fiscal parts calculation (same "personnes à charge" source)
           maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
@@ -845,17 +840,14 @@ export async function recalculateSingleEmployee(
     new Date(run.periodEnd)
   );
 
-  // Get period key
-  const periodDate = new Date(run.periodStart);
-  const periodKey = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}-01`;
-
-  // Get components breakdown
+  // Get components breakdown (date-range mode for multi-frequency payroll)
   const { getEmployeeSalaryComponentsForPeriod } = await import('@/lib/salary-components/component-reader');
   const breakdown = await getEmployeeSalaryComponentsForPeriod(
     currentSalary as any,
     employee.id,
-    periodKey,
-    run.tenantId
+    run.periodStart, // Start date (YYYY-MM-DD)
+    run.tenantId,
+    run.periodEnd    // End date (YYYY-MM-DD) - prevents variable duplication for multi-frequency
   );
 
   // Extract base salary components
