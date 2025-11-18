@@ -42,12 +42,20 @@ interface TenantSwitcherProps {
   variant?: 'full' | 'compact';
   /** Additional CSS classes */
   className?: string;
+  /** Callback when dropdown open state changes */
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function TenantSwitcher({ variant = 'full', className }: TenantSwitcherProps) {
+export function TenantSwitcher({ variant = 'full', className, onOpenChange }: TenantSwitcherProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+
+  // Handle dropdown open state change
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    onOpenChange?.(open);
+  };
 
   // Fetch available tenants
   const { data: tenants, isLoading: isLoadingTenants } = trpc.tenant.listUserTenants.useQuery();
@@ -73,7 +81,7 @@ export function TenantSwitcher({ variant = 'full', className }: TenantSwitcherPr
 
   const handleSwitchTenant = async (tenantId: string) => {
     if (tenantId === currentTenant?.id) {
-      setIsOpen(false);
+      handleOpenChange(false);
       return;
     }
 
@@ -121,7 +129,7 @@ export function TenantSwitcher({ variant = 'full', className }: TenantSwitcherPr
 
   // Multi-tenant dropdown
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+    <DropdownMenu open={isOpen} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -214,7 +222,7 @@ export function TenantSwitcher({ variant = 'full', className }: TenantSwitcherPr
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => {
-                setIsOpen(false);
+                handleOpenChange(false);
                 router.push('/settings/companies/new');
               }}
               className="flex items-center gap-3 py-3 cursor-pointer min-h-[44px] text-primary"

@@ -255,6 +255,7 @@ export function Sidebar({
   const router = useRouter();
   const [isCollapsed, setIsCollapsed] = React.useState(true); // Start collapsed
   const [isHovered, setIsHovered] = React.useState(false); // Track hover state
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false); // Track dropdown state
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
@@ -271,6 +272,26 @@ export function Sidebar({
       setIsLoggingOut(false);
     }
   };
+
+  // Handle mouse enter - expand immediately
+  const handleMouseEnter = () => {
+    setIsHovered(true);
+  };
+
+  // Handle mouse leave - only collapse if dropdown is not open
+  const handleMouseLeave = () => {
+    if (!isDropdownOpen) {
+      setIsHovered(false);
+    }
+  };
+
+  // When dropdown closes, collapse sidebar if mouse is not hovering
+  React.useEffect(() => {
+    if (!isDropdownOpen && !isHovered) {
+      // Dropdown closed and mouse not hovering - ensure collapsed state
+      setIsHovered(false);
+    }
+  }, [isDropdownOpen, isHovered]);
 
   // Filter items based on search
   const filteredSections = React.useMemo(() => {
@@ -292,8 +313,8 @@ export function Sidebar({
   // Only show on desktop
   return (
     <aside
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={cn(
         "hidden lg:flex lg:flex-col border-r bg-background transition-all duration-300",
         showCollapsed ? "w-16" : "w-64",
@@ -325,7 +346,11 @@ export function Sidebar({
         {/* Tenant Switcher */}
         {!showCollapsed && (
           <div className="px-4 pb-3">
-            <TenantSwitcher variant="full" className="w-full justify-start" />
+            <TenantSwitcher
+              variant="full"
+              className="w-full justify-start"
+              onOpenChange={setIsDropdownOpen}
+            />
           </div>
         )}
       </div>
