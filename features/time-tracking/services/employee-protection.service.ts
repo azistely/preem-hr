@@ -274,7 +274,7 @@ export async function getProtectedEmployees(tenantId: string) {
   type Employee = typeof allEmployees[number];
 
   const mappedEmployees = allEmployees
-    .map((emp: Employee) => {
+    .map((emp) => {
       const category = getProtectionCategory({
         birthDate: emp.birthDate,
         isPregnant: emp.isPregnant,
@@ -303,7 +303,7 @@ export async function getProtectedEmployees(tenantId: string) {
   type MappedEmployee = typeof mappedEmployees[number];
 
   const protectedEmployees = mappedEmployees
-    .filter((emp: MappedEmployee): emp is NonNullable<MappedEmployee> => emp !== null);
+    .filter((emp): emp is NonNullable<MappedEmployee> => emp !== null);
 
   return protectedEmployees;
 }

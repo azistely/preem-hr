@@ -434,7 +434,7 @@ export async function getEmployeesApproachingLimits(
 
   // Calculate overtime usage for each employee
   const employeesWithUsage = await Promise.all(
-    allEmployees.map(async (employee: typeof allEmployees[number]) => {
+    allEmployees.map(async (employee) => {
       const yearlyUsed = await getOvertimeHoursInRange(
         employee.id,
         yearStart,
@@ -463,6 +463,6 @@ export async function getEmployeesApproachingLimits(
 
   // Filter to only at-risk employees and sort by percentage descending
   return employeesWithUsage
-    .filter((emp: EmployeeWithUsage): emp is EmployeeWithUsage => emp.isAtRisk)
-    .sort((a: EmployeeWithUsage, b: EmployeeWithUsage) => b.yearlyPercentage - a.yearlyPercentage);
+    .filter((emp): emp is EmployeeWithUsage => emp.isAtRisk)
+    .sort((a, b) => b.yearlyPercentage - a.yearlyPercentage);
 }

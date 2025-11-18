@@ -64,6 +64,7 @@ import { useToast } from '@/hooks/use-toast';
 import { CoefficientSelector } from '@/components/employees/coefficient-selector';
 import { ContractInfoCard } from '@/components/contracts/contract-info-card';
 import { UploadDocumentDialog } from '@/components/documents/upload-document-dialog';
+import { DocumentList } from '@/components/documents/document-list';
 import { trpc } from '@/lib/trpc/client';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -149,6 +150,7 @@ interface EmployeeEditPageProps {
 export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const utils = trpc.useUtils();
   const [activeTab, setActiveTab] = useState('essential');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [pregnancyCertDialogOpen, setPregnancyCertDialogOpen] = useState(false);
@@ -178,6 +180,22 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
     sectorCode: (employee as any)?.sectorCodeCgeci || undefined,
   }, {
     enabled: !!employee, // Only fetch after employee data is loaded
+  });
+
+  // Fetch pregnancy certificates
+  const { data: pregnancyDocs } = trpc.documents.listUploaded.useQuery({
+    employeeId,
+    uploadContext: 'employee_protection_pregnancy',
+  }, {
+    enabled: !!employeeId,
+  });
+
+  // Fetch medical exemption certificates
+  const { data: exemptionDocs } = trpc.documents.listUploaded.useQuery({
+    employeeId,
+    uploadContext: 'employee_protection_night_work',
+  }, {
+    enabled: !!employeeId,
   });
 
   // Fetch dependents for fiscal parts display
@@ -314,6 +332,13 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         dateOfBirth: data.dateOfBirth,
         nationalIdExpiry: data.nationalIdExpiry,
         workPermitExpiry: data.workPermitExpiry,
+        hireDate: data.hireDate,
+        // Employee protection fields
+        isPregnant: data.isPregnant,
+        pregnancyStartDate: data.pregnancyStartDate,
+        expectedDeliveryDate: data.expectedDeliveryDate,
+        medicalExemptionNightWork: data.medicalExemptionNightWork,
+        medicalExemptionExpiryDate: data.medicalExemptionExpiryDate,
         isExpat: data.isExpat,
         identityDocumentType: data.identityDocumentType,
       } as any);
@@ -722,6 +747,42 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                                 <Upload className="h-4 w-4 mr-2" />
                                 Télécharger le certificat
                               </Button>
+
+                              {/* Document Preview */}
+                              {pregnancyDocs && pregnancyDocs.documents.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  <p className="text-xs font-medium text-muted-foreground">Documents téléchargés:</p>
+                                  {pregnancyDocs.documents.map((doc: any) => (
+                                    <div key={doc.id} className="flex items-center justify-between p-2 bg-purple-50 rounded-md">
+                                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <FileText className="h-4 w-4 text-purple-600 flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium truncate">{doc.fileName}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {doc.uploadedAt ? format(new Date(doc.uploadedAt), 'dd MMM yyyy', { locale: fr }) : ''}
+                                            {doc.fileSize ? ` · ${(doc.fileSize / 1024).toFixed(0)} KB` : ''}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      {doc.storageUrl && (
+                                        <a
+                                          href={doc.storageUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-xs text-purple-600 hover:underline flex-shrink-0"
+                                        >
+                                          Voir
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  Aucun certificat téléchargé
+                                </p>
+                              )}
+
                               <p className="text-xs text-muted-foreground">
                                 Le certificat médical sera versionnée et peut être signé électroniquement
                               </p>
@@ -795,6 +856,42 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
                                 <Upload className="h-4 w-4 mr-2" />
                                 Télécharger le certificat
                               </Button>
+
+                              {/* Document Preview */}
+                              {exemptionDocs && exemptionDocs.documents.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  <p className="text-xs font-medium text-muted-foreground">Documents téléchargés:</p>
+                                  {exemptionDocs.documents.map((doc: any) => (
+                                    <div key={doc.id} className="flex items-center justify-between p-2 bg-blue-50 rounded-md">
+                                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <FileText className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium truncate">{doc.fileName}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {doc.uploadedAt ? format(new Date(doc.uploadedAt), 'dd MMM yyyy', { locale: fr }) : ''}
+                                            {doc.expiryDate ? ` · Expire: ${format(new Date(doc.expiryDate), 'dd MMM yyyy', { locale: fr })}` : ''}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      {doc.storageUrl && (
+                                        <a
+                                          href={doc.storageUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-xs text-blue-600 hover:underline flex-shrink-0"
+                                        >
+                                          Voir
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  Aucun certificat téléchargé
+                                </p>
+                              )}
+
                               <p className="text-xs text-muted-foreground">
                                 Le certificat sera lié à la date d'expiration et suivi automatiquement
                               </p>
@@ -1731,6 +1828,11 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
           expectedDeliveryDate: form.watch('expectedDeliveryDate'),
         }}
         onUploadSuccess={(result) => {
+          // Refetch documents to show in preview
+          utils.documents.listUploaded.invalidate({
+            employeeId,
+            uploadContext: 'employee_protection_pregnancy',
+          });
           toast({
             title: 'Certificat téléchargé',
             description: 'Le certificat médical de grossesse a été enregistré avec succès.',
@@ -1749,6 +1851,11 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
           expiryDate: form.watch('medicalExemptionExpiryDate'),
         }}
         onUploadSuccess={(result) => {
+          // Refetch documents to show in preview
+          utils.documents.listUploaded.invalidate({
+            employeeId,
+            uploadContext: 'employee_protection_night_work',
+          });
           toast({
             title: 'Certificat téléchargé',
             description: 'Le certificat médical d\'exemption a été enregistré avec succès.',
