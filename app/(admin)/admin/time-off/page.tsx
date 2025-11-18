@@ -170,9 +170,32 @@ export default function TimeOffAdminPage() {
   const conflictsByRequestId = conflictsData || {};
 
   // Mutations
+  const generateCertificateMutation = api.documents.generateLeaveCertificate.useMutation({
+    onSuccess: (data) => {
+      // Download the PDF
+      const link = document.createElement('a');
+      link.href = `data:${data.mimeType};base64,${data.base64}`;
+      link.download = data.filename;
+      link.click();
+      toast.success('Attestation de congé téléchargée');
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erreur lors de la génération de l\'attestation');
+    },
+  });
+
   const approveMutation = api.timeOff.approve.useMutation({
-    onSuccess: () => {
-      toast.success('Demande approuvée');
+    onSuccess: async (_, variables) => {
+      toast.success('Demande approuvée', {
+        description: 'Voulez-vous télécharger l\'attestation de congé ?',
+        action: {
+          label: 'Télécharger',
+          onClick: () => {
+            generateCertificateMutation.mutate({ requestId: variables.requestId });
+          },
+        },
+        duration: 10000, // Show for 10 seconds
+      });
       refetch();
     },
     onError: (error) => {
@@ -192,7 +215,17 @@ export default function TimeOffAdminPage() {
 
   const bulkApproveMutation = api.timeOff.bulkApprove.useMutation({
     onSuccess: (_, variables) => {
-      toast.success(`${variables.requestIds.length} demandes approuvées`);
+      toast.success(`${variables.requestIds.length} demandes approuvées`, {
+        description: 'Changez le filtre vers "Approuvé" pour télécharger les attestations',
+        action: {
+          label: 'Voir approuvées',
+          onClick: () => {
+            setStatusFilter('approved');
+            setShowFilters(true);
+          },
+        },
+        duration: 10000,
+      });
       setSelectedRequestIds(new Set());
       refetch();
     },
@@ -427,6 +460,50 @@ export default function TimeOffAdminPage() {
 
         {/* List View */}
         <TabsContent value="list" className="space-y-6 mt-6">
+
+      {/* Quick status filters */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground">Statut :</span>
+        <div className="flex gap-2">
+          <Button
+            variant={statusFilter === 'pending' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('pending')}
+            className="min-h-[36px]"
+          >
+            En attente
+            {summary?.pendingCount ? (
+              <Badge variant="secondary" className="ml-2">
+                {summary.pendingCount}
+              </Badge>
+            ) : null}
+          </Button>
+          <Button
+            variant={statusFilter === 'approved' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('approved')}
+            className="min-h-[36px]"
+          >
+            Approuvé
+          </Button>
+          <Button
+            variant={statusFilter === 'rejected' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('rejected')}
+            className="min-h-[36px]"
+          >
+            Rejeté
+          </Button>
+          <Button
+            variant={statusFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('all')}
+            className="min-h-[36px]"
+          >
+            Tous
+          </Button>
+        </div>
+      </div>
 
       {/* Filter panel */}
       {showFilters && (
