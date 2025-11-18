@@ -1,9 +1,10 @@
 import * as XLSX from 'xlsx';
 import { db } from '@/db';
-import { employees, timeOffRequests, timeOffPolicies, timeOffBalances } from '@/drizzle/schema';
+import { employees, timeOffRequests, timeOffPolicies, timeOffBalances, tenants } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { parse, isValid, eachDayOfInterval, isWeekend } from 'date-fns';
 import { z } from 'zod';
+import { calculateReturnDate } from '@/features/time-tracking/services/holiday.service';
 
 // Schéma validation
 const LeaveRowSchema = z.object({
@@ -47,6 +48,15 @@ export async function importLeavePlan(
     conflicts: [],
     totalProcessed: 0,
   };
+
+  // Get tenant to determine country for return date calculation
+  const [tenant] = await db
+    .select()
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+
+  const countryCode = tenant?.countryCode || 'CI';
 
   try {
     // 1. Parser Excel
@@ -179,6 +189,9 @@ export async function importLeavePlan(
           continue; // Ne pas créer si overlap
         }
 
+        // Calculate return date (first business day after leave)
+        const returnDate = await calculateReturnDate(endDate, countryCode);
+
         // Créer request avec status 'planned'
         await db.insert(timeOffRequests).values({
           tenantId,
@@ -186,6 +199,7 @@ export async function importLeavePlan(
           policyId: policy.id,
           startDate: startDate.toISOString().split('T')[0], // Format YYYY-MM-DD
           endDate: endDate.toISOString().split('T')[0],
+          returnDate: returnDate.toISOString().split('T')[0],
           totalDays: businessDays.toString(),
           status: 'planned',
           planningPeriodId: periodId,

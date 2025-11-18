@@ -7,6 +7,7 @@ import { leavePlanningPeriods, timeOffRequests, tenants, employees, timeOffPolic
 import { eq, and } from 'drizzle-orm';
 import { eachDayOfInterval, isWeekend } from 'date-fns';
 import * as XLSX from 'xlsx';
+import { calculateReturnDate } from '@/features/time-tracking/services/holiday.service';
 
 export const leavePlanningRouter = createTRPCRouter({
   // List employees (for dropdowns)
@@ -125,6 +126,16 @@ export const leavePlanningRouter = createTRPCRouter({
       const days = eachDayOfInterval({ start: startDate, end: endDate });
       const businessDays = days.filter(day => !isWeekend(day)).length;
 
+      // Get tenant to determine country for return date calculation
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, ctx.user.tenantId),
+      });
+
+      const countryCode = tenant?.countryCode || 'CI';
+
+      // Calculate return date (first business day after leave)
+      const returnDate = await calculateReturnDate(endDate, countryCode);
+
       // Check for overlaps (conflicts)
       const overlaps = await db
         .select()
@@ -154,6 +165,7 @@ export const leavePlanningRouter = createTRPCRouter({
             policyId: input.policyId,
             startDate: input.startDate,
             endDate: input.endDate,
+            returnDate: returnDate.toISOString().split('T')[0],
             totalDays: businessDays.toString(),
             handoverNotes: input.notes || null,
             updatedAt: new Date().toISOString(),
@@ -167,6 +179,7 @@ export const leavePlanningRouter = createTRPCRouter({
           policyId: input.policyId,
           startDate: input.startDate,
           endDate: input.endDate,
+          returnDate: returnDate.toISOString().split('T')[0],
           totalDays: businessDays.toString(),
           status: 'planned',
           planningPeriodId: input.periodId,

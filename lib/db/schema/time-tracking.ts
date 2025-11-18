@@ -155,8 +155,9 @@ export const timeOffRequests = pgTable('time_off_requests', {
   policyId: uuid('policy_id').notNull().references(() => timeOffPolicies.id),
 
   // Request details
-  startDate: date('start_date').notNull(),
-  endDate: date('end_date').notNull(),
+  startDate: date('start_date').notNull(), // Date de début du congé (first day of leave)
+  endDate: date('end_date').notNull(), // Dernier jour de congé (last day of leave)
+  returnDate: date('return_date').notNull(), // Date de reprise (first day back at work)
   totalDays: numeric('total_days', { precision: 5, scale: 2 }).notNull(),
   reason: text('reason'),
   notes: text('notes'),

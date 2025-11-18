@@ -165,6 +165,7 @@ describe('ACP Router Integration Tests', () => {
         policyId: testPolicyId,
         startDate: '2025-11-05',
         endDate: '2025-11-14',
+        returnDate: '2025-11-15',
         status: 'approved',
         totalDays: '10', // Numeric fields are strings in Drizzle
         isDeductibleForAcp: true,
@@ -337,6 +338,7 @@ describe('ACP Router Integration Tests', () => {
           policyId: testPolicyId,
           startDate: '2025-12-01',
           endDate: '2025-12-03',
+          returnDate: '2025-12-04',
           status: 'approved',
           totalDays: '3', // Numeric fields are strings in Drizzle
           isDeductibleForAcp: true, // Initially deductible

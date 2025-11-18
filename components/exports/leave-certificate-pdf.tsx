@@ -201,8 +201,12 @@ export function LeaveCertificatePDF({ data }: LeaveCertificatePDFProps) {
               <Text style={styles.value}>{data.leave.startDate}</Text>
             </View>
             <View style={styles.infoRow}>
-              <Text style={styles.label}>Date de fin :</Text>
+              <Text style={styles.label}>Dernier jour de congé :</Text>
               <Text style={styles.value}>{data.leave.endDate}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.label}>Date de reprise :</Text>
+              <Text style={styles.value}>{data.leave.returnDate}</Text>
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.label}>Durée totale :</Text>

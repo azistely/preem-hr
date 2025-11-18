@@ -155,6 +155,53 @@ export async function countBusinessDaysExcludingHolidays(
 }
 
 /**
+ * Calculate return-to-work date (date de reprise)
+ *
+ * Finds the first business day after the last day of leave,
+ * skipping weekends and public holidays.
+ *
+ * Example:
+ * - If last day off = Friday → return date = next Monday (unless Monday is holiday)
+ * - If last day off = Wednesday (Thursday is holiday) → return date = Friday
+ *
+ * @param lastDayOff - Last day of leave (end_date)
+ * @param countryCode - Country code for holiday lookup (CI, SN, BF, etc.)
+ * @returns First business day back at work
+ */
+export async function calculateReturnDate(
+  lastDayOff: Date,
+  countryCode: string
+): Promise<Date> {
+  // Start from the day after last day off
+  let returnDate = new Date(lastDayOff);
+  returnDate.setDate(returnDate.getDate() + 1);
+
+  // Get holidays for next 30 days to cover edge cases
+  const endRange = new Date(returnDate);
+  endRange.setDate(endRange.getDate() + 30);
+  const holidays = await getHolidaysInRange(countryCode, returnDate, endRange);
+  const holidayDates = new Set(holidays.map((h) => h.holidayDate));
+
+  // Find first business day (not weekend, not holiday)
+  let attempts = 0; // Safety counter to prevent infinite loops
+  while (attempts < 30) {
+    const dayOfWeek = returnDate.getDay(); // 0 = Sunday, 6 = Saturday
+    const dateStr = format(returnDate, 'yyyy-MM-dd');
+
+    // If it's a business day (not weekend, not holiday), we're done
+    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidayDates.has(dateStr)) {
+      break;
+    }
+
+    // Otherwise, move to next day
+    returnDate.setDate(returnDate.getDate() + 1);
+    attempts++;
+  }
+
+  return returnDate;
+}
+
+/**
  * Get upcoming holidays (next 12 months)
  */
 export async function getUpcomingHolidays(

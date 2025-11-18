@@ -47,7 +47,7 @@ import {
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
-// Employee Navigation (SIMPLIFIED - 7 items total)
+// Employee Navigation (SIMPLIFIED - 8 items total)
 export const employeeMobileSections: NavSection[] = [
   {
     title: "",
@@ -67,6 +67,7 @@ export const employeeMobileSections: NavSection[] = [
     title: "Ma Paie",
     items: [
       { icon: FileText, label: "Mes bulletins", href: "/employee/payslips" },
+      { icon: Wallet, label: "Avances sur salaire", href: "/employee/salary-advances" },
     ],
   },
   {
@@ -102,6 +103,7 @@ export const employeeDesktopSections: NavSection[] = [
     title: "Ma Paie",
     items: [
       { icon: FileText, label: "Mes bulletins", href: "/employee/payslips" },
+      { icon: Wallet, label: "Avances sur salaire", href: "/employee/salary-advances" },
     ],
   },
   {
@@ -191,7 +193,7 @@ export const managerDesktopSections: NavSection[] = [
   },
 ];
 
-// HR Manager Navigation (STREAMLINED - 12 visible + 7 collapsible)
+// HR Manager Navigation (STREAMLINED - 13 visible + 7 collapsible)
 // HCI-COMPLIANT: Consolidated automation into single task-oriented entry point
 export const hrManagerMobileSections: NavSection[] = [
   {
@@ -208,6 +210,7 @@ export const hrManagerMobileSections: NavSection[] = [
       { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice", href: "/payroll/calculator" },
       { icon: FileText, label: "Déclaration CNPS", href: "/payroll/cnps-declaration" },
+      { icon: Wallet, label: "Avances sur salaire", href: "/admin/salary-advances" },
     ],
   },
   {
@@ -303,6 +306,7 @@ export const hrManagerDesktopSections: NavSection[] = [
       { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice paie", href: "/payroll/calculator" },
       { icon: FileText, label: "Déclaration CNPS", href: "/payroll/cnps-declaration" },
+      { icon: Wallet, label: "Avances sur salaire", href: "/admin/salary-advances" },
     ],
   },
   {

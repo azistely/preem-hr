@@ -16,8 +16,9 @@ import { createTRPCRouter, publicProcedure, protectedProcedure, managerProcedure
 import * as timeOffService from '@/features/time-off/services/time-off.service';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { timeOffPolicies, timeOffRequests, timeOffBalances, employees } from '@/drizzle/schema';
+import { timeOffPolicies, timeOffRequests, timeOffBalances, employees, tenants } from '@/drizzle/schema';
 import { eq, and, sql, like, or, gte, lte, inArray, ne, desc } from 'drizzle-orm';
+import { countBusinessDaysExcludingHolidays, calculateReturnDate, getHolidaysInRange } from '@/features/time-tracking/services/holiday.service';
 import type {
   TimeOffBalanceWithPolicy,
   TimeOffRequestWithPolicy,
@@ -82,6 +83,119 @@ export const timeOffRouter = createTRPCRouter({
           });
         }
         throw error;
+      }
+    }),
+
+  /**
+   * Preview time-off request
+   *
+   * Calculates business days, return date, and detects holidays
+   * before the user submits the request. Provides accurate preview
+   * that matches backend calculation (excludes both weekends AND holidays).
+   */
+  previewRequest: publicProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid(),
+        policyId: z.string().uuid(),
+        startDate: z.date(),
+        endDate: z.date(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      try {
+        // Get tenant to determine country
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, ctx.user.tenantId))
+          .limit(1);
+
+        const countryCode = tenant?.countryCode || 'CI';
+
+        // Calculate total business days (excluding weekends AND holidays)
+        const totalDays = await countBusinessDaysExcludingHolidays(
+          input.startDate,
+          input.endDate,
+          countryCode
+        );
+
+        // Calculate return date (first business day back at work)
+        const returnDate = await calculateReturnDate(input.endDate, countryCode);
+
+        // Get holidays in the requested range
+        const holidays = await getHolidaysInRange(
+          countryCode,
+          input.startDate,
+          input.endDate
+        );
+
+        // Get policy to validate min/max days
+        const policy = await db.query.timeOffPolicies.findFirst({
+          where: eq(timeOffPolicies.id, input.policyId),
+        });
+
+        // Check if this is unpaid/unlimited leave
+        const isUnpaidLeave = policy?.accrualMethod === 'none' || !policy?.isPaid;
+
+        // Get current balance (only for paid leave)
+        const balance = await db.query.timeOffBalances.findFirst({
+          where: and(
+            eq(timeOffBalances.employeeId, input.employeeId),
+            eq(timeOffBalances.policyId, input.policyId)
+          ),
+        });
+
+        const availableBalance = balance
+          ? parseFloat(balance.balance as string) - parseFloat(balance.pending as string)
+          : 0;
+
+        // Skip balance check for unpaid leave
+        const hasSufficientBalance = isUnpaidLeave || totalDays <= availableBalance;
+
+        // Check policy constraints
+        const errors = [];
+        if (policy?.minDaysPerRequest && totalDays < parseFloat(policy.minDaysPerRequest as string)) {
+          errors.push({
+            code: 'BELOW_MINIMUM_DAYS',
+            message: `Minimum ${policy.minDaysPerRequest} jours requis`,
+          });
+        }
+
+        if (policy?.maxDaysPerRequest && totalDays > parseFloat(policy.maxDaysPerRequest as string)) {
+          errors.push({
+            code: 'ABOVE_MAXIMUM_DAYS',
+            message: `Maximum ${policy.maxDaysPerRequest} jours autorisés`,
+          });
+        }
+
+        // Only check balance for paid leave
+        if (!isUnpaidLeave && !hasSufficientBalance) {
+          errors.push({
+            code: 'INSUFFICIENT_BALANCE',
+            message: `Solde insuffisant (disponible: ${availableBalance.toFixed(1)} jours)`,
+          });
+        }
+
+        return {
+          totalDays,
+          returnDate: returnDate.toISOString(),
+          holidays: holidays.map(h => ({
+            date: h.holidayDate,
+            name: h.name.fr || h.name.en || 'Jour férié',
+          })),
+          hasHolidays: holidays.length > 0,
+          availableBalance,
+          hasSufficientBalance,
+          errors,
+          isValid: errors.length === 0,
+        };
+      } catch (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors du calcul de l\'aperçu',
+          cause: error,
+        });
       }
     }),
 

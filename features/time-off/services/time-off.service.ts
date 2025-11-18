@@ -22,7 +22,7 @@ import {
   addDays,
   parseISO,
 } from 'date-fns';
-import { countBusinessDaysExcludingHolidays } from '@/features/time-tracking/services/holiday.service';
+import { countBusinessDaysExcludingHolidays, calculateReturnDate } from '@/features/time-tracking/services/holiday.service';
 
 export interface TimeOffRequestInput {
   employeeId: string;
@@ -122,19 +122,27 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
   // Calculate total days (excluding weekends AND public holidays)
   const totalDays = await calculateBusinessDaysWithHolidays(startDate, endDate, countryCode);
 
-  // Validate min/max days
-  if (policy.minDaysPerRequest && totalDays < parseFloat(policy.minDaysPerRequest as string)) {
-    throw new TimeOffError(
-      `Minimum ${policy.minDaysPerRequest} jours requis`,
-      'BELOW_MINIMUM_DAYS'
-    );
-  }
+  // Calculate return date (first business day back at work)
+  const returnDate = await calculateReturnDate(endDate, countryCode);
 
-  if (policy.maxDaysPerRequest && totalDays > parseFloat(policy.maxDaysPerRequest as string)) {
-    throw new TimeOffError(
-      `Maximum ${policy.maxDaysPerRequest} jours autorisés`,
-      'ABOVE_MAXIMUM_DAYS'
-    );
+  // Check if this is unpaid/unlimited leave
+  const isUnpaidLeave = policy.accrualMethod === 'none' || !policy.isPaid;
+
+  // Validate min/max days (only for paid leave)
+  if (!isUnpaidLeave) {
+    if (policy.minDaysPerRequest && totalDays < parseFloat(policy.minDaysPerRequest as string)) {
+      throw new TimeOffError(
+        `Minimum ${policy.minDaysPerRequest} jours requis`,
+        'BELOW_MINIMUM_DAYS'
+      );
+    }
+
+    if (policy.maxDaysPerRequest && totalDays > parseFloat(policy.maxDaysPerRequest as string)) {
+      throw new TimeOffError(
+        `Maximum ${policy.maxDaysPerRequest} jours autorisés`,
+        'ABOVE_MAXIMUM_DAYS'
+      );
+    }
   }
 
   // Validate advance notice
@@ -170,29 +178,32 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
     }
   }
 
-  // Get current balance
-  const balance = await db.query.timeOffBalances.findFirst({
-    where: and(
-      eq(timeOffBalances.employeeId, employeeId),
-      eq(timeOffBalances.policyId, policyId)
-    ),
-  });
+  // Get current balance (only for paid leave)
+  let balance = null;
+  if (!isUnpaidLeave) {
+    balance = await db.query.timeOffBalances.findFirst({
+      where: and(
+        eq(timeOffBalances.employeeId, employeeId),
+        eq(timeOffBalances.policyId, policyId)
+      ),
+    });
 
-  if (!balance) {
-    throw new TimeOffError(
-      'Solde de congé non trouvé',
-      'BALANCE_NOT_FOUND'
-    );
-  }
+    if (!balance) {
+      throw new TimeOffError(
+        'Solde de congé non trouvé',
+        'BALANCE_NOT_FOUND'
+      );
+    }
 
-  // Check sufficient balance
-  const availableBalance = parseFloat(balance.balance as string) - parseFloat(balance.pending as string);
-  if (totalDays > availableBalance) {
-    throw new TimeOffError(
-      `Solde insuffisant (disponible: ${availableBalance.toFixed(1)} jours)`,
-      'INSUFFICIENT_BALANCE',
-      { available: availableBalance, requested: totalDays }
-    );
+    // Check sufficient balance
+    const availableBalance = parseFloat(balance.balance as string) - parseFloat(balance.pending as string);
+    if (totalDays > availableBalance) {
+      throw new TimeOffError(
+        `Solde insuffisant (disponible: ${availableBalance.toFixed(1)} jours)`,
+        'INSUFFICIENT_BALANCE',
+        { available: availableBalance, requested: totalDays }
+      );
+    }
   }
 
   // Create request
@@ -204,6 +215,7 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
       policyId,
       startDate: startDate.toISOString().split('T')[0],
       endDate: endDate.toISOString().split('T')[0],
+      returnDate: returnDate.toISOString().split('T')[0],
       totalDays: totalDays.toString(),
       reason,
       handoverNotes,
@@ -212,14 +224,16 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
     })
     .returning();
 
-  // Update balance (mark as pending)
-  await db
-    .update(timeOffBalances)
-    .set({
-      pending: (parseFloat(balance.pending as string) + totalDays).toString(),
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(timeOffBalances.id, balance.id));
+  // Update balance (mark as pending) - only for paid leave
+  if (!isUnpaidLeave && balance) {
+    await db
+      .update(timeOffBalances)
+      .set({
+        pending: (parseFloat(balance.pending as string) + totalDays).toString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(timeOffBalances.id, balance.id));
+  }
 
   return request;
 }

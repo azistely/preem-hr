@@ -26,6 +26,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   // Employee routes (accessible by all authenticated users)
   '/employee/dashboard': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/payslips': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/employee/salary-advances': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/profile': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/profile/edit': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/my-schedule': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
@@ -62,6 +63,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/admin/benefits': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/shift-planning': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/documents': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/salary-advances': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // AI Import System (HR Manager+)
   '/import/ai': ['hr_manager', 'tenant_admin', 'super_admin'],

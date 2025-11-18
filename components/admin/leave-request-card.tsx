@@ -26,7 +26,10 @@ import {
   Users,
   Plane,
   Home,
+  Download,
 } from 'lucide-react';
+import { trpc } from '@/lib/trpc/client';
+import { toast } from 'sonner';
 import {
   Card,
   CardContent,
@@ -122,6 +125,25 @@ export function LeaveRequestCard({
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Certificate generation mutation
+  const generateCertificateMutation = trpc.documents.generateLeaveCertificate.useMutation({
+    onSuccess: (data) => {
+      // Download the PDF
+      const link = document.createElement('a');
+      link.href = `data:${data.mimeType};base64,${data.base64}`;
+      link.download = data.filename;
+      link.click();
+      toast.success('Attestation de congé générée');
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erreur lors de la génération de l\'attestation');
+    },
+  });
+
+  const handleGenerateCertificate = async () => {
+    await generateCertificateMutation.mutateAsync({ requestId: request.id });
+  };
 
   const employeeName = `${request.employee.firstName} ${request.employee.lastName}`;
   const initials = `${request.employee.firstName[0]}${request.employee.lastName[0]}`;
@@ -301,24 +323,39 @@ export function LeaveRequestCard({
         </CardContent>
 
         <CardFooter className="gap-2">
-          <Button
-            className="min-h-[44px] flex-1"
-            variant="default"
-            onClick={handleApprove}
-            disabled={isLoading || isSubmitting || request.status !== 'pending'}
-          >
-            <Check className="mr-2 h-5 w-5" />
-            Approuver
-          </Button>
-          <Button
-            className="min-h-[44px] flex-1"
-            variant="outline"
-            onClick={() => setRejectDialogOpen(true)}
-            disabled={isLoading || isSubmitting || request.status !== 'pending'}
-          >
-            <X className="mr-2 h-5 w-5" />
-            Rejeter
-          </Button>
+          {request.status === 'pending' && (
+            <>
+              <Button
+                className="min-h-[44px] flex-1"
+                variant="default"
+                onClick={handleApprove}
+                disabled={isLoading || isSubmitting}
+              >
+                <Check className="mr-2 h-5 w-5" />
+                Approuver
+              </Button>
+              <Button
+                className="min-h-[44px] flex-1"
+                variant="outline"
+                onClick={() => setRejectDialogOpen(true)}
+                disabled={isLoading || isSubmitting}
+              >
+                <X className="mr-2 h-5 w-5" />
+                Rejeter
+              </Button>
+            </>
+          )}
+          {request.status === 'approved' && (
+            <Button
+              className="min-h-[44px] flex-1"
+              variant="outline"
+              onClick={handleGenerateCertificate}
+              disabled={generateCertificateMutation.isPending}
+            >
+              <Download className="mr-2 h-5 w-5" />
+              {generateCertificateMutation.isPending ? 'Génération...' : 'Télécharger attestation'}
+            </Button>
+          )}
         </CardFooter>
       </Card>
 

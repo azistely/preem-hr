@@ -41,7 +41,7 @@ import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
 import { Calendar as CalendarIcon, AlertCircle, Settings, Info } from 'lucide-react';
 import { fr } from 'date-fns/locale';
-import { differenceInBusinessDays, addDays } from 'date-fns';
+import { addDays, format } from 'date-fns';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const timeOffRequestSchema = z.object({
@@ -110,10 +110,24 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
   const startDate = form.watch('startDate');
   const endDate = form.watch('endDate');
 
-  // Calculate business days
-  const businessDays = startDate && endDate
-    ? differenceInBusinessDays(endDate, startDate) + 1
-    : 0;
+  // Get server-side preview (accurate calculation with holidays)
+  const { data: preview, isLoading: isLoadingPreview } = trpc.timeOff.previewRequest.useQuery(
+    {
+      employeeId,
+      policyId: selectedPolicy || '',
+      startDate: startDate || new Date(),
+      endDate: endDate || new Date(),
+    },
+    {
+      enabled: !!selectedPolicy && !!startDate && !!endDate,
+    }
+  );
+
+  // Use preview data when available
+  const businessDays = preview?.totalDays ?? 0;
+  const returnDate = preview?.returnDate ? new Date(preview.returnDate) : null;
+  const hasHolidays = preview?.hasHolidays ?? false;
+  const holidays = preview?.holidays ?? [];
 
   // Get selected policy details
   const selectedPolicyDetails = policies?.find((p) => p.id === selectedPolicy);
@@ -121,12 +135,12 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
 
   // Get balance for selected policy (only for paid leave)
   const selectedBalance = balances?.find((b) => b.policyId === selectedPolicy);
-  const availableBalance = selectedBalance
+  const availableBalance = preview?.availableBalance ?? (selectedBalance
     ? parseFloat(selectedBalance.balance as string) - parseFloat(selectedBalance.pending as string)
-    : 0;
+    : 0);
 
   // Check if sufficient balance (skip check for unpaid leave)
-  const hasSufficientBalance = isUnpaidLeave || businessDays <= availableBalance;
+  const hasSufficientBalance = preview?.hasSufficientBalance ?? (isUnpaidLeave || businessDays <= availableBalance);
 
   // Submit handler
   const onSubmit = async (data: TimeOffRequestForm) => {
@@ -229,7 +243,7 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
                 name="endDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-lg">Date de fin</FormLabel>
+                    <FormLabel className="text-lg">Dernier jour de congé</FormLabel>
                     <FormControl>
                       <Calendar
                         mode="single"
@@ -240,36 +254,69 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
                         className="rounded-md border"
                       />
                     </FormControl>
+                    <FormDescription className="text-sm">
+                      Vous reprendrez le travail le lendemain
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
 
-            {/* Duration summary */}
+            {/* Duration summary with return date and holidays */}
             {businessDays > 0 && (
-              <Alert className={hasSufficientBalance ? 'border-green-500' : 'border-destructive'}>
-                <AlertCircle className="h-5 w-5" />
-                <AlertDescription className="text-base">
-                  <div className="space-y-1">
-                    <p className="font-medium">
-                      Durée: {businessDays} jour{businessDays > 1 ? 's' : ''} ouvrable{businessDays > 1 ? 's' : ''}
-                    </p>
-                    {selectedBalance && (
-                      <>
-                        <p>
-                          Solde disponible: {availableBalance.toFixed(1)} jour{availableBalance > 1 ? 's' : ''}
+              <div className="space-y-4">
+                <Alert className={hasSufficientBalance ? 'border-green-500' : 'border-destructive'}>
+                  <AlertCircle className="h-5 w-5" />
+                  <AlertDescription className="text-base">
+                    <div className="space-y-2">
+                      <p className="font-medium">
+                        Durée: {businessDays} jour{businessDays > 1 ? 's' : ''} ouvrable{businessDays > 1 ? 's' : ''}
+                      </p>
+                      {returnDate && (
+                        <p className="text-sm">
+                          <span className="font-medium">Date de reprise:</span>{' '}
+                          {format(returnDate, 'EEEE d MMMM yyyy', { locale: fr })}
                         </p>
-                        {!hasSufficientBalance && (
-                          <p className="text-destructive font-medium">
-                            Solde insuffisant!
+                      )}
+                      {selectedBalance && (
+                        <>
+                          <p>
+                            Solde disponible: {availableBalance.toFixed(1)} jour{availableBalance > 1 ? 's' : ''}
                           </p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </AlertDescription>
-              </Alert>
+                          {!hasSufficientBalance && (
+                            <p className="text-destructive font-medium">
+                              Solde insuffisant!
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+
+                {/* Holiday warnings */}
+                {hasHolidays && holidays.length > 0 && (
+                  <Alert className="border-blue-500">
+                    <Info className="h-5 w-5 text-blue-500" />
+                    <AlertDescription className="text-base">
+                      <p className="font-medium mb-1">
+                        {holidays.length} jour{holidays.length > 1 ? 's' : ''} férié{holidays.length > 1 ? 's' : ''} dans cette période:
+                      </p>
+                      <ul className="list-disc list-inside text-sm space-y-0.5">
+                        {holidays.map((holiday, idx) => (
+                          <li key={idx}>
+                            {holiday.name} ({format(new Date(holiday.date), 'd MMM', { locale: fr })})
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-sm mt-2 text-muted-foreground">
+                        Les jours fériés ne sont pas déduits de votre solde.
+                      </p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
             )}
 
             {/* Reason */}
