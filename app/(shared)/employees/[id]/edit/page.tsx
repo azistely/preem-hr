@@ -233,6 +233,12 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
       motherName: '',
       placeOfBirth: '',
       emergencyContactName: '',
+      // Employee Protection fields (must have boolean defaults, not undefined)
+      isPregnant: false,
+      pregnancyStartDate: undefined,
+      expectedDeliveryDate: undefined,
+      medicalExemptionNightWork: false,
+      medicalExemptionExpiryDate: undefined,
     },
   });
 
@@ -285,6 +291,12 @@ export default function EmployeeEditPage({ params }: EmployeeEditPageProps) {
         motherName: emp.motherName || '',
         placeOfBirth: emp.placeOfBirth || '',
         emergencyContactName: emp.emergencyContactName || '',
+        // Employee Protection fields (always provide boolean, never undefined)
+        isPregnant: emp.isPregnant ?? false,
+        pregnancyStartDate: emp.pregnancyStartDate ? new Date(emp.pregnancyStartDate) : undefined,
+        expectedDeliveryDate: emp.expectedDeliveryDate ? new Date(emp.expectedDeliveryDate) : undefined,
+        medicalExemptionNightWork: emp.medicalExemptionNightWork ?? false,
+        medicalExemptionExpiryDate: emp.medicalExemptionExpiryDate ? new Date(emp.medicalExemptionExpiryDate) : undefined,
       });
     }
   }, [employee, form]);
