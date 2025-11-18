@@ -163,11 +163,11 @@ export default function EmployeeDocumentsPage() {
           )}
 
           {/* Other Documents Section */}
-          {documents?.others && documents.others.length > 0 && (
+          {documents && (documents.otherGenerated.length > 0 || documents.otherUploaded.length > 0) && (
             <div>
               <h2 className="text-2xl font-bold mb-4">Autres Documents</h2>
               <div className="space-y-3">
-                {documents.others.map((doc) => (
+                {[...documents.otherGenerated, ...documents.otherUploaded].map((doc: any) => (
                   <Card key={doc.id}>
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between gap-4 flex-wrap">

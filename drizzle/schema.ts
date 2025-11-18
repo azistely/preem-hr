@@ -2635,6 +2635,7 @@ export const timeOffRequests = pgTable("time_off_requests", {
 	policyId: uuid("policy_id").notNull(),
 	startDate: date("start_date").notNull(),
 	endDate: date("end_date").notNull(),
+	returnDate: date("return_date").notNull(),
 	totalDays: numeric("total_days", { precision: 4, scale:  1 }).notNull(),
 	reason: text(),
 	notes: text(),

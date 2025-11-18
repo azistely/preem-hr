@@ -8,6 +8,8 @@ export * from './employees';
 export * from './assignments';
 export * from './salaries';
 export * from './bonuses';
+export * from './salary-advances';
+export * from './salary-advances-relations';
 export * from './payroll';
 export * from './payroll-config';
 export * from './city-transport-minimums';

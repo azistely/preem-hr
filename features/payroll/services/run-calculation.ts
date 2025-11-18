@@ -30,6 +30,10 @@ import type { PayrollRunSummary } from '../types';
 import type { SalaryComponentInstance } from '@/features/employees/types/salary-components';
 import { aggregateTimeEntriesForPayroll } from './time-entries-aggregation.service';
 import { buildCalculationContext } from '../types/calculation-context';
+import {
+  processEmployeeAdvances,
+  getPayrollMonth,
+} from './salary-advance-integration';
 
 export interface CreatePayrollRunInput {
   tenantId: string;
@@ -533,6 +537,19 @@ export async function calculatePayrollRun(
           dependentChildren: verifiedCmuDependents, // Use verified dependents count from table
         });
 
+        // Process salary advances (disbursements and repayments)
+        const payrollMonth = getPayrollMonth(new Date(run.periodStart), new Date(run.periodEnd));
+        const advanceResult = await processEmployeeAdvances(
+          employee.id,
+          run.tenantId,
+          run.id,
+          payrollMonth
+        );
+
+        // Calculate final net salary after advances
+        // Net salary = Calculated net + Disbursements - Repayments
+        const finalNetSalary = calculation.netSalary + advanceResult.netEffect;
+
         // Prepare line item data (using new schema structure)
         lineItemsData.push({
           tenantId: run.tenantId,
@@ -574,7 +591,14 @@ export async function calculatePayrollRun(
             cnps: calculation.cnpsEmployee,
             cmu: calculation.cmuEmployee,
           },
-          otherDeductions: {},
+          otherDeductions: {
+            salaryAdvances: {
+              disbursements: advanceResult.disbursementAmount,
+              repayments: advanceResult.repaymentAmount,
+              repaymentDetails: advanceResult.repaymentDetails,
+              disbursedAdvanceIds: advanceResult.disbursedAdvanceIds,
+            },
+          },
 
           // Individual deduction columns (for easy export access)
           cnpsEmployee: String(calculation.cnpsEmployee),
@@ -582,8 +606,8 @@ export async function calculatePayrollRun(
           its: String(calculation.its),
 
           // Net calculation
-          totalDeductions: String(calculation.totalDeductions),
-          netSalary: String(calculation.netSalary),
+          totalDeductions: String(calculation.totalDeductions + advanceResult.repaymentAmount),
+          netSalary: String(finalNetSalary),
 
           // Employer costs (both JSONB and dedicated columns)
           employerContributions: {
@@ -966,6 +990,18 @@ export async function recalculateSingleEmployee(
     dependentChildren: verifiedCmuDependents, // Use verified dependents from table
   });
 
+  // Process salary advances (disbursements and repayments)
+  const payrollMonth = getPayrollMonth(new Date(run.periodStart), new Date(run.periodEnd));
+  const advanceResult = await processEmployeeAdvances(
+    employee.id,
+    run.tenantId,
+    run.id,
+    payrollMonth
+  );
+
+  // Calculate final net salary after advances
+  const finalNetSalary = calculation.netSalary + advanceResult.netEffect;
+
   // Update line item
   await db
     .update(payrollLineItems)
@@ -974,8 +1010,16 @@ export async function recalculateSingleEmployee(
       daysWorked: String(calculation.daysWorked),
       hoursWorked: hoursWorkedThisMonth ? String(hoursWorkedThisMonth) : '0',
       grossSalary: String(calculation.grossSalary),
-      netSalary: String(calculation.netSalary),
-      totalDeductions: String(calculation.totalDeductions),
+      netSalary: String(finalNetSalary),
+      totalDeductions: String(calculation.totalDeductions + advanceResult.repaymentAmount),
+      otherDeductions: {
+        salaryAdvances: {
+          disbursements: advanceResult.disbursementAmount,
+          repayments: advanceResult.repaymentAmount,
+          repaymentDetails: advanceResult.repaymentDetails,
+          disbursedAdvanceIds: advanceResult.disbursedAdvanceIds,
+        },
+      },
       totalEmployerCost: String(calculation.employerCost),
       employerCost: String(calculation.employerCost),
       cnpsEmployee: String(calculation.cnpsEmployee),

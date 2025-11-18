@@ -11,6 +11,7 @@ import { createTRPCRouter, publicProcedure, protectedProcedure, hrManagerProcedu
 import { generateWorkCertificate } from '@/features/documents/services/work-certificate.service';
 import { generateCNPSAttestation } from '@/features/documents/services/cnps-attestation.service';
 import { generateFinalPayslip } from '@/features/documents/services/final-payslip.service';
+import { generateLeaveCertificate } from '@/lib/documents/leave-certificate-service';
 import { bulletinService } from '@/lib/documents/bulletin-service';
 import { certificatService } from '@/lib/documents/certificat-travail-service';
 import { soldeService } from '@/lib/documents/solde-de-tout-compte-service';
@@ -138,6 +139,46 @@ export const documentsRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: error.message || 'Erreur lors de la génération du bulletin de paie final',
+        });
+      }
+    }),
+
+  /**
+   * Generate leave certificate (Attestation de départ en congés annuels)
+   * Required by law to be delivered 15 days before leave starts
+   */
+  generateLeaveCertificate: publicProcedure
+    .input(z.object({
+      requestId: z.string().uuid(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      console.log('[TRPC Documents] generateLeaveCertificate called with requestId:', input.requestId);
+      console.log('[TRPC Documents] Context tenantId:', ctx.user.tenantId);
+
+      try {
+        console.log('[TRPC Documents] About to call generateLeaveCertificate service');
+        const blob = await generateLeaveCertificate(
+          input.requestId,
+          ctx.user.tenantId,
+          ctx.user.id
+        );
+        console.log('[TRPC Documents] Service returned blob successfully');
+
+        // Convert blob to base64 for transmission
+        const buffer = Buffer.from(await blob.arrayBuffer());
+        const base64 = buffer.toString('base64');
+
+        return {
+          base64,
+          filename: `attestation-conge-${input.requestId}.pdf`,
+          mimeType: 'application/pdf',
+        };
+      } catch (error: any) {
+        console.error('[Leave Certificate] Generation error:', error);
+        console.error('[Leave Certificate] Error stack:', error.stack);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la génération de l\'attestation de congé',
         });
       }
     }),
@@ -273,6 +314,7 @@ export const documentsRouter = createTRPCRouter({
 
   /**
    * Get employee documents (for employee portal)
+   * Fetches from BOTH generatedDocuments (payslips, etc.) AND uploadedDocuments (certificates, contracts, etc.)
    */
   getMyDocuments: protectedProcedure
     .query(async ({ ctx }) => {
@@ -284,19 +326,42 @@ export const documentsRouter = createTRPCRouter({
           });
         }
 
-        const documents = await db
+        // Fetch generated documents (payslips, old certificates)
+        const generated = await db
           .select()
           .from(generatedDocuments)
           .where(eq(generatedDocuments.employeeId, ctx.user.employeeId))
-          .orderBy(desc(generatedDocuments.createdAt));
+          .orderBy(desc(generatedDocuments.generationDate));
 
-        // Separate by type
-        const payslips = documents.filter(d => d.documentType === 'bulletin_de_paie');
-        const others = documents.filter(d => d.documentType !== 'bulletin_de_paie');
+        // Fetch uploaded documents (includes system-generated certificates with advanced features)
+        const uploaded = await db
+          .select()
+          .from(uploadedDocuments)
+          .where(
+            and(
+              eq(uploadedDocuments.employeeId, ctx.user.employeeId),
+              eq(uploadedDocuments.isArchived, false)
+            )
+          )
+          .orderBy(desc(uploadedDocuments.createdAt));
+
+        // Categorize documents
+        const payslips = generated.filter(d => d.documentType === 'bulletin_de_paie');
+
+        // Leave certificates from uploaded documents (new system with e-signature/versioning)
+        const leaveCertificates = uploaded.filter(d => d.documentCategory === 'leave_certificates');
+
+        // Other generated documents (work certificates, CNPS attestations, etc.)
+        const otherGenerated = generated.filter(d => d.documentType !== 'bulletin_de_paie');
+
+        // Other uploaded documents (contracts, ID cards, etc.)
+        const otherUploaded = uploaded.filter(d => d.documentCategory !== 'leave_certificates');
 
         return {
           payslips,
-          others,
+          leaveCertificates, // Separate category with advanced features
+          otherGenerated,
+          otherUploaded,
         };
       } catch (error: any) {
         console.error('[My Documents] Error:', error);
