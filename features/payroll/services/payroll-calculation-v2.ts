@@ -574,13 +574,18 @@ export async function calculatePayrollV2(
             input.paymentFrequency &&
             ['DAILY', 'WEEKLY', 'BIWEEKLY'].includes(input.paymentFrequency);
 
-          if (!isNonMonthlyWorker && totalTransport < cityMinimum.monthlyMinimum) {
+          // Skip validation for terminal payroll (final payment for terminated employees)
+          const isTerminalPayroll = !!input.terminationDate;
+
+          if (!isNonMonthlyWorker && !isTerminalPayroll && totalTransport < cityMinimum.monthlyMinimum) {
             const cityName = cityMinimum.displayName?.fr || cityMinimum.cityName;
             throw new Error(
               `L'indemnité de transport (${totalTransport.toLocaleString('fr-FR')} FCFA/mois) est inférieure au minimum légal pour ${cityName} (${cityMinimum.monthlyMinimum.toLocaleString('fr-FR')} FCFA/mois). Référence: ${cityMinimum.legalReference?.fr || 'Arrêté du 30 janvier 2020'}`
             );
           } else if (isNonMonthlyWorker) {
             console.log(`[TRANSPORT VALIDATION] Skipping monthly minimum check for ${input.paymentFrequency} worker - prorated amount is valid`);
+          } else if (isTerminalPayroll) {
+            console.log(`[TRANSPORT VALIDATION] Skipping monthly minimum check for terminal payroll - employee is being terminated`);
           }
         } catch (error) {
           // If city minimum not configured, log warning but don't fail
