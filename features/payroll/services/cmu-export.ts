@@ -237,7 +237,7 @@ export async function generateCMUBeneficiaryExport(
 
   // Generate filename
   const periodStr = formatPeriod(data.periodStart);
-  const filename = `CMU_Beneficiaires_${periodStr}.xlsx`;
+  const filename = `Declaration_Cotisation_CMU_${periodStr}.xlsx`;
 
   return {
     data: Buffer.from(buffer),

@@ -30,6 +30,12 @@ export interface BankTransferEmployeeData {
   bankAccount: string | null;
   netSalary: number;
   paymentReference?: string;
+  phoneNumber?: string;
+  // RIB components (Relevé d'Identité Bancaire)
+  bankCode?: string;        // Code banque (5 digits)
+  branchCode?: string;      // Code guichet (5 digits)
+  accountNumber?: string;   // Numéro de compte (11 chars)
+  ribKey?: string;          // Clé RIB (2 digits)
 }
 
 export interface BankTransferExportData {
@@ -43,13 +49,15 @@ export interface BankTransferExportData {
 }
 
 interface BankTransferRow {
-  'N°': number;
   Matricule: string;
-  'Nom et Prénoms': string;
-  'Banque': string;
-  'Compte Bancaire': string;
-  'Montant (FCFA)': number;
-  'Référence': string;
+  'Nom Prénom': string;
+  'Code Banque': string;
+  'Code Guichet': string;
+  'Numéro de Compte': string;
+  'Clé RIB': string;
+  'Libellé': string;
+  'Net à Payer': number;
+  'Numéro de Téléphone': string;
 }
 
 export type BankTransferFormat = 'csv' | 'excel' | 'sepa';
@@ -86,6 +94,47 @@ const validateIBAN = (iban: string): boolean => {
   return ibanRegex.test(iban.replace(/\s/g, ''));
 };
 
+/**
+ * Parse RIB components from bank account string
+ *
+ * French RIB format: BBBBBGGGGGCCCCCCCCCCCCC (23 chars total)
+ * - B: Code banque (5 digits)
+ * - G: Code guichet (5 digits)
+ * - C: Numéro de compte (11 chars)
+ * - K: Clé RIB (2 digits)
+ *
+ * Accepts formats:
+ * - "12345 67890 12345678901 23" (with spaces)
+ * - "12345678901234567890123" (without spaces)
+ * - "12345-67890-12345678901-23" (with dashes)
+ */
+const parseRIB = (bankAccount: string | null): {
+  bankCode?: string;
+  branchCode?: string;
+  accountNumber?: string;
+  ribKey?: string;
+} => {
+  if (!bankAccount) {
+    return {};
+  }
+
+  // Remove all spaces, dashes, and special characters
+  const cleaned = bankAccount.replace(/[\s\-]/g, '');
+
+  // Check if it's a valid RIB length (23 characters)
+  if (cleaned.length === 23 && /^[0-9A-Z]+$/i.test(cleaned)) {
+    return {
+      bankCode: cleaned.substring(0, 5),
+      branchCode: cleaned.substring(5, 10),
+      accountNumber: cleaned.substring(10, 21),
+      ribKey: cleaned.substring(21, 23),
+    };
+  }
+
+  // Return empty if not a valid RIB format
+  return {};
+};
+
 // ========================================
 // CSV Export
 // ========================================
@@ -93,24 +142,31 @@ const validateIBAN = (iban: string): boolean => {
 /**
  * Generate bank transfer CSV file
  *
- * Generic CSV format compatible with most banks.
- * Each bank may have specific requirements, so this is a base format.
+ * CSV format with RIB components for bank transfers.
  */
 export const generateBankTransferCSV = (data: BankTransferExportData): string => {
-  // Filter employees with valid bank accounts
-  const validEmployees = data.employees.filter((emp) => emp.bankAccount);
+  // Generate libellé (payment description)
+  const month = format(data.periodStart, 'MMMM', { locale: fr }).toUpperCase();
+  const year = format(data.periodStart, 'yyyy');
+  const libelle = `PAIE ${month} ${year}`;
 
-  // Prepare rows
-  const rows: BankTransferRow[] = validEmployees.map((emp, index) => ({
-    'N°': index + 1,
-    Matricule: emp.employeeNumber,
-    'Nom et Prénoms': emp.employeeName,
-    'Banque': emp.bankName || 'N/A',
-    'Compte Bancaire': emp.bankAccount || '',
-    'Montant (FCFA)': formatCurrency(emp.netSalary),
-    'Référence':
-      emp.paymentReference || generatePaymentReference(emp.employeeNumber, data.periodStart),
-  }));
+  // Prepare rows with RIB components (include ALL employees, even without bank accounts)
+  const rows: BankTransferRow[] = data.employees.map((emp) => {
+    // Parse RIB components from bank account
+    const rib = parseRIB(emp.bankAccount);
+
+    return {
+      Matricule: emp.employeeNumber,
+      'Nom Prénom': emp.employeeName,
+      'Code Banque': rib.bankCode || emp.bankCode || '',
+      'Code Guichet': rib.branchCode || emp.branchCode || '',
+      'Numéro de Compte': rib.accountNumber || emp.accountNumber || '',
+      'Clé RIB': rib.ribKey || emp.ribKey || '',
+      'Libellé': libelle,
+      'Net à Payer': formatCurrency(emp.netSalary),
+      'Numéro de Téléphone': emp.phoneNumber || '',
+    };
+  });
 
   // Convert to CSV
   const headers = Object.keys(rows[0]);
@@ -140,36 +196,52 @@ export const generateBankTransferCSV = (data: BankTransferExportData): string =>
 /**
  * Generate bank transfer Excel file
  *
- * Excel format with detailed information and summary.
+ * Excel format with detailed bank information (RIB components).
+ * Columns: Matricule, Nom Prénom, Code Banque, Code Guichet, Numéro de Compte,
+ *          Clé RIB, Libellé, Net à Payer, Numéro de Téléphone
  */
 export const generateBankTransferExcel = (data: BankTransferExportData): ArrayBuffer => {
-  // Filter employees with valid bank accounts
-  const validEmployees = data.employees.filter((emp) => emp.bankAccount);
+  // Generate libellé (payment description)
+  const generateLibelle = (periodStart: Date): string => {
+    const month = format(periodStart, 'MMMM', { locale: fr }).toUpperCase();
+    const year = format(periodStart, 'yyyy');
+    return `PAIE ${month} ${year}`;
+  };
 
-  // Prepare rows
-  const rows: BankTransferRow[] = validEmployees.map((emp, index) => ({
-    'N°': index + 1,
-    Matricule: emp.employeeNumber,
-    'Nom et Prénoms': emp.employeeName,
-    'Banque': emp.bankName || 'N/A',
-    'Compte Bancaire': emp.bankAccount || '',
-    'Montant (FCFA)': formatCurrency(emp.netSalary),
-    'Référence':
-      emp.paymentReference || generatePaymentReference(emp.employeeNumber, data.periodStart),
-  }));
+  const libelle = generateLibelle(data.periodStart);
+
+  // Prepare rows with RIB components (include ALL employees, even without bank accounts)
+  const rows: BankTransferRow[] = data.employees.map((emp) => {
+    // Parse RIB components from bank account
+    const rib = parseRIB(emp.bankAccount);
+
+    return {
+      Matricule: emp.employeeNumber,
+      'Nom Prénom': emp.employeeName,
+      'Code Banque': rib.bankCode || emp.bankCode || '',
+      'Code Guichet': rib.branchCode || emp.branchCode || '',
+      'Numéro de Compte': rib.accountNumber || emp.accountNumber || '',
+      'Clé RIB': rib.ribKey || emp.ribKey || '',
+      'Libellé': libelle,
+      'Net à Payer': formatCurrency(emp.netSalary),
+      'Numéro de Téléphone': emp.phoneNumber || '',
+    };
+  });
 
   // Calculate totals
-  const totalAmount = rows.reduce((sum, row) => sum + row['Montant (FCFA)'], 0);
+  const totalAmount = rows.reduce((sum, row) => sum + row['Net à Payer'], 0);
 
   // Add totals row
   rows.push({
-    'N°': 0,
     Matricule: '',
-    'Nom et Prénoms': 'TOTAL',
-    'Banque': '',
-    'Compte Bancaire': '',
-    'Montant (FCFA)': totalAmount,
-    'Référence': '',
+    'Nom Prénom': 'TOTAL',
+    'Code Banque': '',
+    'Code Guichet': '',
+    'Numéro de Compte': '',
+    'Clé RIB': '',
+    'Libellé': '',
+    'Net à Payer': totalAmount,
+    'Numéro de Téléphone': '',
   });
 
   // Create worksheet
@@ -177,32 +249,36 @@ export const generateBankTransferExcel = (data: BankTransferExportData): ArrayBu
 
   // Set column widths
   worksheet['!cols'] = [
-    { wch: 5 }, // N°
-    { wch: 15 }, // Matricule
-    { wch: 30 }, // Nom et Prénoms
-    { wch: 20 }, // Banque
-    { wch: 25 }, // Compte Bancaire
-    { wch: 18 }, // Montant
-    { wch: 25 }, // Référence
+    { wch: 12 },  // Matricule
+    { wch: 30 },  // Nom Prénom
+    { wch: 12 },  // Code Banque
+    { wch: 12 },  // Code Guichet
+    { wch: 15 },  // Numéro de Compte
+    { wch: 10 },  // Clé RIB
+    { wch: 25 },  // Libellé
+    { wch: 15 },  // Net à Payer
+    { wch: 18 },  // Numéro de Téléphone
   ];
 
   // Create workbook
   const workbook = XLSX.utils.book_new();
 
+  // Add data sheet (main sheet)
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Paiement');
+
   // Add header info sheet
+  const employeesWithBankAccount = data.employees.filter((emp) => emp.bankAccount);
   const employeesWithoutAccount = data.employees.filter((emp) => !emp.bankAccount);
 
   const headerData = [
-    ['ORDRE DE VIREMENT BANCAIRE'],
+    ['EXTRACTION POUR PAIEMENT'],
     [''],
     ['Employeur:', data.companyName],
-    ['Compte émetteur:', data.companyBankAccount || 'N/A'],
     ['Période:', formatPeriod(data.periodStart)],
     ['Date de paiement:', format(data.payDate, 'dd/MM/yyyy', { locale: fr })],
-    ['Référence du lot:', data.batchReference || `VIR_${format(data.payDate, 'ddMMyyyy')}`],
     [''],
     ['Nombre total d\'employés:', data.employees.length],
-    ['Employés avec compte bancaire:', validEmployees.length],
+    ['Employés avec compte bancaire:', employeesWithBankAccount.length],
     ['Employés sans compte bancaire:', employeesWithoutAccount.length],
     [''],
     ['Montant total:', `${formatCurrency(totalAmount)} FCFA`],
@@ -212,13 +288,9 @@ export const generateBankTransferExcel = (data: BankTransferExportData): ArrayBu
   const headerSheet = XLSX.utils.aoa_to_sheet(headerData);
   XLSX.utils.book_append_sheet(workbook, headerSheet, 'Informations');
 
-  // Add data sheet
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Virements');
-
   // Add sheet for employees without bank accounts
   if (employeesWithoutAccount.length > 0) {
-    const missingData = employeesWithoutAccount.map((emp, index) => ({
-      'N°': index + 1,
+    const missingData = employeesWithoutAccount.map((emp) => ({
       Matricule: emp.employeeNumber,
       'Nom et Prénoms': emp.employeeName,
       'Montant (FCFA)': formatCurrency(emp.netSalary),
@@ -227,7 +299,6 @@ export const generateBankTransferExcel = (data: BankTransferExportData): ArrayBu
 
     const missingSheet = XLSX.utils.json_to_sheet(missingData);
     missingSheet['!cols'] = [
-      { wch: 5 },
       { wch: 15 },
       { wch: 30 },
       { wch: 18 },
@@ -254,7 +325,7 @@ export const generateBankTransferExcel = (data: BankTransferExportData): ArrayBu
  * a proper SEPA library for full compliance.
  */
 export const generateSEPAXML = (data: BankTransferExportData): string => {
-  // Filter employees with valid bank accounts
+  // For SEPA, we MUST filter to only employees with valid bank accounts
   const validEmployees = data.employees.filter((emp) => emp.bankAccount);
 
   const totalAmount = validEmployees.reduce((sum, emp) => sum + emp.netSalary, 0);
@@ -362,7 +433,7 @@ export const generateBankTransferFilename = (
   const monthStr = month.toString().padStart(2, '0');
 
   const extension = format === 'sepa' ? 'xml' : format === 'excel' ? 'xlsx' : 'csv';
-  return `Virement_Bancaire_${monthStr}_${year}.${extension}`;
+  return `Extraction_Paiement_${monthStr}_${year}.${extension}`;
 };
 
 // ========================================

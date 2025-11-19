@@ -199,7 +199,7 @@ export const generateEtat301Excel = (data: Etat301ExportData): ArrayBuffer => {
 export const generateEtat301Filename = (periodStart: Date): string => {
   const month = format(periodStart, 'MM', { locale: fr });
   const year = format(periodStart, 'yyyy', { locale: fr });
-  return `Etat_301_${month}_${year}.xlsx`;
+  return `Declaration_Impots_Salaires_${month}_${year}.xlsx`;
 };
 
 /**

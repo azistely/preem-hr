@@ -311,7 +311,7 @@ export const generateCNPSExcel = (data: CNPSExportData): ArrayBuffer => {
 /**
  * Generate CNPS export file name
  *
- * Format: Declaration_CNPS_MM_YYYY.xlsx
+ * Format: Appel_Cotisation_CNPS_MM_YYYY.xlsx
  *
  * @param periodStart - Period start date
  * @returns Filename string
@@ -319,7 +319,7 @@ export const generateCNPSExcel = (data: CNPSExportData): ArrayBuffer => {
 export const generateCNPSFilename = (periodStart: Date): string => {
   const month = format(periodStart, 'MM', { locale: fr });
   const year = format(periodStart, 'yyyy', { locale: fr });
-  return `Declaration_CNPS_${month}_${year}.xlsx`;
+  return `Appel_Cotisation_CNPS_${month}_${year}.xlsx`;
 };
 
 /**

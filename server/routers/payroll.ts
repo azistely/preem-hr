@@ -1776,28 +1776,28 @@ export const payrollRouter = createTRPCRouter({
           id: 'cnps',
           templateType: 'social_security',
           providerCode: 'cnps_ci',
-          providerName: 'CNPS',
+          providerName: 'Appel à cotisation mensuel CNPS',
           fileFormat: 'xlsx',
         },
         {
           id: 'cmu',
           templateType: 'health',
           providerCode: 'cmu_ci',
-          providerName: 'CMU',
+          providerName: 'Déclaration cotisation mensuel CMU',
           fileFormat: 'xlsx',
         },
         {
           id: 'etat301',
           templateType: 'tax',
           providerCode: 'dgi_ci',
-          providerName: 'État 301 (DGI)',
+          providerName: 'Déclaration des impots sur les salaires mensuels',
           fileFormat: 'xlsx',
         },
         {
           id: 'bank_transfer',
           templateType: 'bank_transfer',
           providerCode: 'standard',
-          providerName: 'Virement Bancaire',
+          providerName: 'Extraction pour paiement',
           fileFormat: 'xlsx',
         },
       ];
@@ -2733,19 +2733,41 @@ export const payrollRouter = createTRPCRouter({
         where: (tenants, { eq }) => eq(tenants.id, run.tenantId),
       });
 
-      // Prepare export data
+      // Get employee details (including phone numbers and bank info)
+      const employeeIds = lineItems.map((item) => item.employeeId);
+      const employees = await db.query.employees.findMany({
+        where: (employees, { inArray }) => inArray(employees.id, employeeIds),
+      });
+
+      // Create a map for quick lookup
+      const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
+
+      // Prepare export data with phone numbers and bank details
       const exportData: BankTransferExportData = {
         companyName: tenant?.name || 'Company',
         periodStart: new Date(run.periodStart),
         periodEnd: new Date(run.periodEnd),
         payDate: new Date(run.payDate),
-        employees: lineItems.map((item) => ({
-          employeeName: item.employeeName || '',
-          employeeNumber: item.employeeNumber || '',
-          bankAccount: item.bankAccount,
-          netSalary: parseFloat(item.netSalary?.toString() || '0'),
-          paymentReference: item.paymentReference || undefined,
-        })),
+        employees: lineItems.map((item) => {
+          const employee = employeeMap.get(item.employeeId);
+
+          // Construct employee name from employee record, fallback to line item
+          const employeeName = employee
+            ? `${employee.firstName} ${employee.lastName}`.trim()
+            : (item.employeeName || '');
+
+          // Get employee number from employee record, fallback to line item
+          const employeeNumber = employee?.employeeNumber || item.employeeNumber || '';
+
+          return {
+            employeeName,
+            employeeNumber,
+            bankAccount: employee?.bankAccount || item.bankAccount || null,
+            netSalary: parseFloat(item.netSalary?.toString() || '0'),
+            paymentReference: item.paymentReference || undefined,
+            phoneNumber: employee?.phone || '',
+          };
+        }),
       };
 
       // Generate Excel
