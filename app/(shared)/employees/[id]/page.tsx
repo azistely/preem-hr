@@ -36,7 +36,7 @@ import { EmployeeStatusBadge } from '@/features/employees/components/employee-st
 import { formatCurrency } from '@/features/employees/hooks/use-salary-validation';
 import { formatCurrencyWithRate, convertMonthlyAmountToRateType, getGrossSalaryLabel } from '@/features/employees/utils/rate-type-labels';
 import type { RateType } from '@/features/employees/utils/rate-type-labels';
-import { TerminateEmployeeModal } from '@/features/employees/components/lifecycle/terminate-employee-modal';
+import { TerminateEmployeeWizard } from '@/features/employees/components/lifecycle/terminate-employee-wizard';
 import { SuspendEmployeeModal } from '@/features/employees/components/lifecycle/suspend-employee-modal';
 import { TransferWizard } from '@/features/employees/components/transfer-wizard';
 import { SalaryHistoryTimeline } from '@/features/employees/components/salary/salary-history-timeline';
@@ -663,16 +663,24 @@ export default function EmployeeDetailPage() {
             contract={(employee as any)?.contract || null}
           />
 
-          {/* Link to full contract management page */}
+          {/* Contract navigation buttons */}
           {(employee as any)?.contract && (
             <Card>
               <CardContent className="py-4">
-                <Link href={`/employees/${employeeId}/contracts`}>
-                  <Button variant="outline" className="w-full min-h-[44px]">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Gérer les contrats et renouvellements
-                  </Button>
-                </Link>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Link href={`/employees/${employeeId}/contracts`}>
+                    <Button variant="outline" className="w-full min-h-[44px]">
+                      <FileText className="mr-2 h-4 w-4" />
+                      Voir le contrat
+                    </Button>
+                  </Link>
+                  <Link href="/contracts">
+                    <Button variant="outline" className="w-full min-h-[44px]">
+                      <FileText className="mr-2 h-4 w-4" />
+                      Tous les contrats
+                    </Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -1040,8 +1048,14 @@ export default function EmployeeDetailPage() {
 
       {/* Modals */}
       {showTerminateModal && (
-        <TerminateEmployeeModal
-          employee={employee as any}
+        <TerminateEmployeeWizard
+          employee={{
+            ...(employee as any),
+            // Map contract type from nested contract object
+            // CDDTI, CDD, INTERIM → 'CDD' for wizard purposes
+            // CDI → 'CDI'
+            contractType: ((employee as any)?.contract?.contractType === 'CDI' ? 'CDI' : 'CDD') as 'CDI' | 'CDD',
+          }}
           open={showTerminateModal}
           onClose={() => setShowTerminateModal(false)}
         />

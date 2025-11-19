@@ -23,6 +23,8 @@ import { and, eq, gte, lte, isNull, sql, or, gt, lt } from 'drizzle-orm';
 import { addDays, differenceInDays, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { sendEvent } from '@/lib/inngest/client';
+import { cddComplianceService } from '@/lib/compliance/cdd-compliance.service';
+import { cddtiComplianceService } from '@/lib/compliance/cddti-compliance.service';
 
 /**
  * Helper function to trigger email notification for new alert
@@ -676,6 +678,55 @@ export async function createPayrollReminders() {
 }
 
 /**
+ * Create contract compliance alerts (CDD and CDDTI) for all tenants
+ * Checks for contracts approaching 2-year limit (CDD) or 12-month limit (CDDTI)
+ */
+export async function createContractComplianceAlerts() {
+  let totalAlertsCreated = 0;
+  let tenantsProcessed = 0;
+  let errors: string[] = [];
+
+  // Get all active tenants
+  const activeTenants = await db.query.tenants.findMany({
+    where: eq(tenants.status, 'active'),
+  });
+
+  console.log(`[Alert Engine] Processing contract compliance alerts for ${activeTenants.length} tenants`);
+
+  for (const tenant of activeTenants) {
+    try {
+      // Generate CDD compliance alerts
+      const cddAlerts = await cddComplianceService.generateDailyAlerts(tenant.id);
+
+      // Generate CDDTI compliance alerts
+      const cddtiAlerts = await cddtiComplianceService.generateDailyCDDTIAlerts(tenant.id);
+
+      const tenantTotal = cddAlerts + cddtiAlerts;
+      totalAlertsCreated += tenantTotal;
+      tenantsProcessed++;
+
+      if (tenantTotal > 0) {
+        console.log(`[Alert Engine] Created ${tenantTotal} compliance alerts for tenant ${tenant.name} (${cddAlerts} CDD, ${cddtiAlerts} CDDTI)`);
+      }
+    } catch (error) {
+      const errorMsg = `Failed to generate compliance alerts for tenant ${tenant.name}: ${error instanceof Error ? error.message : String(error)}`;
+      console.error(`[Alert Engine] ${errorMsg}`);
+      errors.push(errorMsg);
+      // Continue processing other tenants even if one fails
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    alertsCreated: totalAlertsCreated,
+    tenantsProcessed,
+    totalTenants: activeTenants.length,
+    errors: errors.length > 0 ? errors : undefined,
+    message: `Created ${totalAlertsCreated} contract compliance alerts across ${tenantsProcessed} tenants`,
+  };
+}
+
+/**
  * Clean up old dismissed/completed alerts
  * Run weekly to keep alerts table clean
  */
@@ -710,6 +761,7 @@ export async function generateDailyAlerts() {
       createLeaveNotifications(),
       createDocumentExpiryAlerts(),
       createPayrollReminders(),
+      createContractComplianceAlerts(), // NEW: CDD and CDDTI compliance alerts
     ]);
 
     const summary = {
@@ -721,11 +773,14 @@ export async function generateDailyAlerts() {
         results[2].status === 'fulfilled' ? results[2].value : { alertsCreated: 0 },
       payrollReminders:
         results[3].status === 'fulfilled' ? results[3].value : { alertsCreated: 0 },
+      contractCompliance:
+        results[4].status === 'fulfilled' ? results[4].value : { alertsCreated: 0 },
       totalAlerts:
         (results[0].status === 'fulfilled' ? results[0].value.alertsCreated : 0) +
         (results[1].status === 'fulfilled' ? results[1].value.alertsCreated : 0) +
         (results[2].status === 'fulfilled' ? results[2].value.alertsCreated : 0) +
-        (results[3].status === 'fulfilled' ? results[3].value.alertsCreated : 0),
+        (results[3].status === 'fulfilled' ? results[3].value.alertsCreated : 0) +
+        (results[4].status === 'fulfilled' ? results[4].value.alertsCreated : 0),
     };
 
     console.log('[Alert Engine] Daily alert generation completed:', summary);

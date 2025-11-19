@@ -7,15 +7,13 @@
 
 'use client';
 
-import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FileText, Calendar, Clock, ArrowRight, Pencil } from 'lucide-react';
+import { FileText, Calendar, Clock } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import Link from 'next/link';
-import { EditContractDialog } from './edit-contract-dialog';
 
 // ============================================================================
 // Types
@@ -83,8 +81,6 @@ const formatDate = (date: string | Date | null | undefined) => {
 // ============================================================================
 
 export function ContractInfoCard({ employeeId, contract }: ContractInfoCardProps) {
-  const [showEditDialog, setShowEditDialog] = useState(false);
-
   if (!contract) {
     return (
       <Card>
@@ -219,39 +215,7 @@ export function ContractInfoCard({ employeeId, contract }: ContractInfoCardProps
           </Badge>
         </div>
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setShowEditDialog(true)}
-            className="min-h-[44px]"
-          >
-            <Pencil className="h-4 w-4 mr-2" />
-            Modifier
-          </Button>
-          <Link href={`/employees/${employeeId}/contracts`}>
-            <Button variant="outline" className="w-full min-h-[44px]">
-              Gérer
-              <ArrowRight className="h-4 w-4 ml-2" />
-            </Button>
-          </Link>
-        </div>
-
-        {/* Info Message */}
-        <p className="text-xs text-muted-foreground">
-          Vous pouvez modifier les détails du contrat ou accéder à la page de gestion complète.
-        </p>
       </CardContent>
-
-      {/* Edit Dialog */}
-      {showEditDialog && (
-        <EditContractDialog
-          open={showEditDialog}
-          onOpenChange={setShowEditDialog}
-          contract={contract}
-        />
-      )}
     </Card>
   );
 }

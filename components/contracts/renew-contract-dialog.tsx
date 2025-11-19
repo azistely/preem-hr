@@ -36,7 +36,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertCircle, Calendar } from 'lucide-react';
 import { format, addMonths } from 'date-fns';
-import { trpc } from '@/lib/trpc/client';
+import { api } from '@/trpc/react';
 import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
@@ -84,7 +84,7 @@ export function RenewContractDialog({
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const form = useForm<RenewContractFormValues>({
     resolver: zodResolver(renewContractSchema),
@@ -95,7 +95,7 @@ export function RenewContractDialog({
   });
 
   // Validate renewal
-  const validateRenewal = trpc.compliance.validateRenewal.useQuery(
+  const validateRenewal = api.compliance.validateRenewal.useQuery(
     {
       contractId,
       newEndDate: form.watch('newEndDate'),
@@ -106,7 +106,7 @@ export function RenewContractDialog({
   );
 
   // Renew contract mutation
-  const renewContract = trpc.compliance.renewContract.useMutation({
+  const renewContract = api.compliance.renewContract.useMutation({
     onSuccess: (data) => {
       toast({
         title: 'Contrat renouvelé',

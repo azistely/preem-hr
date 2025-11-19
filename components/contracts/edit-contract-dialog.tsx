@@ -45,7 +45,7 @@ import { Loader2, Calendar as CalendarIcon, Info } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { trpc } from '@/lib/trpc/client';
+import { api } from '@/trpc/react';
 import { useToast } from '@/hooks/use-toast';
 import { EntityDocumentsSection } from '@/components/documents/entity-documents-section';
 
@@ -105,7 +105,7 @@ export function EditContractDialog({
   onSuccess,
 }: EditContractDialogProps) {
   const { toast } = useToast();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const form = useForm<EditContractFormValues>({
     resolver: zodResolver(editContractSchema),
@@ -155,7 +155,7 @@ export function EditContractDialog({
     }
   }, [open, contract, form]);
 
-  const updateContractMutation = trpc.contracts.updateContract.useMutation({
+  const updateContractMutation = api.contracts.updateContract.useMutation({
     onSuccess: () => {
       toast({
         title: 'Contrat modifié',

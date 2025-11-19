@@ -48,6 +48,7 @@ export const dailyAlertsFunction = inngest.createFunction(
           leaveNotifications: alertsResult.summary.leaveNotifications?.alertsCreated || 0,
           documentExpiry: alertsResult.summary.documentExpiry?.alertsCreated || 0,
           payrollReminders: alertsResult.summary.payrollReminders?.alertsCreated || 0,
+          contractCompliance: alertsResult.summary.contractCompliance?.alertsCreated || 0,
           totalAlerts: alertsResult.summary.totalAlerts,
         });
 

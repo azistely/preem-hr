@@ -44,6 +44,7 @@ import {
   Edit3,
   Heart,
   Wallet,
+  FileSignature,
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
@@ -218,6 +219,7 @@ export const hrManagerMobileSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste employés", href: "/employees" },
       { icon: UserPlus, label: "Nouvel employé", href: "/employees/new" },
+      { icon: FileSignature, label: "Contrats", href: "/contracts" },
       { icon: Briefcase, label: "Postes", href: "/positions" },
       { icon: Heart, label: "Avantages sociaux", href: "/admin/benefits" },
     ],
@@ -314,6 +316,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste employés", href: "/employees" },
       { icon: UserPlus, label: "Nouvel employé", href: "/employees/new" },
+      { icon: FileSignature, label: "Contrats", href: "/contracts" },
       { icon: Briefcase, label: "Postes", href: "/positions" },
       { icon: Heart, label: "Avantages sociaux", href: "/admin/benefits" },
     ],

@@ -12,6 +12,7 @@ import { generateWorkCertificate } from '@/features/documents/services/work-cert
 import { generateCNPSAttestation } from '@/features/documents/services/cnps-attestation.service';
 import { generateFinalPayslip } from '@/features/documents/services/final-payslip.service';
 import { generateLeaveCertificate } from '@/lib/documents/leave-certificate-service';
+import { generateContractDocument, getContractPreviewData } from '@/lib/contracts/contract-document.service';
 import { bulletinService } from '@/lib/documents/bulletin-service';
 import { certificatService } from '@/lib/documents/certificat-travail-service';
 import { soldeService } from '@/lib/documents/solde-de-tout-compte-service';
@@ -52,6 +53,17 @@ const generateFinalPayslipSchema = z.object({
   payDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format de date invalide (YYYY-MM-DD)'),
 });
 
+const generateContractDocumentSchema = z.object({
+  contractId: z.string().uuid(),
+  companyRepresentative: z.string().min(1, 'Le nom du représentant est requis'),
+  companyRepresentativeTitle: z.string().min(1, 'Le titre du représentant est requis'),
+  versionNotes: z.string().optional(),
+});
+
+const getContractPreviewSchema = z.object({
+  contractId: z.string().uuid(),
+});
+
 export const documentsRouter = createTRPCRouter({
   /**
    * Generate work certificate (Certificat de Travail)
@@ -69,6 +81,7 @@ export const documentsRouter = createTRPCRouter({
           terminationId: input.terminationId,
           tenantId: ctx.user.tenantId,
           issuedBy: input.issuedBy,
+          uploadedByUserId: ctx.user.id,
         });
         console.log('[TRPC Documents] Service returned successfully');
 
@@ -99,6 +112,7 @@ export const documentsRouter = createTRPCRouter({
           terminationId: input.terminationId,
           tenantId: ctx.user.tenantId,
           issuedBy: input.issuedBy,
+          uploadedByUserId: ctx.user.id,
         });
         console.log('[TRPC Documents] Service returned successfully');
 
@@ -129,6 +143,7 @@ export const documentsRouter = createTRPCRouter({
           terminationId: input.terminationId,
           tenantId: ctx.user.tenantId,
           payDate: input.payDate,
+          uploadedByUserId: ctx.user.id,
         });
         console.log('[TRPC Documents] Service returned successfully');
 
@@ -179,6 +194,115 @@ export const documentsRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: error.message || 'Erreur lors de la génération de l\'attestation de congé',
+        });
+      }
+    }),
+
+  /**
+   * Get contract preview data (before generating document)
+   * Shows what will be included in the contract PDF
+   */
+  getContractPreview: protectedProcedure
+    .input(getContractPreviewSchema)
+    .query(async ({ input, ctx }) => {
+      console.log('[TRPC Documents] getContractPreview called with contractId:', input.contractId);
+      console.log('[TRPC Documents] Context tenantId:', ctx.user.tenantId);
+
+      try {
+        const result = await getContractPreviewData(
+          input.contractId,
+          ctx.user.tenantId!
+        );
+
+        return result;
+      } catch (error: any) {
+        console.error('[Contract Preview] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la récupération de l\'aperçu du contrat',
+        });
+      }
+    }),
+
+  /**
+   * Generate contract document PDF (CDI, CDD, CDDTI)
+   * Uploads to Supabase Storage and creates uploadedDocuments record
+   */
+  generateContractDocument: protectedProcedure
+    .input(generateContractDocumentSchema)
+    .mutation(async ({ input, ctx }) => {
+      console.log('[TRPC Documents] generateContractDocument called with input:', JSON.stringify(input));
+      console.log('[TRPC Documents] Context user:', JSON.stringify({
+        id: ctx.user.id,
+        tenantId: ctx.user.tenantId,
+        role: ctx.user.role,
+      }));
+
+      // Validate context has required fields
+      if (!ctx.user.tenantId) {
+        console.error('[TRPC Documents] Missing tenantId in context');
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Tenant ID is required. Please ensure you are logged in and have an active tenant.',
+        });
+      }
+
+      if (!ctx.user.id) {
+        console.error('[TRPC Documents] Missing user ID in context');
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'User ID is required. Please ensure you are logged in.',
+        });
+      }
+
+      // Validate input has required fields
+      if (!input.contractId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Contract ID is required',
+        });
+      }
+
+      if (!input.companyRepresentative) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Company representative name is required',
+        });
+      }
+
+      if (!input.companyRepresentativeTitle) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Company representative title is required',
+        });
+      }
+
+      try {
+        console.log('[TRPC Documents] Calling generateContractDocument service...');
+        const result = await generateContractDocument({
+          contractId: input.contractId,
+          tenantId: ctx.user.tenantId,
+          uploadedByUserId: ctx.user.id,
+          companyRepresentative: input.companyRepresentative,
+          companyRepresentativeTitle: input.companyRepresentativeTitle,
+          versionNotes: input.versionNotes,
+        });
+
+        console.log('[TRPC Documents] Contract document generated successfully');
+
+        return result;
+      } catch (error: any) {
+        console.error('[Contract Document] Generation error:', error);
+        console.error('[Contract Document] Error message:', error.message);
+        console.error('[Contract Document] Error stack:', error.stack);
+        console.error('[Contract Document] Input data:', JSON.stringify(input));
+        console.error('[Contract Document] Context data:', JSON.stringify({
+          tenantId: ctx.user.tenantId,
+          userId: ctx.user.id,
+        }));
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la génération du document de contrat',
         });
       }
     }),
@@ -1869,6 +1993,51 @@ export const documentsRouter = createTRPCRouter({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: error.message || 'Erreur lors de la mise à jour de la catégorie',
+        });
+      }
+    }),
+
+  /**
+   * Send document for electronic signature
+   * Creates signature request via Dropbox Sign for contract documents
+   * Access: HR Manager, Tenant Admin, Super Admin
+   */
+  sendForSignature: hrManagerProcedure
+    .input(z.object({
+      documentId: z.string().uuid(),
+      signers: z.array(z.object({
+        name: z.string().min(1, 'Le nom du signataire est requis'),
+        email: z.string().email('Email invalide'),
+        order: z.number().int().min(0).optional(),
+      })).min(1, 'Au moins un signataire est requis'),
+      title: z.string().min(1, 'Le titre est requis'),
+      subject: z.string().optional(),
+      message: z.string().optional(),
+      signingOrder: z.enum(['sequential', 'parallel']).default('sequential'),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      try {
+        // Create signature request
+        const result = await createSignatureRequest({
+          documentId: input.documentId,
+          signers: input.signers,
+          title: input.title,
+          subject: input.subject,
+          message: input.message,
+          signingOrder: input.signingOrder,
+          testMode: process.env.NODE_ENV !== 'production',
+        });
+
+        return {
+          success: true,
+          signatureRequestId: result.signatureRequestId,
+          message: 'Demande de signature envoyée avec succès',
+        };
+      } catch (error: any) {
+        console.error('[Send For Signature] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de l\'envoi de la demande de signature',
         });
       }
     }),

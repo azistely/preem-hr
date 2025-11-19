@@ -45,7 +45,7 @@ import { Loader2, Calendar as CalendarIcon, AlertTriangle } from 'lucide-react';
 import { format, addMonths } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { trpc } from '@/lib/trpc/client';
+import { api } from '@/trpc/react';
 import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
@@ -126,7 +126,7 @@ export function ChangeContractTypeDialog({
   onSuccess,
 }: ChangeContractTypeDialogProps) {
   const { toast } = useToast();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const form = useForm<ChangeContractTypeFormValues>({
     resolver: zodResolver(changeContractTypeSchema),
@@ -151,7 +151,7 @@ export function ChangeContractTypeDialog({
     }
   }, [selectedType, startDate, form]);
 
-  const changeContractTypeMutation = trpc.contracts.changeContractType.useMutation({
+  const changeContractTypeMutation = api.contracts.changeContractType.useMutation({
     onSuccess: () => {
       toast({
         title: 'Contrat modifié',

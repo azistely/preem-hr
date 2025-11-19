@@ -1,19 +1,22 @@
 /**
  * Compliance tRPC Router
  *
- * Handles CDD (Fixed-Term Contract) compliance tracking:
- * - Contract compliance checking (2-year, 2-renewal limits)
+ * Handles contract compliance tracking:
+ * - CDD (Fixed-Term Contract): 2-year, 2-renewal limits
+ * - CDDTI (Daily/Task Contract): 12-month limit
  * - Contract renewals with validation
- * - CDD to CDI conversions
+ * - Contract conversions (CDD→CDI, CDDTI→CDI, CDDTI→CDD)
  * - Alert management
  * - Daily alert generation (cron)
  *
  * @see lib/compliance/cdd-compliance.service.ts
+ * @see lib/compliance/cddti-compliance.service.ts
  */
 
 import { z } from 'zod';
 import { createTRPCRouter, publicProcedure } from '../api/trpc';
 import { cddComplianceService } from '@/lib/compliance/cdd-compliance.service';
+import { cddtiComplianceService } from '@/lib/compliance/cddti-compliance.service';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/lib/db';
 import {
@@ -56,6 +59,19 @@ const getActiveAlertsSchema = z.object({
   severity: z.enum(['info', 'warning', 'critical']).optional(),
   limit: z.number().min(1).max(100).default(50),
   offset: z.number().min(0).default(0),
+});
+
+// CDDTI-specific schemas
+const convertCDDTIToCDISchema = z.object({
+  contractId: z.string().uuid(),
+  conversionDate: z.coerce.date().optional(),
+});
+
+const convertCDDTIToCDDSchema = z.object({
+  contractId: z.string().uuid(),
+  cddEndDate: z.coerce.date(),
+  cddReason: z.string().min(10, 'La raison du CDD doit contenir au moins 10 caractères'),
+  conversionDate: z.coerce.date().optional(),
 });
 
 // ============================================================================
@@ -414,6 +430,206 @@ export const complianceRouter = createTRPCRouter({
         return contractsWithCompliance;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Erreur lors de la récupération des contrats CDD';
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message,
+        });
+      }
+    }),
+
+  // ============================================================================
+  // CDDTI Compliance Endpoints
+  // ============================================================================
+
+  /**
+   * Check CDDTI compliance for a specific employee
+   *
+   * Returns:
+   * - Compliance status (compliant if < 12 months)
+   * - Months elapsed and remaining
+   * - 12-month limit date
+   * - Active alerts (90/60/30-day warnings, 12-month limit)
+   */
+  checkCDDTICompliance: publicProcedure
+    .input(checkComplianceSchema)
+    .query(async ({ input, ctx }) => {
+      try {
+        const compliance = await cddtiComplianceService.checkCDDTICompliance(
+          input.employeeId,
+          ctx.user.tenantId
+        );
+
+        return compliance;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Erreur lors de la vérification de conformité CDDTI';
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message,
+        });
+      }
+    }),
+
+  /**
+   * Convert CDDTI to CDI (permanent contract)
+   *
+   * Closes CDDTI contract and creates new CDI contract.
+   * Updates employee record and dismisses all alerts.
+   */
+  convertCDDTIToCDI: publicProcedure
+    .input(convertCDDTIToCDISchema)
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const conversionDate = input.conversionDate ?? new Date();
+
+        const cdiContract = await cddtiComplianceService.convertCDDTIToCDI(
+          input.contractId,
+          conversionDate,
+          ctx.user.id,
+          ctx.user.tenantId
+        );
+
+        return {
+          success: true,
+          message: 'Contrat CDDTI converti en CDI avec succès',
+          cdiContractId: cdiContract.id,
+        };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Erreur lors de la conversion CDDTI en CDI';
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message,
+        });
+      }
+    }),
+
+  /**
+   * Convert CDDTI to CDD (HR discretion adjustment)
+   *
+   * Closes CDDTI contract and creates new CDD contract.
+   * Useful when HR wants to adjust contract type instead of direct CDI conversion.
+   */
+  convertCDDTIToCDD: publicProcedure
+    .input(convertCDDTIToCDDSchema)
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const conversionDate = input.conversionDate ?? new Date();
+
+        const cddContract = await cddtiComplianceService.convertCDDTIToCDD(
+          input.contractId,
+          input.cddEndDate,
+          input.cddReason,
+          conversionDate,
+          ctx.user.id,
+          ctx.user.tenantId
+        );
+
+        return {
+          success: true,
+          message: 'Contrat CDDTI converti en CDD avec succès',
+          cddContractId: cddContract.id,
+        };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Erreur lors de la conversion CDDTI en CDD';
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message,
+        });
+      }
+    }),
+
+  /**
+   * Get active CDDTI contracts for the tenant
+   *
+   * Returns contracts with compliance status (months elapsed, remaining, etc.)
+   */
+  getActiveCDDTIContracts: publicProcedure
+    .query(async ({ ctx }) => {
+      try {
+        const contracts = await db
+          .select({
+            id: employmentContracts.id,
+            employeeId: employmentContracts.employeeId,
+            contractNumber: employmentContracts.contractNumber,
+            startDate: employmentContracts.startDate,
+            cddtiTaskDescription: employmentContracts.cddtiTaskDescription,
+            // Employee details
+            employeeFirstName: employees.firstName,
+            employeeLastName: employees.lastName,
+            employeeNumber: employees.employeeNumber,
+          })
+          .from(employmentContracts)
+          .leftJoin(employees, eq(employmentContracts.employeeId, employees.id))
+          .where(
+            and(
+              eq(employmentContracts.tenantId, ctx.user.tenantId),
+              eq(employmentContracts.contractType, 'CDDTI'),
+              eq(employmentContracts.isActive, true)
+            )
+          )
+          .orderBy(desc(employmentContracts.startDate));
+
+        // Enrich with compliance status
+        const contractsWithCompliance = await Promise.all(
+          contracts.map(async contract => {
+            const compliance = await cddtiComplianceService.checkCDDTICompliance(
+              contract.employeeId,
+              ctx.user.tenantId
+            );
+
+            return {
+              ...contract,
+              employeeName: `${contract.employeeFirstName} ${contract.employeeLastName}`,
+              compliance: {
+                isCompliant: compliance.isCompliant,
+                conversionDue: compliance.conversionDue,
+                monthsElapsed: compliance.monthsElapsed,
+                monthsRemaining: compliance.monthsRemaining,
+                limitDate: compliance.limitDate,
+                hasAlerts: compliance.alerts.length > 0,
+                criticalAlerts: compliance.alerts.filter(a => a.severity === 'critical').length,
+              },
+            };
+          })
+        );
+
+        return contractsWithCompliance;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Erreur lors de la récupération des contrats CDDTI';
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message,
+        });
+      }
+    }),
+
+  /**
+   * Generate daily alerts for ALL contract types (CDD + CDDTI)
+   *
+   * Should be called by cron job daily.
+   * Returns number of alerts created for each type.
+   */
+  generateAllComplianceAlerts: publicProcedure
+    .mutation(async ({ ctx }) => {
+      try {
+        const cddAlerts = await cddComplianceService.generateDailyAlerts(
+          ctx.user.tenantId
+        );
+
+        const cddtiAlerts = await cddtiComplianceService.generateDailyCDDTIAlerts(
+          ctx.user.tenantId
+        );
+
+        const totalAlerts = cddAlerts + cddtiAlerts;
+
+        return {
+          success: true,
+          message: `${totalAlerts} nouvelles alertes créées (${cddAlerts} CDD, ${cddtiAlerts} CDDTI)`,
+          cddAlertsCreated: cddAlerts,
+          cddtiAlertsCreated: cddtiAlerts,
+          totalAlerts,
+        };
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Erreur lors de la génération des alertes';
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message,

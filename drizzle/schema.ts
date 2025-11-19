@@ -19,6 +19,32 @@ export const rateTypeEnum = pgEnum("rate_type_enum", ['MONTHLY', 'DAILY', 'HOURL
 export const ruleScopeType = pgEnum("rule_scope_type", ['country', 'location', 'sector', 'tenant', 'employee'])
 export const ruleType = pgEnum("rule_type", ['tax.bracket', 'tax.family_deduction', 'contribution.rate', 'contribution.sector_override', 'tax.other', 'component.definition', 'component.formula'])
 
+// STC System Enums
+export const departureTypeEnum = pgEnum("departure_type", [
+	'FIN_CDD',
+	'DEMISSION_CDI',
+	'DEMISSION_CDD',
+	'LICENCIEMENT',
+	'RUPTURE_CONVENTIONNELLE',
+	'RETRAITE',
+	'DECES'
+])
+
+export const noticePeriodStatusEnum = pgEnum("notice_period_status", [
+	'worked',
+	'paid_by_employer',
+	'paid_by_employee',
+	'waived'
+])
+
+export const licenciementTypeEnum = pgEnum("licenciement_type", [
+	'economique',
+	'faute_simple',
+	'faute_grave',
+	'faute_lourde',
+	'inaptitude'
+])
+
 
 export const countries = pgTable("countries", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -478,21 +504,62 @@ export const employeeTerminations = pgTable("employee_terminations", {
 	terminationDate: date("termination_date").notNull(),
 	terminationReason: text("termination_reason").notNull(),
 	notes: text(),
+
+	// Core STC fields
+	departureType: departureTypeEnum("departure_type").default('LICENCIEMENT').notNull(),
+	contractTypeAtTermination: varchar("contract_type_at_termination", { length: 20 }),
+	gratificationAmount: numeric("gratification_amount", { precision: 15, scale: 2 }).default('0'),
+	gratificationRate: numeric("gratification_rate", { precision: 5, scale: 4 }).default('0.75'),
+
+	// Notice period configuration
 	noticePeriodDays: integer("notice_period_days").notNull(),
-	noticePaymentAmount: numeric("notice_payment_amount", { precision: 15, scale:  2 }),
+	noticePaymentAmount: numeric("notice_payment_amount", { precision: 15, scale: 2 }),
+	noticePeriodStatus: noticePeriodStatusEnum("notice_period_status").default('worked'),
+	noticePeriodMonths: numeric("notice_period_months", { precision: 3, scale: 1 }),
 	jobSearchDaysUsed: integer("job_search_days_used").default(0),
-	severanceAmount: numeric("severance_amount", { precision: 15, scale:  2 }).default('0'),
-	vacationPayoutAmount: numeric("vacation_payout_amount", { precision: 15, scale:  2 }).default('0'),
-	averageSalary12M: numeric("average_salary_12m", { precision: 15, scale:  2 }),
-	yearsOfService: numeric("years_of_service", { precision: 5, scale:  2 }),
+
+	// Indemnities
+	severanceAmount: numeric("severance_amount", { precision: 15, scale: 2 }).default('0'),
+	vacationPayoutAmount: numeric("vacation_payout_amount", { precision: 15, scale: 2 }).default('0'),
+	cddEndIndemnity: numeric("cdd_end_indemnity", { precision: 15, scale: 2 }).default('0'),
+	funeralExpenses: numeric("funeral_expenses", { precision: 15, scale: 2 }).default('0'),
+
+	// Calculation metadata
+	averageSalary12M: numeric("average_salary_12m", { precision: 15, scale: 2 }),
+	yearsOfService: numeric("years_of_service", { precision: 5, scale: 2 }),
 	severanceRate: integer("severance_rate"),
+
+	// Specific departure types
+	licenciementType: licenciementTypeEnum("licenciement_type"),
+	ruptureNegotiatedAmount: numeric("rupture_negotiated_amount", { precision: 15, scale: 2 }),
+
+	// Décès specific
+	deathCertificateUrl: text("death_certificate_url"),
+	beneficiaries: jsonb().$type<Array<{
+		name: string;
+		relationship: 'spouse' | 'child' | 'parent' | 'other';
+		identityDocument: string;
+		bankAccount: string;
+		sharePercentage: number;
+	}>>().default([]),
+
+	// Documents (uploadedDocuments integration)
+	workCertificateDocumentId: uuid("work_certificate_document_id"),
 	workCertificateGeneratedAt: timestamp("work_certificate_generated_at", { withTimezone: true, mode: 'string' }),
-	workCertificateUrl: text("work_certificate_url"),
+	workCertificateUrl: text("work_certificate_url"), // Backward compat
+
+	finalPayslipDocumentId: uuid("final_payslip_document_id"),
 	finalPayslipGeneratedAt: timestamp("final_payslip_generated_at", { withTimezone: true, mode: 'string' }),
-	finalPayslipUrl: text("final_payslip_url"),
+	finalPayslipUrl: text("final_payslip_url"), // Backward compat
+
+	cnpsAttestationDocumentId: uuid("cnps_attestation_document_id"),
 	cnpsAttestationGeneratedAt: timestamp("cnps_attestation_generated_at", { withTimezone: true, mode: 'string' }),
-	cnpsAttestationUrl: text("cnps_attestation_url"),
+	cnpsAttestationUrl: text("cnps_attestation_url"), // Backward compat
+
+	// Workflow
 	status: text().default('pending').notNull(),
+
+	// Audit
 	createdBy: uuid("created_by"),
 	createdByEmail: text("created_by_email"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -500,10 +567,18 @@ export const employeeTerminations = pgTable("employee_terminations", {
 	updatedBy: uuid("updated_by"),
 	updatedByEmail: text("updated_by_email"),
 }, (table) => [
+	// Indexes
 	index("idx_terminations_date").using("btree", table.terminationDate.asc().nullsLast().op("date_ops")),
 	index("idx_terminations_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
 	index("idx_terminations_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
 	index("idx_terminations_tenant").using("btree", table.tenantId.asc().nullsLast().op("uuid_ops")),
+	index("idx_terminations_departure_type").using("btree", table.departureType.asc().nullsLast()),
+	index("idx_terminations_notice_status").using("btree", table.noticePeriodStatus.asc().nullsLast()),
+	index("idx_terminations_work_cert_doc").using("btree", table.workCertificateDocumentId.asc().nullsLast()),
+	index("idx_terminations_final_payslip_doc").using("btree", table.finalPayslipDocumentId.asc().nullsLast()),
+	index("idx_terminations_cnps_doc").using("btree", table.cnpsAttestationDocumentId.asc().nullsLast()),
+
+	// Foreign keys
 	foreignKey({
 			columns: [table.createdBy],
 			foreignColumns: [users.id],
@@ -524,7 +599,11 @@ export const employeeTerminations = pgTable("employee_terminations", {
 			foreignColumns: [users.id],
 			name: "employee_terminations_updated_by_fkey"
 		}),
+
+	// Policies
 	pgPolicy("Tenant isolation for terminations", { as: "permissive", for: "all", to: ["public"], using: sql`(tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)` }),
+
+	// Constraints
 	check("positive_notice_period", sql`notice_period_days >= 0`),
 	check("positive_severance", sql`severance_amount >= (0)::numeric`),
 	check("valid_severance_rate", sql`severance_rate = ANY (ARRAY[0, 30, 35, 40])`),
@@ -3309,6 +3388,8 @@ export const employmentContracts: any = pgTable("employment_contracts", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	createdBy: uuid("created_by"),
 	cddtiTaskDescription: text("cddti_task_description"),
+	contractHtmlContent: text("contract_html_content"),
+	contractTemplateSource: varchar("contract_template_source", { length: 50 }),
 }, (table) => [
 	index("idx_contracts_employee").using("btree", table.employeeId.asc().nullsLast().op("uuid_ops")),
 	index("idx_employment_contracts_cddti").using("btree", table.employeeId.asc().nullsLast().op("date_ops"), table.contractType.asc().nullsLast().op("date_ops"), table.startDate.asc().nullsLast().op("date_ops")).where(sql`((contract_type)::text = 'CDDTI'::text)`),

@@ -235,15 +235,27 @@ export function CNPSAttestationPDF({ data }: { data: CNPSAttestationData }) {
             <Text style={styles.tableCol}>Total</Text>
           </View>
 
-          {data.contributions.map((contrib, index) => (
-            <View key={index} style={styles.tableRow}>
-              <Text style={styles.tableColWide}>{formatPeriod(contrib.period)}</Text>
-              <Text style={styles.tableCol}>{formatCurrency(contrib.baseSalary)} FCFA</Text>
-              <Text style={styles.tableCol}>{formatCurrency(contrib.employeeContribution)} FCFA</Text>
-              <Text style={styles.tableCol}>{formatCurrency(contrib.employerContribution)} FCFA</Text>
-              <Text style={styles.tableCol}>{formatCurrency(contrib.totalContribution)} FCFA</Text>
+          {data.contributions.length === 0 ? (
+            <View style={styles.tableRow}>
+              <Text style={{ ...styles.tableColWide, fontStyle: 'italic', color: '#666' }}>
+                Aucune cotisation enregistrée (employé terminé avant versement de salaire)
+              </Text>
+              <Text style={styles.tableCol}></Text>
+              <Text style={styles.tableCol}></Text>
+              <Text style={styles.tableCol}></Text>
+              <Text style={styles.tableCol}></Text>
             </View>
-          ))}
+          ) : (
+            data.contributions.map((contrib, index) => (
+              <View key={index} style={styles.tableRow}>
+                <Text style={styles.tableColWide}>{formatPeriod(contrib.period)}</Text>
+                <Text style={styles.tableCol}>{formatCurrency(contrib.baseSalary)} FCFA</Text>
+                <Text style={styles.tableCol}>{formatCurrency(contrib.employeeContribution)} FCFA</Text>
+                <Text style={styles.tableCol}>{formatCurrency(contrib.employerContribution)} FCFA</Text>
+                <Text style={styles.tableCol}>{formatCurrency(contrib.totalContribution)} FCFA</Text>
+              </View>
+            ))
+          )}
 
           <View style={styles.totalRow}>
             <Text style={styles.tableColWide}>TOTAL</Text>

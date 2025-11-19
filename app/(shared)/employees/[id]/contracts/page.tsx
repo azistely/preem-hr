@@ -28,14 +28,11 @@ import {
   RefreshCw,
   CheckCircle,
   Loader2,
-  Pencil,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { ContractTimeline } from '@/components/contracts/contract-timeline';
 import { RenewContractDialog } from '@/components/contracts/renew-contract-dialog';
 import { ConvertToCDIDialog } from '@/components/contracts/convert-to-cdi-dialog';
-import { ChangeContractTypeDialog } from '@/components/contracts/change-contract-type-dialog';
-import { EditContractDialog } from '@/components/contracts/edit-contract-dialog';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import Link from 'next/link';
@@ -60,8 +57,6 @@ export default function ContractManagementPage({ params }: ContractPageProps) {
   const { toast } = useToast();
   const [showRenewDialog, setShowRenewDialog] = useState(false);
   const [showConvertDialog, setShowConvertDialog] = useState(false);
-  const [showChangeTypeDialog, setShowChangeTypeDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
 
   // Unwrap async params (Next.js 15)
   const resolvedParams = React.use(params);
@@ -232,58 +227,42 @@ export default function ContractManagementPage({ params }: ContractPageProps) {
                   </div>
                 </>
               )}
-
-              {/* Actions */}
-              <Separator />
-              <div className="flex flex-col gap-2">
-                {/* Edit contract details button - always available */}
-                <Button
-                  variant="outline"
-                  className="w-full min-h-[44px]"
-                  onClick={() => setShowEditDialog(true)}
-                >
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Modifier les détails
-                </Button>
-
-                {/* CDD-specific actions - only when active */}
-                {contract.isActive && contract.contractType === 'CDD' && (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="w-full min-h-[44px]"
-                      onClick={() => setShowRenewDialog(true)}
-                      disabled={contract.renewalCount >= 2}
-                    >
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Renouveler le contrat
-                    </Button>
-                    <Button
-                      variant="default"
-                      className="w-full min-h-[44px]"
-                      onClick={() => setShowConvertDialog(true)}
-                    >
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Convertir en CDI
-                    </Button>
-                  </>
-                )}
-
-                {/* Change contract type - always available for active contracts */}
-                {contract.isActive && (
-                  <Button
-                    variant="secondary"
-                    className="w-full min-h-[44px]"
-                    onClick={() => setShowChangeTypeDialog(true)}
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Changer le type de contrat
-                  </Button>
-                )}
-              </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Contract HTML Content */}
+        {contract && contract.contractHtmlContent && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Contenu du contrat
+              </CardTitle>
+              <CardDescription>
+                Contrat généré depuis l'éditeur
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div
+                className="prose prose-sm max-w-none p-4 bg-muted/30 rounded-lg border"
+                dangerouslySetInnerHTML={{ __html: contract.contractHtmlContent }}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Navigation to all contracts */}
+        <Card>
+          <CardContent className="py-4">
+            <Link href="/contracts">
+              <Button variant="outline" className="w-full min-h-[44px]">
+                <FileText className="mr-2 h-4 w-4" />
+                Tous les contrats
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
 
         {/* Contract Timeline (CDD only) */}
         {contract && contract.contractType === 'CDD' && compliance && (
@@ -340,33 +319,6 @@ export default function ContractManagementPage({ params }: ContractPageProps) {
                 description: 'Le contrat a été converti en CDI avec succès',
               });
             }}
-          />
-        )}
-
-        {/* Change Contract Type Dialog */}
-        {contract && (
-          <ChangeContractTypeDialog
-            open={showChangeTypeDialog}
-            onOpenChange={setShowChangeTypeDialog}
-            employeeId={employeeId}
-            employeeName={`${emp.firstName} ${emp.lastName}`}
-            currentContractId={contract.id}
-            currentContractType={contract.contractType}
-            onSuccess={() => {
-              toast({
-                title: 'Succès',
-                description: 'Le type de contrat a été changé avec succès',
-              });
-            }}
-          />
-        )}
-
-        {/* Edit Contract Dialog */}
-        {contract && (
-          <EditContractDialog
-            open={showEditDialog}
-            onOpenChange={setShowEditDialog}
-            contract={contract}
           />
         )}
       </div>

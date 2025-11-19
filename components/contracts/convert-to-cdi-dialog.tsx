@@ -35,7 +35,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import { trpc } from '@/lib/trpc/client';
+import { api } from '@/trpc/react';
 import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
@@ -77,7 +77,7 @@ export function ConvertToCDIDialog({
 }: ConvertToCDIDialogProps) {
   const { toast } = useToast();
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const form = useForm<ConvertToCDIFormValues>({
     resolver: zodResolver(convertToCDISchema),
@@ -87,7 +87,7 @@ export function ConvertToCDIDialog({
   });
 
   // Convert to CDI mutation
-  const convertToCDI = trpc.compliance.convertToCDI.useMutation({
+  const convertToCDI = api.compliance.convertToCDI.useMutation({
     onSuccess: (data) => {
       toast({
         title: 'Conversion réussie',
