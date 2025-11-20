@@ -208,6 +208,7 @@ export const hrManagerMobileSections: NavSection[] = [
     items: [
       { icon: Play, label: "Lancer la paie", href: "/payroll/runs/new" },
       { icon: History, label: "Historique paies", href: "/payroll/runs" },
+      { icon: FileStack, label: "Rapports mensuels", href: "/payroll/reports/monthly" },
       { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice", href: "/payroll/calculator" },
       { icon: FileText, label: "Déclaration CNPS", href: "/payroll/cnps-declaration" },
@@ -305,6 +306,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: Play, label: "Lancer la paie", href: "/payroll/runs/new" },
       { icon: History, label: "Historique paies", href: "/payroll/runs" },
+      { icon: FileStack, label: "Rapports mensuels", href: "/payroll/reports/monthly" },
       { icon: Award, label: "Primes et variables", href: "/payroll/variable-inputs" },
       { icon: Calculator, label: "Calculatrice paie", href: "/payroll/calculator" },
       { icon: FileText, label: "Déclaration CNPS", href: "/payroll/cnps-declaration" },
@@ -358,7 +360,15 @@ export const hrManagerDesktopSections: NavSection[] = [
 
 // Tenant Admin Navigation (STREAMLINED - HCI COMPLIANT)
 // Strategy: HR Manager sections as PRIMARY (admin features in "Plus d'Options")
-export const adminMobileSections: NavSection[] = hrManagerMobileSections;
+export const adminMobileSections: NavSection[] = [
+  {
+    title: "",
+    items: [
+      { icon: Home, label: "Accueil", href: "/admin/settings/dashboard" },
+    ],
+  },
+  ...hrManagerMobileSections.slice(1), // All other sections from HR Manager
+];
 
 // Admin advanced features (collapsible) - HCI COMPLIANT
 // Only include pages that actually exist
@@ -400,8 +410,16 @@ export const superAdminOnlySections: NavSection[] = [
   },
 ];
 
-// Admin Desktop: HR Manager sections only (admin features are in "Plus d'Options")
-export const adminDesktopSections: NavSection[] = hrManagerDesktopSections;
+// Admin Desktop: Same as HR Manager sections but with Admin Settings dashboard
+export const adminDesktopSections: NavSection[] = [
+  {
+    title: "",
+    items: [
+      { icon: Home, label: "Tableau de bord", href: "/admin/settings/dashboard" },
+    ],
+  },
+  ...hrManagerDesktopSections.slice(1), // All other sections from HR Manager
+];
 
 // Helper function to get navigation based on role
 export function getNavigationByRole(role: string) {

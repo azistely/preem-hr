@@ -306,6 +306,242 @@ async function fetchLeaveBalances(
   return result;
 }
 
+/**
+ * Aggregate payroll data for all runs in a given month
+ *
+ * Used for monthly regulatory exports (CNPS, CMU, État 301).
+ * Consolidates all approved/paid runs for the month, which is critical for
+ * CDDTI employees who can have multiple payroll runs within a single month.
+ *
+ * IMPORTANT: CDDTI 21-day threshold must be calculated using monthly totals,
+ * not individual run totals.
+ *
+ * @param tenantId - Tenant UUID
+ * @param month - Month in YYYY-MM format (e.g., "2025-01")
+ * @returns Aggregated employee data with monthly totals
+ */
+async function aggregateMonthlyPayrollData(
+  tenantId: string,
+  month: string
+): Promise<{
+  runs: Array<typeof payrollRuns.$inferSelect>;
+  employees: Array<{
+    // Employee identification
+    employeeId: string;
+    employeeNumber: string;
+    employeeName: string;
+    cnpsNumber: string | null;
+    dateOfBirth: Date | null;
+    hireDate: Date;
+    terminationDate: Date | null;
+    salaryRegime: string | null;
+    contractType: string | null;
+    phone: string | null;
+    bankAccount: string | null;
+
+    // Monthly aggregated totals
+    grossSalary: number;
+    daysWorked: number;
+    hoursWorked: number;
+    cnpsEmployee: number;
+    cmuEmployee: number;
+    taxableIncome: number;
+    its: number;
+    netSalary: number;
+
+    // Tracking
+    runIds: string[]; // Run IDs this employee appeared in
+  }>;
+  periodStart: Date;
+  periodEnd: Date;
+}> {
+  // Parse month string (YYYY-MM)
+  const [yearStr, monthStr] = month.split('-');
+  const year = parseInt(yearStr || '0', 10);
+  const monthNum = parseInt(monthStr || '0', 10);
+
+  if (isNaN(year) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Invalid month format. Expected YYYY-MM, got: ${month}`,
+    });
+  }
+
+  // Calculate period bounds for this month
+  const periodStart = new Date(year, monthNum - 1, 1);
+  const periodEnd = new Date(year, monthNum, 0); // Last day of month
+
+  console.log(`[Aggregate Monthly] Querying runs for ${month} (${periodStart.toISOString()} to ${periodEnd.toISOString()})`);
+
+  // Query all approved/paid runs for this month
+  // Use SQL EXTRACT to filter by year and month
+  const runs = await db
+    .select()
+    .from(payrollRuns)
+    .where(
+      and(
+        eq(payrollRuns.tenantId, tenantId),
+        or(
+          eq(payrollRuns.status, 'approved'),
+          eq(payrollRuns.status, 'paid')
+        ),
+        sql`EXTRACT(YEAR FROM ${payrollRuns.periodStart}) = ${year}`,
+        sql`EXTRACT(MONTH FROM ${payrollRuns.periodStart}) = ${monthNum}`
+      )
+    )
+    .orderBy(asc(payrollRuns.periodStart));
+
+  if (runs.length === 0) {
+    console.log(`[Aggregate Monthly] No approved/paid runs found for ${month}`);
+    return {
+      runs: [],
+      employees: [],
+      periodStart,
+      periodEnd,
+    };
+  }
+
+  console.log(`[Aggregate Monthly] Found ${runs.length} runs for ${month}:`, runs.map(r => r.id));
+
+  const runIds = runs.map(run => run.id);
+
+  // Fetch all line items for these runs
+  const lineItems = await db
+    .select({
+      lineItemId: payrollLineItems.id,
+      employeeId: payrollLineItems.employeeId,
+      employeeNumber: payrollLineItems.employeeNumber,
+      employeeName: payrollLineItems.employeeName,
+      runId: payrollLineItems.payrollRunId,
+      grossSalary: payrollLineItems.grossSalary,
+      daysWorked: payrollLineItems.daysWorked,
+      hoursWorked: payrollLineItems.hoursWorked,
+      cnpsEmployee: payrollLineItems.cnpsEmployee,
+      cmuEmployee: payrollLineItems.cmuEmployee,
+      brutImposable: payrollLineItems.brutImposable,
+      its: payrollLineItems.its,
+      netSalary: payrollLineItems.netSalary,
+    })
+    .from(payrollLineItems)
+    .where(inArray(payrollLineItems.payrollRunId, runIds));
+
+  console.log(`[Aggregate Monthly] Found ${lineItems.length} line items across all runs`);
+
+  if (lineItems.length === 0) {
+    return {
+      runs,
+      employees: [],
+      periodStart,
+      periodEnd,
+    };
+  }
+
+  // Get unique employee IDs
+  const employeeIds = [...new Set(lineItems.map(item => item.employeeId))];
+
+  // Fetch employee details (for CNPS number, DOB, contract type, etc.)
+  const employeeRecords = await db
+    .select()
+    .from(employees)
+    .where(
+      and(
+        inArray(employees.id, employeeIds),
+        eq(employees.tenantId, tenantId)
+      )
+    );
+
+  // Create employee lookup map
+  const employeeMap = new Map(employeeRecords.map(emp => [emp.id, emp]));
+
+  // Group line items by employee and aggregate
+  const employeeDataMap = new Map<string, {
+    employeeId: string;
+    employeeNumber: string;
+    employeeName: string;
+    cnpsNumber: string | null;
+    dateOfBirth: Date | null;
+    hireDate: Date;
+    terminationDate: Date | null;
+    salaryRegime: string | null;
+    contractType: string | null;
+    phone: string | null;
+    bankAccount: string | null;
+    grossSalary: number;
+    daysWorked: number;
+    hoursWorked: number;
+    cnpsEmployee: number;
+    cmuEmployee: number;
+    taxableIncome: number;
+    its: number;
+    netSalary: number;
+    runIds: string[];
+  }>();
+
+  for (const item of lineItems) {
+    const employee = employeeMap.get(item.employeeId);
+
+    if (!employee) {
+      console.warn(`[Aggregate Monthly] Employee ${item.employeeId} not found in database`);
+      continue;
+    }
+
+    const existing = employeeDataMap.get(item.employeeId);
+
+    if (existing) {
+      // Aggregate values
+      existing.grossSalary += parseFloat(item.grossSalary?.toString() || '0');
+      existing.daysWorked += parseFloat(item.daysWorked?.toString() || '0');
+      existing.hoursWorked += parseFloat(item.hoursWorked?.toString() || '0');
+      existing.cnpsEmployee += parseFloat(item.cnpsEmployee?.toString() || '0');
+      existing.cmuEmployee += parseFloat(item.cmuEmployee?.toString() || '0');
+      existing.taxableIncome += parseFloat(item.brutImposable?.toString() || '0');
+      existing.its += parseFloat(item.its?.toString() || '0');
+      existing.netSalary += parseFloat(item.netSalary?.toString() || '0');
+      existing.runIds.push(item.runId);
+    } else {
+      // Initialize new employee entry
+      employeeDataMap.set(item.employeeId, {
+        employeeId: item.employeeId,
+        employeeNumber: employee.employeeNumber || item.employeeNumber || '',
+        employeeName: `${employee.firstName} ${employee.lastName}`.trim() || item.employeeName || '',
+        cnpsNumber: employee.cnpsNumber,
+        dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : null,
+        hireDate: new Date(employee.hireDate),
+        terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : null,
+        salaryRegime: employee.salaryRegime,
+        contractType: employee.contractType,
+        phone: employee.phone,
+        bankAccount: employee.bankAccount,
+        grossSalary: parseFloat(item.grossSalary?.toString() || '0'),
+        daysWorked: parseFloat(item.daysWorked?.toString() || '0'),
+        hoursWorked: parseFloat(item.hoursWorked?.toString() || '0'),
+        cnpsEmployee: parseFloat(item.cnpsEmployee?.toString() || '0'),
+        cmuEmployee: parseFloat(item.cmuEmployee?.toString() || '0'),
+        taxableIncome: parseFloat(item.brutImposable?.toString() || '0'),
+        its: parseFloat(item.its?.toString() || '0'),
+        netSalary: parseFloat(item.netSalary?.toString() || '0'),
+        runIds: [item.runId],
+      });
+    }
+  }
+
+  const aggregatedEmployees = Array.from(employeeDataMap.values());
+
+  console.log(`[Aggregate Monthly] Aggregated data for ${aggregatedEmployees.length} employees`);
+  console.log(`[Aggregate Monthly] CDDTI employees with multiple runs:`,
+    aggregatedEmployees
+      .filter(emp => emp.runIds.length > 1 && emp.contractType === 'CDDTI')
+      .map(emp => `${emp.employeeName} (${emp.runIds.length} runs, ${emp.daysWorked} days total)`)
+  );
+
+  return {
+    runs,
+    employees: aggregatedEmployees,
+    periodStart,
+    periodEnd,
+  };
+}
+
 // ========================================
 // Payroll Router
 // ========================================
@@ -2773,6 +3009,294 @@ export const payrollRouter = createTRPCRouter({
       // Generate Excel
       const excelBuffer = generateBankTransferExcel(exportData);
       const filename = generateBankTransferFilename(new Date(run.periodStart), 'excel');
+
+      return {
+        data: Buffer.from(excelBuffer).toString('base64'),
+        filename,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+    }),
+
+  // ========================================
+  // Monthly Consolidation Endpoints
+  // ========================================
+
+  /**
+   * Get monthly payroll summary
+   *
+   * Returns all approved/paid runs for a month plus aggregated employee data.
+   * Used for monthly reports page.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.getMonthlyPayrollSummary.query({
+   *   month: '2025-01',
+   * });
+   * ```
+   */
+  getMonthlyPayrollSummary: protectedProcedure
+    .input(
+      z.object({
+        month: z.string().regex(/^\d{4}-\d{2}$/, 'Format requis: YYYY-MM'),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+      const result = await aggregateMonthlyPayrollData(tenantId, input.month);
+
+      // Get employee count for each run
+      const runsWithCounts = await Promise.all(
+        result.runs.map(async (run) => {
+          const count = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(payrollLineItems)
+            .where(eq(payrollLineItems.payrollRunId, run.id));
+
+          return {
+            ...run,
+            employeeCount: count[0]?.count ?? 0,
+          };
+        })
+      );
+
+      return {
+        month: input.month,
+        runs: runsWithCounts,
+        employeeCount: result.employees.length,
+        totalGross: result.employees.reduce((sum, emp) => sum + emp.grossSalary, 0),
+        totalNet: result.employees.reduce((sum, emp) => sum + emp.netSalary, 0),
+        periodStart: result.periodStart,
+        periodEnd: result.periodEnd,
+      };
+    }),
+
+  /**
+   * Export monthly CNPS declaration
+   *
+   * Consolidates all approved/paid runs for the month.
+   * Critical for CDDTI employees with multiple runs per month.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.exportCNPSMonthly.mutate({
+   *   month: '2025-01',
+   * });
+   * ```
+   */
+  exportCNPSMonthly: protectedProcedure
+    .input(
+      z.object({
+        month: z.string().regex(/^\d{4}-\d{2}$/, 'Format requis: YYYY-MM'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+      const result = await aggregateMonthlyPayrollData(tenantId, input.month);
+
+      if (result.employees.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Aucune paie approuvée trouvée pour ce mois',
+        });
+      }
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, tenantId),
+      });
+
+      // Prepare export data with monthly aggregated totals
+      const exportData: CNPSExportData = {
+        companyName: tenant?.name || 'Company',
+        companyCNPS: tenant?.taxId || undefined,
+        periodStart: result.periodStart,
+        periodEnd: result.periodEnd,
+        employees: result.employees.map((emp) => ({
+          cnpsNumber: emp.cnpsNumber || '',
+          firstName: emp.employeeName.split(' ').slice(1).join(' ') || emp.employeeName,
+          lastName: emp.employeeName.split(' ')[0] || emp.employeeName,
+          dateOfBirth: emp.dateOfBirth,
+          hireDate: emp.hireDate,
+          terminationDate: emp.terminationDate,
+          salaryRegime: emp.salaryRegime,
+          contractType: emp.contractType,
+          daysWorked: emp.daysWorked, // Monthly total - CRITICAL for CDDTI 21-day rule
+          hoursWorked: emp.hoursWorked, // Monthly total
+          grossSalary: emp.grossSalary,
+        })),
+      };
+
+      // Generate Excel
+      const excelBuffer = generateCNPSExcel(exportData);
+      const filename = generateCNPSFilename(result.periodStart);
+
+      return {
+        data: Buffer.from(excelBuffer).toString('base64'),
+        filename,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+    }),
+
+  /**
+   * Export monthly CMU beneficiary declaration
+   *
+   * Consolidates all approved/paid runs for the month.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.exportCMUMonthly.mutate({
+   *   month: '2025-01',
+   * });
+   * ```
+   */
+  exportCMUMonthly: protectedProcedure
+    .input(
+      z.object({
+        month: z.string().regex(/^\d{4}-\d{2}$/, 'Format requis: YYYY-MM'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+      const result = await aggregateMonthlyPayrollData(tenantId, input.month);
+
+      if (result.employees.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Aucune paie approuvée trouvée pour ce mois',
+        });
+      }
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, tenantId),
+      });
+
+      // Fetch dependents for all employees
+      const employeeIds = result.employees.map(emp => emp.employeeId);
+      const dependents = await db.query.employeeDependents.findMany({
+        where: (employeeDependents, { inArray, and, eq }) =>
+          and(
+            inArray(employeeDependents.employeeId, employeeIds),
+            eq(employeeDependents.tenantId, tenantId)
+          ),
+      });
+
+      // Create rows (one per beneficiary)
+      const beneficiaryRows: CMUBeneficiaryRow[] = [];
+
+      for (const emp of result.employees) {
+        const employeeDependents = dependents.filter(d => d.employeeId === emp.employeeId);
+
+        if (employeeDependents.length === 0) {
+          // Employee without beneficiaries - one row with empty beneficiary columns
+          beneficiaryRows.push({
+            employeeCnpsNumber: emp.cnpsNumber || '',
+            employeeSocialSecurityNumber: emp.cnpsNumber || '', // Same as CNPS for now
+            employeeLastName: emp.employeeName.split(' ')[0] || emp.employeeName,
+            employeeFirstName: emp.employeeName.split(' ').slice(1).join(' ') || emp.employeeName,
+            employeeDateOfBirth: formatCNPSDate(emp.dateOfBirth),
+            beneficiaryCnpsNumber: '',
+            beneficiarySocialSecurityNumber: '',
+            beneficiaryType: '',
+            beneficiaryLastName: '',
+            beneficiaryFirstName: '',
+            beneficiaryDateOfBirth: '',
+            beneficiaryGender: '',
+          });
+        } else {
+          // One row per beneficiary
+          for (const dependent of employeeDependents) {
+            beneficiaryRows.push({
+              employeeCnpsNumber: emp.cnpsNumber || '',
+              employeeSocialSecurityNumber: emp.cnpsNumber || '',
+              employeeLastName: emp.employeeName.split(' ')[0] || emp.employeeName,
+              employeeFirstName: emp.employeeName.split(' ').slice(1).join(' ') || emp.employeeName,
+              employeeDateOfBirth: formatCNPSDate(emp.dateOfBirth),
+              beneficiaryCnpsNumber: '',
+              beneficiarySocialSecurityNumber: '',
+              beneficiaryType: mapRelationshipToType(dependent.relationship || 'child'),
+              beneficiaryLastName: dependent.lastName || '',
+              beneficiaryFirstName: dependent.firstName || '',
+              beneficiaryDateOfBirth: formatCNPSDate(dependent.dateOfBirth),
+              beneficiaryGender: mapGenderCode(dependent.gender),
+            });
+          }
+        }
+      }
+
+      const exportData = {
+        beneficiaryRows,
+        periodStart: result.periodStart,
+        periodEnd: result.periodEnd,
+        companyName: tenant?.name || 'Company',
+        totalEmployees: result.employees.length,
+        totalBeneficiaries: dependents.length,
+      };
+
+      // Generate Excel
+      const exportResult = await generateCMUBeneficiaryExport(exportData);
+
+      return {
+        data: exportResult.data.toString('base64'),
+        filename: exportResult.filename,
+        contentType: exportResult.contentType,
+      };
+    }),
+
+  /**
+   * Export monthly État 301 (tax declaration)
+   *
+   * Consolidates all approved/paid runs for the month.
+   *
+   * @example
+   * ```typescript
+   * const result = await trpc.payroll.exportEtat301Monthly.mutate({
+   *   month: '2025-01',
+   * });
+   * ```
+   */
+  exportEtat301Monthly: protectedProcedure
+    .input(
+      z.object({
+        month: z.string().regex(/^\d{4}-\d{2}$/, 'Format requis: YYYY-MM'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+      const result = await aggregateMonthlyPayrollData(tenantId, input.month);
+
+      if (result.employees.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Aucune paie approuvée trouvée pour ce mois',
+        });
+      }
+
+      // Get tenant info
+      const tenant = await db.query.tenants.findFirst({
+        where: (tenants, { eq }) => eq(tenants.id, tenantId),
+      });
+
+      // Prepare export data with monthly aggregated totals
+      const exportData: Etat301ExportData = {
+        companyName: tenant?.name || 'Company',
+        companyTaxId: tenant?.taxId || undefined,
+        periodStart: result.periodStart,
+        periodEnd: result.periodEnd,
+        employees: result.employees.map((emp) => ({
+          employeeName: emp.employeeName,
+          employeeNumber: emp.employeeNumber,
+          grossSalary: emp.grossSalary,
+          cnpsEmployee: emp.cnpsEmployee,
+          cmuEmployee: emp.cmuEmployee,
+          taxableIncome: emp.taxableIncome,
+          its: emp.its,
+        })),
+      };
+
+      // Generate Excel
+      const excelBuffer = generateEtat301Excel(exportData);
+      const filename = generateEtat301Filename(result.periodStart);
 
       return {
         data: Buffer.from(excelBuffer).toString('base64'),

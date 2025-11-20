@@ -253,6 +253,13 @@ export const hrManagerNavigation: NavigationSection[] = [
         description: 'Historique des paies',
       },
       {
+        id: 'payroll-monthly-reports',
+        label: 'Rapports Mensuels',
+        href: '/payroll/reports/monthly',
+        icon: FileStack,
+        description: 'Exports mensuels consolidés',
+      },
+      {
         id: 'bonuses',
         label: 'Primes et Variables',
         href: '/payroll/bonuses',
