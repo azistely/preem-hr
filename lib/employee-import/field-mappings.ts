@@ -52,13 +52,15 @@ export const SAGE_TO_PREEM_MAPPING: Record<string, string> = {
   'Date de sortie': 'terminationDate',
   'Nature de sortie': 'terminationReason',
 
-  // Classification (5 fields)
+  // Classification (6 fields)
   'Catégorie': 'categoryCode',
   'Qualification': 'qualification',
   'Salaire Catégoriel': 'categoricalSalary',
   'Sursalaire': 'salaryPremium',
   'Regime salaire': 'salaryRegime',
   'Régime salaire': 'salaryRegime', // With accent
+  'Régime horaire': 'weeklyHoursRegime',
+  'Regime horaire': 'weeklyHoursRegime', // Without accent
 
   // Transport allowance (optional - if not provided, uses city minimum)
   'Indemnité de transport': 'transportAllowance',
@@ -90,23 +92,37 @@ export const SAGE_TO_PREEM_MAPPING: Record<string, string> = {
 };
 
 // ============================================================================
-// REQUIRED FIELDS
+// REQUIRED FIELDS (18 total - minimal template)
 // ============================================================================
 
 export const REQUIRED_FIELDS = [
+  // 1. Employee identification
   'Matricule',
-  'Prénom',
   'Nom',
+  'Prénom',
   'Contact',
+
+  // 2. Personal information
+  'Date de naissance',
+  'Genre',
+  'Situation Familiale',
+  'Nombre d\'enfants à charge',
+  'Zone Nationalité',
+  'Type de salarié',
+
+  // 3. Employment details
   'Date d\'embauche',
   'Nature du contrat',
   'Fréquence de paiement',
   'Fonction',
-  'Situation Familiale',
-  'Nombre d\'enfants à charge',
+  'Régime horaire',
+  'Site de travail',
+
+  // 4. Compensation
   'Catégorie',
   'N° CNPS',
   'Salaire Catégoriel',
+  'Sursalaire',
   'Indemnité de transport',
 ] as const;
 
@@ -161,7 +177,9 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
   },
 
   'Date de naissance': (val: any) => {
-    if (!val) return { valid: true }; // Optional
+    if (!val) {
+      return { valid: false, message: 'Date de naissance requise' };
+    }
     const parsed = parseDate(val);
     if (!parsed) {
       return { valid: false, message: 'Format de date invalide (utilisez JJ/MM/AAAA)' };
@@ -298,6 +316,81 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
     const validTypes = ['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE', 'PERMANENT', 'FIXE', 'INTÉRIM', 'TEMPORAIRE', 'STAGIAIRE', 'TACHE', 'TÂCHE'];
     if (!validTypes.includes(normalized)) {
       return { valid: false, message: 'Type de contrat invalide. Écrivez: CDI (permanent), CDD (durée déterminée), CDDTI (tâche imprécise), INTERIM (intérim), ou STAGE (stage)' };
+    }
+    return { valid: true };
+  },
+
+  'Genre': (val: string) => {
+    if (!val) {
+      return { valid: false, message: 'Genre requis' };
+    }
+    const normalized = val.trim().toLowerCase();
+    const validGenders = ['h', 'homme', 'm', 'masculin', 'f', 'femme', 'féminin', 'feminin', 'autre', 'other', 'male', 'female'];
+    if (!validGenders.includes(normalized)) {
+      return { valid: false, message: 'Genre invalide. Écrivez: H (homme), F (femme), ou Autre' };
+    }
+    return { valid: true };
+  },
+
+  'Zone Nationalité': (val: string) => {
+    if (!val) {
+      return { valid: false, message: 'Zone de nationalité requise' };
+    }
+    const normalized = val.trim().toUpperCase();
+    const validZones = ['LOCAL', 'IVOIRIEN', 'IVOIRIENNE', 'CEDEAO', 'AFRIQUE DE L\'OUEST', 'HORS_CEDEAO', 'HORS CEDEAO', 'ETRANGER', 'ÉTRANGER'];
+    if (!validZones.includes(normalized)) {
+      return { valid: false, message: 'Zone de nationalité invalide. Écrivez: LOCAL (ivoirien), CEDEAO (Afrique de l\'Ouest), ou HORS_CEDEAO (étranger)' };
+    }
+    return { valid: true };
+  },
+
+  'Type de salarié': (val: string) => {
+    if (!val) {
+      return { valid: false, message: 'Type d\'employé requis' };
+    }
+    const normalized = val.trim().toUpperCase();
+    const validTypes = ['LOCAL', 'EXPAT', 'EXPATRIE', 'EXPATRIÉ', 'DETACHE', 'DÉTACHÉ', 'STAGIAIRE', 'STAGE'];
+    if (!validTypes.includes(normalized)) {
+      return { valid: false, message: 'Type d\'employé invalide. Écrivez: LOCAL, EXPAT (expatrié), DETACHE (détaché), ou STAGIAIRE' };
+    }
+    return { valid: true };
+  },
+
+  'Régime horaire': (val: any) => {
+    if (!val) {
+      return { valid: false, message: 'Régime horaire requis' };
+    }
+    const num = Number(String(val).replace(/[\s,h]/gi, ''));
+    if (isNaN(num) || num < 1 || num > 80) {
+      return { valid: false, message: 'Régime horaire doit être un nombre entre 1 et 80 heures par semaine' };
+    }
+    // Common valid values: 35, 39, 40, 45, 48
+    if (![35, 39, 40, 45, 48].includes(num) && (num < 30 || num > 50)) {
+      return { valid: false, message: 'Régime horaire inhabituel. Valeurs courantes: 35h, 39h, 40h, 45h, ou 48h par semaine' };
+    }
+    return { valid: true };
+  },
+
+  'Site de travail': (val: string) => {
+    if (!val || typeof val !== 'string') {
+      return { valid: false, message: 'Site de travail requis' };
+    }
+    if (val.trim().length < 2) {
+      return { valid: false, message: 'Site de travail doit avoir au moins 2 caractères' };
+    }
+    return { valid: true };
+  },
+
+  'Sursalaire': (val: any) => {
+    if (val === null || val === undefined || val === '') {
+      return { valid: false, message: 'Sursalaire requis (0 si aucun)' };
+    }
+    const num = Number(String(val).replace(/[\s,]/g, ''));
+    if (isNaN(num) || num < 0) {
+      return { valid: false, message: 'Sursalaire doit être un nombre positif (0 si aucun)' };
+    }
+    if (num > 50000000) {
+      return { valid: false, message: 'Sursalaire semble trop élevé (supérieur à 50 millions FCFA). Vérifiez le montant.' };
     }
     return { valid: true };
   },
@@ -452,6 +545,13 @@ export const FIELD_TRANSFORMERS: Record<string, (value: any) => any> = {
   'Sursalaire': (val: any) => {
     if (!val) return null;
     return parseFloat(String(val).replace(/[\s,]/g, '')) || null;
+  },
+
+  'Régime horaire': (val: any) => {
+    if (!val) return null;
+    // Remove spaces, commas, and 'h' characters (e.g., "35h" -> 35)
+    const num = parseFloat(String(val).replace(/[\s,h]/gi, ''));
+    return isNaN(num) ? null : num;
   },
 
   'Indemnité de transport': (val: any) => {

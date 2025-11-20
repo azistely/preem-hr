@@ -68,8 +68,11 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
   const validateFileMutation = trpc.employeeImport.validateFile.useMutation();
   const executeImportMutation = trpc.employeeImport.executeImport.useMutation();
 
-  const handleDownloadTemplate = () => {
-    window.open('/templates/employee-import-template.xlsx', '_blank');
+  const handleDownloadTemplate = (type: 'minimal' | 'complete') => {
+    const filename = type === 'minimal'
+      ? 'employee-import-template-minimal.xlsx'
+      : 'employee-import-template-complete.xlsx';
+    window.open(`/templates/${filename}`, '_blank');
   };
 
   const convertFileToBase64 = (file: File): Promise<string> => {
@@ -243,33 +246,38 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-900 mb-3 font-medium">
-                  📄 Le modèle contient:
+                <p className="text-sm text-blue-900 mb-2 font-medium">
+                  📄 Choisissez votre modèle:
                 </p>
-                <ul className="text-sm text-blue-800 space-y-2">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <span>46 colonnes couvrant tous les champs du registre du personnel + salaires</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <span>3 exemples complets pour vous guider</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <span>Instructions de format dans chaque colonne</span>
-                  </li>
-                </ul>
+                <p className="text-sm text-blue-800">
+                  <strong>Modèle minimal:</strong> Pour démarrer rapidement avec les informations essentielles (18 champs obligatoires).
+                  <br />
+                  <strong>Modèle complet:</strong> Pour un registre du personnel exhaustif (49 champs incluant tous les détails).
+                </p>
               </div>
 
-              <Button
-                onClick={handleDownloadTemplate}
-                className="w-full min-h-[56px] text-lg"
-                size="lg"
-              >
-                <Download className="w-5 h-5 mr-2" />
-                Télécharger le modèle Excel
-              </Button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Minimal Template Button */}
+                <Button
+                  onClick={() => handleDownloadTemplate('minimal')}
+                  variant="outline"
+                  className="flex-col h-auto py-6 min-h-[100px] gap-2"
+                >
+                  <FileSpreadsheet className="w-8 h-8 mb-1" />
+                  <span className="text-base font-semibold">Modèle Minimal</span>
+                  <span className="text-xs text-muted-foreground font-normal">21 champs obligatoires</span>
+                </Button>
+
+                {/* Complete Template Button */}
+                <Button
+                  onClick={() => handleDownloadTemplate('complete')}
+                  className="flex-col h-auto py-6 min-h-[100px] gap-2"
+                >
+                  <FileSpreadsheet className="w-8 h-8 mb-1" />
+                  <span className="text-base font-semibold">Modèle Complet</span>
+                  <span className="text-xs font-normal opacity-90">49 champs (registre complet)</span>
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

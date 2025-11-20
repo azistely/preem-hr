@@ -13,8 +13,8 @@ const COLUMNS = [
   { header: 'Matricule*', hint: 'Ex: EMP001', example1: 'EMP001', example2: 'EMP002', example3: 'EMP003' },
   { header: 'Prénom*', hint: 'Ex: Jean', example1: 'Jean', example2: 'Aminata', example3: 'Laurent' },
   { header: 'Nom*', hint: 'Ex: Kouassi', example1: 'Kouassi', example2: 'Diabaté', example3: 'Martin' },
-  { header: 'Genre', hint: 'Homme/Femme/Autre', example1: 'Homme', example2: 'Femme', example3: 'Homme' },
-  { header: 'Date de naissance', hint: 'JJ/MM/AAAA', example1: '15/03/1985', example2: '22/07/1990', example3: '10/11/1978' },
+  { header: 'Genre*', hint: 'Homme/Femme/Autre', example1: 'Homme', example2: 'Femme', example3: 'Homme' },
+  { header: 'Date de naissance*', hint: 'JJ/MM/AAAA', example1: '15/03/1985', example2: '22/07/1990', example3: '10/11/1978' },
   { header: 'Lieu de naissance', hint: 'Ex: Abidjan, Côte d\'Ivoire', example1: 'Abidjan, Côte d\'Ivoire', example2: 'Bamako, Mali', example3: 'Paris, France' },
   { header: 'Nationalité', hint: 'Ex: Ivoirienne', example1: 'Ivoirienne', example2: 'Malienne', example3: 'Française' },
   { header: 'Contact*', hint: 'Ex: +225 01 23 45 67 89', example1: '+225 07 12 34 56 78', example2: '+225 05 98 76 54 32', example3: '+225 01 23 45 67 89' },
@@ -25,8 +25,8 @@ const COLUMNS = [
   { header: 'Domicile', hint: 'Ex: Cocody, Abidjan', example1: 'Cocody, Abidjan', example2: 'Yopougon, Abidjan', example3: 'Plateau, Abidjan' },
 
   // Section 3: Registre du personnel (6 fields)
-  { header: 'Zone Nationalité', hint: 'LOCAL/CEDEAO/HORS_CEDEAO', example1: 'LOCAL', example2: 'CEDEAO', example3: 'HORS_CEDEAO' },
-  { header: 'Type de salarié', hint: 'LOCAL/EXPAT/DETACHE/STAGIAIRE', example1: 'LOCAL', example2: 'LOCAL', example3: 'EXPAT' },
+  { header: 'Zone Nationalité*', hint: 'LOCAL/CEDEAO/HORS_CEDEAO', example1: 'LOCAL', example2: 'CEDEAO', example3: 'HORS_CEDEAO' },
+  { header: 'Type de salarié*', hint: 'LOCAL/EXPAT/DETACHE/STAGIAIRE', example1: 'LOCAL', example2: 'LOCAL', example3: 'EXPAT' },
   { header: 'Nom du père', hint: '', example1: 'Kouassi Yao', example2: 'Diabaté Moussa', example3: 'Martin Pierre' },
   { header: 'Nom de la mère', hint: '', example1: 'Kouassi Akissi', example2: 'Diabaté Fatoumata', example3: 'Martin Marie' },
   { header: 'Personne en cas d\'urgence', hint: 'Nom complet et lien', example1: 'Kouassi Aya (Épouse)', example2: 'Diabaté Ibrahim (Frère)', example3: 'Martin Sophie (Épouse)' },
@@ -47,11 +47,12 @@ const COLUMNS = [
   { header: 'Date de sortie', hint: 'JJ/MM/AAAA - si applicable', example1: '', example2: '31/12/2024', example3: '' },
   { header: 'Nature de sortie', hint: 'Démission/Licenciement/Fin CDD/Retraite', example1: '', example2: 'Fin CDD', example3: '' },
 
-  // Section 6: Classification (5 fields)
+  // Section 6: Classification (7 fields)
   { header: 'Catégorie*', hint: 'Ex: C, M1, 1A, 2B - voir barème CGECI', example1: 'C', example2: '2A', example3: 'C' },
   { header: 'Qualification', hint: 'Ex: Cadre supérieur, Agent de maîtrise', example1: 'Cadre supérieur', example2: 'Employé qualifié', example3: 'Cadre supérieur' },
   { header: 'Salaire Catégoriel*', hint: 'Ex: 150000 - REQUIS pour la paie', example1: '500000', example2: '120000', example3: '600000' },
-  { header: 'Sursalaire', hint: 'Ex: 50000', example1: '200000', example2: '30000', example3: '300000' },
+  { header: 'Sursalaire*', hint: 'Ex: 50000 (0 si aucun)', example1: '200000', example2: '30000', example3: '300000' },
+  { header: 'Régime horaire*', hint: 'Ex: 40 (heures/semaine). Valeurs courantes: 35, 39, 40, 45, 48', example1: '40', example2: '40', example3: '40' },
   { header: 'Indemnité de transport*', hint: 'Ex: 35000 - Minimum: Abidjan 30k, Bouaké 24k, Autres 20k', example1: '30000', example2: '30000', example3: '40000' },
   { header: 'Regime salaire', hint: 'Mensuel/Journalier/Horaire', example1: 'Mensuel', example2: 'Mensuel', example3: 'Mensuel' },
 
@@ -61,7 +62,7 @@ const COLUMNS = [
   { header: 'Département', hint: 'Ex: Ressources Humaines', example1: '', example2: 'Administration', example3: 'Comptabilité' },
   { header: 'Service', hint: 'Ex: Paie et Administration', example1: '', example2: 'Secrétariat', example3: 'Contrôle de gestion' },
   { header: 'Section', hint: 'Ex: Section Paie', example1: '', example2: '', example3: '' },
-  { header: 'Site de travail', hint: 'Ex: Abidjan Plateau', example1: 'Abidjan Plateau', example2: 'Abidjan Marcory', example3: 'Abidjan Plateau' },
+  { header: 'Site de travail*', hint: 'Ex: Abidjan Plateau', example1: 'Abidjan Plateau', example2: 'Abidjan Marcory', example3: 'Abidjan Plateau' },
   { header: 'Manager', hint: 'Matricule du manager, Ex: EMP000', example1: '', example2: 'EMP001', example3: 'EMP001' },
 
   // Section 8: Protection sociale (4 fields)
@@ -77,6 +78,9 @@ const COLUMNS = [
   // Section 10: Congés (1 field)
   { header: 'Solde congés initial', hint: 'Ex: 2.5 - jours acquis à l\'embauche', example1: '0', example2: '0', example3: '5' },
 ];
+
+// Minimal columns (18 required fields only)
+const MINIMAL_COLUMNS = COLUMNS.filter(col => col.header.includes('*'));
 
 // Instructions sheet content
 const INSTRUCTIONS = {
@@ -165,8 +169,77 @@ const INSTRUCTIONS = {
   ],
 };
 
-function generateTemplate() {
-  console.log('🚀 Génération du modèle d\'import des employés...');
+function generateMinimalTemplate() {
+  console.log('🚀 Génération du modèle MINIMAL (18 champs obligatoires)...');
+
+  // Create workbook
+  const workbook = XLSX.utils.book_new();
+
+  // Sheet 1: Employee data with minimal columns only
+  const headers = MINIMAL_COLUMNS.map(col => col.header);
+  const hints = MINIMAL_COLUMNS.map(col => col.hint);
+  const example1 = MINIMAL_COLUMNS.map(col => col.example1);
+  const example2 = MINIMAL_COLUMNS.map(col => col.example2);
+  const example3 = MINIMAL_COLUMNS.map(col => col.example3);
+
+  const employeeData = [
+    headers,
+    hints,
+    example1,
+    example2,
+    example3,
+  ];
+
+  const employeeSheet = XLSX.utils.aoa_to_sheet(employeeData);
+
+  // Set column widths
+  employeeSheet['!cols'] = MINIMAL_COLUMNS.map(() => ({ wch: 20 }));
+
+  // Add to workbook
+  XLSX.utils.book_append_sheet(workbook, employeeSheet, 'Employés');
+
+  // Sheet 2: Instructions (minimal version)
+  const instructionsData: any[][] = [
+    ['Instructions - Modèle Minimal (18 champs obligatoires)'],
+    [''],
+    ['Ce modèle contient uniquement les 18 champs OBLIGATOIRES pour démarrer rapidement.'],
+    ['Vous pourrez compléter les informations manquantes plus tard dans l\'application.'],
+    [''],
+  ];
+
+  INSTRUCTIONS.sections.forEach(section => {
+    instructionsData.push([section.title]);
+    section.items.forEach(item => {
+      instructionsData.push([`  • ${item}`]);
+    });
+    instructionsData.push(['']);
+  });
+
+  instructionsData.push(['💡 Besoin de plus de champs?']);
+  instructionsData.push(['  • Téléchargez le "Modèle Complet" (46 champs) pour un registre du personnel exhaustif']);
+  instructionsData.push(['  • Vous pouvez toujours compléter les informations manquantes dans l\'application']);
+
+  const instructionsSheet = XLSX.utils.aoa_to_sheet(instructionsData);
+  instructionsSheet['!cols'] = [{ wch: 100 }];
+
+  XLSX.utils.book_append_sheet(workbook, instructionsSheet, 'Instructions');
+
+  // Write file
+  const outputDir = path.join(process.cwd(), 'public', 'templates');
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  const outputPath = path.join(outputDir, 'employee-import-template-minimal.xlsx');
+  XLSX.writeFile(workbook, outputPath);
+
+  console.log(`✅ Modèle minimal créé: ${outputPath}`);
+  console.log(`📊 ${MINIMAL_COLUMNS.length} champs obligatoires`);
+  console.log(`👥 3 exemples d'employés fournis`);
+}
+
+function generateCompleteTemplate() {
+  console.log('🚀 Génération du modèle COMPLET (46 champs)...');
 
   // Create workbook
   const workbook = XLSX.utils.book_new();
@@ -194,9 +267,12 @@ function generateTemplate() {
   // Add to workbook
   XLSX.utils.book_append_sheet(workbook, employeeSheet, 'Employés');
 
-  // Sheet 2: Instructions
+  // Sheet 2: Instructions (complete version)
   const instructionsData: any[][] = [
-    [INSTRUCTIONS.title],
+    ['Instructions - Modèle Complet (46 champs pour registre du personnel)'],
+    [''],
+    ['Ce modèle contient TOUS les champs pour un registre du personnel exhaustif.'],
+    ['Les champs marqués avec * sont OBLIGATOIRES.'],
     [''],
   ];
 
@@ -207,6 +283,10 @@ function generateTemplate() {
     });
     instructionsData.push(['']);
   });
+
+  instructionsData.push(['💡 Trop de champs?']);
+  instructionsData.push(['  • Téléchargez le "Modèle Minimal" (18 champs obligatoires) pour démarrer rapidement']);
+  instructionsData.push(['  • Laissez les cellules vides si vous n\'avez pas encore l\'information']);
 
   const instructionsSheet = XLSX.utils.aoa_to_sheet(instructionsData);
   instructionsSheet['!cols'] = [{ wch: 100 }];
@@ -219,18 +299,26 @@ function generateTemplate() {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const outputPath = path.join(outputDir, 'employee-import-template.xlsx');
+  const outputPath = path.join(outputDir, 'employee-import-template-complete.xlsx');
   XLSX.writeFile(workbook, outputPath);
 
-  console.log(`✅ Modèle créé avec succès: ${outputPath}`);
-  console.log(`📊 ${COLUMNS.length} champs configurés (Section 8 Protection sociale: maintenant 4 champs)`);
+  console.log(`✅ Modèle complet créé: ${outputPath}`);
+  console.log(`📊 ${COLUMNS.length} champs configurés`);
   console.log(`👥 3 exemples d'employés fournis`);
   console.log(`📖 ${INSTRUCTIONS.sections.length} sections d'instructions`);
 }
 
-// Run if executed directly
-if (require.main === module) {
-  generateTemplate();
+function generateBothTemplates() {
+  console.log('📝 Génération des deux modèles d\'import...\n');
+  generateMinimalTemplate();
+  console.log('');
+  generateCompleteTemplate();
+  console.log('\n✅ Les deux modèles ont été générés avec succès!');
 }
 
-export { generateTemplate, COLUMNS, INSTRUCTIONS };
+// Run if executed directly
+if (require.main === module) {
+  generateBothTemplates();
+}
+
+export { generateMinimalTemplate, generateCompleteTemplate, generateBothTemplates, COLUMNS, MINIMAL_COLUMNS, INSTRUCTIONS };

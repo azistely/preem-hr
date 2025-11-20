@@ -78,8 +78,39 @@ export function CompanyInfoStep({ onComplete }: CompanyInfoStepProps) {
     }
   };
 
+  const handleSkip = async () => {
+    setIsSubmitting(true);
+
+    try {
+      // Complete step without saving company info
+      await completeStep.mutateAsync({ stepId: 'company_info' });
+
+      toast.success('Étape ignorée');
+
+      // Call parent callback
+      onComplete();
+    } catch (error: any) {
+      toast.error(error.message || 'Erreur lors du passage à l\'étape suivante');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      {/* Skip Button */}
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleSkip}
+          disabled={isSubmitting}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          Ignorer cette étape
+        </Button>
+      </div>
+
       <div className="space-y-4">
         {/* Legal Name */}
         <div className="space-y-2">
