@@ -293,19 +293,8 @@ function parseDataRows(
       }
     }
 
-    // Add warnings for recommended but missing fields
-    const recommendedFields = ['N° CMU', 'Lieu de naissance', 'Nom du père', 'Nom de la mère'];
-    for (const field of recommendedFields) {
-      const dbField = SAGE_TO_PREEM_MAPPING[field];
-      if (dbField && (!rowObject[dbField] || String(rowObject[dbField]).trim() === '')) {
-        rowWarnings.push({
-          row: rowIndex,
-          field,
-          message: `Champ recommandé manquant: ${field}`,
-          severity: 'warning',
-        });
-      }
-    }
+    // Warnings removed - only show critical validation errors
+    // Users can add optional fields (CMU, place of birth, parents' names) later via employee edit
 
     // Add row even if it has errors (for preview)
     rows.push(rowObject);

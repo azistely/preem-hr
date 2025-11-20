@@ -18,7 +18,9 @@ import { FormField } from '@/features/onboarding/components/form-field';
 import { Button } from '@/components/ui/button';
 import { Wizard, WizardStep } from '@/components/wizard/wizard';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Plus, X, MapPin, Building2, HardHat, Users } from 'lucide-react';
+import { Plus, X, MapPin, Building2, HardHat, Users, CheckCircle2 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { CI_CITIES, ABIDJAN_COMMUNES } from '@/lib/constants/ci-cities';
@@ -47,6 +49,10 @@ const companySetupSchema = z.object({
   cgeciSectorCode: z.string().min(1, 'Sélectionnez votre secteur d\'activité'),
   workAccidentRate: z.coerce.number().min(0).max(1).optional(),
   taxId: z.string().optional(),
+  // Contact information (optional)
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email('Email invalide').optional().or(z.literal('')),
   // Locations (at least one required)
   locations: z.array(locationSchema).min(1, 'Ajoutez au moins un site/emplacement'),
 });
@@ -80,6 +86,7 @@ const LOCATION_TYPE_LABELS: Record<string, { label: string; icon: any; descripti
 export default function OnboardingQ1Page() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
+  const [isMultiCompany, setIsMultiCompany] = useState<boolean | null>(null);
 
   // Get current tenant info for pre-filling
   const { data: currentTenant } = api.tenant.getCurrent.useQuery();
@@ -89,6 +96,7 @@ export default function OnboardingQ1Page() {
 
   // Mutations
   const setCompanyInfoMutation = api.onboarding.setCompanyInfoV2.useMutation();
+  const updateCompanyInfoMutation = api.tenant.updateCompanyInfo.useMutation();
   const createLocationMutation = api.locations.create.useMutation();
 
   const { register, handleSubmit, watch, setValue, formState: { errors }, trigger } = useForm<CompanySetupFormData>({
@@ -137,7 +145,7 @@ export default function OnboardingQ1Page() {
 
   const onSubmit = async (data: CompanySetupFormData) => {
     try {
-      // Step 1: Save company info
+      // Step 1: Save company info (country, sector, name, etc.)
       await setCompanyInfoMutation.mutateAsync({
         countryCode: data.countryCode,
         legalName: data.legalName,
@@ -147,7 +155,19 @@ export default function OnboardingQ1Page() {
         taxId: data.taxId,
       });
 
-      // Step 2: Create NEW locations only (skip existing ones)
+      // Step 2: Save contact info (address, phone, email) if provided
+      if (data.address || data.phone || data.email) {
+        await updateCompanyInfoMutation.mutateAsync({
+          generalInfo: {
+            legalName: data.legalName, // Also save legal name to settings.company
+            address: data.address,
+            phone: data.phone,
+            email: data.email,
+          },
+        });
+      }
+
+      // Step 3: Create NEW locations only (skip existing ones)
       // Build set of existing location codes for quick lookup
       const existingLocationCodes = new Set(
         (existingLocations || []).map(loc => loc.locationCode)
@@ -196,7 +216,7 @@ export default function OnboardingQ1Page() {
         toast.success('Configuration enregistrée (sites déjà existants)');
       }
 
-      // Navigate to Q2 (employee migration wizard)
+      // Navigate directly to employee import
       router.push('/onboarding/q2');
     } catch (error: any) {
       toast.error(error.message || 'Impossible d\'enregistrer les informations');
@@ -224,6 +244,125 @@ export default function OnboardingQ1Page() {
   };
 
   const wizardSteps: WizardStep[] = [
+    // STEP 0: Organizational structure check
+    {
+      title: 'Comment est organisée votre structure ?',
+      description: 'Configurons votre premier espace',
+      validate: async () => {
+        // Must select one option before proceeding
+        return isMultiCompany !== null;
+      },
+      content: (
+        <div className="space-y-6">
+          <p className="text-sm text-muted-foreground">
+            Preem s'adapte à toutes les structures : entreprise unique, groupe avec filiales, société mère + laboratoires, ou plusieurs sociétés distinctes.
+          </p>
+
+          {/* Two option cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Option 1: Multiple entities */}
+            <Card
+              className={`cursor-pointer transition-all min-h-[160px] ${
+                isMultiCompany === true
+                  ? 'border-primary bg-primary/5 ring-2 ring-primary'
+                  : 'hover:border-primary/50'
+              }`}
+              onClick={() => setIsMultiCompany(true)}
+            >
+              <CardContent className="flex flex-col items-center justify-center p-6 text-center h-full">
+                <div className="text-4xl mb-3">🏢 🏢 🏢</div>
+                <CardTitle className="text-lg mb-2">Structure multiple</CardTitle>
+                <CardDescription className="text-sm leading-relaxed">
+                  Plusieurs entités à gérer : filiales, laboratoires, sociétés, ou secteurs d'activité
+                </CardDescription>
+              </CardContent>
+            </Card>
+
+            {/* Option 2: Single entity */}
+            <Card
+              className={`cursor-pointer transition-all min-h-[160px] ${
+                isMultiCompany === false
+                  ? 'border-primary bg-primary/5 ring-2 ring-primary'
+                  : 'hover:border-primary/50'
+              }`}
+              onClick={() => setIsMultiCompany(false)}
+            >
+              <CardContent className="flex flex-col items-center justify-center p-6 text-center h-full">
+                <div className="text-4xl mb-3">🏢</div>
+                <CardTitle className="text-lg mb-2">Structure simple</CardTitle>
+                <CardDescription className="text-sm leading-relaxed">
+                  Une seule entité juridique ou administrative
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Info box for multi-entity users */}
+          {isMultiCompany === true && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardContent className="p-6">
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="rounded-full bg-blue-100 p-2">
+                    <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-blue-900 mb-1">Bon à savoir</h3>
+                    <p className="text-sm text-blue-800">
+                      Comment fonctionnent les espaces multi-entités
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-blue-900">
+                      <strong>Vous allez créer 1 espace par entité</strong>
+                      <br />
+                      <span className="text-blue-700">
+                        Chaque entité (filiale, labo, société, secteur) aura son propre espace indépendant
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-blue-900">
+                      <strong>Commencez avec votre première entité</strong>
+                      <br />
+                      <span className="text-blue-700">
+                        Configurez maintenant une seule entité, ajoutez les autres après
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-blue-900">
+                      <strong>Changez facilement d'entité</strong>
+                      <br />
+                      <span className="text-blue-700">
+                        Utilisez le menu principal pour passer d'une entité à l'autre
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="mt-4 p-3 bg-blue-100/50 rounded-lg">
+                    <p className="text-sm text-blue-900 font-medium">
+                      💡 Les données de chaque entité sont totalement séparées
+                    </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      (employés, paies, politiques RH, documents, etc.)
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      ),
+    },
+
     // STEP 1: Company Info
     {
       title: 'Informations de l\'entreprise',
@@ -250,11 +389,12 @@ export default function OnboardingQ1Page() {
 
           {/* Company Name */}
           <FormField
-            label="Nom de l'entreprise"
+            label={isMultiCompany ? "Nom de la première entité" : "Nom de l'entreprise"}
             {...register('legalName')}
             error={errors.legalName?.message}
             required
-            placeholder="Ex: Ma Boutique"
+            placeholder="Ex: Ma Boutique, Laboratoire Nord, Filiale CI"
+            helperText={isMultiCompany ? "Vous pourrez ajouter les autres entités (filiales, labs, sociétés) après cette configuration" : undefined}
           />
 
           {/* CGECI Sector Selection */}
@@ -327,6 +467,49 @@ export default function OnboardingQ1Page() {
             {...register('taxId')}
             error={errors.taxId?.message}
             placeholder="Ex: CI-123456789"
+          />
+
+          {/* Divider */}
+          <div className="border-t pt-4 mt-2">
+            <p className="text-sm font-medium text-muted-foreground mb-4">
+              Coordonnées de contact (optionnel)
+            </p>
+          </div>
+
+          {/* Address */}
+          <div className="space-y-2">
+            <Label htmlFor="address" className="text-base">
+              Adresse (optionnel)
+            </Label>
+            <Textarea
+              id="address"
+              {...register('address')}
+              placeholder="Ex: 01 BP 1234 Abidjan 01"
+              className="min-h-[96px] resize-none"
+            />
+            {errors.address?.message ? (
+              <p className="text-sm text-red-500">{errors.address.message}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Adresse du siège social</p>
+            )}
+          </div>
+
+          {/* Phone */}
+          <FormField
+            label="Téléphone (optionnel)"
+            type="tel"
+            {...register('phone')}
+            error={errors.phone?.message}
+            placeholder="Ex: +225 27 20 12 34 56"
+          />
+
+          {/* Email */}
+          <FormField
+            label="Email (optionnel)"
+            type="email"
+            {...register('email')}
+            error={errors.email?.message}
+            placeholder="Ex: contact@preem.com"
           />
         </div>
       ),

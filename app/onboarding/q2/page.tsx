@@ -17,20 +17,20 @@ export default function OnboardingQ2Page() {
   const router = useRouter();
 
   const handleComplete = () => {
-    // Navigate to company info step after employee import
-    router.push('/onboarding/company-info');
+    // Navigate to success after employee import
+    router.push('/onboarding/success');
   };
 
   const handleSkip = () => {
     // Allow skipping employee import (can add later)
-    router.push('/onboarding/company-info');
+    router.push('/onboarding/success');
   };
 
   return (
     <OnboardingQuestion
       title="Ajoutez vos employés"
       subtitle="Importez vos données existantes ou démarrez de zéro"
-      progress={{ current: 2, total: 3 }}
+      progress={{ current: 3, total: 3 }}
     >
       <EmployeeMigrationWizard
         onComplete={handleComplete}

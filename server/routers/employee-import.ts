@@ -91,6 +91,33 @@ function mapMaritalStatus(frenchValue: string | null | undefined): 'single' | 'm
 }
 
 /**
+ * Map French gender values to English values
+ * Template uses: "Homme", "Femme", "Autre", "Ne souhaite pas répondre"
+ * Database expects: "male", "female", "other", "prefer_not_to_say"
+ */
+function mapGender(frenchValue: string | null | undefined): 'male' | 'female' | 'other' | 'prefer_not_to_say' | null {
+  if (!frenchValue) return null;
+
+  const normalized = frenchValue.toLowerCase().trim();
+
+  if (normalized.includes('homme') || normalized === 'h' || normalized === 'm') {
+    return 'male';
+  }
+  if (normalized.includes('femme') || normalized === 'f') {
+    return 'female';
+  }
+  if (normalized.includes('autre') || normalized === 'other') {
+    return 'other';
+  }
+  if (normalized.includes('ne souhaite pas') || normalized.includes('prefer not')) {
+    return 'prefer_not_to_say';
+  }
+
+  // Default to null if unknown
+  return null;
+}
+
+/**
  * Safely parse date values from Excel template
  * Returns ISO date string (YYYY-MM-DD) or current date if invalid
  *
@@ -506,7 +533,7 @@ export const employeeImportRouter = createTRPCRouter({
               email: row.email || `${row.employeeNumber}@temp.preem.hr`, // Temp email if not provided
               phone: row.phone,
               dateOfBirth: parseDateSafelyOrNull(row.dateOfBirth, 'dateOfBirth'),
-              gender: row.gender || null,
+              gender: mapGender(row.gender),
               nationality: row.nationality || null,
               placeOfBirth: row.placeOfBirth || null,
               nationalityZone: row.nationalityZone || null,

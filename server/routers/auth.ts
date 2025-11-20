@@ -167,22 +167,34 @@ export const authRouter = router({
         console.log('[Auth] Supabase user created:', authData.user.id);
         console.log('[Auth] Confirmation email sent automatically by Supabase');
 
-        // 4. Create user in database
-        console.log('[Auth] Creating user in database...');
-        const [user] = await serviceDb
-          .insert(users)
-          .values({
-            id: authData.user.id,
-            tenantId: tenant.id,
-            activeTenantId: tenant.id, // Set active tenant on signup
-            email,
-            firstName,
-            lastName,
-            role: 'tenant_admin', // First user is admin
-            locale: 'fr',
-            status: 'active',
-          })
-          .returning();
+        // 4. Create user in database with NULL active_tenant_id first
+        // (Trigger allows NULL, FK constraint requires user to exist before user_tenants)
+        console.log('[Auth] Creating user in database with NULL active_tenant_id...');
+        let user;
+        try {
+          [user] = await serviceDb
+            .insert(users)
+            .values({
+              id: authData.user.id,
+              tenantId: tenant.id,
+              activeTenantId: null, // ✅ NULL bypasses trigger validation
+              email,
+              firstName,
+              lastName,
+              role: 'tenant_admin', // First user is admin
+              locale: 'fr',
+              status: 'active',
+            })
+            .returning();
+        } catch (dbError) {
+          console.error('[Auth] Database error creating user:', dbError);
+          console.error('[Auth] Error details:', {
+            message: dbError instanceof Error ? dbError.message : 'Unknown error',
+            stack: dbError instanceof Error ? dbError.stack : undefined,
+            name: dbError instanceof Error ? dbError.name : undefined,
+          });
+          throw dbError;
+        }
 
         if (!user) {
           console.error('[Auth] User creation returned null');
@@ -194,19 +206,28 @@ export const authRouter = router({
 
         console.log('[Auth] User created successfully:', user.id);
 
-        // 5. Create user_tenants record (many-to-many relationship)
+        // 5. Create user_tenants record (now user exists, FK constraint is satisfied)
         console.log('[Auth] Creating user_tenants record...');
         await serviceDb
           .insert(userTenants)
           .values({
-            userId: user.id,
+            userId: authData.user.id,
             tenantId: tenant.id,
             role: 'tenant_admin',
           });
 
         console.log('[Auth] User_tenants record created');
 
-        // 6. Seed time-off policies from templates for the tenant's country
+        // 6. Update user to set active_tenant_id (now user_tenants exists, trigger will pass)
+        console.log('[Auth] Setting active_tenant_id...');
+        await serviceDb
+          .update(users)
+          .set({ activeTenantId: tenant.id })
+          .where(eq(users.id, authData.user.id));
+
+        console.log('[Auth] Active tenant set successfully');
+
+        // 7. Seed time-off policies from templates for the tenant's country
         let policiesSeeded = 0;
         try {
           const { seedTimeOffPoliciesForTenant } = await import('@/features/time-off/services/policy-seeding.service');
