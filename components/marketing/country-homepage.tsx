@@ -1,10 +1,12 @@
 'use client';
 
 /**
- * Country-Specific Homepage Component
+ * Country-Specific Homepage Component - Sophisticated High-End Design
  *
  * Reusable homepage that adapts content based on country
  * Supports: Côte d'Ivoire, Sénégal, Burkina Faso
+ *
+ * Design Philosophy: Each section is distinct, sophisticated, mobile-first
  */
 
 import { useState, useEffect } from 'react';
@@ -17,7 +19,21 @@ import {
   Clock,
   Smartphone,
   Brain,
-  Globe
+  Globe,
+  Calendar,
+  Users,
+  FileText,
+  TrendingUp,
+  Zap,
+  BarChart3,
+  MapPin,
+  Camera,
+  DollarSign,
+  AlertCircle,
+  Download,
+  Target,
+  Award,
+  Lock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +46,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from '@/trpc/react';
+import { Badge } from '@/components/ui/badge';
+import {
+  GTAPillarSection,
+  AdminHRPillarSection,
+  TalentPillarSection,
+  PayrollPillarSection
+} from '@/components/marketing/homepage-pillar-sections';
 
 export interface CountryConfig {
   code: string;
@@ -119,332 +142,473 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50">
-      {/* Header / Navigation */}
-      <header className="container mx-auto px-4 py-6">
-        <nav className="flex items-center justify-between">
-          <Link href="/">
-            <PreemLogo size="default" />
-          </Link>
-          <div className="flex items-center gap-2 sm:gap-4">
-            {/* Country Selector - Only render on client to avoid hydration mismatch */}
-            {mounted && (
-              <Select value={country.code} onValueChange={handleCountryChange}>
-                <SelectTrigger className="min-h-[44px] w-[140px] sm:w-[180px] border-preem-teal/30 hidden sm:flex">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableCountries.map((c) => (
-                    <SelectItem key={c.code} value={c.code}>
-                      {c.flag} {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {/* Show different button based on auth state */}
-            {user ? (
-              <Link href={getDashboardUrl()}>
-                <Button
-                  className="min-h-[44px] min-w-[100px] sm:min-w-[120px] bg-preem-teal text-white hover:bg-preem-teal-600 transition-colors text-sm sm:text-base"
-                >
-                  Accéder à mon compte
-                </Button>
-              </Link>
-            ) : (
-              <Link href="/login">
-                <Button
-                  variant="outline"
-                  className="min-h-[44px] min-w-[100px] sm:min-w-[120px] border-preem-teal text-preem-teal hover:bg-preem-teal hover:text-white transition-colors text-sm sm:text-base"
-                >
-                  Se connecter
-                </Button>
-              </Link>
-            )}
-          </div>
-        </nav>
+    <div className="min-h-screen bg-white">
+      {/* Fixed Header / Navigation */}
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
+        <div className="container mx-auto px-4 py-4">
+          <nav className="flex items-center justify-between">
+            <Link href="/" className="transition-opacity hover:opacity-80">
+              <PreemLogo size="default" />
+            </Link>
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* Country Selector - Only render on client to avoid hydration mismatch */}
+              {mounted && (
+                <Select value={country.code} onValueChange={handleCountryChange}>
+                  <SelectTrigger className="min-h-[44px] w-[140px] sm:w-[180px] border-gray-200 hidden sm:flex">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCountries.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.flag} {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {/* Show different button based on auth state */}
+              {user ? (
+                <Link href={getDashboardUrl()}>
+                  <Button
+                    className="min-h-[44px] min-w-[100px] sm:min-w-[120px] bg-gradient-to-r from-preem-teal to-preem-teal-600 text-white hover:shadow-lg transition-all text-sm sm:text-base"
+                  >
+                    Mon compte
+                  </Button>
+                </Link>
+              ) : (
+                <>
+                  <Link href="/login" className="hidden sm:inline-block">
+                    <Button
+                      variant="ghost"
+                      className="min-h-[44px] text-gray-700 hover:text-preem-teal"
+                    >
+                      Se connecter
+                    </Button>
+                  </Link>
+                  <Link href="/signup">
+                    <Button
+                      className="min-h-[44px] min-w-[100px] sm:min-w-[140px] bg-gradient-to-r from-preem-teal to-preem-teal-600 text-white hover:shadow-lg transition-all text-sm sm:text-base"
+                    >
+                      Essai gratuit
+                    </Button>
+                  </Link>
+                </>
+              )}
+            </div>
+          </nav>
+        </div>
       </header>
 
-      {/* Hero Section - Outcome-Focused */}
-      <section className="container mx-auto px-4 py-12 md:py-20">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-            Finissez la paie en 10 minutes.{' '}
-            <span className="text-preem-gradient">Sans stress, sans erreur, sans amende.</span>
-          </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-            Preem HR calcule automatiquement les salaires, cotisations {country.socialSecurity}, et {country.taxSystem} pour votre entreprise en <strong>{country.flag} {country.name}</strong>.
-            Utilisé par <strong>150+ entreprises</strong> qui veulent dormir tranquilles.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Link href="/signup">
-              <Button
-                size="lg"
-                className="min-h-[56px] text-lg px-8 w-full sm:w-auto bg-preem-teal hover:bg-preem-teal-600 text-white shadow-preem-teal transition-all"
-              >
-                Créer votre compte gratuitement
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </Link>
-          </div>
-          <p className="mt-4 text-sm text-muted-foreground">
-            Assistance en français par WhatsApp
-          </p>
-        </div>
+      {/* Hero Section - Dark Sophisticated Design */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-preem-navy to-gray-900">
+        {/* Decorative gradient orbs */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-preem-teal/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-preem-purple/10 rounded-full blur-3xl"></div>
 
-        {/* Trust Indicators - Country-Specific */}
-        <div className="max-w-4xl mx-auto mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-          <div className="flex flex-col items-center gap-2">
-            <CheckCircle className="h-8 w-8 text-preem-teal" />
-            <p className="text-sm font-medium">{country.trustIndicators.tax}</p>
-            <p className="text-xs text-muted-foreground">{country.trustIndicators.taxDetail}</p>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            <CheckCircle className="h-8 w-8 text-preem-teal" />
-            <p className="text-sm font-medium">{country.trustIndicators.social}</p>
-            <p className="text-xs text-muted-foreground">{country.trustIndicators.socialDetail}</p>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            <CheckCircle className="h-8 w-8 text-preem-teal" />
-            <p className="text-sm font-medium">Garantie zéro erreur</p>
-            <p className="text-xs text-muted-foreground">ou remboursé</p>
-          </div>
-        </div>
-      </section>
+        <div className="container mx-auto px-4 py-20 md:py-32 relative z-10">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-12">
+              <Badge className="mb-6 bg-preem-teal/10 text-preem-teal border-preem-teal/20 hover:bg-preem-teal/20 text-sm px-4 py-2">
+                AUTOMATISÉ. PROACTIF. CONFORME.
+              </Badge>
+              <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight text-white">
+                Éliminez 80% des
+                <br />
+                <span className="bg-gradient-to-r from-preem-teal via-preem-purple to-preem-gold bg-clip-text text-transparent">
+                  opérations manuelles
+                </span>
+              </h1>
+              <p className="text-xl md:text-2xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
+                Preem gère de façon <strong className="text-white">proactive</strong> les activités RH: pointage, variables de paie, heures sup, absences, congés, déclarat ions {country.socialSecurity}, {country.taxSystem}, bulletins de paie, solde de tout compte.
+              </p>
+              <p className="text-lg text-gray-400 mb-8">
+                Tout dans <strong className="text-preem-teal">un seul système</strong> conforme pour {country.flag} {country.name}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                <Link href="/signup">
+                  <Button
+                    size="lg"
+                    className="min-h-[56px] text-lg px-10 w-full sm:w-auto bg-gradient-to-r from-preem-teal to-preem-teal-600 text-white hover:shadow-2xl hover:shadow-preem-teal/50 transition-all group"
+                  >
+                    Commencer gratuitement
+                    <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                </Link>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="min-h-[56px] text-lg px-10 w-full sm:w-auto bg-transparent border-2 border-gray-600 text-white hover:bg-white/10 transition-all"
+                >
+                  Voir la démo
+                  <Zap className="ml-2 h-5 w-5" />
+                </Button>
+              </div>
+              <p className="mt-6 text-sm text-gray-400 flex items-center justify-center gap-2">
+                <CheckCircle className="h-4 w-4 text-preem-teal" />
+                Pas de carte bancaire • Support WhatsApp en français • Web & Mobile
+              </p>
+            </div>
 
-      {/* Social Proof / Testimonials */}
-      <section className="container mx-auto px-4 py-12 md:py-16 bg-preem-navy/5 rounded-3xl my-12">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
-            Rejoignez 150+ entreprises qui ont dit adieu aux erreurs de paie
-          </h2>
-          <p className="text-center text-muted-foreground mb-12">
-            Ils passaient 8 heures par mois sur Excel. Maintenant, 10 minutes.
-          </p>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            {/* Testimonial 1: Small Business Owner */}
-            <Card className="border-preem-teal/20">
-              <CardHeader>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-12 w-12 rounded-full bg-preem-teal/10 flex items-center justify-center text-preem-teal font-bold text-lg">
-                    MK
-                  </div>
-                  <div>
-                    <p className="font-semibold">Marie K.</p>
-                    <p className="text-sm text-muted-foreground">Boutique de mode</p>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground italic">
-                  &quot;Avant Preem HR, je passais 8 heures par mois sur Excel à calculer la paie. Maintenant, ça me prend 10 minutes. Et surtout, je ne stresse plus avant les contrôles {country.socialSecurity}.&quot;
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">12 employés</p>
-              </CardContent>
-            </Card>
-
-            {/* Testimonial 2: HR Manager */}
-            <Card className="border-preem-purple/20">
-              <CardHeader>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-12 w-12 rounded-full bg-preem-purple/10 flex items-center justify-center text-preem-purple font-bold text-lg">
-                    KD
-                  </div>
-                  <div>
-                    <p className="font-semibold">Kouadio D.</p>
-                    <p className="text-sm text-muted-foreground">RH Logistique</p>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground italic">
-                  &quot;Le système {country.taxSystem} m&apos;a toujours stressé. Avec Preem HR, tout est déjà configuré. Mon patron me demande &apos;comment tu fais si vite maintenant?&apos; 😊&quot;
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">45 employés</p>
-              </CardContent>
-            </Card>
-
-            {/* Testimonial 3: CFO */}
-            <Card className="border-preem-gold/20">
-              <CardHeader>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-12 w-12 rounded-full bg-preem-gold/10 flex items-center justify-center text-preem-gold-600 font-bold text-lg">
-                    AS
-                  </div>
-                  <div>
-                    <p className="font-semibold">Aminata S.</p>
-                    <p className="text-sm text-muted-foreground">CFO, Société régionale</p>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground italic">
-                  &quot;Nous avons 3 bureaux en Afrique de l&apos;Ouest. Avant, 3 systèmes différents. Avec Preem HR, un seul système qui connaît les règles CNPS, IPRES, CNSS. Enfin!&quot;
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">120 employés</p>
-              </CardContent>
-            </Card>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-16 max-w-4xl mx-auto">
+              <div className="text-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <div className="text-3xl md:text-4xl font-bold text-white mb-2">80%</div>
+                <div className="text-sm text-gray-400">Opérations éliminées</div>
+              </div>
+              <div className="text-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <div className="text-3xl md:text-4xl font-bold text-white mb-2">10 min</div>
+                <div className="text-sm text-gray-400">Traitement de la paie</div>
+              </div>
+              <div className="text-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <div className="text-3xl md:text-4xl font-bold text-white mb-2">100%</div>
+                <div className="text-sm text-gray-400">Conforme {country.socialSecurity}</div>
+              </div>
+              <div className="text-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <div className="text-3xl md:text-4xl font-bold text-white mb-2">3 pays</div>
+                <div className="text-sm text-gray-400">CI, SN, BF</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Benefits Section - Outcome-Focused (4 benefits) */}
-      <section className="container mx-auto px-4 py-12 md:py-16">
+      {/* Pain Points Section - Before/After Visual */}
+      <section className="container mx-auto px-4 py-20 md:py-28">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
-            Pourquoi les entreprises choisissent Preem HR
-          </h2>
-          <p className="text-center text-muted-foreground mb-12 max-w-2xl mx-auto">
-            Parce qu&apos;elles veulent dormir tranquilles. Et se concentrer sur leur business, pas sur les formules Excel.
-          </p>
+          <div className="text-center mb-16">
+            <Badge className="mb-4 bg-red-50 text-red-600 border-red-200 hover:bg-red-100 text-sm px-4 py-2">
+              STOP AUX OPÉRATIONS MANUELLES
+            </Badge>
+            <h2 className="text-4xl md:text-5xl font-bold mb-6">
+              Vous perdez des journées entières sur...
+            </h2>
+          </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Benefit 1: Zero Risk of Fines */}
-            <Card className="hover:shadow-lg transition-shadow border-2 border-preem-purple/20 hover:border-preem-purple">
-              <CardHeader>
-                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-lg bg-preem-purple/10">
-                  <Shield className="h-8 w-8 text-preem-purple" />
+          <div className="grid md:grid-cols-2 gap-8 mb-12">
+            {/* Pain Points Column */}
+            <div className="space-y-4">
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-red-50 border-2 border-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Traiter les données du pointage</h3>
+                  <p className="text-gray-600 text-sm">Saisir manuellement heures supplémentaires, absences, congés dans SAGE ou Excel</p>
                 </div>
-                <CardTitle className="text-2xl mb-2">Zéro risque d&apos;amende fiscale</CardTitle>
-                <CardDescription className="text-base">
-                  Dormez tranquille. La conformité est garantie.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {country.benefits.compliance.stat} Avec Preem HR, c&apos;est impossible:
-                </p>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  {country.benefits.compliance.items.map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <CheckCircle className="h-4 w-4 text-preem-purple mt-0.5 flex-shrink-0" />
-                      <span>{item}</span>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-red-50 border-2 border-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Gérer les variables de paie</h3>
+                  <p className="text-gray-600 text-sm">Primes, acomptes, déductions, personnes à charge - tout rentré à la main</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-red-50 border-2 border-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Paramétrer SAGE/Excel</h3>
+                  <p className="text-gray-600 text-sm">Formules compliquées, erreurs de calcul, fichiers corrompus</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-red-50 border-2 border-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Générer manuellement les déclarations</h3>
+                  <p className="text-gray-600 text-sm">{country.socialSecurity}, CMU, DGI, État 301 - Excel, erreurs, stress</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-red-50 border-2 border-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Gérer les documents</h3>
+                  <p className="text-gray-600 text-sm">Bulletins de paie, certificats de travail, soldes de tout compte dispersés partout</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Solution Column */}
+            <div className="space-y-4">
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-preem-teal/5 border-2 border-preem-teal/20">
+                <CheckCircle className="h-6 w-6 text-preem-teal flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Pointage GPS automatique</h3>
+                  <p className="text-gray-600 text-sm">Badgeage avec géolocalisation, heures sup calculées automatiquement, manager approuve en 1 clic</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-preem-purple/5 border-2 border-preem-purple/20">
+                <CheckCircle className="h-6 w-6 text-preem-purple flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Variables centralisées</h3>
+                  <p className="text-gray-600 text-sm">Primes, acomptes, parts fiscales gérés dans le système - intégration automatique à la paie</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-preem-gold/5 border-2 border-preem-gold/20">
+                <CheckCircle className="h-6 w-6 text-preem-gold-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Zéro configuration</h3>
+                  <p className="text-gray-600 text-sm">Règles {country.taxSystem}, {country.socialSecurity} déjà paramétrées - cliquez "Calculer" et c&apos;est fait</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-preem-navy/5 border-2 border-preem-navy/20">
+                <CheckCircle className="h-6 w-6 text-preem-navy flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Exports 1-clic</h3>
+                  <p className="text-gray-600 text-sm">Appel {country.socialSecurity}, CMU, État 301 générés en Excel format officiel - prêts à soumettre</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4 p-6 rounded-2xl bg-gradient-to-br from-preem-teal/5 to-preem-purple/5 border-2 border-preem-teal/20">
+                <CheckCircle className="h-6 w-6 text-preem-teal flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-lg mb-2 text-gray-900">Documents centralisés</h3>
+                  <p className="text-gray-600 text-sm">Bulletins, contrats, certificats stockés en sécurité - accessibles depuis mobile</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center p-8 rounded-2xl bg-gradient-to-r from-preem-teal/10 to-preem-purple/10 border-2 border-preem-teal/20">
+            <h3 className="text-2xl font-bold mb-3 text-gray-900">
+              Résultat: <span className="text-preem-teal">80% des opérations éliminées</span>
+            </h3>
+            <p className="text-lg text-gray-700">
+              Ce qui prenait 2 jours prend maintenant 10 minutes
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 4 Pillar Feature Sections - Each with Unique Design */}
+      <GTAPillarSection countryCode={country.code} />
+      <AdminHRPillarSection countryCode={country.code} />
+      <TalentPillarSection countryCode={country.code} />
+      <PayrollPillarSection country={country} />
+
+      {/* Sophistication Showcase - Technical Excellence */}
+      <section className="relative overflow-hidden bg-gray-900 py-20 md:py-28">
+        {/* Gradient orbs */}
+        <div className="absolute top-20 left-0 w-96 h-96 bg-preem-teal/20 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 right-0 w-96 h-96 bg-preem-purple/20 rounded-full blur-3xl"></div>
+
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+              <Badge className="mb-4 bg-white/10 text-white border-white/20 hover:bg-white/20 text-sm px-4 py-2">
+                SOLUTION SOPHISTIQUÉE
+              </Badge>
+              <h2 className="text-4xl md:text-5xl font-bold mb-6 text-white">
+                Conçu pour RH productifs, cool et modernes
+              </h2>
+              <p className="text-xl text-gray-300 max-w-3xl mx-auto">
+                Web & Mobile. Multi-pays. Sécurisé. Rapide même en 3G.
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              {/* Web & Mobile */}
+              <Card className="border-2 border-white/10 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all">
+                <CardHeader>
+                  <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-preem-teal/20">
+                    <Smartphone className="h-7 w-7 text-preem-teal" />
+                  </div>
+                  <CardTitle className="text-xl mb-2 text-white">Web & Mobile</CardTitle>
+                  <CardDescription className="text-gray-300">
+                    Gérez tout depuis votre téléphone
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3 text-sm text-gray-300">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
+                      <span>Application web responsive (pas d&apos;app à télécharger)</span>
                     </li>
-                  ))}
-                </ul>
-                <p className="text-sm italic text-preem-purple/70 mt-4">
-                  &quot;Plus jamais de lettre du fisc qui vous fait paniquer.&quot;
-                </p>
-              </CardContent>
-            </Card>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
+                      <span>Optimisé pour écrans 5&quot; (la majorité de vos employés)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
+                      <span>Fonctionne hors ligne (synchronise après)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
+                      <span>Rapide même sur 3G</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
 
-            {/* Benefit 2: Time Savings */}
-            <Card className="hover:shadow-lg transition-shadow border-2 border-preem-teal/20 hover:border-preem-teal">
-              <CardHeader>
-                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-lg bg-preem-teal/10">
-                  <Clock className="h-8 w-8 text-preem-teal" />
-                </div>
-                <CardTitle className="text-2xl mb-2">8 heures de paie → 10 minutes</CardTitle>
-                <CardDescription className="text-base">
-                  Reprenez 8 heures par mois pour développer votre business.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Arrêtez de perdre des journées entières sur Excel:
-                </p>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
-                    <span>Fini les formules compliquées (brut imposable, parts fiscales)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
-                    <span>Fini les erreurs de calcul (et les employés mécontents)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
-                    <span>Heures supplémentaires à 115%, 150%, 175% calculées automatiquement</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-teal mt-0.5 flex-shrink-0" />
-                    <span>Bulletins de paie générés en 1 clic</span>
-                  </li>
-                </ul>
-                <p className="text-sm italic text-preem-teal/70 mt-4">
-                  &quot;Imaginez: vous lancez la paie lundi matin, et à 10h c&apos;est déjà fini. Le reste de la journée? À vous.&quot;
-                </p>
-              </CardContent>
-            </Card>
+              {/* Multi-Country */}
+              <Card className="border-2 border-white/10 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all">
+                <CardHeader>
+                  <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-preem-purple/20">
+                    <Globe className="h-7 w-7 text-preem-purple" />
+                  </div>
+                  <CardTitle className="text-xl mb-2 text-white">Multi-pays</CardTitle>
+                  <CardDescription className="text-gray-300">
+                    Un système pour toute l&apos;Afrique de l&apos;Ouest
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3 text-sm text-gray-300">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-purple mt-0.5 flex-shrink-0" />
+                      <span>🇨🇮 Côte d&apos;Ivoire (ITS, CNPS)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-purple mt-0.5 flex-shrink-0" />
+                      <span>🇸🇳 Sénégal (IRPP, IPRES)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-purple mt-0.5 flex-shrink-0" />
+                      <span>🇧🇫 Burkina Faso (CNSS)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-purple mt-0.5 flex-shrink-0" />
+                      <span>Base de données unique pour plusieurs bureaux</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
 
-            {/* Benefit 3: No Expertise Needed */}
-            <Card className="hover:shadow-lg transition-shadow border-2 border-preem-gold/20 hover:border-preem-gold">
-              <CardHeader>
-                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-lg bg-preem-gold/10">
-                  <Brain className="h-8 w-8 text-preem-gold-600" />
-                </div>
-                <CardTitle className="text-2xl mb-2">Pas besoin d&apos;être expert en paie</CardTitle>
-                <CardDescription className="text-base">
-                  L&apos;expertise RH intégrée dans le logiciel.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Vous n&apos;avez pas fait d&apos;études en comptabilité? Aucun problème:
-                </p>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-gold-600 mt-0.5 flex-shrink-0" />
-                    <span>Interface guidée étape par étape (aucune formation nécessaire)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-gold-600 mt-0.5 flex-shrink-0" />
-                    <span>Explications simples pour chaque calcul (si vous voulez comprendre)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-gold-600 mt-0.5 flex-shrink-0" />
-                    <span>{country.benefits.expertise.wage} vérifié automatiquement</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-gold-600 mt-0.5 flex-shrink-0" />
-                    <span>Déductions familiales calculées selon vos parts fiscales</span>
-                  </li>
-                </ul>
-                <p className="text-sm italic text-preem-gold-600/70 mt-4">
-                  &quot;Même si vous ne connaissez rien à la paie, vous aurez l&apos;air d&apos;un pro.&quot;
-                </p>
-              </CardContent>
-            </Card>
+              {/* Security */}
+              <Card className="border-2 border-white/10 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all">
+                <CardHeader>
+                  <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-xl bg-preem-gold/20">
+                    <Lock className="h-7 w-7 text-preem-gold-400" />
+                  </div>
+                  <CardTitle className="text-xl mb-2 text-white">Sécurité totale</CardTitle>
+                  <CardDescription className="text-gray-300">
+                    Vos données protégées comme une banque
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3 text-sm text-gray-300">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-gold-400 mt-0.5 flex-shrink-0" />
+                      <span>Cryptage des données sensibles (RIB, CNI)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-gold-400 mt-0.5 flex-shrink-0" />
+                      <span>Isolation multi-tenant (vos données sont VÔTRES)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-gold-400 mt-0.5 flex-shrink-0" />
+                      <span>Rôles & permissions (RH, Manager, Employé)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-preem-gold-400 mt-0.5 flex-shrink-0" />
+                      <span>Audit logs (qui a fait quoi, quand)</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
 
-            {/* Benefit 4: Mobile + 3G */}
-            <Card className="hover:shadow-lg transition-shadow border-2 border-preem-navy/20 hover:border-preem-navy">
-              <CardHeader>
-                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-lg bg-preem-navy/10">
-                  <Smartphone className="h-8 w-8 text-preem-navy" />
-                </div>
-                <CardTitle className="text-2xl mb-2">Fonctionne partout, même avec 3G</CardTitle>
-                <CardDescription className="text-base">
-                  Gérez la paie depuis votre téléphone. Connexion lente? Aucun souci.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Conçu pour l&apos;Afrique de l&apos;Ouest, pas pour la Silicon Valley:
-                </p>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-navy mt-0.5 flex-shrink-0" />
-                    <span>Interface optimisée pour mobile (gérez tout depuis votre téléphone)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-navy mt-0.5 flex-shrink-0" />
-                    <span>Fonctionne avec connexion 3G lente</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-navy mt-0.5 flex-shrink-0" />
-                    <span>100% en français (langage business, pas jargon technique)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-preem-navy mt-0.5 flex-shrink-0" />
-                    <span>Sauvegarde automatique (ne perdez jamais votre travail)</span>
-                  </li>
-                </ul>
-                <p className="text-sm italic text-preem-navy/70 mt-4">
-                  &quot;Vous êtes en déplacement? Lancez la paie depuis un taxi. Vraiment.&quot;
-                </p>
-              </CardContent>
-            </Card>
+      {/* Social Proof - Customer Testimonials */}
+      <section className="bg-white py-20 md:py-28">
+        <div className="container mx-auto px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+              <Badge className="mb-4 bg-preem-teal/10 text-preem-teal border-preem-teal/20 hover:bg-preem-teal/20 text-sm px-4 py-2">
+                ILS ONT CHOISI PREEM HR
+              </Badge>
+              <h2 className="text-4xl md:text-5xl font-bold mb-6 text-gray-900">
+                Ce qu&apos;ils disent après 3 mois
+              </h2>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              {/* Testimonial 1 */}
+              <Card className="border-2 border-gray-100 hover:border-preem-teal/30 transition-all hover:shadow-xl">
+                <CardHeader>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-14 w-14 rounded-full bg-gradient-to-br from-preem-teal to-preem-teal-600 flex items-center justify-center text-white font-bold text-xl">
+                      MK
+                    </div>
+                    <div>
+                      <p className="font-semibold text-lg text-gray-900">Marie K.</p>
+                      <p className="text-sm text-gray-600">Boutique de mode, Abidjan</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="mb-4">
+                    <div className="flex gap-1 mb-3">
+                      {[...Array(5)].map((_, i) => (
+                        <Award key={i} className="h-5 w-5 fill-preem-gold-400 text-preem-gold-400" />
+                      ))}
+                    </div>
+                    <p className="text-gray-700 italic leading-relaxed">
+                      &quot;Avant Preem HR, je passais <strong className="text-gray-900">8 heures par mois</strong> sur Excel. Maintenant, <strong className="text-preem-teal">10 minutes</strong>. Je ne stress e plus avant les contrôles CNPS.&quot;
+                    </p>
+                  </div>
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="text-sm text-gray-600">12 employés • 3 mois avec Preem HR</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Testimonial 2 */}
+              <Card className="border-2 border-gray-100 hover:border-preem-purple/30 transition-all hover:shadow-xl">
+                <CardHeader>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-14 w-14 rounded-full bg-gradient-to-br from-preem-purple to-preem-purple/80 flex items-center justify-center text-white font-bold text-xl">
+                      KD
+                    </div>
+                    <div>
+                      <p className="font-semibold text-lg text-gray-900">Kouadio D.</p>
+                      <p className="text-sm text-gray-600">RH Logistique, Abidjan</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="mb-4">
+                    <div className="flex gap-1 mb-3">
+                      {[...Array(5)].map((_, i) => (
+                        <Award key={i} className="h-5 w-5 fill-preem-gold-400 text-preem-gold-400" />
+                      ))}
+                    </div>
+                    <p className="text-gray-700 italic leading-relaxed">
+                      &quot;Le système ITS m&apos;a toujours stressé. Avec Preem HR, <strong className="text-preem-purple">tout est déjà configuré</strong>. Mon patron me demande &apos;comment tu fais si vite maintenant?&apos;&quot;
+                    </p>
+                  </div>
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="text-sm text-gray-600">45 employés • 6 mois avec Preem HR</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Testimonial 3 */}
+              <Card className="border-2 border-gray-100 hover:border-preem-gold/30 transition-all hover:shadow-xl">
+                <CardHeader>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-14 w-14 rounded-full bg-gradient-to-br from-preem-gold-500 to-preem-gold-600 flex items-center justify-center text-white font-bold text-xl">
+                      AS
+                    </div>
+                    <div>
+                      <p className="font-semibold text-lg text-gray-900">Aminata S.</p>
+                      <p className="text-sm text-gray-600">CFO Société régionale</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="mb-4">
+                    <div className="flex gap-1 mb-3">
+                      {[...Array(5)].map((_, i) => (
+                        <Award key={i} className="h-5 w-5 fill-preem-gold-400 text-preem-gold-400" />
+                      ))}
+                    </div>
+                    <p className="text-gray-700 italic leading-relaxed">
+                      &quot;3 bureaux en Afrique de l&apos;Ouest. Avant, 3 systèmes différents. Avec Preem HR, <strong className="text-preem-gold-600">un seul système</strong> qui connaît CNPS, IPRES, CNSS. Enfin!&quot;
+                    </p>
+                  </div>
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="text-sm text-gray-600">120 employés • 1 an avec Preem HR</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </div>
       </section>
@@ -505,39 +669,65 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
         </div>
       </section>
 
-      {/* Risk Reversal / Final CTA */}
-      <section className="container mx-auto px-4 py-16 md:py-20">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Essayez sans risque.
-          </h2>
-          <p className="text-xl text-muted-foreground mb-2">
-            Si vous n&apos;êtes pas convaincu, vous ne payez rien.
-          </p>
-          <p className="text-lg text-muted-foreground mb-8">
-            150+ entreprises nous font confiance. Rejoignez-les.
-          </p>
-          <Link href="/signup" className="w-full sm:w-auto">
-            <Button
-              size="lg"
-              className="min-h-[56px] text-lg px-8 w-full sm:w-auto bg-preem-teal hover:bg-preem-teal-600 text-white shadow-preem-teal transition-all"
-            >
-              Commencer gratuitement - Sans carte bancaire
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </Link>
+      {/* Final CTA - Dark Sophisticated */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-preem-navy to-gray-900 py-24 md:py-32">
+        {/* Decorative elements */}
+        <div className="absolute top-0 right-1/4 w-96 h-96 bg-preem-teal/20 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-preem-purple/20 rounded-full blur-3xl"></div>
 
-          {/* Trust Signals Below CTA */}
-          <div className="mt-8 grid gap-4 md:grid-cols-2 text-sm max-w-2xl mx-auto">
-            <div className="flex flex-col items-center gap-2">
-              <CheckCircle className="h-6 w-6 text-preem-teal" />
-              <p className="font-medium">Assistance en français</p>
-              <p className="text-muted-foreground">Par WhatsApp, email, téléphone</p>
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="max-w-4xl mx-auto text-center">
+            <Badge className="mb-6 bg-preem-gold-500/20 text-preem-gold-300 border-preem-gold-500/30 hover:bg-preem-gold-500/30 text-sm px-4 py-2">
+              REJOIGNEZ 150+ ENTREPRISES
+            </Badge>
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 text-white leading-tight">
+              Prêt à éliminer 80% des<br />
+              opérations manuelles?
+            </h2>
+            <p className="text-xl md:text-2xl text-gray-300 mb-4">
+              Créez votre compte maintenant. Sans carte bancaire.
+            </p>
+            <p className="text-lg text-gray-400 mb-10">
+              Si vous n&apos;êtes pas convaincu, vous ne payez rien.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
+              <Link href="/signup">
+                <Button
+                  size="lg"
+                  className="min-h-[64px] text-lg px-12 w-full sm:w-auto bg-gradient-to-r from-preem-teal to-preem-teal-600 text-white hover:shadow-2xl hover:shadow-preem-teal/50 transition-all group"
+                >
+                  Commencer gratuitement
+                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </Link>
+              <Button
+                size="lg"
+                variant="outline"
+                className="min-h-[64px] text-lg px-12 w-full sm:w-auto bg-transparent border-2 border-gray-600 text-white hover:bg-white/10 transition-all"
+              >
+                Voir la démo
+                <Zap className="ml-2 h-5 w-5" />
+              </Button>
             </div>
-            <div className="flex flex-col items-center gap-2">
-              <CheckCircle className="h-6 w-6 text-preem-teal" />
-              <p className="font-medium">Garantie zéro erreur</p>
-              <p className="text-muted-foreground">Si Preem HR se trompe, on corrige et on rembourse</p>
+
+            {/* Trust Grid */}
+            <div className="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto">
+              <div className="flex flex-col items-center gap-3 p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <CheckCircle className="h-8 w-8 text-preem-teal" />
+                <p className="font-semibold text-white">Sans carte bancaire</p>
+                <p className="text-sm text-gray-400 text-center">Essai gratuit complet, aucun engagement</p>
+              </div>
+              <div className="flex flex-col items-center gap-3 p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <CheckCircle className="h-8 w-8 text-preem-teal" />
+                <p className="font-semibold text-white">Support en français</p>
+                <p className="text-sm text-gray-400 text-center">WhatsApp, email, téléphone - réponse rapide</p>
+              </div>
+              <div className="flex flex-col items-center gap-3 p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
+                <CheckCircle className="h-8 w-8 text-preem-teal" />
+                <p className="font-semibold text-white">Garantie zéro erreur</p>
+                <p className="text-sm text-gray-400 text-center">Si Preem se trompe, on corrige et rembourse</p>
+              </div>
             </div>
           </div>
         </div>
