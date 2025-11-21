@@ -11,8 +11,8 @@ import { NavigationProgressBar } from '@/components/navigation/progress-bar';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'PREEM HR - Gestion de Paie Côte d\'Ivoire',
-  description: 'Système de gestion de paie pour la Côte d\'Ivoire',
+  title: 'PREEM HR - Gestion RH & Paie Côte d\'Ivoire',
+  description: 'Système complet de gestion RH: pointage, congés, paie, déclarations CNPS/CMU/ITS pour la Côte d\'Ivoire, Sénégal, Burkina Faso',
 };
 
 export default function RootLayout({

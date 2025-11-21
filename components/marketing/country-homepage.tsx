@@ -746,7 +746,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                 <PreemLogo size="sm" />
               </Link>
               <p className="text-sm text-muted-foreground text-center md:text-left">
-                Système de gestion de paie pour {country.name}
+                Système complet de gestion RH & Paie pour {country.name}
               </p>
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Globe className="h-3 w-3" />
