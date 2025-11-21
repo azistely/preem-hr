@@ -219,7 +219,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                 </span>
               </h1>
               <p className="text-xl md:text-2xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
-                Preem gère de façon <strong className="text-white">proactive</strong> les activités RH: pointage, variables de paie, heures sup, absences, congés, déclarat ions {country.socialSecurity}, {country.taxSystem}, bulletins de paie, solde de tout compte.
+                Preem gère de façon <strong className="text-white">proactive</strong> les activités RH: pointage, variables de paie, heures sup, absences, congés, déclarations {country.socialSecurity}, CMU, {country.taxSystem}, bulletins de paie, solde de tout compte.
               </p>
               <p className="text-lg text-gray-400 mb-8">
                 Tout dans <strong className="text-preem-teal">un seul système</strong> conforme pour {country.flag} {country.name}
@@ -234,14 +234,16 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                     <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                   </Button>
                 </Link>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="min-h-[56px] text-lg px-10 w-full sm:w-auto bg-transparent border-2 border-gray-600 text-white hover:bg-white/10 transition-all"
-                >
-                  Voir la démo
-                  <Zap className="ml-2 h-5 w-5" />
-                </Button>
+                <a href="https://wa.me/2250708786828?text=Bonjour%21%20Je%20souhaite%20voir%20une%20d%C3%A9mo%20de%20Preem%20HR" target="_blank" rel="noopener noreferrer">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="min-h-[56px] text-lg px-10 w-full sm:w-auto bg-transparent border-2 border-gray-600 text-white hover:bg-white/10 transition-all"
+                  >
+                    Voir la démo
+                    <Zap className="ml-2 h-5 w-5" />
+                  </Button>
+                </a>
               </div>
               <p className="mt-6 text-sm text-gray-400 flex items-center justify-center gap-2">
                 <CheckCircle className="h-4 w-4 text-preem-teal" />
@@ -261,7 +263,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
               </div>
               <div className="text-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
                 <div className="text-3xl md:text-4xl font-bold text-white mb-2">100%</div>
-                <div className="text-sm text-gray-400">Conforme {country.socialSecurity}</div>
+                <div className="text-sm text-gray-400">Conforme</div>
               </div>
               <div className="text-center p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
                 <div className="text-3xl md:text-4xl font-bold text-white mb-2">3 pays</div>
@@ -701,14 +703,16 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                   <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
-              <Button
-                size="lg"
-                variant="outline"
-                className="min-h-[64px] text-lg px-12 w-full sm:w-auto bg-transparent border-2 border-gray-600 text-white hover:bg-white/10 transition-all"
-              >
-                Voir la démo
-                <Zap className="ml-2 h-5 w-5" />
-              </Button>
+              <a href="https://wa.me/2250708786828?text=Bonjour%21%20Je%20souhaite%20voir%20une%20d%C3%A9mo%20de%20Preem%20HR" target="_blank" rel="noopener noreferrer">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="min-h-[64px] text-lg px-12 w-full sm:w-auto bg-transparent border-2 border-gray-600 text-white hover:bg-white/10 transition-all"
+                >
+                  Voir la démo
+                  <Zap className="ml-2 h-5 w-5" />
+                </Button>
+              </a>
             </div>
 
             {/* Trust Grid */}

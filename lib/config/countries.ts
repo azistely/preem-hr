@@ -12,14 +12,14 @@ export const COUNTRIES: Record<string, CountryConfig> = {
     code: 'ci',
     name: 'Côte d\'Ivoire',
     flag: '🇨🇮',
-    taxSystem: 'ITS 2024',
-    taxSystemFull: 'Impôt sur les Traitements et Salaires 2024',
+    taxSystem: 'ITS',
+    taxSystemFull: 'Impôt sur les Traitements et Salaires',
     socialSecurity: 'CNPS',
     socialSecurityFull: 'Caisse Nationale de Prévoyance Sociale',
     minimumWage: 'SMIG 75,000 FCFA',
     minimumWageAmount: 75000,
     trustIndicators: {
-      tax: 'Conforme réforme ITS 2024',
+      tax: 'Conforme réforme ITS',
       taxDetail: '(6 tranches progressives)',
       social: 'Calcul CNPS automatique',
       socialDetail: '(Retraite, Prestations, CMU)',
@@ -28,7 +28,7 @@ export const COUNTRIES: Record<string, CountryConfig> = {
       compliance: {
         stat: 'Saviez-vous que 33% des PME ivoiriennes reçoivent des amendes chaque année pour erreurs de paie?',
         items: [
-          'ITS 2024 calculé automatiquement (6 tranches progressives)',
+          'ITS calculé automatiquement (6 tranches progressives)',
           'Cotisations CNPS exactes (Retraite 14%, Prestations 5%, Accidents 2-5%)',
           'CMU déduite correctement (1,000 FCFA salarié + famille)',
           'FDFP (Taxe d\'Apprentissage + Formation) appliquée',
@@ -41,7 +41,7 @@ export const COUNTRIES: Record<string, CountryConfig> = {
     howItWorks: {
       step1: {
         outcome: 'Preem HR configure automatiquement les règles de Côte d\'Ivoire',
-        details: 'configure ITS 2024, CNPS, CMU, FDFP pour vous.',
+        details: 'configure ITS, CNPS, CMU, FDFP pour vous.',
       },
     },
   },
