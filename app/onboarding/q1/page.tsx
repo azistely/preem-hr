@@ -24,13 +24,6 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { CI_CITIES, ABIDJAN_COMMUNES } from '@/lib/constants/ci-cities';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { getWorkAccidentRate, type CGECISector } from '@/lib/cgeci/sector-mapping';
 
 // Location schema
@@ -579,27 +572,30 @@ export default function OnboardingQ1Page() {
                         </div>
                         <div>
                           <label className="text-sm font-medium">Ville *</label>
-                          <Select
+                          <select
                             value={location.city || ''}
-                            onValueChange={(value) => {
-                              updateLocation(index, 'city', value);
-                              // Reset commune when changing city
-                              if (value !== 'Abidjan') {
-                                updateLocation(index, 'commune', undefined);
-                              }
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              // Single atomic update for both city and commune
+                              const updated = locations.map((loc, i) =>
+                                i === index ? {
+                                  ...loc,
+                                  city: value,
+                                  // Reset commune when changing city to non-Abidjan
+                                  commune: value !== 'Abidjan' ? undefined : loc.commune
+                                } : loc
+                              );
+                              setValue('locations', updated, { shouldValidate: true });
                             }}
+                            className="w-full mt-1 px-3 py-2 border rounded-md min-h-[48px]"
                           >
-                            <SelectTrigger className="w-full mt-1 min-h-[48px]">
-                              <SelectValue placeholder="Sélectionnez la ville du site" />
-                            </SelectTrigger>
-                            <SelectContent position="popper" className="max-h-[300px] overflow-y-auto">
-                              {CI_CITIES.map((city) => (
-                                <SelectItem key={city.value} value={city.value}>
-                                  {city.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            <option value="">-- Sélectionnez la ville --</option>
+                            {CI_CITIES.map((city) => (
+                              <option key={city.value} value={city.value}>
+                                {city.label}
+                              </option>
+                            ))}
+                          </select>
                           <p className="text-xs text-muted-foreground mt-1">
                             Sélectionnez la ville du site
                           </p>
@@ -607,21 +603,18 @@ export default function OnboardingQ1Page() {
                         {location.city === 'Abidjan' && (
                           <div>
                             <label className="text-sm font-medium">Commune</label>
-                            <Select
+                            <select
                               value={location.commune || ''}
-                              onValueChange={(value) => updateLocation(index, 'commune', value)}
+                              onChange={(e) => updateLocation(index, 'commune', e.target.value)}
+                              className="w-full mt-1 px-3 py-2 border rounded-md min-h-[48px]"
                             >
-                              <SelectTrigger className="w-full mt-1 min-h-[48px]">
-                                <SelectValue placeholder="Précisez la commune (optionnel)" />
-                              </SelectTrigger>
-                              <SelectContent position="popper" className="max-h-[300px] overflow-y-auto">
-                                {ABIDJAN_COMMUNES.map((commune) => (
-                                  <SelectItem key={commune.value} value={commune.value}>
-                                    {commune.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              <option value="">-- Sélectionnez la commune (optionnel) --</option>
+                              {ABIDJAN_COMMUNES.map((commune) => (
+                                <option key={commune.value} value={commune.value}>
+                                  {commune.label}
+                                </option>
+                              ))}
+                            </select>
                             <p className="text-xs text-muted-foreground mt-1">
                               Précisez la commune (optionnel)
                             </p>

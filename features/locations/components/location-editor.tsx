@@ -277,7 +277,7 @@ export function LocationEditor({ locationId, onClose }: LocationEditorProps) {
               <SelectTrigger className="min-h-[48px]">
                 <SelectValue placeholder="Sélectionnez la ville du site" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" className="max-h-[300px]">
                 {CI_CITIES.map((city) => (
                   <SelectItem key={city.value} value={city.value}>
                     {city.label}
@@ -301,7 +301,7 @@ export function LocationEditor({ locationId, onClose }: LocationEditorProps) {
                 <SelectTrigger className="min-h-[48px]">
                   <SelectValue placeholder="Précisez la commune (optionnel)" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" className="max-h-[300px]">
                   {ABIDJAN_COMMUNES.map((commune) => (
                     <SelectItem key={commune.value} value={commune.value}>
                       {commune.label}
