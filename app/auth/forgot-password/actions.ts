@@ -18,9 +18,16 @@ export async function requestPasswordReset(email: string): Promise<{ success: bo
 
     const supabase = await createClient();
 
+    // Construct reset password URL (ensure no double slashes)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3002';
+    const resetPasswordUrl = `${baseUrl}/auth/reset-password`;
+
+    console.log('[Password Reset] Sending reset email to:', email);
+    console.log('[Password Reset] Redirect URL:', resetPasswordUrl);
+
     // Send password reset email
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password`,
+      redirectTo: resetPasswordUrl,
     });
 
     if (error) {
