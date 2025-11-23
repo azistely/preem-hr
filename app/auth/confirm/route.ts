@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type');
-  const next = searchParams.get('next') ?? '/onboarding';
+  const next = searchParams.get('next');
 
   if (token_hash && type) {
     const supabase = await createClient();
@@ -16,8 +16,15 @@ export async function GET(request: NextRequest) {
     });
 
     if (!error) {
-      // Redirect to onboarding or intended page
-      return NextResponse.redirect(new URL(next, request.url));
+      // Determine redirect based on type
+      let redirectUrl = next || '/onboarding';
+
+      // For password recovery, always redirect to reset password page
+      if (type === 'recovery') {
+        redirectUrl = '/auth/reset-password';
+      }
+
+      return NextResponse.redirect(new URL(redirectUrl, request.url));
     }
   }
 

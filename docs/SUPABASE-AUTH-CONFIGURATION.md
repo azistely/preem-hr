@@ -4,20 +4,63 @@
 
 If password reset emails redirect to the homepage instead of `/auth/reset-password`, follow these steps:
 
-### 1. Configure Redirect URLs in Supabase Dashboard
+### Recommended Solution: Update Email Template (No Allowlist Needed)
+
+This approach is simpler and doesn't require managing redirect URL allowlists.
+
+#### 1. Configure Site URL
+
+1. Go to [Supabase Dashboard](https://supabase.com/dashboard) → Your Project → **Authentication** → **URL Configuration**
+2. Set **Site URL** to:
+   ```
+   https://www.preemhr.com
+   ```
+   (No trailing slash)
+
+#### 2. Update Email Template
+
+1. Go to **Authentication** → **Email Templates** → **Reset Password**
+2. Find the password reset link (usually contains `{{ .ConfirmationURL }}`)
+3. Replace it with:
+
+```html
+<!-- Old (uses redirectTo allowlist) -->
+<a href="{{ .ConfirmationURL }}">Reset Password</a>
+
+<!-- New (uses Site URL + /auth/confirm) -->
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery">Reset Password</a>
+```
+
+**How it works:**
+- User clicks link → `/auth/confirm?token_hash=...&type=recovery`
+- Confirm route verifies token and sets session
+- Automatically redirects to `/auth/reset-password` (handled by code)
+- User enters new password
+
+**Benefits:**
+- ✅ No redirect URL allowlist needed
+- ✅ Works same way as email confirmation
+- ✅ Simpler configuration
+- ✅ Easier to debug
+
+### Alternative: Use Redirect URLs Allowlist (Current Default)
+
+If you prefer to use the default Supabase flow with `redirectTo`:
+
+#### 1. Configure Redirect URLs in Supabase Dashboard
 
 1. Go to [Supabase Dashboard](https://supabase.com/dashboard)
 2. Select your project
 3. Navigate to **Authentication** → **URL Configuration**
 4. Update the following settings:
 
-#### Site URL
+##### Site URL
 Set this to your production domain:
 ```
 https://www.preemhr.com
 ```
 
-#### Redirect URLs (Add these)
+##### Redirect URLs (Add these)
 Add the following URLs to the **Redirect URLs** allowlist:
 ```
 https://www.preemhr.com/auth/reset-password
@@ -30,7 +73,7 @@ http://localhost:3002/onboarding (for local development)
 
 **Important:** Each URL must be added separately. Click "+ Add URL" for each one.
 
-### 2. Email Template Configuration (Optional)
+#### 2. Email Template Configuration (Keep Default)
 
 Supabase uses email templates for password reset. To customize:
 
