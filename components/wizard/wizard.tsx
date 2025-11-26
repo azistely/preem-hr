@@ -19,6 +19,8 @@ interface WizardProps {
   isSubmitting?: boolean;
   currentStep?: number;
   onStepChange?: (step: number) => void;
+  /** Disable the next/continue button (e.g., when form is invalid or blocked) */
+  disableNext?: boolean;
 }
 
 export function Wizard({
@@ -27,6 +29,7 @@ export function Wizard({
   isSubmitting = false,
   currentStep: controlledStep,
   onStepChange,
+  disableNext = false,
 }: WizardProps) {
   const [internalStep, setInternalStep] = useState(0);
 
@@ -114,7 +117,7 @@ export function Wizard({
         <Button
           type="button"
           onClick={handleNext}
-          disabled={isSubmitting}
+          disabled={isSubmitting || disableNext}
           className="flex-1 min-h-[48px]"
         >
           {isSubmitting ? (

@@ -275,14 +275,30 @@ export default function NewPayrollRunPage() {
       title: 'Fréquence de paiement',
       description: 'Sélectionnez la fréquence de paiement pour cette paie',
       content: (
-        <PaymentFrequencyStep
-          periodStart={periodStart}
-          periodEnd={periodEnd}
-          paymentFrequency={formValues.paymentFrequency}
-          closureSequence={formValues.closureSequence ?? null}
-          onPaymentFrequencyChange={handlePaymentFrequencyChange}
-          onClosureSequenceChange={handleClosureSequenceChange}
-        />
+        <div className="space-y-6">
+          <PaymentFrequencyStep
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+            paymentFrequency={formValues.paymentFrequency}
+            closureSequence={formValues.closureSequence ?? null}
+            onPaymentFrequencyChange={handlePaymentFrequencyChange}
+            onClosureSequenceChange={handleClosureSequenceChange}
+          />
+          {/* Show warning if existing run detected */}
+          {existingRun && (
+            <Card className="border-amber-500 bg-amber-50">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                  <p className="text-sm text-amber-800">
+                    Une paie <span className="font-semibold">{existingRun.runNumber}</span> existe déjà pour cette période.
+                    Continuez pour voir les options disponibles.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       ),
     },
 
@@ -565,9 +581,10 @@ export default function NewPayrollRunPage() {
           <Wizard
             steps={wizardSteps}
             onComplete={handleComplete}
-            isSubmitting={isSubmitting || !!existingRun}
+            isSubmitting={isSubmitting}
             currentStep={currentStep}
             onStepChange={setCurrentStep}
+            disableNext={currentStep === wizardSteps.length - 1 && !!existingRun}
           />
         </CardContent>
       </Card>
