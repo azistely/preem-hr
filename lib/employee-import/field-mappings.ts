@@ -423,9 +423,13 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
     if (!parsed) {
       return { valid: false, message: 'Format de date invalide. Écrivez comme ceci: JJ/MM/AAAA (exemple: 31/12/2025)' };
     }
-    const now = new Date();
-    if (parsed < now) {
-      return { valid: false, message: 'Date de fin de contrat doit être dans le futur' };
+    // Allow past dates for importing historical/terminated contracts
+    // Only validate that date is reasonable (not too far in past or future)
+    if (parsed < new Date('1950-01-01')) {
+      return { valid: false, message: 'Date de fin de contrat trop ancienne (avant 1950)' };
+    }
+    if (parsed > new Date('2100-01-01')) {
+      return { valid: false, message: 'Date de fin de contrat trop éloignée (après 2100)' };
     }
     return { valid: true };
   },
