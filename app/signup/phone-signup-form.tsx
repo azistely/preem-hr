@@ -49,7 +49,7 @@ const step1Schema = z.object({
 type Step1FormData = z.infer<typeof step1Schema>;
 
 interface PhoneSignupFormProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export function PhoneSignupForm({ onBack }: PhoneSignupFormProps) {
@@ -272,17 +272,6 @@ export function PhoneSignupForm({ onBack }: PhoneSignupFormProps) {
   // Step 1: Phone + Info form
   return (
     <form onSubmit={handleSubmit(onStep1Submit)} className="space-y-6">
-      {/* Back button */}
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={onBack}
-        className="min-h-[44px]"
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Changer de méthode
-      </Button>
-
       {/* Company Name */}
       <div className="space-y-2">
         <Label htmlFor="companyName" className="text-base">
