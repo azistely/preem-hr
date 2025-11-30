@@ -283,7 +283,11 @@ function parseDataRows(
         const dbField = SAGE_TO_PREEM_MAPPING[sageField];
         const value = rowObject[dbField];
 
-        if (!value || String(value).trim() === '') {
+        // Check for missing value - allow 0 as a valid value (e.g., for "Nombre d'enfants à charge")
+        const isMissing = value === null || value === undefined ||
+          (typeof value === 'string' && value.trim() === '');
+
+        if (isMissing) {
           rowErrors.push({
             row: rowIndex,
             field: sageField,

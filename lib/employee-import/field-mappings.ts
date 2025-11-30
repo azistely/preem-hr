@@ -793,15 +793,16 @@ export function isConditionallyRequired(fieldName: string, contractType: string 
 export function validateConditionalFields(row: Record<string, any>): ValidationResult[] {
   const errors: ValidationResult[] = [];
 
-  // Get contract type from row (check various possible field names)
-  const contractType = row['Nature du contrat'] || row['contractType'];
+  // Get contract type from row (check various possible field names, including with asterisks)
+  const contractType = row['Nature du contrat'] || row['Nature du contrat*'] || row['contractType'];
 
   if (!contractType) return errors; // Can't validate without contract type
 
   // Check each conditionally required field
   for (const [fieldName, condition] of Object.entries(CONDITIONAL_REQUIRED_FIELDS)) {
     if (isConditionallyRequired(fieldName, contractType)) {
-      const value = row[fieldName];
+      // Look for value with various field name formats (with/without asterisks)
+      const value = row[fieldName] || row[`${fieldName}*`] || row[`${fieldName}**`];
 
       if (!value || (typeof value === 'string' && value.trim() === '')) {
         // Determine which contract types require this field for the error message
