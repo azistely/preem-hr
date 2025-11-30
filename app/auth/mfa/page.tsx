@@ -19,7 +19,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Shield, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,29 @@ import { createAuthClient } from '@/lib/supabase/auth-client';
 
 type Step = 'loading' | 'challenge' | 'success' | 'error';
 
+// Loading fallback for Suspense
+function MfaLoadingFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-preem-teal mx-auto mb-4" />
+        <p className="text-muted-foreground">Chargement...</p>
+      </div>
+    </div>
+  );
+}
+
+// Main page wrapper with Suspense
 export default function MfaChallengePage() {
+  return (
+    <Suspense fallback={<MfaLoadingFallback />}>
+      <MfaChallengeContent />
+    </Suspense>
+  );
+}
+
+// Inner component that uses useSearchParams
+function MfaChallengeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>('loading');
