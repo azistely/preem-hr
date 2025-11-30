@@ -60,6 +60,14 @@ export default function OnboardingPage() {
       return;
     }
 
+    // For email users who haven't set up 2FA, redirect to phone verification
+    // Phone users skip this since they already verified their phone during signup
+    if (user.authMethod === 'email' && !user.mfaEnabled) {
+      console.log('[Onboarding] Email user needs 2FA setup, redirecting to verify-phone');
+      router.push('/onboarding/verify-phone');
+      return;
+    }
+
     // Otherwise, start V2 onboarding flow at Q1
     router.push('/onboarding/q1');
   }, [user, isLoading, router]);

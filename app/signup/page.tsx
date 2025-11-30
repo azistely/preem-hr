@@ -4,6 +4,10 @@
  * Simple, guided signup flow for Preem HR
  * Creates tenant + user, then redirects to onboarding
  *
+ * Now supports:
+ * - Email + Password signup
+ * - Phone OTP signup (passwordless)
+ *
  * Design principles:
  * - Mobile-first (works on 5" phones)
  * - Large touch targets (min 44px)
@@ -27,6 +31,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { toast } from 'sonner';
 import { PreemLogo } from '@/components/brand/preem-logo';
 import { signup } from './actions';
+import { AuthMethodSelector, type AuthMethod } from '@/components/auth/auth-method-selector';
+import { PhoneSignupForm } from './phone-signup-form';
 
 /**
  * Signup form validation schema
@@ -62,6 +68,7 @@ export default function SignupPage() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [passwordStrength, setPasswordStrength] = useState<'weak' | 'medium' | 'strong' | null>(null);
+  const [authMethod, setAuthMethod] = useState<AuthMethod | null>(null);
 
   const {
     register,
@@ -126,6 +133,12 @@ export default function SignupPage() {
     });
   };
 
+  // Handle auth method back navigation
+  const handleAuthMethodBack = () => {
+    setAuthMethod(null);
+    setError(null);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
@@ -150,7 +163,45 @@ export default function SignupPage() {
           </CardHeader>
 
           <CardContent>
+            {/* Auth Method Selection (Step 0) */}
+            {authMethod === null && (
+              <div className="space-y-6">
+                <AuthMethodSelector
+                  value={undefined}
+                  onChange={setAuthMethod}
+                  isSignup={true}
+                />
+
+                {/* Login Link */}
+                <div className="mt-6 text-center border-t pt-6">
+                  <p className="text-sm text-muted-foreground">
+                    Vous avez déjà un compte ?{' '}
+                    <Link href="/login" className="text-preem-teal font-medium hover:underline hover:text-preem-teal-700">
+                      Se connecter
+                    </Link>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Phone Signup Form */}
+            {authMethod === 'phone' && (
+              <PhoneSignupForm onBack={handleAuthMethodBack} />
+            )}
+
+            {/* Email Signup Form */}
+            {authMethod === 'email' && (
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              {/* Back button */}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleAuthMethodBack}
+                className="min-h-[44px]"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Changer de méthode
+              </Button>
               {/* Company Name */}
               <div className="space-y-2">
                 <Label htmlFor="companyName" className="text-base">
@@ -376,17 +427,18 @@ export default function SignupPage() {
               <p className="text-sm text-center text-muted-foreground">
                 En créant un compte, vous acceptez nos conditions d&apos;utilisation et notre politique de confidentialité.
               </p>
-            </form>
 
-            {/* Login Link */}
-            <div className="mt-6 text-center border-t pt-6">
-              <p className="text-sm text-muted-foreground">
-                Vous avez déjà un compte ?{' '}
-                <Link href="/login" className="text-preem-teal font-medium hover:underline hover:text-preem-teal-700">
-                  Se connecter
-                </Link>
-              </p>
-            </div>
+              {/* Login Link */}
+              <div className="mt-6 text-center border-t pt-6">
+                <p className="text-sm text-muted-foreground">
+                  Vous avez déjà un compte ?{' '}
+                  <Link href="/login" className="text-preem-teal font-medium hover:underline hover:text-preem-teal-700">
+                    Se connecter
+                  </Link>
+                </p>
+              </div>
+            </form>
+            )}
           </CardContent>
         </Card>
 

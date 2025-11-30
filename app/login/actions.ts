@@ -12,6 +12,9 @@ import { createClient } from '@/lib/supabase/server';
 import { loginRateLimiter, getClientIp } from '@/lib/rate-limit';
 import { headers } from 'next/headers';
 import { z } from 'zod';
+import { db } from '@/lib/db';
+import { users } from '@/drizzle/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * Login form validation schema
@@ -107,8 +110,32 @@ export async function login(formData: FormData): Promise<LoginResult> {
     };
   }
 
+  // Get the authenticated user
+  const { data: { user: authUser } } = await supabase.auth.getUser();
+
   // Get safe redirect URL
   const safeRedirectUrl = getSafeRedirectUrl(redirectUrl);
+
+  // Check if user has MFA enabled in our database
+  if (authUser) {
+    const dbUser = await db.query.users.findFirst({
+      where: eq(users.id, authUser.id),
+      columns: {
+        mfaEnabled: true,
+        authMethod: true,
+      },
+    });
+
+    // If email user has MFA enabled, redirect to MFA challenge page
+    if (dbUser?.mfaEnabled && dbUser?.authMethod === 'email') {
+      console.log('[Login] User has MFA enabled, redirecting to MFA challenge');
+      revalidatePath('/', 'layout');
+      return {
+        success: true,
+        redirectUrl: `/auth/mfa?redirect=${encodeURIComponent(safeRedirectUrl)}`,
+      };
+    }
+  }
 
   // Revalidate the layout to update auth state
   revalidatePath('/', 'layout');

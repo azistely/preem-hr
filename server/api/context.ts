@@ -43,6 +43,9 @@ const DEV_MOCK_USER = {
   employeeId: null as string | null,
   companyName: 'Dev Company',
   onboardingComplete: true,
+  authMethod: 'email' as const,
+  mfaEnabled: true,
+  phoneVerified: true,
 };
 
 /**
@@ -100,6 +103,9 @@ async function getUserFromSession() {
           tenantId: true,
           activeTenantId: true,
           employeeId: true,
+          authMethod: true,
+          mfaEnabled: true,
+          phoneVerified: true,
         },
       }),
       // Fetch tenant info to avoid second query in auth.me
@@ -136,6 +142,10 @@ async function getUserFromSession() {
       // Include tenant info to avoid re-querying
       companyName: tenant?.name || '',
       onboardingComplete: (tenant?.settings as any)?.onboarding?.onboarding_complete || false,
+      // Auth method and MFA status for phone authentication flow
+      authMethod: user.authMethod || 'email',
+      mfaEnabled: user.mfaEnabled || false,
+      phoneVerified: user.phoneVerified || false,
     };
   } catch (error) {
     console.error('[Context] Error extracting user from session:', error);

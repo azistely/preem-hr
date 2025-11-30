@@ -89,6 +89,10 @@ export function createTestContext(user: typeof testHRManager | typeof testEmploy
       employeeId: user.id === testEmployee.id ? testEmployeeRecord.id : null,
       companyName: 'Test Company',
       onboardingComplete: true,
+      // Phone auth fields
+      authMethod: 'email' as const,
+      mfaEnabled: true,
+      phoneVerified: true,
     },
     hasRealSession: true, // Tests always use real authenticated sessions
   };

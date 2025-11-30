@@ -134,7 +134,7 @@ export const users: any = pgTable("users", {
 	tenantId: uuid("tenant_id"),
 	activeTenantId: uuid("active_tenant_id"),
 	employeeId: uuid("employee_id"),
-	email: text().notNull(),
+	email: text(), // Nullable for phone-only users
 	firstName: text("first_name").notNull(),
 	lastName: text("last_name").notNull(),
 	avatarUrl: text("avatar_url"),
@@ -144,6 +144,11 @@ export const users: any = pgTable("users", {
 	lastLoginAt: timestamp("last_login_at", { withTimezone: true, mode: 'string' }),
 	lastLoginIp: inet("last_login_ip"),
 	status: text().default('active').notNull(),
+	// Phone authentication fields
+	phone: text(),
+	phoneVerified: boolean("phone_verified").default(false),
+	authMethod: text("auth_method").default('email').notNull(),
+	mfaEnabled: boolean("mfa_enabled").default(false),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -171,6 +176,7 @@ export const users: any = pgTable("users", {
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(((auth.jwt() ->> 'role'::text) = 'super_admin'::text) OR (id = ((auth.jwt() ->> 'sub'::text))::uuid) OR (tenant_id IN ( SELECT ut.tenant_id FROM user_tenants ut WHERE (ut.user_id = ((auth.jwt() ->> 'sub'::text))::uuid))) OR (tenant_id = (current_setting('app.tenant_id'::text, true))::uuid))`, withCheck: sql`((auth.jwt() IS NULL) OR (tenant_id = ((auth.jwt() ->> 'tenant_id'::text))::uuid) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`  }),
 	check("valid_role", sql`role = ANY (ARRAY['super_admin'::text, 'tenant_admin'::text, 'hr_manager'::text, 'employee'::text])`),
 	check("valid_status", sql`status = ANY (ARRAY['active'::text, 'suspended'::text, 'archived'::text])`),
+	check("valid_auth_method", sql`auth_method = ANY (ARRAY['email'::text, 'phone'::text])`),
 ]);
 
 export const userTenants = pgTable("user_tenants", {

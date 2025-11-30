@@ -158,6 +158,15 @@ const PUBLIC_ROUTES = [
 ];
 
 /**
+ * Routes that accept partial authentication (AAL1)
+ * Users with AAL1 (first factor complete) can access these to complete MFA
+ */
+const AAL1_ALLOWED_ROUTES = [
+  '/auth/mfa',               // MFA challenge page (AAL1 -> AAL2)
+  '/onboarding/verify-phone', // Phone verification setup during onboarding
+];
+
+/**
  * Routes that don't require tenant selection
  * (authenticated users can access these without selecting a tenant)
  */
@@ -222,6 +231,18 @@ function isPublicRoute(pathname: string): boolean {
 }
 
 /**
+ * Check if route accepts AAL1 (partial authentication)
+ * These routes are for users who have completed first factor but not MFA
+ */
+function isAal1AllowedRoute(pathname: string): boolean {
+  // Exact match
+  if (AAL1_ALLOWED_ROUTES.includes(pathname)) return true;
+
+  // Prefix match
+  return AAL1_ALLOWED_ROUTES.some(route => pathname.startsWith(route + '/'));
+}
+
+/**
  * Check if route requires tenant selection
  */
 function requiresTenantSelection(pathname: string): boolean {
@@ -264,6 +285,15 @@ export async function middleware(request: NextRequest) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // ============================================================================
+  // AAL1 ROUTES (MFA Challenge, Phone Verification Setup)
+  // ============================================================================
+  // Allow authenticated users (at any AAL level) to access MFA-related routes
+  // These are needed for completing MFA setup or verification
+  if (isAal1AllowedRoute(pathname)) {
+    return supabaseResponse;
   }
 
   // Extract user role from JWT claims (app_metadata)

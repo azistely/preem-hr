@@ -3,6 +3,10 @@
  *
  * Client component for handling form state and validation
  * Uses Server Actions for authentication
+ *
+ * Now supports:
+ * - Email + Password login
+ * - Phone OTP login (passwordless)
  */
 
 'use client';
@@ -21,6 +25,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { toast } from 'sonner';
 import { PreemLogo } from '@/components/brand/preem-logo';
 import { login } from './actions';
+import { AuthMethodSelector, type AuthMethod } from '@/components/auth/auth-method-selector';
+import { PhoneLoginForm } from './phone-login-form';
 
 /**
  * Login form validation schema
@@ -58,9 +64,16 @@ export function LoginFormClient() {
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [authMethod, setAuthMethod] = useState<AuthMethod | null>(null);
 
   // Get safe redirect URL from query params (set by middleware)
   const redirectUrl = getSafeRedirectUrl(searchParams.get('redirect'));
+
+  // Handle auth method back navigation
+  const handleAuthMethodBack = () => {
+    setAuthMethod(null);
+    setError(null);
+  };
 
   const {
     register,
@@ -123,7 +136,46 @@ export function LoginFormClient() {
           </CardHeader>
 
           <CardContent>
+            {/* Auth Method Selection (Step 0) */}
+            {authMethod === null && (
+              <div className="space-y-6">
+                <AuthMethodSelector
+                  value={undefined}
+                  onChange={setAuthMethod}
+                  isSignup={false}
+                />
+
+                {/* Signup Link */}
+                <div className="mt-6 text-center border-t pt-6">
+                  <p className="text-sm text-muted-foreground">
+                    Vous n&apos;avez pas de compte ?{' '}
+                    <Link href="/signup" className="text-preem-teal font-medium hover:underline hover:text-preem-teal-700">
+                      Créer un compte gratuit
+                    </Link>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Phone Login Form */}
+            {authMethod === 'phone' && (
+              <PhoneLoginForm onBack={handleAuthMethodBack} redirectUrl={redirectUrl} />
+            )}
+
+            {/* Email Login Form */}
+            {authMethod === 'email' && (
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              {/* Back button */}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleAuthMethodBack}
+                className="min-h-[44px]"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Changer de méthode
+              </Button>
+
               {/* Email */}
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-base">
@@ -192,17 +244,18 @@ export function LoginFormClient() {
                   </>
                 )}
               </Button>
-            </form>
 
-            {/* Signup Link */}
-            <div className="mt-6 text-center border-t pt-6">
-              <p className="text-sm text-muted-foreground">
-                Vous n&apos;avez pas de compte ?{' '}
-                <Link href="/signup" className="text-preem-teal font-medium hover:underline hover:text-preem-teal-700">
-                  Créer un compte gratuit
-                </Link>
-              </p>
-            </div>
+              {/* Signup Link */}
+              <div className="mt-6 text-center border-t pt-6">
+                <p className="text-sm text-muted-foreground">
+                  Vous n&apos;avez pas de compte ?{' '}
+                  <Link href="/signup" className="text-preem-teal font-medium hover:underline hover:text-preem-teal-700">
+                    Créer un compte gratuit
+                  </Link>
+                </p>
+              </div>
+            </form>
+            )}
           </CardContent>
         </Card>
 
