@@ -297,7 +297,7 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
             <CardContent>
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-900 mb-3 font-medium">
-                  ✏️ Champs obligatoires (13 minimum):
+                  ✏️ Champs obligatoires:
                 </p>
                 <div className="grid grid-cols-2 gap-3 text-sm text-green-800">
                   <div className="flex items-center gap-2">
@@ -314,7 +314,7 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                    <span>Date d'embauche</span>
+                    <span>Date d&apos;embauche</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
@@ -330,15 +330,11 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                    <span>Nombre d'enfants</span>
+                    <span>Nombre d&apos;enfants</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                     <span>Catégorie</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                    <span>N° CNPS</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
@@ -348,9 +344,18 @@ export function SelfServiceImport({ dataSource, onComplete, onBack }: SelfServic
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                     <span>Indemnité de transport</span>
                   </div>
-                  <div className="text-muted-foreground text-xs italic col-span-2 mt-2">
-                    Les autres champs sont optionnels mais recommandés pour le registre du personnel
-                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-green-300">
+                  <p className="text-xs text-green-800 font-medium mb-2">
+                    📋 Selon le type de contrat:
+                  </p>
+                  <ul className="text-xs text-green-700 space-y-1">
+                    <li>• <strong>CDD/CDDTI:</strong> Date de fin de contrat obligatoire</li>
+                    <li>• <strong>CDDTI:</strong> Régime horaire obligatoire</li>
+                  </ul>
+                </div>
+                <div className="text-muted-foreground text-xs italic mt-3">
+                  N° CNPS et Sursalaire sont optionnels
                 </div>
               </div>
             </CardContent>

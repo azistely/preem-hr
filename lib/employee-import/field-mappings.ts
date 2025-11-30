@@ -42,13 +42,14 @@ export const SAGE_TO_PREEM_MAPPING: Record<string, string> = {
   'Nombre d\'enfants à charge': 'dependentChildren', // Alternative spelling
   'Nbr Part': 'fiscalParts',
 
-  // Employment (8 fields - added payment frequency)
+  // Employment (9 fields - added payment frequency and contract end date)
   'Date d\'embauche': 'hireDate',
   'Nature du contrat': 'contractType',
   'Fréquence de paiement': 'paymentFrequency',
   'Fonction': 'jobTitle',
   'Métier': 'profession',
   'Type Emploi': 'employmentClassification',
+  'Date de fin de contrat': 'contractEndDate', // Required for CDD/CDDTI
   'Date de sortie': 'terminationDate',
   'Nature de sortie': 'terminationReason',
 
@@ -92,7 +93,7 @@ export const SAGE_TO_PREEM_MAPPING: Record<string, string> = {
 };
 
 // ============================================================================
-// REQUIRED FIELDS (18 total - minimal template)
+// REQUIRED FIELDS (always required - minimal template)
 // ============================================================================
 
 export const REQUIRED_FIELDS = [
@@ -115,16 +116,33 @@ export const REQUIRED_FIELDS = [
   'Nature du contrat',
   'Fréquence de paiement',
   'Fonction',
-  'Régime horaire',
   'Site de travail',
 
   // 4. Compensation
   'Catégorie',
-  'N° CNPS',
   'Salaire Catégoriel',
-  'Sursalaire',
   'Indemnité de transport',
 ] as const;
+
+// ============================================================================
+// CONDITIONALLY REQUIRED FIELDS (based on contract type)
+// ============================================================================
+
+/**
+ * Fields required only for specific contract types
+ * - Régime horaire: Required only for CDDTI (task-based contracts)
+ * - Date de fin de contrat: Required for CDD and CDDTI
+ */
+export const CONDITIONAL_REQUIRED_FIELDS: Record<string, { requiredFor: string[]; fieldName: string }> = {
+  'Régime horaire': {
+    requiredFor: ['CDDTI'],
+    fieldName: 'weeklyHoursRegime',
+  },
+  'Date de fin de contrat': {
+    requiredFor: ['CDD', 'CDDTI'],
+    fieldName: 'contractEndDate',
+  },
+};
 
 // ============================================================================
 // FIELD VALIDATORS
@@ -211,9 +229,7 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
   },
 
   'N° CNPS': (val: any) => {
-    if (!val) {
-      return { valid: false, message: 'N° CNPS requis' };
-    }
+    if (!val) return { valid: true }; // Optional field
     const cleaned = String(val).replace(/[\s-]/g, '');
     if (!/^\d{7,10}$/.test(cleaned)) {
       return { valid: false, message: 'N° CNPS doit contenir entre 7 et 10 chiffres' };
@@ -297,13 +313,16 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
     }
     const normalized = val.trim().toUpperCase();
     const validValues = [
-      'MONTHLY', 'MENSUEL',
-      'WEEKLY', 'HEBDOMADAIRE', 'HEBDO',
-      'BIWEEKLY', 'QUINZAINE', 'BIHEBDO',
-      'DAILY', 'JOURNALIER',
+      // English
+      'MONTHLY', 'WEEKLY', 'BIWEEKLY', 'DAILY',
+      // French (various spellings)
+      'MENSUEL', 'MENSUELLE',
+      'HEBDOMADAIRE', 'HEBDO',
+      'BIMENSUEL', 'BIMENSUELLE', 'QUINZAINE', 'BIHEBDO',
+      'JOURNALIER', 'JOURNALIÈRE', 'JOURNALIERE',
     ];
     if (!validValues.includes(normalized)) {
-      return { valid: false, message: 'Fréquence invalide. Écrivez: MENSUEL, HEBDOMADAIRE, QUINZAINE, ou JOURNALIER (ou MONTHLY, WEEKLY, BIWEEKLY, DAILY en anglais)' };
+      return { valid: false, message: 'Fréquence invalide. Écrivez: Mensuelle, Hebdomadaire, Bimensuelle, ou Journalière' };
     }
     return { valid: true };
   },
@@ -357,9 +376,9 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
   },
 
   'Régime horaire': (val: any) => {
-    if (!val) {
-      return { valid: false, message: 'Régime horaire requis' };
-    }
+    // Note: This field is conditionally required for CDDTI contracts only
+    // The conditional validation is handled separately in validateConditionalFields()
+    if (!val) return { valid: true }; // Allow empty - conditional check happens elsewhere
     const num = Number(String(val).replace(/[\s,h]/gi, ''));
     if (isNaN(num) || num < 1 || num > 80) {
       return { valid: false, message: 'Régime horaire doit être un nombre entre 1 et 80 heures par semaine' };
@@ -382,8 +401,9 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
   },
 
   'Sursalaire': (val: any) => {
+    // Optional field - if empty, defaults to 0
     if (val === null || val === undefined || val === '') {
-      return { valid: false, message: 'Sursalaire requis (0 si aucun)' };
+      return { valid: true };
     }
     const num = Number(String(val).replace(/[\s,]/g, ''));
     if (isNaN(num) || num < 0) {
@@ -391,6 +411,21 @@ export const FIELD_VALIDATORS: Record<string, (value: any) => ValidationResult> 
     }
     if (num > 50000000) {
       return { valid: false, message: 'Sursalaire semble trop élevé (supérieur à 50 millions FCFA). Vérifiez le montant.' };
+    }
+    return { valid: true };
+  },
+
+  'Date de fin de contrat': (val: any) => {
+    // Note: This field is conditionally required for CDD/CDDTI contracts
+    // The conditional validation is handled separately in validateConditionalFields()
+    if (!val) return { valid: true }; // Allow empty - conditional check happens elsewhere
+    const parsed = parseDate(val);
+    if (!parsed) {
+      return { valid: false, message: 'Format de date invalide. Écrivez comme ceci: JJ/MM/AAAA (exemple: 31/12/2025)' };
+    }
+    const now = new Date();
+    if (parsed < now) {
+      return { valid: false, message: 'Date de fin de contrat doit être dans le futur' };
     }
     return { valid: true };
   },
@@ -500,16 +535,23 @@ export const FIELD_TRANSFORMERS: Record<string, (value: any) => any> = {
     if (!val) return 'MONTHLY'; // Default to monthly
     const normalized = val.trim().toUpperCase();
     const map: Record<string, string> = {
+      // English values
       'MONTHLY': 'MONTHLY',
-      'MENSUEL': 'MONTHLY',
       'WEEKLY': 'WEEKLY',
+      'BIWEEKLY': 'BIWEEKLY',
+      'DAILY': 'DAILY',
+      // French values (with various spellings)
+      'MENSUEL': 'MONTHLY',
+      'MENSUELLE': 'MONTHLY',
       'HEBDOMADAIRE': 'WEEKLY',
       'HEBDO': 'WEEKLY',
-      'BIWEEKLY': 'BIWEEKLY',
+      'BIMENSUEL': 'BIWEEKLY',
+      'BIMENSUELLE': 'BIWEEKLY',
       'QUINZAINE': 'BIWEEKLY',
       'BIHEBDO': 'BIWEEKLY',
-      'DAILY': 'DAILY',
       'JOURNALIER': 'DAILY',
+      'JOURNALIÈRE': 'DAILY',
+      'JOURNALIERE': 'DAILY',
     };
     return map[normalized] || 'MONTHLY';
   },
@@ -525,6 +567,13 @@ export const FIELD_TRANSFORMERS: Record<string, (value: any) => any> = {
   'Date de sortie': (val: any) => {
     if (!val) return null;
     return parseDate(val);
+  },
+
+  'Date de fin de contrat': (val: any) => {
+    if (!val) return null;
+    const parsed = parseDate(val);
+    // Return ISO date string (YYYY-MM-DD) for database compatibility
+    return parsed ? parsed.toISOString().split('T')[0] : null;
   },
 
   'Nombre d\'enfants à charge': (val: any) => {
@@ -648,13 +697,16 @@ export function normalizeFieldName(name: string): string {
  * Find database field name from SAGE header (fuzzy matching)
  */
 export function findDatabaseField(sageHeader: string): string | null {
+  // Strip asterisks from template headers (e.g., "Fréquence de paiement*" → "Fréquence de paiement")
+  const cleanHeader = sageHeader.replace(/\*+$/, '').trim();
+
   // Direct match first
-  if (SAGE_TO_PREEM_MAPPING[sageHeader]) {
-    return SAGE_TO_PREEM_MAPPING[sageHeader];
+  if (SAGE_TO_PREEM_MAPPING[cleanHeader]) {
+    return SAGE_TO_PREEM_MAPPING[cleanHeader];
   }
 
   // Fuzzy match by normalized name
-  const normalized = normalizeFieldName(sageHeader);
+  const normalized = normalizeFieldName(cleanHeader);
   for (const [sage, preem] of Object.entries(SAGE_TO_PREEM_MAPPING)) {
     if (normalizeFieldName(sage) === normalized) {
       return preem;
@@ -665,10 +717,19 @@ export function findDatabaseField(sageHeader: string): string | null {
 }
 
 /**
+ * Strip asterisks from field names (used for required field markers in templates)
+ */
+function stripFieldMarkers(fieldName: string): string {
+  return fieldName.replace(/\*+$/, '').trim();
+}
+
+/**
  * Validate a single field value
  */
 export function validateField(fieldName: string, value: any): ValidationResult {
-  const validator = FIELD_VALIDATORS[fieldName];
+  // Strip asterisks from template headers (e.g., "Fréquence de paiement*" → "Fréquence de paiement")
+  const cleanFieldName = stripFieldMarkers(fieldName);
+  const validator = FIELD_VALIDATORS[cleanFieldName];
   if (validator) {
     return validator(value);
   }
@@ -679,7 +740,9 @@ export function validateField(fieldName: string, value: any): ValidationResult {
  * Transform a single field value
  */
 export function transformField(fieldName: string, value: any): any {
-  const transformer = FIELD_TRANSFORMERS[fieldName];
+  // Strip asterisks from template headers (e.g., "Fréquence de paiement*" → "Fréquence de paiement")
+  const cleanFieldName = stripFieldMarkers(fieldName);
+  const transformer = FIELD_TRANSFORMERS[cleanFieldName];
   if (transformer) {
     return transformer(value);
   }
@@ -687,8 +750,69 @@ export function transformField(fieldName: string, value: any): any {
 }
 
 /**
- * Check if a field is required
+ * Check if a field is always required (not conditional)
  */
 export function isRequiredField(fieldName: string): boolean {
   return REQUIRED_FIELDS.includes(fieldName as any);
+}
+
+/**
+ * Check if a field is conditionally required based on contract type
+ */
+export function isConditionallyRequired(fieldName: string, contractType: string | null | undefined): boolean {
+  const condition = CONDITIONAL_REQUIRED_FIELDS[fieldName];
+  if (!condition) return false;
+
+  if (!contractType) return false;
+
+  // Normalize contract type (handle French variations)
+  const normalized = contractType.trim().toUpperCase();
+  const normalizedTypes: Record<string, string> = {
+    'CDI': 'CDI',
+    'PERMANENT': 'CDI',
+    'CDD': 'CDD',
+    'FIXE': 'CDD',
+    'CDDTI': 'CDDTI',
+    'TACHE': 'CDDTI',
+    'TÂCHE': 'CDDTI',
+    'INTERIM': 'INTERIM',
+    'INTÉRIM': 'INTERIM',
+    'TEMPORAIRE': 'INTERIM',
+    'STAGE': 'STAGE',
+    'STAGIAIRE': 'STAGE',
+  };
+
+  const resolvedType = normalizedTypes[normalized] || normalized;
+  return condition.requiredFor.includes(resolvedType);
+}
+
+/**
+ * Validate conditional fields for a row
+ * Returns validation errors for fields that are conditionally required but missing
+ */
+export function validateConditionalFields(row: Record<string, any>): ValidationResult[] {
+  const errors: ValidationResult[] = [];
+
+  // Get contract type from row (check various possible field names)
+  const contractType = row['Nature du contrat'] || row['contractType'];
+
+  if (!contractType) return errors; // Can't validate without contract type
+
+  // Check each conditionally required field
+  for (const [fieldName, condition] of Object.entries(CONDITIONAL_REQUIRED_FIELDS)) {
+    if (isConditionallyRequired(fieldName, contractType)) {
+      const value = row[fieldName];
+
+      if (!value || (typeof value === 'string' && value.trim() === '')) {
+        // Determine which contract types require this field for the error message
+        const requiredForText = condition.requiredFor.join('/');
+        errors.push({
+          valid: false,
+          message: `${fieldName} est requis pour les contrats ${requiredForText}`,
+        });
+      }
+    }
+  }
+
+  return errors;
 }

@@ -37,22 +37,23 @@ const COLUMNS = [
   { header: 'Nombre d\'enfants à charge*', hint: 'Ex: 2', example1: '3', example2: '0', example3: '2' },
   { header: 'Nbr Part', hint: 'Auto-calculé si vide', example1: '4.5', example2: '1', example3: '3.5' },
 
-  // Section 5: Emploi (8 fields - added payment frequency)
+  // Section 5: Emploi (9 fields - added payment frequency and contract end date)
   { header: 'Date d\'embauche*', hint: 'JJ/MM/AAAA', example1: '01/01/2020', example2: '15/06/2023', example3: '01/09/2019' },
   { header: 'Nature du contrat*', hint: 'CDI/CDD/CDDTI/INTERIM/STAGE', example1: 'CDI', example2: 'CDD', example3: 'CDI' },
-  { header: 'Fréquence de paiement*', hint: 'MONTHLY/WEEKLY/BIWEEKLY/DAILY', example1: 'MONTHLY', example2: 'MONTHLY', example3: 'MONTHLY' },
+  { header: 'Date de fin de contrat**', hint: 'JJ/MM/AAAA - Requis pour CDD/CDDTI', example1: '', example2: '31/12/2024', example3: '' },
+  { header: 'Fréquence de paiement*', hint: 'Mensuelle/Hebdomadaire/Bimensuelle/Journalière', example1: 'Mensuelle', example2: 'Mensuelle', example3: 'Mensuelle' },
   { header: 'Fonction*', hint: 'Ex: Responsable RH', example1: 'Directeur Général', example2: 'Assistante Administrative', example3: 'Directeur Financier' },
   { header: 'Métier', hint: 'Ex: Ressources Humaines', example1: 'Direction Générale', example2: 'Administration', example3: 'Finance et Comptabilité' },
   { header: 'Type Emploi', hint: 'Temps plein/Temps partiel/Occasionnel', example1: 'Temps plein', example2: 'Temps plein', example3: 'Temps plein' },
-  { header: 'Date de sortie', hint: 'JJ/MM/AAAA - si applicable', example1: '', example2: '31/12/2024', example3: '' },
-  { header: 'Nature de sortie', hint: 'Démission/Licenciement/Fin CDD/Retraite', example1: '', example2: 'Fin CDD', example3: '' },
+  { header: 'Date de sortie', hint: 'JJ/MM/AAAA - si applicable', example1: '', example2: '', example3: '' },
+  { header: 'Nature de sortie', hint: 'Démission/Licenciement/Fin CDD/Retraite', example1: '', example2: '', example3: '' },
 
   // Section 6: Classification (7 fields)
   { header: 'Catégorie*', hint: 'Ex: C, M1, 1A, 2B - voir barème CGECI', example1: 'C', example2: '2A', example3: 'C' },
   { header: 'Qualification', hint: 'Ex: Cadre supérieur, Agent de maîtrise', example1: 'Cadre supérieur', example2: 'Employé qualifié', example3: 'Cadre supérieur' },
   { header: 'Salaire Catégoriel*', hint: 'Ex: 150000 - REQUIS pour la paie', example1: '500000', example2: '120000', example3: '600000' },
-  { header: 'Sursalaire*', hint: 'Ex: 50000 (0 si aucun)', example1: '200000', example2: '30000', example3: '300000' },
-  { header: 'Régime horaire*', hint: 'Ex: 40 (heures/semaine). Valeurs courantes: 35, 39, 40, 45, 48', example1: '40', example2: '40', example3: '40' },
+  { header: 'Sursalaire', hint: 'Ex: 50000 (0 si aucun) - Optionnel', example1: '200000', example2: '30000', example3: '300000' },
+  { header: 'Régime horaire**', hint: 'Ex: 40 (heures/semaine) - Requis pour CDDTI', example1: '40', example2: '40', example3: '40' },
   { header: 'Indemnité de transport*', hint: 'Ex: 35000 - Minimum: Abidjan 30k, Bouaké 24k, Autres 20k', example1: '30000', example2: '30000', example3: '40000' },
   { header: 'Regime salaire', hint: 'Mensuel/Journalier/Horaire', example1: 'Mensuel', example2: 'Mensuel', example3: 'Mensuel' },
 
@@ -66,7 +67,7 @@ const COLUMNS = [
   { header: 'Manager', hint: 'Matricule du manager, Ex: EMP000', example1: '', example2: 'EMP001', example3: 'EMP001' },
 
   // Section 8: Protection sociale (4 fields)
-  { header: 'N° CNPS*', hint: 'Ex: 1234567', example1: '1234567', example2: '2345678', example3: '3456789' },
+  { header: 'N° CNPS', hint: 'Ex: 1234567 - Optionnel', example1: '1234567', example2: '2345678', example3: '3456789' },
   { header: 'N° CMU', hint: 'Ex: CMU123456 - Requis si Couverture = CMU', example1: 'CMU123456', example2: 'CMU234567', example3: 'CMU345678' },
   { header: 'Couverture Maladie', hint: 'Aucune/CMU/Assurance privée/[Nom assureur]', example1: 'NSIA Assurances', example2: 'CMU', example3: 'Assurance privée' },
   { header: 'Date début couverture', hint: 'JJ/MM/AAAA - Défaut: date d\'embauche', example1: '01/01/2020', example2: '15/06/2023', example3: '01/09/2019' },
@@ -79,7 +80,9 @@ const COLUMNS = [
   { header: 'Solde congés initial', hint: 'Ex: 2.5 - jours acquis à l\'embauche', example1: '0', example2: '0', example3: '5' },
 ];
 
-// Minimal columns (18 required fields only)
+// Minimal columns - includes required (*) and conditionally required (**)
+// * = always required
+// ** = conditionally required (based on contract type)
 const MINIMAL_COLUMNS = COLUMNS.filter(col => col.header.includes('*'));
 
 // Instructions sheet content
@@ -96,12 +99,25 @@ const INSTRUCTIONS = {
         'Nombre d\'enfants à charge - Pour les déductions fiscales',
         'Date d\'embauche',
         'Nature du contrat - CDI, CDD, CDDTI, INTERIM, ou STAGE',
-        'Fréquence de paiement - MONTHLY, WEEKLY, BIWEEKLY, ou DAILY',
+        'Fréquence de paiement - Mensuelle, Hebdomadaire, Bimensuelle, ou Journalière',
         'Fonction - Poste occupé',
         'Catégorie - Code CGECI (C, M1, 1A, 2B, etc.)',
-        'N° CNPS - Numéro de sécurité sociale',
         'Salaire Catégoriel - Salaire de base REQUIS pour la paie',
         'Indemnité de transport - Minimum 20k (autres), 24k (Bouaké), 30k (Abidjan)',
+      ],
+    },
+    {
+      title: '📋 Champs conditionnels (marqués avec **)',
+      items: [
+        'Date de fin de contrat** - REQUIS pour les contrats CDD et CDDTI',
+        'Régime horaire** - REQUIS pour les contrats CDDTI (tâche définie)',
+      ],
+    },
+    {
+      title: '📝 Champs optionnels',
+      items: [
+        'N° CNPS - Numéro de sécurité sociale (peut être ajouté plus tard)',
+        'Sursalaire - Prime salariale (0 si aucun)',
       ],
     },
     {

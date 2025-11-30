@@ -15,6 +15,7 @@ import {
   validateField,
   transformField,
   isRequiredField,
+  validateConditionalFields,
 } from './field-mappings';
 
 export type ParsedRow = Record<string, any>;
@@ -291,6 +292,27 @@ function parseDataRows(
           });
         }
       }
+    }
+
+    // Build a row with original header names for conditional validation
+    const rowWithHeaders: Record<string, any> = {};
+    for (let j = 0; j < headers.length; j++) {
+      const header = headers[j];
+      const value = rowData[j];
+      if (header) {
+        rowWithHeaders[header] = value;
+      }
+    }
+
+    // Check conditionally required fields (e.g., Régime horaire for CDDTI, Date de fin de contrat for CDD/CDDTI)
+    const conditionalErrors = validateConditionalFields(rowWithHeaders);
+    for (const condError of conditionalErrors) {
+      rowErrors.push({
+        row: rowIndex,
+        field: condError.message?.split(' est requis')[0], // Extract field name from message
+        message: condError.message || 'Champ conditionnel requis manquant',
+        severity: 'error',
+      });
     }
 
     // Warnings removed - only show critical validation errors

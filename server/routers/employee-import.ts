@@ -623,10 +623,12 @@ export const employeeImportRouter = createTRPCRouter({
               createdBy: userId,
             };
 
-            // Set end date for fixed-term contracts
-            if (['CDD', 'INTERIM', 'STAGE'].includes(contractType)) {
-              if (row.terminationDate) {
-                contractData.endDate = parseDateSafelyOrNull(row.terminationDate, 'terminationDate (contract end)');
+            // Set end date for fixed-term contracts (CDD, CDDTI, INTERIM, STAGE)
+            if (['CDD', 'CDDTI', 'INTERIM', 'STAGE'].includes(contractType)) {
+              // First check contractEndDate (from Excel 'Date de fin de contrat'), then fallback to terminationDate
+              const endDateSource = row.contractEndDate || row.terminationDate;
+              if (endDateSource) {
+                contractData.endDate = parseDateSafelyOrNull(endDateSource, 'contractEndDate (contract end)');
               } else {
                 // Default to 12 months from hire date if not provided
                 const hireDate = new Date(parseDateSafely(row.hireDate, 'hireDate'));
@@ -910,11 +912,14 @@ export const employeeImportRouter = createTRPCRouter({
           throw error;
         }
 
-        console.error('[IMPORT] Unexpected error:', error);
-        console.error('[IMPORT] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorStack = error instanceof Error ? error.stack : 'No stack trace';
+        console.error('[IMPORT] Unexpected error:', errorMessage);
+        console.error('[IMPORT] Error details:', error);
+        console.error('[IMPORT] Error stack:', errorStack);
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'Erreur lors de l\'importation des employés',
+          message: `Erreur lors de l'importation: ${errorMessage}`,
         });
       }
     }),
