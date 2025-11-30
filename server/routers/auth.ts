@@ -734,12 +734,29 @@ export const authRouter = router({
         console.log('[Auth] Phone OTP verified, Supabase user:', authData.user.id);
 
         // 2. Check if user already exists in our database (login case)
-        const existingUser = await db.query.users.findFirst({
+        // Check by BOTH Supabase user ID AND phone number to handle cases where
+        // Supabase creates a new auth user but the phone is already registered
+        const existingUserById = await db.query.users.findFirst({
           where: eq(users.id, authData.user.id),
         });
 
+        const existingUserByPhone = await db.query.users.findFirst({
+          where: eq(users.phone, phone),
+        });
+
+        const existingUser = existingUserById || existingUserByPhone;
+
         if (existingUser) {
-          console.log('[Auth] User already exists, returning login success with session');
+          console.log('[Auth] User already exists (by ID or phone), returning login success with session');
+
+          // If found by phone but different Supabase ID, we need to handle this edge case
+          // The user already has an account - they should use login instead
+          if (existingUserByPhone && !existingUserById) {
+            console.log('[Auth] Phone number already registered to different user:', existingUserByPhone.id);
+            // Still return success - the OTP was valid, they are who they say they are
+            // Just treat it as a login to their existing account
+          }
+
           return {
             success: true,
             isNewUser: false,
