@@ -336,11 +336,13 @@ export const authRouter = router({
           throw error;
         }
 
-        // Provide more detailed error for debugging
+        // Log for debugging but return user-friendly message
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('[Auth:signup] Internal error:', errorMessage);
+
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Erreur lors de l'inscription: ${errorMessage}`,
+          message: 'Une erreur est survenue lors de l\'inscription. Veuillez réessayer.',
         });
       }
     }),
@@ -539,9 +541,17 @@ export const authRouter = router({
             });
           }
 
+          if (error.message.includes('invalid') || error.message.includes('Invalid phone')) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Numéro de téléphone invalide. Vérifiez le format.',
+            });
+          }
+
+          // Generic user-friendly error (don't expose internal details)
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Erreur lors de l'envoi du SMS: ${error.message}`,
+            message: 'Impossible d\'envoyer le SMS. Veuillez réessayer.',
           });
         }
 
@@ -617,9 +627,10 @@ export const authRouter = router({
             });
           }
 
+          // Generic user-friendly error (don't expose internal details)
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Erreur de vérification: ${error.message}`,
+            message: 'Erreur lors de la vérification. Veuillez réessayer.',
           });
         }
 
@@ -893,9 +904,41 @@ export const authRouter = router({
         console.error('[Auth] Phone signup error:', error);
         if (error instanceof TRPCError) throw error;
 
+        // Parse database errors and return user-friendly messages
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+        // Check for common database constraint violations
+        if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
+          if (errorMessage.includes('phone')) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Ce numéro de téléphone est déjà utilisé. Essayez de vous connecter.',
+            });
+          }
+          if (errorMessage.includes('email')) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Cette adresse email est déjà utilisée.',
+            });
+          }
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Un compte existe déjà avec ces informations. Essayez de vous connecter.',
+          });
+        }
+
+        // Check for foreign key violations (tenant not found, etc.)
+        if (errorMessage.includes('foreign key') || errorMessage.includes('violates')) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Erreur lors de la création du compte. Veuillez réessayer.',
+          });
+        }
+
+        // Generic user-friendly error
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Erreur lors de l'inscription: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          message: 'Une erreur est survenue lors de l\'inscription. Veuillez réessayer.',
         });
       }
     }),
@@ -1146,9 +1189,17 @@ export const authRouter = router({
             });
           }
 
+          if (error.message.includes('invalid') || error.message.includes('Invalid phone')) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Numéro de téléphone invalide. Vérifiez le format.',
+            });
+          }
+
+          // Generic user-friendly error
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Erreur lors de l'envoi du SMS: ${error.message}`,
+            message: 'Impossible d\'envoyer le SMS. Veuillez réessayer.',
           });
         }
 
@@ -1212,9 +1263,10 @@ export const authRouter = router({
             });
           }
 
+          // Generic user-friendly error
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Erreur de vérification: ${error.message}`,
+            message: 'Erreur lors de la vérification. Veuillez réessayer.',
           });
         }
 
