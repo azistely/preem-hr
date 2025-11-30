@@ -10,7 +10,7 @@ export const users = pgTable('users', {
   employeeId: uuid('employee_id'), // References employees(id), added later via ALTER
 
   // User info
-  email: text('email').notNull().unique(),
+  email: text('email').unique(), // Nullable for phone-only users
   firstName: text('first_name').notNull(),
   lastName: text('last_name').notNull(),
   avatarUrl: text('avatar_url'),
