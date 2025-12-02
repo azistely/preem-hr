@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Clock, Calendar } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { api } from "@/server/api/client";
 import { QuickActionCard } from "@/components/dashboard/quick-action-card";
 import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
@@ -10,6 +11,7 @@ import { LeaveBalance } from "@/components/dashboard/employee/leave-balance";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function EmployeeDashboardPage() {
+  const router = useRouter();
   const { data: dashboardData, isLoading } = api.dashboard.getEmployeeDashboard.useQuery();
 
   if (isLoading) {
@@ -58,6 +60,7 @@ export default function EmployeeDashboardPage() {
         <SalaryOverview
           netSalary={typeof salary.netSalary === 'string' ? parseFloat(salary.netSalary) : salary.netSalary}
           month={new Date(salary.month)}
+          onViewPayslip={() => router.push('/employee/payslips')}
         />
 
         {/* Quick Actions */}
@@ -67,23 +70,35 @@ export default function EmployeeDashboardPage() {
             icon={Clock}
             title="Pointer"
             description="Entrée 08:15"
-            onClick={() => {/* TODO: Navigate to time tracking */}}
+            onClick={() => router.push('/time-tracking')}
           />
           <QuickActionCard
             icon={Calendar}
             title="Demander Congé"
             description={`Solde: ${leaveBalance.remaining} jours`}
-            onClick={() => {/* TODO: Navigate to leave request */}}
+            onClick={() => router.push('/time-off')}
           />
         </div>
 
         {/* Collapsible Sections */}
-        <CollapsibleSection title="Mes Bulletins" count={recentPayslips.length}>
+        <CollapsibleSection title="Mes Bulletins" count={recentPayslips.length} defaultOpen={true}>
           <div className="space-y-2">
             {recentPayslips.map((payslip: any) => (
               <div
                 key={payslip.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                className="flex items-center justify-between p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push('/employee/payslips');
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    router.push('/employee/payslips');
+                  }
+                }}
               >
                 <div>
                   <p className="font-medium">
@@ -95,6 +110,18 @@ export default function EmployeeDashboardPage() {
                 </div>
               </div>
             ))}
+            {recentPayslips.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">Aucun bulletin disponible</p>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push('/employee/payslips');
+              }}
+              className="w-full text-sm text-primary hover:underline py-2"
+            >
+              Voir tous mes bulletins →
+            </button>
           </div>
         </CollapsibleSection>
 
@@ -116,6 +143,7 @@ export default function EmployeeDashboardPage() {
             netSalary={typeof salary.netSalary === 'string' ? parseFloat(salary.netSalary) : salary.netSalary}
             month={new Date(salary.month)}
             showTrend={true}
+            onViewPayslip={() => router.push('/employee/payslips')}
           />
 
           {/* Quick Actions - Side by side */}
@@ -124,13 +152,13 @@ export default function EmployeeDashboardPage() {
               icon={Clock}
               title="Pointer"
               description="Enregistrer votre présence"
-              onClick={() => {/* TODO: Navigate to time tracking */}}
+              onClick={() => router.push('/time-tracking')}
             />
             <QuickActionCard
               icon={Calendar}
               title="Demander Congé"
               description={`${leaveBalance.remaining} jours disponibles`}
-              onClick={() => {/* TODO: Navigate to leave request */}}
+              onClick={() => router.push('/time-off')}
             />
           </div>
 
@@ -141,7 +169,19 @@ export default function EmployeeDashboardPage() {
               {recentPayslips.map((payslip: any) => (
                 <div
                   key={payslip.id}
-                  className="flex items-center justify-between p-4 rounded-lg border bg-card"
+                  className="flex items-center justify-between p-4 rounded-lg border bg-card cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push('/employee/payslips');
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push('/employee/payslips');
+                    }
+                  }}
                 >
                   <div>
                     <p className="font-medium">
@@ -158,6 +198,15 @@ export default function EmployeeDashboardPage() {
                   </div>
                 </div>
               ))}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push('/employee/payslips');
+                }}
+                className="w-full text-sm text-primary hover:underline py-2"
+              >
+                Voir tous mes bulletins →
+              </button>
             </div>
           </div>
         </div>

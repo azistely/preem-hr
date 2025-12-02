@@ -174,9 +174,9 @@ export default function EmployeeDocumentsPage() {
                         <div className="flex items-center gap-4 flex-1 min-w-0">
                           <FileText className="h-8 w-8 text-primary flex-shrink-0" />
                           <div className="min-w-0 flex-1">
-                            <p className="font-medium">{getDocumentLabel(doc.documentType)}</p>
+                            <p className="font-medium">{getDocumentLabel(doc.documentType || doc.documentCategory)}</p>
                             <p className="text-sm text-muted-foreground">
-                              {format(new Date(doc.generationDate), 'dd MMMM yyyy', { locale: fr })}
+                              {(doc.generationDate || doc.createdAt) && format(new Date(doc.generationDate || doc.createdAt), 'dd MMMM yyyy', { locale: fr })}
                             </p>
                             {doc.metadata && (doc.metadata as any).reason && (
                               <p className="text-xs text-muted-foreground mt-1">

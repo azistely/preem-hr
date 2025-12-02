@@ -55,6 +55,45 @@ export const passwordResetRateLimiter = redis
   : null;
 
 /**
+ * Rate limiter for invitation creation
+ * 10 invitations per hour per tenant
+ */
+export const inviteCreateRateLimiter = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, '1 h'),
+      analytics: true,
+      prefix: 'ratelimit:invite:create',
+    })
+  : null;
+
+/**
+ * Rate limiter for invitation acceptance attempts
+ * 5 attempts per 15 minutes per IP (prevent brute force)
+ */
+export const inviteAcceptRateLimiter = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(5, '15 m'),
+      analytics: true,
+      prefix: 'ratelimit:invite:accept',
+    })
+  : null;
+
+/**
+ * Rate limiter for invitation email resends
+ * 3 resends per invitation per day
+ */
+export const inviteResendRateLimiter = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(3, '24 h'),
+      analytics: true,
+      prefix: 'ratelimit:invite:resend',
+    })
+  : null;
+
+/**
  * Get client IP from headers (works with Vercel, Cloudflare, etc.)
  */
 export function getClientIp(headers: Headers): string {

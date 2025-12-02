@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, pgPolicy } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, pgPolicy, boolean, unique } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { tenantUser } from './roles';
@@ -11,6 +11,10 @@ export const users = pgTable('users', {
 
   // User info
   email: text('email').unique(), // Nullable for phone-only users
+  phone: text('phone'), // Phone number in E.164 format (e.g., +2250701234567)
+  phoneVerified: boolean('phone_verified').notNull().default(false), // Whether phone is verified via OTP
+  authMethod: text('auth_method').notNull().default('email'), // 'email' or 'phone'
+  mfaEnabled: boolean('mfa_enabled').notNull().default(false), // Whether MFA is enabled
   firstName: text('first_name').notNull(),
   lastName: text('last_name').notNull(),
   avatarUrl: text('avatar_url'),
@@ -54,7 +58,10 @@ export const userTenants = pgTable('user_tenants', {
   role: text('role').notNull().default('hr_manager'), // Role specific to this tenant
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+}, (table) => [
+  // Ensure each user can only belong to a tenant once
+  unique('unique_user_tenant').on(table.userId, table.tenantId),
+]);
 
 /**
  * Audit Log: User Tenant Switches

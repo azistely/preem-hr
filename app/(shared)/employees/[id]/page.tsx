@@ -63,6 +63,8 @@ import { ACPPaymentSection } from '@/features/employees/components/acp-payment-s
 import { ACPPreviewDialog } from '@/features/employees/components/acp-preview-dialog';
 import { ACPPaymentHistoryTimeline } from '@/features/leave/components/acp-payment-history-timeline';
 import { UploadButton, DocumentList } from '@/components/documents';
+import { UserPlus } from 'lucide-react';
+import { InviteWizard } from '@/app/(admin)/admin/settings/team/invite-wizard';
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -76,6 +78,7 @@ export default function EmployeeDetailPage() {
   const [showSalaryWizard, setShowSalaryWizard] = useState(false);
   const [showTimeOffRequestForm, setShowTimeOffRequestForm] = useState(false);
   const [showACPPreviewDialog, setShowACPPreviewDialog] = useState(false);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
 
   const { data: employee, isLoading, error } = useEmployee(employeeId);
   const reactivateEmployee = useReactivateEmployee();
@@ -236,6 +239,16 @@ export default function EmployeeDetailPage() {
                   Modifier
                 </Button>
               </Link>
+
+              {/* Give User Access Button */}
+              <Button
+                variant="outline"
+                className="min-h-[44px]"
+                onClick={() => setShowInviteDialog(true)}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Donner accès
+              </Button>
 
               {(employee as any).status === 'active' && (
                 <>
@@ -1127,6 +1140,28 @@ export default function EmployeeDetailPage() {
         calculation={acpCalculation || null}
         isLoading={isLoadingACP}
       />
+
+      {/* User Invite Dialog */}
+      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogTitle>Donner accès au portail</DialogTitle>
+          <p className="text-sm text-muted-foreground mb-4">
+            Invitez {(employee as any)?.firstName} {(employee as any)?.lastName} à créer un compte utilisateur pour accéder au portail Preem HR.
+          </p>
+          <InviteWizard
+            onSuccess={() => {
+              setShowInviteDialog(false);
+              toast({
+                title: 'Invitation envoyée',
+                description: `L'invitation a été envoyée à ${(employee as any)?.email}`,
+              });
+            }}
+            onCancel={() => setShowInviteDialog(false)}
+            prefilledEmail={(employee as any)?.email || ''}
+            prefilledEmployeeId={employeeId}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

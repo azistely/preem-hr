@@ -72,6 +72,7 @@ const listAdvancesSchema = z.object({
       z.enum(['pending', 'approved', 'disbursed', 'active', 'completed', 'rejected', 'cancelled']),
       z.array(z.enum(['pending', 'approved', 'disbursed', 'active', 'completed', 'rejected', 'cancelled'])),
     ])
+    .nullable()
     .optional(),
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
@@ -108,7 +109,7 @@ export const salaryAdvancesRouter = createTRPCRouter({
 
       const result = await listAdvances(tenantId, {
         employeeId: input.employeeId,
-        status: input.status,
+        status: input.status ?? undefined,
         dateFrom: input.dateFrom,
         dateTo: input.dateTo,
         limit: input.limit,

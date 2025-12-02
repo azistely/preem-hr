@@ -14,7 +14,7 @@ import { db, getServiceRoleDb } from '@/lib/db';
 import { tenants, users, userTenants } from '@/drizzle/schema';
 import { createClient } from '@supabase/supabase-js';
 import { TRPCError } from '@trpc/server';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 /**
  * Create Supabase admin client for server-side auth operations
@@ -645,8 +645,10 @@ export const authRouter = router({
         console.log('[Auth:verifyPhoneOtp] OTP verified, Supabase user:', data.user.id);
 
         // Check if user exists in our database
+        // Use serviceRoleDb to bypass RLS (user doesn't have JWT yet during login)
         console.log('[Auth:verifyPhoneOtp] Checking if user exists in our database...');
-        const existingUser = await db.query.users.findFirst({
+        const serviceDb = getServiceRoleDb();
+        const existingUser = await serviceDb.query.users.findFirst({
           where: eq(users.id, data.user.id),
           columns: {
             id: true,
@@ -1308,6 +1310,451 @@ export const authRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Erreur lors de la vérification',
+        });
+      }
+    }),
+
+  /**
+   * Signup with Invite - Create user account and accept invitation
+   *
+   * For new users accepting an invitation to join an existing tenant.
+   * Does NOT create a new tenant - joins the invited tenant instead.
+   */
+  signupWithInvite: publicProcedure
+    .input(z.object({
+      email: z.string().email({ message: 'Email invalide' }),
+      password: z.string().min(8, { message: 'Mot de passe trop court (minimum 8 caractères)' }),
+      firstName: z.string().min(1, { message: 'Prénom requis' }),
+      lastName: z.string().min(1, { message: 'Nom requis' }),
+      inviteToken: z.string().min(1, { message: 'Token d\'invitation requis' }),
+    }))
+    .mutation(async ({ input }) => {
+      const { email, password, firstName, lastName, inviteToken } = input;
+
+      console.log('[Auth:signupWithInvite] Starting signup for:', email);
+
+      // Use service role DB to bypass RLS
+      const serviceDb = getServiceRoleDb();
+      const supabase = createSupabaseAdmin();
+
+      // Import userInvitations from schema
+      const { userInvitations } = await import('@/lib/db/schema');
+
+      try {
+        // 1. Validate invitation
+        console.log('[Auth:signupWithInvite] Validating invitation...');
+        const invitationResult = await serviceDb
+          .select()
+          .from(userInvitations)
+          .where(eq(userInvitations.token, inviteToken))
+          .limit(1);
+
+        const invitation = invitationResult[0];
+
+        if (!invitation) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Invitation non trouvée',
+          });
+        }
+
+        if (invitation.status !== 'pending') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cette invitation n\'est plus valide',
+          });
+        }
+
+        if (new Date() > invitation.expiresAt) {
+          await serviceDb
+            .update(userInvitations)
+            .set({ status: 'expired' })
+            .where(eq(userInvitations.id, invitation.id));
+
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cette invitation a expiré',
+          });
+        }
+
+        // Only validate email match if invitation has an email (not link-only)
+        if (invitation.email && invitation.email.toLowerCase() !== email.toLowerCase()) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'L\'email ne correspond pas à l\'invitation',
+          });
+        }
+
+        console.log('[Auth:signupWithInvite] Invitation valid for tenant:', invitation.tenantId);
+
+        // 2. Create Supabase auth user
+        console.log('[Auth:signupWithInvite] Creating Supabase auth user...');
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              tenant_id: invitation.tenantId,
+              role: invitation.role,
+              first_name: firstName,
+              last_name: lastName,
+            },
+            emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/confirm`,
+          },
+        });
+
+        // Update app_metadata using admin API
+        if (authData.user) {
+          await supabase.auth.admin.updateUserById(authData.user.id, {
+            app_metadata: {
+              tenant_id: invitation.tenantId,
+              role: invitation.role,
+            },
+          });
+        }
+
+        if (authError || !authData.user) {
+          console.error('[Auth:signupWithInvite] Supabase signup error:', authError);
+
+          const isDuplicateEmail = authError?.message?.toLowerCase().includes('already registered') ||
+            authError?.message?.toLowerCase().includes('already exists');
+
+          throw new TRPCError({
+            code: isDuplicateEmail ? 'CONFLICT' : 'INTERNAL_SERVER_ERROR',
+            message: isDuplicateEmail
+              ? 'Un compte avec cet email existe déjà'
+              : `Erreur lors de la création du compte: ${authError?.message || 'Unknown error'}`,
+          });
+        }
+
+        console.log('[Auth:signupWithInvite] Supabase user created:', authData.user.id);
+
+        // 3. Create user in database (NO tenant creation - join existing)
+        console.log('[Auth:signupWithInvite] Creating user in database...');
+        const [user] = await serviceDb
+          .insert(users)
+          .values({
+            id: authData.user.id,
+            tenantId: invitation.tenantId, // Use invited tenant
+            activeTenantId: null, // Will be set after user_tenants exists
+            email,
+            firstName,
+            lastName,
+            role: invitation.role, // Use invited role
+            employeeId: invitation.employeeId, // Link to employee if specified
+            locale: 'fr',
+            status: 'active',
+          })
+          .returning();
+
+        if (!user) {
+          console.error('[Auth:signupWithInvite] User creation failed');
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Erreur lors de la création de l\'utilisateur',
+          });
+        }
+
+        console.log('[Auth:signupWithInvite] User created:', user.id);
+
+        // 4. Create user_tenants record
+        console.log('[Auth:signupWithInvite] Creating user_tenants record...');
+        await serviceDb
+          .insert(userTenants)
+          .values({
+            userId: authData.user.id,
+            tenantId: invitation.tenantId,
+            role: invitation.role,
+          });
+
+        // 5. Update user active tenant
+        console.log('[Auth:signupWithInvite] Updating user active tenant...');
+        await serviceDb
+          .update(users)
+          .set({ activeTenantId: invitation.tenantId })
+          .where(eq(users.id, authData.user.id));
+
+        // 6. Mark invitation as accepted
+        console.log('[Auth:signupWithInvite] Marking invitation as accepted...');
+        await serviceDb
+          .update(userInvitations)
+          .set({
+            status: 'accepted',
+            acceptedAt: new Date(),
+            acceptedByUserId: authData.user.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(userInvitations.id, invitation.id));
+
+        console.log('[Auth:signupWithInvite] Signup with invite completed successfully');
+
+        return {
+          success: true,
+          userId: authData.user.id,
+          tenantId: invitation.tenantId,
+          role: invitation.role,
+        };
+      } catch (error) {
+        console.error('[Auth:signupWithInvite] Exception:', error);
+        if (error instanceof TRPCError) throw error;
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de l\'inscription',
+        });
+      }
+    }),
+
+  /**
+   * Complete phone signup with invitation - Creates user after phone OTP verification
+   *
+   * Flow:
+   * 1. User receives invite link (no email needed)
+   * 2. User enters phone number, receives OTP via SMS
+   * 3. User verifies OTP and enters name
+   * 4. This endpoint validates OTP + invite token, creates user in invited tenant
+   */
+  signupWithInvitePhone: publicProcedure
+    .input(z.object({
+      phone: z.string().min(10, { message: 'Numéro de téléphone invalide' }),
+      token: z.string().length(6, { message: 'Le code doit contenir 6 chiffres' }),
+      firstName: z.string().min(1, { message: 'Prénom requis' }),
+      lastName: z.string().min(1, { message: 'Nom requis' }),
+      inviteToken: z.string().min(1, { message: 'Token d\'invitation requis' }),
+    }))
+    .mutation(async ({ input }) => {
+      const { phone, token, firstName, lastName, inviteToken } = input;
+
+      // Use service role DB to bypass RLS
+      const serviceDb = getServiceRoleDb();
+      const supabase = createSupabaseAdmin();
+
+      // Import userInvitations from schema
+      const { userInvitations } = await import('@/lib/db/schema');
+
+      try {
+        // 1. Validate invitation first (before OTP to fail fast)
+        const invitationResult = await serviceDb
+          .select()
+          .from(userInvitations)
+          .where(eq(userInvitations.token, inviteToken))
+          .limit(1);
+
+        const invitation = invitationResult[0];
+
+        if (!invitation) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Invitation non trouvée',
+          });
+        }
+
+        if (invitation.status !== 'pending') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cette invitation n\'est plus valide',
+          });
+        }
+
+        if (new Date() > invitation.expiresAt) {
+          await serviceDb
+            .update(userInvitations)
+            .set({ status: 'expired' })
+            .where(eq(userInvitations.id, invitation.id));
+
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cette invitation a expiré',
+          });
+        }
+
+        // 2. Verify phone OTP
+        const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+          phone,
+          token,
+          type: 'sms',
+        });
+
+        if (otpError || !otpData.user) {
+          if (otpError?.message.includes('expired')) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Ce code a expiré. Demandez un nouveau code.',
+            });
+          }
+
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Code incorrect. Vérifiez et réessayez.',
+          });
+        }
+
+        // 3. Update Supabase user metadata with tenant info
+        await supabase.auth.admin.updateUserById(otpData.user.id, {
+          app_metadata: {
+            tenant_id: invitation.tenantId,
+            role: invitation.role,
+          },
+          user_metadata: {
+            first_name: firstName,
+            last_name: lastName,
+          },
+        });
+
+        // 4. Check if user already exists in our database
+        // Case A: User exists with same auth.user ID (retrying signup)
+        // Case B: User exists with same phone but different auth.user ID (changing companies)
+        // Case C: New user (no existing record)
+
+        const existingUserById = await serviceDb
+          .select()
+          .from(users)
+          .where(eq(users.id, otpData.user.id))
+          .limit(1);
+
+        const existingUserByPhone = await serviceDb
+          .select()
+          .from(users)
+          .where(eq(users.phone, phone))
+          .limit(1);
+
+        let userId: string;
+        let needsRelogin = false; // Case B needs user to log in again
+
+        if (existingUserByPhone.length > 0 && existingUserByPhone[0].id !== otpData.user.id) {
+          // Case B: User exists with same phone in a different tenant (changing companies)
+          // Use the EXISTING user account and add them to the new tenant
+          userId = existingUserByPhone[0].id;
+          needsRelogin = true; // Session from OTP belongs to deleted user
+
+          // Delete the duplicate auth.user that was just created by OTP verification
+          await supabase.auth.admin.deleteUser(otpData.user.id);
+
+          // Update the existing user's Supabase metadata to include new tenant
+          await supabase.auth.admin.updateUserById(userId, {
+            app_metadata: {
+              tenant_id: invitation.tenantId, // Switch to new tenant
+              role: invitation.role,
+            },
+          });
+
+        } else if (existingUserById.length > 0) {
+          // Case A: User exists with same auth.user ID (retrying signup or previous attempt)
+          userId = existingUserById[0].id;
+
+          await serviceDb
+            .update(users)
+            .set({
+              firstName,
+              lastName,
+              phone,
+              phoneVerified: true,
+              role: invitation.role, // Ensure role is updated from invitation
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId));
+
+          // Update auth.users app_metadata with correct role and tenant
+          await supabase.auth.admin.updateUserById(userId, {
+            app_metadata: {
+              tenant_id: invitation.tenantId,
+              role: invitation.role,
+            },
+          });
+
+        } else {
+          // Case C: New user - create in database
+          userId = otpData.user.id;
+
+          const [user] = await serviceDb
+            .insert(users)
+            .values({
+              id: userId,
+              tenantId: invitation.tenantId,
+              activeTenantId: null, // Will be set after user_tenants exists
+              email: null, // Phone-only user
+              phone,
+              phoneVerified: true,
+              authMethod: 'phone',
+              firstName,
+              lastName,
+              role: invitation.role,
+              employeeId: invitation.employeeId,
+            })
+            .returning();
+
+          if (!user) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: 'Erreur lors de la création du compte',
+            });
+          }
+
+          // Update auth.users app_metadata with correct role and tenant
+          // (OTP verification creates auth.users with default/empty metadata)
+          await supabase.auth.admin.updateUserById(userId, {
+            app_metadata: {
+              tenant_id: invitation.tenantId,
+              role: invitation.role,
+            },
+          });
+        }
+
+        // 5. Create/update user_tenants record (join invited tenant)
+        await serviceDb
+          .insert(userTenants)
+          .values({
+            userId,
+            tenantId: invitation.tenantId,
+            role: invitation.role,
+          })
+          .onConflictDoUpdate({
+            target: [userTenants.userId, userTenants.tenantId],
+            set: { role: invitation.role, updatedAt: sql`now()` },
+          });
+
+        // 6. Update user's active tenant to the new one
+        await serviceDb
+          .update(users)
+          .set({ activeTenantId: invitation.tenantId })
+          .where(eq(users.id, userId));
+
+        // 7. Link employee to user if invitation has employeeId
+        if (invitation.employeeId) {
+          await serviceDb
+            .update(users)
+            .set({ employeeId: invitation.employeeId })
+            .where(eq(users.id, userId));
+        }
+
+        // 8. Mark invitation as accepted
+        await serviceDb
+          .update(userInvitations)
+          .set({
+            status: 'accepted',
+            acceptedAt: new Date(),
+            acceptedByUserId: userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(userInvitations.id, invitation.id));
+
+        return {
+          success: true,
+          userId,
+          tenantId: invitation.tenantId,
+          role: invitation.role,
+          // For Case B (existing user changing companies), session belongs to deleted auth.user
+          // User will need to log in again to get a valid session
+          session: needsRelogin ? null : otpData.session,
+          needsRelogin, // Frontend should redirect to login if true
+        };
+      } catch (error) {
+        console.error('[Auth:signupWithInvitePhone] Error:', error);
+        if (error instanceof TRPCError) throw error;
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erreur lors de l\'inscription',
         });
       }
     }),

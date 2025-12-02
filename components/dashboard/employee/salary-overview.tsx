@@ -18,6 +18,7 @@ export interface SalaryOverviewProps {
   showTrend?: boolean;
   showBreakdown?: boolean;
   className?: string;
+  onViewPayslip?: () => void;
 }
 
 export function SalaryOverview({
@@ -26,6 +27,7 @@ export function SalaryOverview({
   showTrend = false,
   showBreakdown = false,
   className,
+  onViewPayslip,
 }: SalaryOverviewProps) {
   const formattedMonth = new Intl.DateTimeFormat('fr-FR', {
     month: 'long',
@@ -61,7 +63,11 @@ export function SalaryOverview({
             </div>
           )}
 
-          <Button variant="outline" className="w-full lg:w-auto">
+          <Button
+            variant="outline"
+            className="w-full lg:w-auto"
+            onClick={onViewPayslip}
+          >
             Voir le bulletin
           </Button>
         </div>

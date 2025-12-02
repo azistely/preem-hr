@@ -7,7 +7,8 @@
  */
 
 import { useState } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { RequestAdvanceWizard } from './request-advance-wizard';
 import { AdvancesList } from './advances-list';
 
@@ -35,6 +36,9 @@ export function EmployeeAdvancesPage({ employeeId, employeeName }: EmployeeAdvan
 
       <Dialog open={showRequestWizard} onOpenChange={setShowRequestWizard}>
         <DialogContent className="max-w-2xl p-0">
+          <VisuallyHidden>
+            <DialogTitle>Demander une avance sur salaire</DialogTitle>
+          </VisuallyHidden>
           <RequestAdvanceWizard
             employeeId={employeeId}
             employeeName={employeeName}

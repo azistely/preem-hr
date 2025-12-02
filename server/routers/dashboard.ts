@@ -98,7 +98,7 @@ export const dashboardRouter = router({
     const currentYear = new Date().getFullYear();
     const leaveBalance = await db
       .select({
-        total: sql<number>`sum(COALESCE(days_requested::numeric, 0))`,
+        total: sql<number>`sum(COALESCE(total_days, 0))`,
       })
       .from(timeOffRequests)
       .where(
@@ -127,7 +127,7 @@ export const dashboardRouter = router({
       employee: {
         firstName: employee.firstName,
         lastName: employee.lastName,
-        position: employee.position,
+        position: employee.jobTitle || 'Non défini',
       },
       salary: {
         netSalary: latestPayslip?.netSalary || 0,

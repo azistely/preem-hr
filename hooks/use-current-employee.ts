@@ -1,39 +1,38 @@
 /**
  * Hook to get current user's employee record
  *
- * In development: Uses first employee from mock tenant
- * In production: Will get employee linked to authenticated user
+ * Uses the authenticated user's employeeId to fetch their employee profile
  */
 
 import { useMemo } from 'react';
 import { trpc } from '@/lib/trpc/client';
 
 export function useCurrentEmployee() {
-  // In dev: Get first employee from mock tenant
-  // TODO: In production, get from auth context (user.employeeId)
-  const { data: employees, isLoading } = trpc.employees.list.useQuery({
-    status: 'active',
-  }, {
-    // Prevent unnecessary refetches since employee data rarely changes
+  // Get the authenticated user's info (includes employeeId)
+  const { data: user, isLoading: isLoadingUser } = trpc.auth.me.useQuery(undefined, {
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
   });
 
-  // Memoize employee to prevent reference changes
-  const currentEmployee = useMemo(
-    () => employees?.employees?.[0],
-    [employees?.employees]
+  // Fetch the employee record using the user's employeeId
+  const { data: employee, isLoading: isLoadingEmployee } = trpc.employees.getById.useQuery(
+    { id: user?.employeeId! },
+    {
+      enabled: !!user?.employeeId, // Only fetch if we have an employeeId
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      refetchOnWindowFocus: false,
+    }
   );
 
-  // Memoize employee ID to prevent downstream queries from refetching
+  // Memoize employee ID
   const employeeId = useMemo(
-    () => (currentEmployee && 'id' in currentEmployee ? currentEmployee.id as string : undefined),
-    [currentEmployee]
+    () => user?.employeeId,
+    [user?.employeeId]
   );
 
   return {
-    employee: currentEmployee,
+    employee,
     employeeId,
-    isLoading,
+    isLoading: isLoadingUser || isLoadingEmployee,
   };
 }

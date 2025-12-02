@@ -450,12 +450,18 @@ export const documentsRouter = createTRPCRouter({
           });
         }
 
-        // Fetch generated documents (payslips, old certificates)
-        const generated = await db
-          .select()
-          .from(generatedDocuments)
-          .where(eq(generatedDocuments.employeeId, ctx.user.employeeId))
-          .orderBy(desc(generatedDocuments.generationDate));
+        // Fetch generated documents (payslips, old certificates) - legacy table, may be empty
+        let generated: typeof generatedDocuments.$inferSelect[] = [];
+        try {
+          generated = await db
+            .select()
+            .from(generatedDocuments)
+            .where(eq(generatedDocuments.employeeId, ctx.user.employeeId))
+            .orderBy(desc(generatedDocuments.generationDate));
+        } catch (err) {
+          // Legacy table may not exist or have schema issues - continue with uploaded docs
+          console.warn('[My Documents] Could not fetch generated documents:', err);
+        }
 
         // Fetch uploaded documents (includes system-generated certificates with advanced features)
         const uploaded = await db

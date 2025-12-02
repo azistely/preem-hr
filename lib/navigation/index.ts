@@ -378,6 +378,7 @@ export const adminAdvancedSections: NavSection[] = [
     items: [
       { icon: Building, label: "Informations Société", href: "/admin/settings/company" },
       { icon: DollarSign, label: "Configuration Paie", href: "/settings/payroll" },
+      { icon: Users, label: "Gestion Équipe", href: "/admin/settings/team" },
     ],
   },
   {

@@ -28,3 +28,4 @@ export * from './conventions';
 export * from './locations';
 export * from './variable-pay-inputs';
 export * from './acp';
+export * from './user-invitations';

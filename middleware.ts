@@ -30,6 +30,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/employee/profile': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/profile/edit': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/my-schedule': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/employee/documents': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
 
   // Manager routes
   '/manager/dashboard': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
@@ -148,6 +149,7 @@ const PUBLIC_ROUTES = [
   '/bf',  // Burkina Faso homepage
   '/login',
   '/signup',
+  '/invite',                 // Invitation acceptance (public link for new users)
   '/api',
   '/auth/confirm',           // Email verification callback
   '/auth/verify-email',      // Email verification pending page
