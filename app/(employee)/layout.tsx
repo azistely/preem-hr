@@ -5,14 +5,28 @@ import { DashboardLayout } from "@/components/navigation/dashboard-layout";
 import { api } from "@/server/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
 
+/**
+ * EmployeeLayout - Optimized for instant navigation
+ *
+ * Performance optimizations based on TanStack Query best practices:
+ * 1. Uses placeholderData to show previous user data during refetch
+ * 2. Only shows skeleton on FIRST load (when no cached data exists)
+ * 3. Cached auth data (staleTime: 5min) prevents loading flash on navigation
+ */
 export default function EmployeeLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { data: user, isLoading } = api.auth.me.useQuery();
+  const { data: user, isLoading } = api.auth.me.useQuery(undefined, {
+    // Keep previous data while refetching - prevents content flash
+    placeholderData: (previousData) => previousData,
+  });
 
-  if (isLoading) {
+  // Only show loading skeleton on FIRST load (no cached data)
+  const showSkeleton = isLoading && !user;
+
+  if (showSkeleton) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="space-y-4">
