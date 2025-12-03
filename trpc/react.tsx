@@ -2,18 +2,48 @@
  * tRPC React Client (v11)
  *
  * Client-side hooks for use in Client Components
+ *
+ * Performance Optimizations (based on TanStack Query best practices):
+ * 1. Aggressive caching (staleTime: 5min) - auth/tenant data rarely changes
+ * 2. placeholderData pattern - show old data while refetching
+ * 3. refetchOnWindowFocus: false - avoid aggressive refetching on slow networks
+ * 4. Exported queryClient for prefetching in navigation components
+ *
+ * @see https://tanstack.com/query/latest/docs/framework/react/guides/prefetching
  */
 
 'use client';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { httpBatchLink, loggerLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
-import { useState } from 'react';
+import { useState, createContext, useContext } from 'react';
 import superjson from 'superjson';
 import { type AppRouter } from '@/server/routers/_app';
 
 export const api = createTRPCReact<AppRouter>();
+
+// Export QueryClient context for prefetching utilities
+const QueryClientContext = createContext<QueryClient | null>(null);
+
+/**
+ * Hook to access QueryClient for prefetching
+ *
+ * Usage in navigation components:
+ * ```tsx
+ * const queryClient = usePrefetchClient();
+ * const prefetch = () => {
+ *   queryClient.prefetchQuery({
+ *     queryKey: ['dashboard', 'getHRDashboard'],
+ *     queryFn: () => trpcClient.dashboard.getHRDashboard.query(),
+ *     staleTime: 60000,
+ *   });
+ * };
+ * ```
+ */
+export function usePrefetchClient() {
+  return useQueryClient();
+}
 
 export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -30,6 +60,8 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
             refetchOnWindowFocus: false, // Don't refetch on every tab focus (too aggressive for slow 3G)
             // ✅ Add query timeout to prevent infinite loading states
             networkMode: 'online', // Only run queries when online
+            // ✅ NEW: Enable structural sharing for better performance
+            structuralSharing: true,
           },
         },
       })
@@ -58,9 +90,11 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <api.Provider client={trpcClient} queryClient={queryClient}>
-        {props.children}
-      </api.Provider>
+      <QueryClientContext.Provider value={queryClient}>
+        <api.Provider client={trpcClient} queryClient={queryClient}>
+          {props.children}
+        </api.Provider>
+      </QueryClientContext.Provider>
     </QueryClientProvider>
   );
 }

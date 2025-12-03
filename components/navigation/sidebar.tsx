@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LucideIcon, ChevronLeft, ChevronDown, Search, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { cn } from "@/lib/utils";
 import { createAuthClient } from "@/lib/supabase/auth-client";
 import { TenantSwitcher } from "@/components/layout/tenant-switcher";
-import NProgress from "nprogress";
+import { PrefetchLink } from "./prefetch-link";
 
 export interface NavSection {
   title: string;
@@ -62,10 +61,9 @@ function CollapsibleNavSection({
           const Icon = item.icon;
 
           return (
-            <Link
+            <PrefetchLink
               key={item.href}
               href={item.href}
-              onClick={() => NProgress.start()}
               className={cn(
                 "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[44px]",
                 "active:scale-[0.98] active:opacity-90",
@@ -89,7 +87,7 @@ function CollapsibleNavSection({
                   )}
                 </>
               )}
-            </Link>
+            </PrefetchLink>
           );
         })}
       </nav>
@@ -127,10 +125,9 @@ function CollapsibleNavSection({
             const Icon = item.icon;
 
             return (
-              <Link
+              <PrefetchLink
                 key={item.href}
                 href={item.href}
-                onClick={() => NProgress.start()}
                 className={cn(
                   "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 min-h-[44px]",
                   "active:scale-[0.98] active:opacity-90",
@@ -149,7 +146,7 @@ function CollapsibleNavSection({
                     {item.badge}
                   </Badge>
                 )}
-              </Link>
+              </PrefetchLink>
             );
           })}
         </nav>
@@ -205,10 +202,9 @@ function NestedSection({
                   const Icon = item.icon;
 
                   return (
-                    <Link
+                    <PrefetchLink
                       key={item.href}
                       href={item.href}
-                      onClick={() => NProgress.start()}
                       className={cn(
                         "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 min-h-[44px]",
                         "active:scale-[0.98] active:opacity-90",
@@ -231,7 +227,7 @@ function NestedSection({
                           {item.badge}
                         </Badge>
                       )}
-                    </Link>
+                    </PrefetchLink>
                   );
                 })}
               </nav>

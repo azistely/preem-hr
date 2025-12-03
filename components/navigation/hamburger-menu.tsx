@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { NavSection } from "./sidebar";
+import { PrefetchLink } from "./prefetch-link";
 
 export interface HamburgerMenuProps {
   sections: NavSection[];
@@ -121,7 +121,7 @@ function NavSectionComponent({
           const Icon = item.icon;
 
           return (
-            <Link
+            <PrefetchLink
               key={item.href}
               href={item.href}
               className={cn(
@@ -141,7 +141,7 @@ function NavSectionComponent({
                   {item.badge}
                 </Badge>
               )}
-            </Link>
+            </PrefetchLink>
           );
         })}
       </div>
@@ -179,7 +179,7 @@ function NavSectionComponent({
             const Icon = item.icon;
 
             return (
-              <Link
+              <PrefetchLink
                 key={item.href}
                 href={item.href}
                 className={cn(
@@ -199,7 +199,7 @@ function NavSectionComponent({
                     {item.badge}
                   </Badge>
                 )}
-              </Link>
+              </PrefetchLink>
             );
           })}
         </div>
