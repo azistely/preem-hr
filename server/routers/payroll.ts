@@ -18,12 +18,14 @@ import { calculatePayrollV2 } from '@/features/payroll/services/payroll-calculat
 import {
   createPayrollRun,
   calculatePayrollRun,
+  calculatePayrollRunOptimized,
 } from '@/features/payroll/services/run-calculation';
 import { db } from '@/lib/db';
-import { payrollRuns, payrollLineItems, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions, cnpsDeclarationEdits } from '@/lib/db/schema';
+import { payrollRuns, payrollLineItems, payrollRunProgress, employees, timeEntries, tenants, employeeDependents, salaryComponentDefinitions, cnpsDeclarationEdits } from '@/lib/db/schema';
 import { salaryComponentTemplates, taxSystems, timeOffRequests, timeOffBalances, timeOffPolicies } from '@/drizzle/schema';
 import { eq, and, lte, gte, or, isNull, asc, desc, sql, inArray } from 'drizzle-orm';
 import { ruleLoader } from '@/features/payroll/services/rule-loader';
+import { sendEvent } from '@/lib/inngest/client';
 
 // Export services
 import * as React from 'react';
@@ -1636,8 +1638,154 @@ export const payrollRouter = createTRPCRouter({
    */
   calculateRun: hrManagerProcedure
     .input(calculatePayrollRunInputSchema)
-    .mutation(async ({ input }) => {
-      return await calculatePayrollRun(input);
+    .mutation(async ({ input, ctx }) => {
+      // Get the payroll run to check employee count
+      const [run] = await db
+        .select()
+        .from(payrollRuns)
+        .where(eq(payrollRuns.id, input.runId))
+        .limit(1);
+
+      if (!run) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Payroll run not found',
+        });
+      }
+
+      const BACKGROUND_THRESHOLD = 500; // Use background for >500 employees
+
+      // For large tenants, use background processing via Inngest
+      if (run.employeeCount && run.employeeCount > BACKGROUND_THRESHOLD) {
+        console.log('[PAYROLL] Using background processing for large tenant:', {
+          runId: input.runId,
+          employeeCount: run.employeeCount,
+        });
+
+        // Initialize progress tracking
+        await db
+          .insert(payrollRunProgress)
+          .values({
+            payrollRunId: input.runId,
+            tenantId: ctx.user.tenantId,
+            status: 'pending',
+            totalEmployees: run.employeeCount,
+            processedCount: 0,
+            successCount: 0,
+            errorCount: 0,
+            currentChunk: 0,
+            totalChunks: Math.ceil(run.employeeCount / 1000),
+            errors: [],
+          })
+          .onConflictDoUpdate({
+            target: payrollRunProgress.payrollRunId,
+            set: {
+              status: 'pending',
+              totalEmployees: run.employeeCount,
+              processedCount: 0,
+              successCount: 0,
+              errorCount: 0,
+              currentChunk: 0,
+              errors: [],
+              startedAt: null,
+              completedAt: null,
+              lastError: null,
+            },
+          });
+
+        // Trigger background calculation via Inngest
+        await sendEvent({
+          name: 'payroll.run.calculate',
+          data: {
+            payrollRunId: input.runId,
+            periodStart: run.periodStart,
+            periodEnd: run.periodEnd,
+            employeeCount: run.employeeCount,
+            tenantId: ctx.user.tenantId,
+          },
+        });
+
+        // Return immediately with background status
+        return {
+          success: true,
+          background: true,
+          runId: input.runId,
+          message: 'Calcul lancé en arrière-plan. Suivez la progression ci-dessous.',
+          employeeCount: run.employeeCount,
+        };
+      }
+
+      // For smaller tenants, use synchronous optimized processing
+      // Falls back to original implementation if needed
+      try {
+        return await calculatePayrollRunOptimized(input);
+      } catch (error) {
+        console.error('[PAYROLL] Optimized calculation failed, falling back to original:', error);
+        return await calculatePayrollRun(input);
+      }
+    }),
+
+  /**
+   * Get payroll calculation progress
+   *
+   * Returns real-time progress for long-running payroll calculations.
+   * Used by frontend to display progress bar and status updates.
+   *
+   * @example
+   * ```typescript
+   * const progress = await trpc.payroll.getProgress.query({
+   *   runId: 'run-123',
+   * });
+   * // progress.percentComplete = 45
+   * // progress.processedCount = 225
+   * // progress.totalEmployees = 500
+   * ```
+   */
+  getProgress: protectedProcedure
+    .input(z.object({ runId: z.string().uuid() }))
+    .query(async ({ input }) => {
+      const [progress] = await db
+        .select()
+        .from(payrollRunProgress)
+        .where(eq(payrollRunProgress.payrollRunId, input.runId))
+        .limit(1);
+
+      if (!progress) {
+        // No progress record yet - return default state
+        return {
+          status: 'pending' as const,
+          totalEmployees: 0,
+          processedCount: 0,
+          successCount: 0,
+          errorCount: 0,
+          percentComplete: 0,
+          currentChunk: 0,
+          totalChunks: 0,
+          errors: [] as Array<{ employeeId: string; message: string }>,
+          startedAt: null as Date | null,
+          estimatedCompletionAt: null as Date | null,
+        };
+      }
+
+      const percentComplete = progress.totalEmployees > 0
+        ? Math.round((progress.processedCount / progress.totalEmployees) * 100)
+        : 0;
+
+      return {
+        status: progress.status as 'pending' | 'processing' | 'completed' | 'failed' | 'paused',
+        totalEmployees: progress.totalEmployees,
+        processedCount: progress.processedCount,
+        successCount: progress.successCount,
+        errorCount: progress.errorCount,
+        percentComplete,
+        currentChunk: progress.currentChunk,
+        totalChunks: progress.totalChunks,
+        errors: (progress.errors as Array<{ employeeId: string; message: string }>) || [],
+        lastError: progress.lastError,
+        startedAt: progress.startedAt,
+        completedAt: progress.completedAt,
+        estimatedCompletionAt: progress.estimatedCompletionAt,
+      };
     }),
 
   /**

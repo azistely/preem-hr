@@ -29,6 +29,12 @@ import { employeeStatusChangedFunction } from '@/lib/inngest/functions/employee-
 import { leaveStatusChangedFunction } from '@/lib/inngest/functions/leave-status-changed';
 import { payrollRunCompletedFunction } from '@/lib/inngest/functions/payroll-run-completed';
 
+// Payroll background processing
+import {
+  payrollCalculationFunction,
+  payrollCalculationFailedFunction,
+} from '@/lib/inngest/functions/payroll-calculation';
+
 // Week 16: Digital Registre du Personnel
 import { registreEmployeeHiredFunction } from '@/lib/inngest/functions/registre-employee-hired';
 import { registreEmployeeTerminatedFunction } from '@/lib/inngest/functions/registre-employee-terminated';
@@ -74,6 +80,10 @@ const handler = serve({
     employeeStatusChangedFunction,
     leaveStatusChangedFunction,
     payrollRunCompletedFunction,
+
+    // Payroll background processing
+    payrollCalculationFunction,
+    payrollCalculationFailedFunction,
 
     // Week 16: Digital Registre du Personnel
     registreEmployeeHiredFunction,

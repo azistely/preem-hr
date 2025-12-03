@@ -355,6 +355,25 @@ export const payrollRunFailedEventSchema = z.object({
 export type PayrollRunFailedEvent = z.infer<typeof payrollRunFailedEventSchema>;
 
 /**
+ * Event: payroll.run.calculate
+ * Triggered to start background payroll calculation for large tenants
+ * Actions: Process payroll in background with progress tracking
+ */
+export const payrollRunCalculateEventSchema = z.object({
+  name: z.literal('payroll.run.calculate'),
+  data: z.object({
+    payrollRunId: z.string().uuid(),
+    periodStart: z.coerce.date(),
+    periodEnd: z.coerce.date(),
+    employeeCount: z.number().positive(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type PayrollRunCalculateEvent = z.infer<typeof payrollRunCalculateEventSchema>;
+
+/**
  * Event: payroll.payment.processed
  * Triggered when a payroll payment is processed
  * Actions: Update payment status, send confirmations
@@ -735,6 +754,7 @@ export const eventSchemas = {
   'payroll.run.started': payrollRunStartedEventSchema,
   'payroll.run.completed': payrollRunCompletedEventSchema,
   'payroll.run.failed': payrollRunFailedEventSchema,
+  'payroll.run.calculate': payrollRunCalculateEventSchema,
   'payroll.payment.processed': payrollPaymentProcessedEventSchema,
 
   // Contract
@@ -787,6 +807,7 @@ export type PreemEvent =
   | PayrollRunStartedEvent
   | PayrollRunCompletedEvent
   | PayrollRunFailedEvent
+  | PayrollRunCalculateEvent
   | PayrollPaymentProcessedEvent
   // Contract
   | ContractExpiringEvent

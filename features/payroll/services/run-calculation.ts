@@ -34,6 +34,12 @@ import {
   processEmployeeAdvances,
   getPayrollMonth,
 } from './salary-advance-integration';
+import {
+  prefetchBatchPayrollData,
+  calculateFiscalPartsFromBatch,
+  chunkArray,
+  type BatchPayrollData,
+} from './batch-prefetch.service';
 
 export interface CreatePayrollRunInput {
   tenantId: string;
@@ -746,6 +752,491 @@ export async function calculatePayrollRun(
 
     throw error;
   }
+}
+
+// ============================================
+// OPTIMIZED BATCH PROCESSING
+// ============================================
+
+const CHUNK_SIZE = 1000; // Balance memory vs. query efficiency
+
+/**
+ * Optimized payroll calculation using batch prefetching
+ *
+ * Reduces N+1 queries (8+ per employee) to ~6 queries per chunk.
+ * For 500 employees: ~4,000 queries → ~6 queries (666x improvement)
+ *
+ * @param input - Payroll run calculation parameters
+ * @returns Summary of calculated payroll run
+ */
+export async function calculatePayrollRunOptimized(
+  input: CalculatePayrollRunInput
+): Promise<PayrollRunSummary> {
+  // Get the run
+  const run = await db.query.payrollRuns.findFirst({
+    where: eq(payrollRuns.id, input.runId),
+  });
+
+  if (!run) {
+    throw new Error('Payroll run not found');
+  }
+
+  // Allow recalculation of draft and calculated runs (before approval)
+  if (run.status !== 'draft' && run.status !== 'calculated') {
+    throw new Error('La paie a déjà été approuvée et ne peut plus être recalculée');
+  }
+
+  // Update status to calculating
+  await db
+    .update(payrollRuns)
+    .set({ status: 'calculating' })
+    .where(eq(payrollRuns.id, input.runId));
+
+  try {
+    // Delete existing line items if recalculating
+    await db
+      .delete(payrollLineItems)
+      .where(eq(payrollLineItems.payrollRunId, input.runId));
+
+    // Get tenant with sector information and work accident rate
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.id, run.tenantId),
+      columns: {
+        countryCode: true,
+        sectorCode: true,
+        workAccidentRate: true,
+      },
+    });
+
+    if (!tenant) {
+      throw new Error('Tenant not found');
+    }
+
+    console.log('[PAYROLL OPTIMIZED] Starting batch calculation for run:', run.id);
+    console.log('[PAYROLL OPTIMIZED] Period:', run.periodStart, '-', run.periodEnd);
+
+    // Filter employees by payment frequency
+    const paymentFrequencyFilter = (!run.paymentFrequency || run.paymentFrequency === 'MONTHLY')
+      ? or(
+          eq(employees.paymentFrequency, 'MONTHLY'),
+          isNull(employees.paymentFrequency)
+        )
+      : eq(employees.paymentFrequency, run.paymentFrequency as string);
+
+    // Get all active employees for this period (lightweight query - just IDs and basic info)
+    const activeEmployees = await db
+      .select()
+      .from(employees)
+      .where(
+        and(
+          eq(employees.tenantId, run.tenantId),
+          paymentFrequencyFilter,
+          or(
+            // Active employees hired before period end
+            and(
+              eq(employees.status, 'active'),
+              sql`${employees.hireDate} <= ${run.periodEnd}`
+            ),
+            // Terminated employees who worked during period
+            and(
+              eq(employees.status, 'terminated'),
+              sql`${employees.hireDate} <= ${run.periodEnd}`,
+              isNotNull(employees.terminationDate),
+              sql`${employees.terminationDate} >= ${run.periodStart}`
+            )
+          )
+        )
+      );
+
+    console.log('[PAYROLL OPTIMIZED] Found', activeEmployees.length, 'employees to process');
+
+    if (activeEmployees.length === 0) {
+      throw new Error('Aucun employé trouvé pour cette période');
+    }
+
+    const allLineItemsData: any[] = [];
+    const errors: Array<{ employeeId: string; error: string }> = [];
+    const payrollMonth = getPayrollMonth(new Date(run.periodStart), new Date(run.periodEnd));
+
+    // Process in chunks for memory efficiency
+    const employeeChunks = chunkArray(activeEmployees, CHUNK_SIZE);
+    console.log('[PAYROLL OPTIMIZED] Processing in', employeeChunks.length, 'chunk(s) of up to', CHUNK_SIZE, 'employees');
+
+    for (let chunkIndex = 0; chunkIndex < employeeChunks.length; chunkIndex++) {
+      const chunk = employeeChunks[chunkIndex];
+      const employeeIds = chunk.map(e => e.id);
+
+      console.log(`[PAYROLL OPTIMIZED] Chunk ${chunkIndex + 1}/${employeeChunks.length}: Prefetching data for ${chunk.length} employees`);
+
+      // BATCH PREFETCH: 6 parallel queries instead of 8N sequential queries
+      const batchData = await prefetchBatchPayrollData(
+        run.tenantId,
+        employeeIds,
+        run.periodStart,
+        run.periodEnd,
+        payrollMonth
+      );
+
+      console.log(`[PAYROLL OPTIMIZED] Chunk ${chunkIndex + 1}: Data prefetched, processing employees`);
+
+      // Process each employee in chunk - NO DATABASE CALLS in this loop!
+      for (const employee of chunk) {
+        try {
+          const lineItem = await processEmployeeWithBatchData(
+            employee,
+            run as any, // Type coercion for date fields (string vs Date)
+            tenant,
+            batchData,
+            payrollMonth
+          );
+
+          if (lineItem) {
+            allLineItemsData.push(lineItem);
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          console.error(`[PAYROLL OPTIMIZED ERROR] Employee ${employee.id}:`, errorMsg);
+          errors.push({
+            employeeId: employee.id,
+            error: errorMsg,
+          });
+        }
+      }
+
+      console.log(`[PAYROLL OPTIMIZED] Chunk ${chunkIndex + 1}: Processed, ${allLineItemsData.length} line items total`);
+    }
+
+    console.log(`[PAYROLL OPTIMIZED] All chunks processed: ${allLineItemsData.length} line items, ${errors.length} errors`);
+
+    // Batch insert all line items
+    if (allLineItemsData.length > 0) {
+      // Insert in batches of 500 to avoid query size limits
+      const insertChunks = chunkArray(allLineItemsData, 500);
+      for (const insertChunk of insertChunks) {
+        await db.insert(payrollLineItems).values(insertChunk);
+      }
+    }
+
+    // Calculate totals
+    const totals = allLineItemsData.reduce(
+      (acc, item) => {
+        const empContribs = item.employeeContributions as any;
+        const taxDeds = item.taxDeductions as any;
+        const emplContribs = item.employerContributions as any;
+
+        return {
+          totalGross: acc.totalGross + Number(item.grossSalary),
+          totalNet: acc.totalNet + Number(item.netSalary),
+          totalEmployerCost: acc.totalEmployerCost + Number(item.totalEmployerCost),
+          totalEmployeeContributions: acc.totalEmployeeContributions + Number(empContribs.cnps || 0) + Number(empContribs.cmu || 0),
+          totalEmployerContributions: acc.totalEmployerContributions + Number(emplContribs.cnps || 0) + Number(emplContribs.cmu || 0),
+          totalTax: acc.totalTax + Number(taxDeds.its || 0),
+        };
+      },
+      {
+        totalGross: 0,
+        totalNet: 0,
+        totalEmployerCost: 0,
+        totalEmployeeContributions: 0,
+        totalEmployerContributions: 0,
+        totalTax: 0,
+      }
+    );
+
+    // Update run with totals
+    await db
+      .update(payrollRuns)
+      .set({
+        status: 'calculated',
+        processedAt: new Date(),
+        employeeCount: allLineItemsData.length,
+        totalGross: String(totals.totalGross),
+        totalNet: String(totals.totalNet),
+        totalTax: String(totals.totalTax),
+        totalEmployeeContributions: String(totals.totalEmployeeContributions),
+        totalEmployerContributions: String(totals.totalEmployerContributions),
+      } as any)
+      .where(eq(payrollRuns.id, input.runId));
+
+    console.log('[PAYROLL OPTIMIZED] Run complete:', {
+      runId: run.id,
+      employeeCount: allLineItemsData.length,
+      ...totals,
+    });
+
+    return {
+      runId: run.id,
+      employeeCount: allLineItemsData.length,
+      ...totals,
+    };
+  } catch (error) {
+    // Rollback to draft on error
+    await db
+      .update(payrollRuns)
+      .set({ status: 'failed' })
+      .where(eq(payrollRuns.id, input.runId));
+
+    throw error;
+  }
+}
+
+/**
+ * Process a single employee using batch-prefetched data
+ *
+ * This function uses the prefetched Maps for O(1) lookups instead of database queries.
+ * Should NEVER make database calls - all data comes from batchData.
+ */
+async function processEmployeeWithBatchData(
+  employee: typeof employees.$inferSelect,
+  run: typeof payrollRuns.$inferSelect,
+  tenant: { countryCode: string; sectorCode: string | null; workAccidentRate: string | null },
+  batchData: BatchPayrollData,
+  payrollMonth: string
+): Promise<any | null> {
+  // Get salary from batch data
+  const currentSalary = batchData.salaries.get(employee.id);
+  if (!currentSalary) {
+    throw new Error('Aucun salaire trouvé pour cet employé');
+  }
+
+  // Get contract from batch data
+  const currentContract = batchData.contracts.get(employee.id);
+  const contractType = currentContract?.contractType as 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | undefined;
+
+  // Get dependent data from batch (fiscal parts + CMU dependents in single query result)
+  const dependentData = batchData.dependents.get(employee.id);
+
+  // Calculate fiscal parts from batch data (pure function, no DB call)
+  const hasFamily = (employee.customFields as any)?.hasFamily || false;
+  const fiscalParts = (employee.customFields as any)?.fiscalParts ||
+    calculateFiscalPartsFromBatch(
+      employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | null,
+      dependentData?.fiscalPartsDependents || 0
+    );
+
+  // CMU dependents from batch
+  const verifiedCmuDependents = dependentData?.cmuDependents || 0;
+
+  // Get salary components (this is fast - parsing existing data, not DB query)
+  const { getEmployeeSalaryComponentsForPeriod } = await import('@/lib/salary-components/component-reader');
+  const breakdown = await getEmployeeSalaryComponentsForPeriod(
+    currentSalary as any,
+    employee.id,
+    run.periodStart,
+    run.tenantId,
+    run.periodEnd
+  );
+
+  // Extract base salary components
+  const { extractBaseSalaryAmounts, getSalaireCategoriel, calculateBaseSalaryTotal } = await import('@/lib/salary-components/base-salary-loader');
+
+  const salaryComponents = (currentSalary.components || []) as SalaryComponentInstance[];
+  const baseAmounts = await extractBaseSalaryAmounts(salaryComponents, tenant.countryCode);
+  const totalBaseSalary = await calculateBaseSalaryTotal(salaryComponents, tenant.countryCode);
+  const salaireCategoriel = await getSalaireCategoriel(salaryComponents, tenant.countryCode);
+
+  // Auto-calculate Prime d'ancienneté if not already in stored components
+  let effectiveSeniorityBonus = breakdown.seniorityBonus;
+  if (effectiveSeniorityBonus === 0 && salaireCategoriel > 0) {
+    const { calculateSeniorityBonus } = await import('@/lib/salary-components/component-calculator');
+    const seniorityCalc = await calculateSeniorityBonus({
+      baseSalary: salaireCategoriel,
+      hireDate: new Date(employee.hireDate),
+      currentDate: new Date(run.periodEnd),
+      tenantId: run.tenantId,
+      countryCode: tenant.countryCode,
+      contractType,
+    });
+    effectiveSeniorityBonus = seniorityCalc.amount;
+  }
+
+  // Get time tracking data from batch
+  const timeData = batchData.timeEntries.get(employee.id);
+  const rateType = (employee.rateType || 'MONTHLY') as 'MONTHLY' | 'DAILY' | 'HOURLY';
+  let daysWorkedThisMonth: number | undefined = undefined;
+  let hoursWorkedThisMonth: number | undefined = undefined;
+  let sundayHours = 0;
+  let nightHours = 0;
+  let nightSundayHours = 0;
+
+  if (rateType === 'DAILY') {
+    daysWorkedThisMonth = timeData?.daysWorked || 0;
+    if (daysWorkedThisMonth === 0) {
+      console.log(`[PAYROLL OPTIMIZED] Skipping daily worker ${employee.id}: 0 days worked`);
+      return null; // Skip daily workers with 0 days
+    }
+  }
+
+  if (contractType === 'CDDTI') {
+    hoursWorkedThisMonth = timeData?.totalHours || 0;
+    daysWorkedThisMonth = timeData?.daysWorked || 0;
+    sundayHours = timeData?.sundayHours || 0;
+    nightHours = timeData?.nightHours || 0;
+    nightSundayHours = timeData?.nightSundayHours || 0;
+
+    if (hoursWorkedThisMonth === 0) {
+      console.log(`[PAYROLL OPTIMIZED] Skipping CDDTI worker ${employee.id}: 0 hours worked`);
+      return null; // Skip CDDTI workers with 0 hours
+    }
+  }
+
+  // Calculate payroll using V2
+  const useComponentBasedCalculation = contractType === 'CDDTI' && salaryComponents.length > 0;
+
+  const calculation = await calculatePayrollV2({
+    employeeId: employee.id,
+    tenantId: run.tenantId,
+    countryCode: tenant.countryCode,
+    sectorCode: tenant.sectorCode || 'SERVICES',
+    workAccidentRate: tenant.workAccidentRate ? Number(tenant.workAccidentRate) : undefined,
+    periodStart: new Date(run.periodStart),
+    periodEnd: new Date(run.periodEnd),
+    baseSalary: useComponentBasedCalculation ? 0 : totalBaseSalary,
+    salaireCategoriel,
+    sursalaire: baseAmounts['12'],
+    housingAllowance: useComponentBasedCalculation ? 0 : breakdown.housingAllowance,
+    transportAllowance: useComponentBasedCalculation ? 0 : breakdown.transportAllowance,
+    mealAllowance: useComponentBasedCalculation ? 0 : breakdown.mealAllowance,
+    seniorityBonus: useComponentBasedCalculation ? 0 : effectiveSeniorityBonus,
+    familyAllowance: useComponentBasedCalculation ? 0 : breakdown.familyAllowance,
+    otherAllowances: useComponentBasedCalculation ? [] : breakdown.otherAllowances,
+    customComponents: useComponentBasedCalculation
+      ? salaryComponents.map(c => ({ ...c, name: c.name || 'Component', sourceType: 'standard' as const }))
+      : breakdown.customComponents,
+    fiscalParts,
+    hasFamily,
+    hireDate: new Date(employee.hireDate),
+    terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
+    rateType,
+    contractType,
+    daysWorkedThisMonth,
+    hoursWorkedThisMonth,
+    paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
+    weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
+    sundayHours,
+    nightHours,
+    nightSundayHours,
+    maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+    dependentChildren: verifiedCmuDependents,
+  });
+
+  // Get advance data from batch
+  const advanceData = batchData.advances.get(employee.id);
+  const disbursementAmount = advanceData?.disbursements.reduce((sum, d) => sum + d.amount, 0) || 0;
+  const repaymentAmount = advanceData?.repayments.reduce((sum, r) => sum + r.amount, 0) || 0;
+  const netEffect = advanceData?.netEffect || 0;
+  const finalNetSalary = calculation.netSalary + netEffect;
+
+  // Return line item data
+  return {
+    tenantId: run.tenantId,
+    payrollRunId: run.id,
+    employeeId: employee.id,
+
+    // Denormalized employee info
+    employeeName: `${employee.firstName} ${employee.lastName}`,
+    employeeNumber: employee.employeeNumber,
+    positionTitle: employee.jobTitle || null,
+
+    // Salary information
+    baseSalary: String(calculation.baseSalary),
+    allowances: {
+      housing: breakdown.housingAllowance,
+      transport: breakdown.transportAllowance,
+      meal: breakdown.mealAllowance,
+      seniority: effectiveSeniorityBonus,
+      family: breakdown.familyAllowance,
+    },
+
+    // Time tracking
+    daysWorked: String(calculation.daysWorked),
+    daysAbsent: '0',
+    hoursWorked: hoursWorkedThisMonth ? String(hoursWorkedThisMonth) : '0',
+    overtimeHours: {},
+
+    // Gross calculation
+    grossSalary: String(calculation.grossSalary),
+    brutImposable: String(calculation.brutImposable),
+
+    // Detailed breakdowns
+    earningsDetails: calculation.earningsDetails || [],
+    deductionsDetails: calculation.deductionsDetails || [],
+
+    // Deductions
+    taxDeductions: { its: calculation.its },
+    employeeContributions: {
+      cnps: calculation.cnpsEmployee,
+      cmu: calculation.cmuEmployee,
+    },
+    otherDeductions: {
+      salaryAdvances: {
+        disbursements: disbursementAmount,
+        repayments: repaymentAmount,
+        repaymentDetails: advanceData?.repayments || [],
+        disbursedAdvanceIds: advanceData?.disbursements.map(d => d.id) || [],
+      },
+    },
+
+    // Individual deduction columns
+    cnpsEmployee: String(calculation.cnpsEmployee),
+    cmuEmployee: String(calculation.cmuEmployee),
+    its: String(calculation.its),
+
+    // Net calculation
+    totalDeductions: String(calculation.totalDeductions + repaymentAmount),
+    netSalary: String(finalNetSalary),
+
+    // Employer costs
+    employerContributions: {
+      cnps: calculation.cnpsEmployer,
+      cmu: calculation.cmuEmployer,
+    },
+    cnpsEmployer: String(calculation.cnpsEmployer),
+    cmuEmployer: String(calculation.cmuEmployer),
+    totalEmployerCost: String(calculation.employerCost),
+
+    // Other taxes
+    totalOtherTaxes: String(calculation.otherTaxesEmployer || 0),
+    otherTaxesDetails: calculation.otherTaxesDetails || [],
+
+    // Contribution details
+    contributionDetails: calculation.contributionDetails || [],
+
+    // Calculation context
+    calculationContext: buildCalculationContext({
+      fiscalParts,
+      maritalStatus: employee.maritalStatus as 'single' | 'married' | 'divorced' | 'widowed' | undefined,
+      dependentChildren: verifiedCmuDependents,
+      hasFamily,
+      rateType,
+      contractType,
+      weeklyHoursRegime: employee.weeklyHoursRegime as '40h' | '44h' | '48h' | '52h' | '56h' | undefined,
+      paymentFrequency: employee.paymentFrequency as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | undefined,
+      sectorCode: tenant.sectorCode || 'SERVICES',
+      salaireCategoriel,
+      sursalaire: baseAmounts['12'],
+      components: salaryComponents,
+      allowances: {
+        housing: breakdown.housingAllowance,
+        transport: breakdown.transportAllowance,
+        meal: breakdown.mealAllowance,
+        seniority: breakdown.seniorityBonus,
+        family: breakdown.familyAllowance,
+      },
+      hireDate: new Date(employee.hireDate),
+      terminationDate: employee.terminationDate ? new Date(employee.terminationDate) : undefined,
+      periodStart: new Date(run.periodStart),
+      periodEnd: new Date(run.periodEnd),
+      daysWorkedThisMonth,
+      hoursWorkedThisMonth,
+      countryCode: tenant.countryCode,
+    }),
+
+    // Payment details
+    paymentMethod: 'bank_transfer',
+    bankAccount: employee.bankAccount,
+    status: 'pending',
+  };
 }
 
 /**

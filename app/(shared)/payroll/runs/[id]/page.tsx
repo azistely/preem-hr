@@ -12,7 +12,7 @@
  *   - Approved: "Export" button (future)
  */
 
-import { useState, use } from 'react';
+import { useState, use, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -65,6 +65,8 @@ import { EmployeeDetailSheet } from '@/features/payroll/components/review/employ
 import { EmployeeDetailContent } from '@/features/payroll/components/review/draft/employee-detail-content';
 import { DashboardSummaryCard } from '@/features/payroll/components/review/draft/dashboard-summary-card';
 import { CalculatedReviewEnhancements } from './components/calculated-review-enhancements';
+import { CalculationProgress } from '@/features/payroll/components/calculation-progress';
+import { usePayrollProgress } from './hooks/use-payroll-progress';
 
 type RunStatus = 'draft' | 'calculating' | 'processing' | 'calculated' | 'approved' | 'paid' | 'failed';
 
@@ -129,6 +131,7 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     lastName: string;
     employeeNumber: string;
   } | null>(null);
+  const [isBackgroundCalculating, setIsBackgroundCalculating] = useState(false);
 
   // Unwrap params promise (Next.js 15)
   const { id: runId } = use(params);
@@ -141,6 +144,38 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   const { data: run, isLoading, refetch } = api.payroll.getRun.useQuery({
     runId,
   });
+
+  // Track calculation progress for background processing
+  const {
+    progress,
+    isProcessing: isProgressProcessing,
+    isCompleted: isProgressCompleted,
+    isFailed: isProgressFailed,
+    isOnline,
+    percentComplete,
+    processedCount,
+    totalEmployees: progressTotalEmployees,
+    errorCount,
+    estimatedTimeRemaining,
+    formatTimeRemaining,
+  } = usePayrollProgress(isBackgroundCalculating ? runId : null, {
+    enabled: isBackgroundCalculating,
+  });
+
+  // Handle progress completion/failure
+  useEffect(() => {
+    if (isBackgroundCalculating) {
+      if (isProgressCompleted) {
+        // Background calculation completed - refetch and reset
+        setIsBackgroundCalculating(false);
+        refetch();
+      } else if (isProgressFailed) {
+        // Background calculation failed
+        setIsBackgroundCalculating(false);
+        refetch();
+      }
+    }
+  }, [isBackgroundCalculating, isProgressCompleted, isProgressFailed, refetch]);
 
   // Load verification statuses for calculated/processing runs
   const { data: verificationStatuses, refetch: refetchVerificationStatuses } = api.payrollReview.getVerificationStatus.useQuery(
@@ -155,12 +190,23 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
 
   // Calculate run mutation
   const calculateRun = api.payroll.calculateRun.useMutation({
-    onSuccess: async () => {
-      setIsCalculating(false);
-      await refetch();
+    onSuccess: async (result) => {
+      // Check if this is a background calculation
+      if (result && 'background' in result && result.background) {
+        // Background calculation started - enable progress tracking
+        setIsBackgroundCalculating(true);
+        setIsCalculating(false);
+        // Don't refetch yet - wait for progress to complete
+      } else {
+        // Synchronous calculation completed
+        setIsCalculating(false);
+        setIsBackgroundCalculating(false);
+        await refetch();
+      }
     },
     onError: (error) => {
       setIsCalculating(false);
+      setIsBackgroundCalculating(false);
       alert(`Erreur: ${error.message}`);
     },
   });
@@ -487,6 +533,23 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
           </div>
         </CardContent>
       </Card>
+
+      {/* Calculation Progress (for background processing) */}
+      {(isBackgroundCalculating || isCalculating) && (
+        <CalculationProgress
+          status={isProgressProcessing ? 'processing' : isProgressCompleted ? 'completed' : isProgressFailed ? 'failed' : 'pending'}
+          percentComplete={percentComplete}
+          processedCount={processedCount}
+          totalEmployees={progressTotalEmployees || run.employeeCount || 0}
+          errorCount={errorCount}
+          errors={progress?.errors || []}
+          isOnline={isOnline}
+          estimatedTimeRemaining={estimatedTimeRemaining}
+          formatTimeRemaining={formatTimeRemaining}
+          lastError={progress?.lastError}
+          className="mb-6"
+        />
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4 mb-8">

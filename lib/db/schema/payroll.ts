@@ -1,4 +1,4 @@
-import { pgTable, uuid, date, timestamp, text, numeric, jsonb, pgPolicy, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, date, timestamp, text, numeric, jsonb, pgPolicy, integer, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { employees } from './employees';
@@ -143,6 +143,66 @@ export const payrollLineItems = pgTable('payroll_line_items', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => [
+  // RLS Policy: Tenant Isolation
+  pgPolicy('tenant_isolation', {
+    as: 'permissive',
+    for: 'all',
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);
+
+/**
+ * Payroll Run Progress Table
+ *
+ * Tracks progress of long-running payroll calculations for:
+ * - Real-time UI progress display
+ * - Resume capability after disconnection
+ * - Error tracking and debugging
+ *
+ * Used by the streaming payroll processor for large tenants (500+ employees)
+ */
+export const payrollRunProgress = pgTable('payroll_run_progress', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  payrollRunId: uuid('payroll_run_id').notNull().references(() => payrollRuns.id, { onDelete: 'cascade' }),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Progress tracking
+  totalEmployees: integer('total_employees').notNull().default(0),
+  processedCount: integer('processed_count').notNull().default(0),
+  successCount: integer('success_count').notNull().default(0),
+  errorCount: integer('error_count').notNull().default(0),
+
+  // Cursor for resumability (keyset pagination)
+  lastProcessedEmployeeId: uuid('last_processed_employee_id'),
+  currentChunk: integer('current_chunk').notNull().default(0),
+  totalChunks: integer('total_chunks'),
+  chunkSize: integer('chunk_size').notNull().default(1000),
+
+  // Status: pending, processing, completed, failed, paused
+  status: text('status').notNull().default('pending'),
+
+  // Error tracking (last 100 errors for debugging)
+  errors: jsonb('errors').notNull().default('[]'),
+  lastError: text('last_error'),
+
+  // Timing
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
+  estimatedCompletionAt: timestamp('estimated_completion_at'),
+
+  // Inngest correlation
+  inngestRunId: text('inngest_run_id'),
+
+  // Audit
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => [
+  // Index for quick lookup by payroll run
+  index('idx_payroll_run_progress_run_id').on(table.payrollRunId),
+  // Index for finding in-progress runs by tenant
+  index('idx_payroll_run_progress_tenant_status').on(table.tenantId, table.status),
   // RLS Policy: Tenant Isolation
   pgPolicy('tenant_isolation', {
     as: 'permissive',
