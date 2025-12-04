@@ -1653,76 +1653,62 @@ export const payrollRouter = createTRPCRouter({
         });
       }
 
-      const BACKGROUND_THRESHOLD = 500; // Use background for >500 employees
+      // ALWAYS use background processing via Inngest for reliable calculations
+      // This ensures payroll succeeds even with unreliable internet connections
+      // The calculation runs server-side and client polls for progress
+      const employeeCount = run.employeeCount || 0;
 
-      // For large tenants, use background processing via Inngest
-      if (run.employeeCount && run.employeeCount > BACKGROUND_THRESHOLD) {
-        console.log('[PAYROLL] Using background processing for large tenant:', {
-          runId: input.runId,
-          employeeCount: run.employeeCount,
-        });
+      console.log('[PAYROLL] Using background processing for reliable calculation:', {
+        runId: input.runId,
+        employeeCount,
+      });
 
-        // Initialize progress tracking
-        await db
-          .insert(payrollRunProgress)
-          .values({
-            payrollRunId: input.runId,
-            tenantId: ctx.user.tenantId,
-            status: 'pending',
-            totalEmployees: run.employeeCount,
-            processedCount: 0,
-            successCount: 0,
-            errorCount: 0,
-            currentChunk: 0,
-            totalChunks: Math.ceil(run.employeeCount / 1000),
-            errors: [],
-          })
-          .onConflictDoUpdate({
-            target: payrollRunProgress.payrollRunId,
-            set: {
-              status: 'pending',
-              totalEmployees: run.employeeCount,
-              processedCount: 0,
-              successCount: 0,
-              errorCount: 0,
-              currentChunk: 0,
-              errors: [],
-              startedAt: null,
-              completedAt: null,
-              lastError: null,
-            },
-          });
+      // Initialize progress tracking
+      // Use raw SQL for upsert to handle null timestamp values properly
+      await db.execute(sql`
+        INSERT INTO payroll_run_progress (
+          payroll_run_id, tenant_id, status, total_employees,
+          processed_count, success_count, error_count,
+          current_chunk, total_chunks, errors
+        ) VALUES (
+          ${input.runId}, ${ctx.user.tenantId}, 'pending', ${employeeCount},
+          0, 0, 0, 0, ${Math.ceil(employeeCount / 1000) || 1}, '[]'::jsonb
+        )
+        ON CONFLICT (payroll_run_id) DO UPDATE SET
+          status = 'pending',
+          total_employees = ${employeeCount},
+          processed_count = 0,
+          success_count = 0,
+          error_count = 0,
+          current_chunk = 0,
+          errors = '[]'::jsonb,
+          started_at = NULL,
+          completed_at = NULL,
+          last_error = NULL,
+          updated_at = NOW()
+      `);
 
-        // Trigger background calculation via Inngest
-        await sendEvent({
-          name: 'payroll.run.calculate',
-          data: {
-            payrollRunId: input.runId,
-            periodStart: run.periodStart,
-            periodEnd: run.periodEnd,
-            employeeCount: run.employeeCount,
-            tenantId: ctx.user.tenantId,
-          },
-        });
+      // Trigger background calculation via Inngest
+      // This runs server-side so client disconnection won't affect it
+      await sendEvent({
+        name: 'payroll.run.calculate',
+        data: {
+          payrollRunId: input.runId,
+          periodStart: run.periodStart,
+          periodEnd: run.periodEnd,
+          employeeCount,
+          tenantId: ctx.user.tenantId,
+        },
+      });
 
-        // Return immediately with background status
-        return {
-          success: true,
-          background: true,
-          runId: input.runId,
-          message: 'Calcul lancé en arrière-plan. Suivez la progression ci-dessous.',
-          employeeCount: run.employeeCount,
-        };
-      }
-
-      // For smaller tenants, use synchronous optimized processing
-      // Falls back to original implementation if needed
-      try {
-        return await calculatePayrollRunOptimized(input);
-      } catch (error) {
-        console.error('[PAYROLL] Optimized calculation failed, falling back to original:', error);
-        return await calculatePayrollRun(input);
-      }
+      // Return immediately - client polls getProgress for updates
+      return {
+        success: true,
+        background: true,
+        runId: input.runId,
+        message: 'Calcul lancé en arrière-plan. Suivez la progression ci-dessous.',
+        employeeCount,
+      };
     }),
 
   /**

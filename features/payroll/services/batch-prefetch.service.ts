@@ -44,9 +44,6 @@ export interface BatchEmploymentContract {
   contractType: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE';
   startDate: string;
   endDate: string | null;
-  hourlyRate: string | null;
-  dailyRate: string | null;
-  monthlyRate: string | null;
 }
 
 export interface BatchDependentData {
@@ -109,6 +106,7 @@ export async function batchFetchSalaries(
   if (employeeIds.length === 0) return new Map();
 
   // Use raw SQL with DISTINCT ON for optimal performance
+  // Cast employeeIds array explicitly to uuid[] for PostgreSQL ANY() operator
   const results: any = await db.execute(sql`
     SELECT DISTINCT ON (employee_id)
       id,
@@ -121,7 +119,7 @@ export async function batchFetchSalaries(
       pay_frequency
     FROM employee_salaries
     WHERE tenant_id = ${tenantId}
-      AND employee_id = ANY(${employeeIds})
+      AND employee_id = ANY(${sql.raw(`ARRAY[${employeeIds.map(id => `'${id}'::uuid`).join(',')}]`)})
       AND effective_from <= ${periodEnd}
     ORDER BY employee_id, effective_from DESC
   `);
@@ -154,18 +152,16 @@ export async function batchFetchContracts(
   if (employeeIds.length === 0) return new Map();
 
   // Use raw SQL with DISTINCT ON
+  // Cast employeeIds array explicitly to uuid[] for PostgreSQL ANY() operator
   const results: any = await db.execute(sql`
     SELECT DISTINCT ON (employee_id)
       id,
       employee_id,
       contract_type,
       start_date,
-      end_date,
-      hourly_rate,
-      daily_rate,
-      monthly_rate
+      end_date
     FROM employment_contracts
-    WHERE employee_id = ANY(${employeeIds})
+    WHERE employee_id = ANY(${sql.raw(`ARRAY[${employeeIds.map(id => `'${id}'::uuid`).join(',')}]`)})
       AND (end_date IS NULL OR end_date >= ${periodStart})
     ORDER BY employee_id, start_date DESC
   `);
@@ -179,9 +175,6 @@ export async function batchFetchContracts(
       contractType: row.contract_type as 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE',
       startDate: row.start_date,
       endDate: row.end_date,
-      hourlyRate: row.hourly_rate,
-      dailyRate: row.daily_rate,
-      monthlyRate: row.monthly_rate,
     });
   }
 
@@ -211,6 +204,8 @@ export async function batchFetchDependentData(
   const age21CutoffStr = age21Cutoff.toISOString().split('T')[0];
 
   // Single query that combines employee marital status with dependent aggregation
+  // Cast employeeIds array explicitly to uuid[] for PostgreSQL ANY() operator
+  const employeeIdsArray = sql.raw(`ARRAY[${employeeIds.map(id => `'${id}'::uuid`).join(',')}]`);
   const results: any = await db.execute(sql`
     WITH dependent_counts AS (
       SELECT
@@ -241,7 +236,7 @@ export async function batchFetchDependentData(
         ) AS cmu_dependents
       FROM employee_dependents
       WHERE tenant_id = ${tenantId}
-        AND employee_id = ANY(${employeeIds})
+        AND employee_id = ANY(${employeeIdsArray})
       GROUP BY employee_id
     )
     SELECT
@@ -252,7 +247,7 @@ export async function batchFetchDependentData(
       COALESCE(dc.cmu_dependents, 0)::int AS cmu_dependents
     FROM employees e
     LEFT JOIN dependent_counts dc ON e.id = dc.employee_id
-    WHERE e.id = ANY(${employeeIds})
+    WHERE e.id = ANY(${employeeIdsArray})
       AND e.tenant_id = ${tenantId}
   `);
 
@@ -336,6 +331,7 @@ export async function batchFetchTimeEntries(
 ): Promise<Map<string, BatchTimeEntryAggregate>> {
   if (employeeIds.length === 0) return new Map();
 
+  // Cast employeeIds array explicitly to uuid[] for PostgreSQL ANY() operator
   const results: any = await db.execute(sql`
     SELECT
       employee_id,
@@ -348,7 +344,7 @@ export async function batchFetchTimeEntries(
       COUNT(*)::int AS entry_count
     FROM time_entries
     WHERE tenant_id = ${tenantId}
-      AND employee_id = ANY(${employeeIds})
+      AND employee_id = ANY(${sql.raw(`ARRAY[${employeeIds.map(id => `'${id}'::uuid`).join(',')}]`)})
       AND status = 'approved'
       AND clock_in >= ${periodStart}::timestamp
       AND clock_in < ${periodEnd}::timestamp + interval '1 day'
@@ -383,9 +379,12 @@ export async function batchFetchTimeEntries(
 export async function batchFetchAdvances(
   tenantId: string,
   employeeIds: string[],
-  payrollMonth: string // Format: YYYY-MM-01
+  payrollMonth: string // Format: YYYY-MM (will be converted to YYYY-MM-01 for date comparison)
 ): Promise<Map<string, BatchAdvanceData>> {
   if (employeeIds.length === 0) return new Map();
+
+  // Cast employeeIds array explicitly to uuid[] for PostgreSQL ANY() operator
+  const employeeIdsArray = sql.raw(`ARRAY[${employeeIds.map(id => `'${id}'::uuid`).join(',')}]`);
 
   // Query disbursable advances (approved, not yet disbursed)
   const disbursableResults: any = await db.execute(sql`
@@ -395,7 +394,7 @@ export async function batchFetchAdvances(
       approved_amount AS amount
     FROM salary_advances
     WHERE tenant_id = ${tenantId}
-      AND employee_id = ANY(${employeeIds})
+      AND employee_id = ANY(${employeeIdsArray})
       AND status = 'approved'
   `);
 
@@ -409,8 +408,8 @@ export async function batchFetchAdvances(
     FROM salary_advance_repayments sar
     JOIN salary_advances sa ON sar.salary_advance_id = sa.id
     WHERE sar.tenant_id = ${tenantId}
-      AND sa.employee_id = ANY(${employeeIds})
-      AND sar.due_month = ${payrollMonth}::date
+      AND sa.employee_id = ANY(${employeeIdsArray})
+      AND sar.due_month = (${payrollMonth} || '-01')::date
       AND sar.status = 'pending'
   `);
 
@@ -470,6 +469,7 @@ export async function batchFetchVariablePay(
 ): Promise<Map<string, BatchVariablePay[]>> {
   if (employeeIds.length === 0) return new Map();
 
+  // Cast employeeIds array explicitly to uuid[] for PostgreSQL ANY() operator
   const results: any = await db.execute(sql`
     SELECT
       employee_id,
@@ -477,7 +477,7 @@ export async function batchFetchVariablePay(
       SUM(amount)::numeric AS total_amount
     FROM variable_pay_inputs
     WHERE tenant_id = ${tenantId}
-      AND employee_id = ANY(${employeeIds})
+      AND employee_id = ANY(${sql.raw(`ARRAY[${employeeIds.map(id => `'${id}'::uuid`).join(',')}]`)})
       AND entry_date >= ${periodStart}::date
       AND entry_date <= ${periodEnd}::date
     GROUP BY employee_id, component_code

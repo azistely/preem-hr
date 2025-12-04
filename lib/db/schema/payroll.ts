@@ -1,4 +1,4 @@
-import { pgTable, uuid, date, timestamp, text, numeric, jsonb, pgPolicy, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, date, timestamp, text, numeric, jsonb, pgPolicy, integer, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { tenants } from './tenants';
 import { employees } from './employees';
@@ -199,8 +199,8 @@ export const payrollRunProgress = pgTable('payroll_run_progress', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => [
-  // Index for quick lookup by payroll run
-  index('idx_payroll_run_progress_run_id').on(table.payrollRunId),
+  // Unique index for payroll run (required for ON CONFLICT upsert)
+  uniqueIndex('idx_payroll_run_progress_run_id').on(table.payrollRunId),
   // Index for finding in-progress runs by tenant
   index('idx_payroll_run_progress_tenant_status').on(table.tenantId, table.status),
   // RLS Policy: Tenant Isolation

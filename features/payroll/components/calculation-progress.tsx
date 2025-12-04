@@ -77,12 +77,8 @@ export function CalculationProgress({
 }: CalculationProgressProps) {
   const [showErrors, setShowErrors] = useState(false);
 
-  // Don't render if pending and no employees
-  if (status === 'pending' && totalEmployees === 0) {
-    return null;
-  }
-
   const isProcessing = status === 'processing';
+  const isPending = status === 'pending';
   const isCompleted = status === 'completed';
   const isFailed = status === 'failed';
 
@@ -90,6 +86,12 @@ export function CalculationProgress({
     <Card className={cn('w-full', className)}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-lg">
+          {isPending && (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <span>Démarrage du calcul...</span>
+            </>
+          )}
           {isProcessing && (
             <>
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -124,7 +126,13 @@ export function CalculationProgress({
           <div className="flex justify-between text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
               <Users className="h-4 w-4" />
-              {processedCount.toLocaleString('fr-FR')} / {totalEmployees.toLocaleString('fr-FR')} employés
+              {totalEmployees > 0 ? (
+                <>
+                  {processedCount.toLocaleString('fr-FR')} / {totalEmployees.toLocaleString('fr-FR')} employés
+                </>
+              ) : (
+                <span className="text-muted-foreground">Chargement des employés...</span>
+              )}
             </span>
             <span className="font-medium">{percentComplete}%</span>
           </div>

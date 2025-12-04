@@ -146,8 +146,10 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
   });
 
   // Track calculation progress for background processing
+  // Always pass runId - hook will poll when calculation is in progress
   const {
     progress,
+    isPending: isProgressPending,
     isProcessing: isProgressProcessing,
     isCompleted: isProgressCompleted,
     isFailed: isProgressFailed,
@@ -158,8 +160,10 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     errorCount,
     estimatedTimeRemaining,
     formatTimeRemaining,
-  } = usePayrollProgress(isBackgroundCalculating ? runId : null, {
-    enabled: isBackgroundCalculating,
+    refetch: refetchProgress,
+  } = usePayrollProgress(runId, {
+    // Enable polling when background calculation is active OR when isCalculating is true
+    enabled: isBackgroundCalculating || isCalculating,
   });
 
   // Handle progress completion/failure
@@ -193,12 +197,15 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     onSuccess: async (result) => {
       // Check if this is a background calculation
       if (result && 'background' in result && result.background) {
-        // Background calculation started - enable progress tracking
-        setIsBackgroundCalculating(true);
+        // Background calculation started via Inngest
+        // Keep isBackgroundCalculating true for progress polling
+        // Turn off isCalculating spinner since we're now showing progress
         setIsCalculating(false);
-        // Don't refetch yet - wait for progress to complete
+        // Trigger an immediate progress refetch to start polling
+        refetchProgress();
+        // Don't refetch run yet - wait for progress to complete
       } else {
-        // Synchronous calculation completed
+        // Synchronous calculation completed (shouldn't happen with Inngest)
         setIsCalculating(false);
         setIsBackgroundCalculating(false);
         await refetch();
@@ -275,8 +282,14 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
     );
 
     if (confirmed) {
+      // Enable both states - isCalculating shows UI, isBackgroundCalculating enables progress polling
       setIsCalculating(true);
-      await calculateRun.mutateAsync({ runId: run.id });
+      setIsBackgroundCalculating(true);
+      try {
+        await calculateRun.mutateAsync({ runId: run.id });
+      } catch {
+        // Error handled in mutation onError
+      }
     }
   };
 
@@ -537,7 +550,7 @@ export default function PayrollRunDetailPage({ params }: { params: Promise<{ id:
       {/* Calculation Progress (for background processing) */}
       {(isBackgroundCalculating || isCalculating) && (
         <CalculationProgress
-          status={isProgressProcessing ? 'processing' : isProgressCompleted ? 'completed' : isProgressFailed ? 'failed' : 'pending'}
+          status={progress?.status || 'pending'}
           percentComplete={percentComplete}
           processedCount={processedCount}
           totalEmployees={progressTotalEmployees || run.employeeCount || 0}
