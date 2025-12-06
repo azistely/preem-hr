@@ -1044,45 +1044,6 @@ export function SalaryChangeWizard({
                       </div>
                     )}
 
-                    {/* Payment Frequency Equivalents */}
-                    {paymentFrequency !== 'MONTHLY' && componentTotal > 0 && (() => {
-                      // All amounts are stored as monthly - calculate equivalents by simple division
-                      const weeklyAmount = componentTotal / 4.33;
-                      const biweeklyAmount = componentTotal / 2;
-                      const dailyAmount = componentTotal / 30;
-
-                      return (
-                        <Alert>
-                          <Calculator className="h-4 w-4" />
-                          <AlertDescription>
-                            <strong>💡 Équivalences pour paie {getPaymentFrequencyLabel(paymentFrequency)}:</strong>
-                            <div className="mt-2 space-y-1 text-sm">
-                              {paymentFrequency === 'WEEKLY' && (
-                                <>
-                                  <div>Semaine: ~{formatCurrencyUtil(weeklyAmount)} FCFA</div>
-                                  <div>Mois (4.33 semaines): ~{formatCurrencyUtil(componentTotal)} FCFA</div>
-                                </>
-                              )}
-                              {paymentFrequency === 'BIWEEKLY' && (
-                                <>
-                                  <div>Quinzaine: ~{formatCurrencyUtil(biweeklyAmount)} FCFA</div>
-                                  <div>Mois (2 quinzaines): ~{formatCurrencyUtil(componentTotal)} FCFA</div>
-                                </>
-                              )}
-                              {paymentFrequency === 'DAILY' && (
-                                <>
-                                  <div>Jour: ~{formatCurrencyUtil(dailyAmount)} FCFA</div>
-                                  <div>Mois (30 jours): ~{formatCurrencyUtil(componentTotal)} FCFA</div>
-                                </>
-                              )}
-                            </div>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              Basé sur le salaire mensuel. Le montant réel dépendra des jours travaillés.
-                            </p>
-                          </AlertDescription>
-                        </Alert>
-                      );
-                    })()}
 
                     {/* Weekly Hours Regime Context */}
                     {paymentFrequency !== 'MONTHLY' && weeklyHoursRegime && (
