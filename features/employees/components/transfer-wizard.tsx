@@ -157,7 +157,7 @@ export function TransferWizard({ employee, open, onClose }: TransferWizardProps)
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <div className="space-y-6">
             {/* Step 1: Select Position */}
             {step === 1 && (
               <div className="space-y-4">
@@ -272,10 +272,9 @@ export function TransferWizard({ employee, open, onClose }: TransferWizardProps)
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="promotion">Promotion</SelectItem>
-                          <SelectItem value="lateral_move">Mutation horizontale</SelectItem>
+                          <SelectItem value="transfer">Mutation horizontale</SelectItem>
                           <SelectItem value="demotion">Rétrogradation</SelectItem>
-                          <SelectItem value="restructuring">Réorganisation</SelectItem>
-                          <SelectItem value="other">Autre</SelectItem>
+                          <SelectItem value="other">Autre (Réorganisation, etc.)</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -349,9 +348,8 @@ export function TransferWizard({ employee, open, onClose }: TransferWizardProps)
                       {
                         {
                           promotion: 'Promotion',
-                          lateral_move: 'Mutation horizontale',
+                          transfer: 'Mutation horizontale',
                           demotion: 'Rétrogradation',
-                          restructuring: 'Réorganisation',
                           other: 'Autre',
                         }[form.getValues('reason')]
                       }
@@ -380,7 +378,8 @@ export function TransferWizard({ employee, open, onClose }: TransferWizardProps)
                 </Button>
               ) : (
                 <Button
-                  type="submit"
+                  type="button"
+                  onClick={form.handleSubmit(onSubmit)}
                   disabled={transferEmployee.isPending}
                   className="min-h-[56px] bg-green-600 hover:bg-green-700"
                 >
@@ -398,7 +397,7 @@ export function TransferWizard({ employee, open, onClose }: TransferWizardProps)
                 </Button>
               )}
             </div>
-          </form>
+          </div>
         </Form>
       </DialogContent>
     </Dialog>
