@@ -32,6 +32,7 @@ import {
   type RawDependentData,
   type RawTimeData,
   type RawAdvanceData,
+  type RawACPData,
   type SalaryBreakdown,
   type BaseSalaryAmounts,
 } from './transform-employee-data';
@@ -109,6 +110,13 @@ export class OnDemandPayrollDataProvider implements PayrollDataProvider {
       contractType
     );
 
+    // Prepare ACP data from employee record
+    const acpData: RawACPData = {
+      acpPaymentActive: (employee as any).acpPaymentActive || false,
+      acpPaymentDate: (employee as any).acpPaymentDate,
+      acpLastPaidAt: (employee as any).acpLastPaidAt,
+    };
+
     // Transform to unified format
     const data = transformToEmployeePayrollData(
       employee as RawEmployeeRecord,
@@ -119,7 +127,10 @@ export class OnDemandPayrollDataProvider implements PayrollDataProvider {
       advanceData,
       breakdown,
       baseAmounts,
-      effectiveSeniorityBonus
+      effectiveSeniorityBonus,
+      acpData,
+      this.periodStart,
+      this.periodEnd
     );
 
     // Check if employee should be skipped

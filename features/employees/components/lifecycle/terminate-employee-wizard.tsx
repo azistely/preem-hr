@@ -49,6 +49,10 @@ import { STCPreviewStep } from './wizard-steps/stc-preview-step';
 import { DocumentGenerationStep } from './wizard-steps/document-generation-step';
 import { ConfirmationStep } from './wizard-steps/confirmation-step';
 
+// Background processing
+import { useTerminationProgress } from '../../hooks/use-termination-progress';
+import { TerminationProgress } from './termination-progress';
+
 // Types
 export type DepartureType =
   | 'FIN_CDD'
@@ -185,24 +189,55 @@ export function TerminateEmployeeWizard({
     },
   });
 
-  const generateDocuments = trpc.terminations.generateDocuments.useMutation({
-    onSuccess: () => {
-      form.setValue('documentsGenerated', true);
-      queryClient.invalidateQueries();
+  // Start background processing (STC + documents) via Inngest
+  const startTerminationProcessing = trpc.terminations.startTerminationProcessing.useMutation({
+    onSuccess: (result) => {
+      form.setValue('terminationId', result.terminationId);
       toast({
-        title: 'Documents générés',
-        description: 'Les 3 documents de cessation ont été générés avec succès.',
+        title: 'Traitement démarré',
+        description: 'Le calcul STC et la génération des documents sont en cours...',
       });
-      setCurrentStep(5);
+      // Don't advance step - stay on step 4 to show progress
     },
     onError: (error) => {
       toast({
-        title: 'Erreur de génération',
+        title: 'Erreur',
         description: error.message,
         variant: 'destructive',
       });
     },
   });
+
+  // Track processing progress
+  const terminationId = form.watch('terminationId');
+  const {
+    progress,
+    isProcessing,
+    isCompleted,
+    isFailed,
+    isOnline,
+    percentComplete,
+    currentStep: progressCurrentStep,
+    estimatedTimeRemaining,
+    formatTimeRemaining,
+    stcResults,
+    documents,
+  } = useTerminationProgress(terminationId ?? null, {
+    enabled: !!terminationId,
+  });
+
+  // Advance to confirmation step when processing completes
+  useEffect(() => {
+    if (isCompleted && terminationId) {
+      form.setValue('documentsGenerated', true);
+      queryClient.invalidateQueries();
+      toast({
+        title: 'Traitement terminé',
+        description: 'Tous les documents ont été générés avec succès.',
+      });
+      setCurrentStep(5);
+    }
+  }, [isCompleted, terminationId, queryClient, toast, form]);
 
   const handleNext = async () => {
     // Step-specific validation
@@ -254,7 +289,7 @@ export function TerminateEmployeeWizard({
         return;
       }
     } else if (currentStep === 4) {
-      // Step 4: Validate document generation fields and create termination
+      // Step 4: Validate document generation fields and start background processing
       if (!form.getValues('issuedBy')) {
         toast({
           title: 'Champ requis',
@@ -274,6 +309,15 @@ export function TerminateEmployeeWizard({
         return;
       }
 
+      // If processing is already in progress, don't start again
+      if (terminationId && (isProcessing || progress?.status === 'pending')) {
+        toast({
+          title: 'Traitement en cours',
+          description: 'Veuillez patienter pendant que le traitement se termine.',
+        });
+        return;
+      }
+
       // Create termination record
       const termination = await createTermination.mutateAsync({
         employeeId: employee.id,
@@ -283,20 +327,26 @@ export function TerminateEmployeeWizard({
         noticePeriodDays: stcResult.noticePeriod?.totalDays || 0,
         severanceAmount: stcResult.severancePay || 0,
         vacationPayoutAmount: stcResult.vacationPayout || 0,
-        averageSalary12m: stcResult.calculationDetails.averageSalary12M, // ← Fix: Access from calculationDetails
-        yearsOfService: stcResult.calculationDetails.yearsOfService, // ← Fix: Access from calculationDetails
-        severanceRate: String(getSeveranceRate(stcResult)) as '0' | '30' | '35' | '40', // ← Fix: Convert to string
+        averageSalary12m: stcResult.calculationDetails.averageSalary12M,
+        yearsOfService: stcResult.calculationDetails.yearsOfService,
+        severanceRate: String(getSeveranceRate(stcResult)) as '0' | '30' | '35' | '40',
       });
 
-      // Generate documents
-      await generateDocuments.mutateAsync({
+      // Start background processing (STC recalculation + document generation)
+      // This is more reliable on 3G connections than synchronous generation
+      const terminationDate = form.getValues('terminationDate');
+      await startTerminationProcessing.mutateAsync({
         terminationId: termination.id,
+        departureType: form.getValues('departureType')!,
+        terminationDate: terminationDate!.toISOString(),
+        noticePeriodStatus: form.getValues('noticePeriodStatus')!,
+        licenciementType: form.getValues('licenciementType'),
+        ruptureNegotiatedAmount: form.getValues('ruptureNegotiatedAmount'),
         issuedBy: form.getValues('issuedBy')!,
         payDate: form.getValues('payDate') || new Date().toISOString(),
-        versionNotes: form.getValues('versionNotes'),
       });
 
-      return; // Don't increment step, mutation will do it on success
+      return; // Don't increment step - progress tracking will advance when complete
     }
 
     setCurrentStep((prev) => Math.min(prev + 1, totalSteps));
@@ -329,6 +379,41 @@ export function TerminateEmployeeWizard({
           />
         );
       case 4:
+        // Show progress indicator when processing is in progress
+        if (terminationId && (progress?.status === 'pending' || progress?.status === 'processing')) {
+          return (
+            <div className="space-y-6">
+              <TerminationProgress
+                status={progress?.status ?? 'pending'}
+                percentComplete={percentComplete}
+                currentStep={progressCurrentStep}
+                isOnline={isOnline}
+                estimatedTimeRemaining={estimatedTimeRemaining}
+                formatTimeRemaining={formatTimeRemaining}
+                error={progress?.error}
+                stcResults={stcResults}
+                documents={documents}
+              />
+            </div>
+          );
+        }
+        // Show failed state with retry option
+        if (terminationId && isFailed) {
+          return (
+            <div className="space-y-6">
+              <TerminationProgress
+                status="failed"
+                percentComplete={percentComplete}
+                currentStep={progressCurrentStep}
+                isOnline={isOnline}
+                error={progress?.error}
+                stcResults={stcResults}
+                documents={documents}
+              />
+              <DocumentGenerationStep form={form} employee={employee} />
+            </div>
+          );
+        }
         return <DocumentGenerationStep form={form} employee={employee} />;
       case 5:
         return <ConfirmationStep form={form} employee={employee} />;
@@ -337,7 +422,7 @@ export function TerminateEmployeeWizard({
     }
   };
 
-  const isLoading = createTermination.isPending || generateDocuments.isPending;
+  const isLoading = createTermination.isPending || startTerminationProcessing.isPending || isProcessing;
   const canGoNext = currentStep < totalSteps;
   const canGoBack = currentStep > 1 && currentStep < 5;
 

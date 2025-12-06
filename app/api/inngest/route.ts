@@ -53,6 +53,12 @@ import {
 import { leaveReminder20Days } from '@/lib/inngest/functions/leave-reminder-20d';
 import { leaveReminder15Days } from '@/lib/inngest/functions/leave-reminder-15d';
 
+// Termination background processing (3G resilience)
+import {
+  terminationProcessingFunction,
+  terminationProcessingFailedFunction,
+} from '@/lib/inngest/functions/termination-processing';
+
 /**
  * Register all Inngest functions with the API route
  * The serve() function automatically handles:
@@ -108,6 +114,10 @@ const handler = serve({
     // Leave Planning System
     leaveReminder20Days,
     leaveReminder15Days,
+
+    // Termination background processing (3G resilience)
+    terminationProcessingFunction,
+    terminationProcessingFailedFunction,
   ],
 
   // Streaming: Return results as they complete (improves performance)

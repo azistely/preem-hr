@@ -24,6 +24,7 @@ import {
   type RawDependentData,
   type RawTimeData,
   type RawAdvanceData,
+  type RawACPData,
   type SalaryBreakdown,
   type BaseSalaryAmounts,
 } from './transform-employee-data';
@@ -55,6 +56,10 @@ type EmployeeRecord = {
   jobTitle: string | null;
   bankAccount: string | null;
   customFields: Record<string, any> | null;
+  // ACP payment fields
+  acpPaymentActive: boolean | null;
+  acpPaymentDate: string | null;
+  acpLastPaidAt: string | null;
 };
 
 /**
@@ -115,6 +120,13 @@ export class BatchPayrollDataProvider implements PayrollDataProvider {
       contract?.contractType as 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | undefined
     );
 
+    // Prepare ACP data from employee record
+    const acpData: RawACPData = {
+      acpPaymentActive: employee.acpPaymentActive || false,
+      acpPaymentDate: employee.acpPaymentDate,
+      acpLastPaidAt: employee.acpLastPaidAt,
+    };
+
     // Transform to unified format using shared function
     const data = transformToEmployeePayrollData(
       employee as RawEmployeeRecord,
@@ -136,7 +148,10 @@ export class BatchPayrollDataProvider implements PayrollDataProvider {
       advanceData,
       breakdown,
       baseAmounts,
-      effectiveSeniorityBonus
+      effectiveSeniorityBonus,
+      acpData,
+      this.periodStart,
+      this.periodEnd
     );
 
     // Check if employee should be skipped

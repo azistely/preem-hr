@@ -20,6 +20,7 @@ import type {
 } from './employee-payroll-data';
 import { calculatePayrollV2 } from './payroll-calculation-v2';
 import { buildCalculationContext } from '../types/calculation-context';
+import { calculateACP, type ACPCalculationResult } from '@/features/leave/services/acp-calculation.service';
 
 /**
  * SINGLE function that processes one employee's payroll.
@@ -98,8 +99,45 @@ export async function processEmployeePayroll(
     nightSundayHours: timeData?.nightSundayHours || 0,
   };
 
+  // ============================================
+  // ACP (Allocations de Congés Payés) Auto-Calculation
+  // ============================================
+  // Check if employee should receive ACP this payroll period
+  // Only CDI/CDD contracts are eligible (checked in data provider transform)
+  let acpAmount = 0;
+  let acpResult: ACPCalculationResult | null = null;
+
+  if (data.acpPaymentInfo?.shouldCalculate) {
+    try {
+      acpResult = await calculateACP({
+        employeeId: employee.id,
+        tenantId: run.tenantId,
+        countryCode: tenant.countryCode,
+        acpPaymentDate: new Date(data.acpPaymentInfo.acpPaymentDate),
+        payrollPeriodStart: run.periodStart,
+        payrollPeriodEnd: run.periodEnd,
+      });
+
+      if (acpResult.isEligible) {
+        acpAmount = acpResult.acpAmount;
+        console.log(`[ACP AUTO-CALC] Employee ${employee.id} (${employee.firstName} ${employee.lastName}): ACP = ${acpAmount.toLocaleString('fr-FR')} FCFA (${acpResult.leaveDaysTakenCalendar} days leave)`);
+      } else {
+        console.log(`[ACP AUTO-CALC] Employee ${employee.id}: Not eligible - ${acpResult.skipReason}`);
+      }
+    } catch (error) {
+      // Log warning but continue payroll without ACP - don't block employee payment
+      console.warn(`[ACP AUTO-CALC] Failed for employee ${employee.id}:`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  // Add ACP to calculation input if applicable
+  const calculationInputWithACP = {
+    ...calculationInput,
+    acpAmount: acpAmount > 0 ? acpAmount : undefined,
+  };
+
   // Call core calculation engine (already shared)
-  const calculation = await calculatePayrollV2(calculationInput);
+  const calculation = await calculatePayrollV2(calculationInputWithACP);
 
   // Process salary advances
   const disbursementAmount = advances.disbursements.reduce((sum, d) => sum + d.amount, 0);
@@ -177,7 +215,25 @@ export async function processEmployeePayroll(
     brutImposable: String(calculation.brutImposable),
 
     // Detailed breakdowns (for CDDTI components like gratification, congés payés, précarité)
-    earningsDetails: calculation.earningsDetails || [],
+    // Add ACP to earnings details if it was calculated
+    earningsDetails: acpAmount > 0
+      ? [
+          ...(calculation.earningsDetails || []),
+          {
+            code: 'ACP',
+            name: 'Allocations de Congés Payés',
+            amount: acpAmount,
+            isTaxable: true,
+            isContributable: true,
+            details: acpResult ? {
+              leaveDaysTaken: acpResult.leaveDaysTakenCalendar,
+              dailyAverageSalary: acpResult.dailyAverageSalary,
+              referencePeriodStart: acpResult.referencePeriodStart.toISOString(),
+              referencePeriodEnd: acpResult.referencePeriodEnd.toISOString(),
+            } : undefined,
+          },
+        ]
+      : (calculation.earningsDetails || []),
     deductionsDetails: calculation.deductionsDetails || [],
 
     // Deductions (both JSONB and dedicated columns for exports)
@@ -227,5 +283,12 @@ export async function processEmployeePayroll(
     paymentMethod: 'bank_transfer',
     bankAccount: employee.bankAccount,
     status: 'pending',
+
+    // ACP payment tracking (for updating employee record after payroll)
+    acpPaymentApplied: acpAmount > 0 && acpResult ? {
+      amount: acpAmount,
+      employeeId: employee.id,
+      leaveDaysTaken: acpResult.leaveDaysTakenCalendar,
+    } : undefined,
   };
 }

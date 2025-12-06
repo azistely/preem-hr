@@ -21,6 +21,10 @@ import {
 import { calculateSTC, type DepartureType, type NoticePeriodStatus, type LicenciementType } from '@/features/payroll/services/stc-calculator.service';
 import { bulkGenerateTerminationDocuments, regenerateTerminationDocuments } from '@/features/documents/services/bulk-termination-documents.service';
 import { TRPCError } from '@trpc/server';
+import { db } from '@/lib/db';
+import { employeeTerminations } from '@/drizzle/schema';
+import { eq, and } from 'drizzle-orm';
+import { sendEvent } from '@/lib/inngest/client';
 
 const createTerminationSchema = z.object({
   employeeId: z.string().uuid(),
@@ -296,5 +300,206 @@ export const terminationsRouter = createTRPCRouter({
           message: error.message || 'Erreur lors de la régénération des documents',
         });
       }
+    }),
+
+  // =====================================================
+  // BACKGROUND PROCESSING ENDPOINTS (3G Resilience)
+  // =====================================================
+
+  /**
+   * Start termination processing in background via Inngest
+   *
+   * This endpoint triggers the background processing of a termination,
+   * which includes:
+   * - STC (Solde de Tout Compte) calculation
+   * - Work Certificate generation
+   * - Final Payslip generation
+   * - CNPS Attestation generation
+   *
+   * The client should poll getTerminationProgress for status updates.
+   */
+  startTerminationProcessing: publicProcedure
+    .input(z.object({
+      terminationId: z.string().uuid(),
+      departureType: z.enum([
+        'FIN_CDD',
+        'DEMISSION_CDI',
+        'DEMISSION_CDD',
+        'LICENCIEMENT',
+        'RUPTURE_CONVENTIONNELLE',
+        'RETRAITE',
+        'DECES',
+      ]),
+      terminationDate: z.string().datetime(),
+      noticePeriodStatus: z.enum(['worked', 'paid_by_employer', 'paid_by_employee', 'waived']),
+      issuedBy: z.string().min(1, 'Le nom de la personne qui émet les documents est requis'),
+      payDate: z.string().datetime(),
+      // Optional fields for specific departure types
+      licenciementType: z.enum(['economique', 'faute_simple', 'faute_grave', 'faute_lourde', 'inaptitude']).optional(),
+      ruptureNegotiatedAmount: z.number().min(0).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Verify termination exists and belongs to tenant
+      const termination = await db.query.employeeTerminations.findFirst({
+        where: and(
+          eq(employeeTerminations.id, input.terminationId),
+          eq(employeeTerminations.tenantId, tenantId)
+        ),
+      });
+
+      if (!termination) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Cessation non trouvée',
+        });
+      }
+
+      // Check if processing is already in progress
+      if (termination.processingStatus === 'processing' || termination.processingStatus === 'pending') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Le traitement est déjà en cours',
+        });
+      }
+
+      // Mark as pending and send event to Inngest
+      await db.update(employeeTerminations)
+        .set({
+          processingStatus: 'pending',
+          processingProgress: 0,
+          processingCurrentStep: 'En attente de traitement...',
+          processingError: null,
+          processingStartedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(and(
+          eq(employeeTerminations.id, input.terminationId),
+          eq(employeeTerminations.tenantId, tenantId)
+        ));
+
+      // Send event to Inngest for background processing
+      const { ids } = await sendEvent({
+        name: 'termination.process',
+        data: {
+          terminationId: input.terminationId,
+          tenantId,
+          employeeId: termination.employeeId,
+          departureType: input.departureType,
+          terminationDate: input.terminationDate,
+          noticePeriodStatus: input.noticePeriodStatus,
+          licenciementType: input.licenciementType,
+          ruptureNegotiatedAmount: input.ruptureNegotiatedAmount,
+          issuedBy: input.issuedBy,
+          payDate: input.payDate,
+          uploadedByUserId: ctx.user.id,
+        },
+      });
+
+      // Store Inngest run ID for tracking
+      if (ids && ids.length > 0) {
+        await db.update(employeeTerminations)
+          .set({
+            inngestRunId: ids[0],
+            updatedAt: new Date().toISOString(),
+          })
+          .where(and(
+            eq(employeeTerminations.id, input.terminationId),
+            eq(employeeTerminations.tenantId, tenantId)
+          ));
+      }
+
+      return {
+        success: true,
+        terminationId: input.terminationId,
+        inngestRunId: ids?.[0],
+        message: 'Traitement démarré en arrière-plan',
+      };
+    }),
+
+  /**
+   * Get termination processing progress
+   *
+   * Poll this endpoint to track the progress of background termination processing.
+   * Designed for West African 3G connections with unreliable connectivity.
+   */
+  getTerminationProgress: publicProcedure
+    .input(z.object({
+      terminationId: z.string().uuid(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      const termination = await db.query.employeeTerminations.findFirst({
+        where: and(
+          eq(employeeTerminations.id, input.terminationId),
+          eq(employeeTerminations.tenantId, tenantId)
+        ),
+        columns: {
+          id: true,
+          employeeId: true,
+          processingStatus: true,
+          processingProgress: true,
+          processingCurrentStep: true,
+          processingStartedAt: true,
+          processingCompletedAt: true,
+          processingError: true,
+          inngestRunId: true,
+          // STC results (available after calculation completes)
+          stcCalculatedAt: true,
+          severanceAmount: true,
+          vacationPayoutAmount: true,
+          gratificationAmount: true,
+          proratedSalary: true,
+          noticePaymentAmount: true,
+          totalGross: true,
+          totalNet: true,
+          yearsOfService: true,
+          averageSalary12M: true,
+          // Document URLs (available after generation)
+          workCertificateDocumentId: true,
+          finalPayslipDocumentId: true,
+          cnpsAttestationDocumentId: true,
+        },
+      });
+
+      if (!termination) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Cessation non trouvée',
+        });
+      }
+
+      return {
+        id: termination.id,
+        employeeId: termination.employeeId,
+        status: (termination.processingStatus || 'idle') as 'idle' | 'pending' | 'processing' | 'completed' | 'failed',
+        progress: termination.processingProgress || 0,
+        currentStep: termination.processingCurrentStep,
+        startedAt: termination.processingStartedAt,
+        completedAt: termination.processingCompletedAt,
+        error: termination.processingError,
+        inngestRunId: termination.inngestRunId,
+        // STC results (if calculated)
+        stcResults: termination.stcCalculatedAt ? {
+          calculatedAt: termination.stcCalculatedAt,
+          severancePay: termination.severanceAmount ? parseFloat(termination.severanceAmount) : 0,
+          vacationPayout: termination.vacationPayoutAmount ? parseFloat(termination.vacationPayoutAmount) : 0,
+          gratification: termination.gratificationAmount ? parseFloat(termination.gratificationAmount) : 0,
+          proratedSalary: termination.proratedSalary ? parseFloat(termination.proratedSalary) : 0,
+          noticePayment: termination.noticePaymentAmount ? parseFloat(termination.noticePaymentAmount) : 0,
+          grossTotal: termination.totalGross ? parseFloat(termination.totalGross) : 0,
+          netTotal: termination.totalNet ? parseFloat(termination.totalNet) : 0,
+          yearsOfService: termination.yearsOfService ? parseFloat(termination.yearsOfService) : 0,
+          averageSalary12M: termination.averageSalary12M ? parseFloat(termination.averageSalary12M) : 0,
+        } : null,
+        // Document IDs (if generated)
+        documents: {
+          workCertificateId: termination.workCertificateDocumentId,
+          finalPayslipId: termination.finalPayslipDocumentId,
+          cnpsAttestationId: termination.cnpsAttestationDocumentId,
+        },
+      };
     }),
 });

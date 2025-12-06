@@ -88,6 +88,15 @@ export interface RawAdvanceData {
 }
 
 /**
+ * Raw ACP payment data (from employee record)
+ */
+export interface RawACPData {
+  acpPaymentActive: boolean;
+  acpPaymentDate: string | null;
+  acpLastPaidAt: string | null;
+}
+
+/**
  * Salary breakdown from component reader
  * Note: Types align with ComponentsBreakdown from component-reader.ts
  */
@@ -128,6 +137,9 @@ export interface BaseSalaryAmounts {
  * @param breakdown - Salary component breakdown
  * @param baseAmounts - Extracted base salary amounts
  * @param effectiveSeniorityBonus - Auto-calculated seniority bonus
+ * @param acpData - ACP payment data (optional)
+ * @param periodStart - Payroll period start date (for ACP date check)
+ * @param periodEnd - Payroll period end date (for ACP date check)
  * @returns Unified EmployeePayrollData
  */
 export function transformToEmployeePayrollData(
@@ -139,7 +151,10 @@ export function transformToEmployeePayrollData(
   advances: RawAdvanceData,
   breakdown: SalaryBreakdown,
   baseAmounts: BaseSalaryAmounts,
-  effectiveSeniorityBonus: number
+  effectiveSeniorityBonus: number,
+  acpData?: RawACPData,
+  periodStart?: string,
+  periodEnd?: string
 ): EmployeePayrollData {
   // Parse dates consistently
   const hireDate = typeof employee.hireDate === 'string'
@@ -236,6 +251,58 @@ export function transformToEmployeePayrollData(
       repayments: advances.repayments,
       netEffect: advances.netEffect,
     },
+
+    // ACP payment info (populated if employee should receive ACP this period)
+    acpPaymentInfo: determineACPPaymentInfo(acpData, periodStart, periodEnd, contractType),
+  };
+}
+
+/**
+ * Determine if ACP should be calculated for this employee in this period
+ *
+ * @param acpData - Raw ACP data from employee record
+ * @param periodStart - Payroll period start date
+ * @param periodEnd - Payroll period end date
+ * @param contractType - Employee contract type (only CDI/CDD eligible)
+ * @returns ACP payment info or undefined if not applicable
+ */
+function determineACPPaymentInfo(
+  acpData?: RawACPData,
+  periodStart?: string,
+  periodEnd?: string,
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | null
+): EmployeePayrollData['acpPaymentInfo'] {
+  // Skip if no ACP data or missing period dates
+  if (!acpData || !periodStart || !periodEnd) {
+    return undefined;
+  }
+
+  // Only CDI/CDD contracts are eligible for ACP
+  if (!contractType || !['CDI', 'CDD'].includes(contractType)) {
+    return undefined;
+  }
+
+  // Check if ACP is active and payment date is set
+  if (!acpData.acpPaymentActive || !acpData.acpPaymentDate) {
+    return undefined;
+  }
+
+  // Check if acpPaymentDate falls within the payroll period
+  const acpDate = new Date(acpData.acpPaymentDate);
+  const start = new Date(periodStart);
+  const end = new Date(periodEnd);
+
+  // Include the end date (<=) since payroll periods are inclusive
+  const shouldCalculate = acpDate >= start && acpDate <= end;
+
+  if (!shouldCalculate) {
+    return undefined;
+  }
+
+  return {
+    shouldCalculate: true,
+    acpPaymentDate: acpData.acpPaymentDate,
+    acpLastPaidAt: acpData.acpLastPaidAt,
   };
 }
 

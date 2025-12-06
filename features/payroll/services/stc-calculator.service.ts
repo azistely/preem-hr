@@ -21,7 +21,7 @@ import {
   timeOffBalances,
   tenants,
 } from '@/drizzle/schema';
-import { eq, and, gte, desc, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
 import { differenceInDays, differenceInMonths, subMonths, getDaysInMonth } from 'date-fns';
 import { calculateSTCTaxation, type STCTaxationResult } from './stc-taxation.service';
 
@@ -730,17 +730,26 @@ async function calculateAverageSalary12Months(
   console.log('[STC Calculator] Calculating 12-month average salary...');
   const date12MonthsAgo = subMonths(terminationDate, 12);
 
-  // Get all salary records in the last 12 months
+  // Get salary records that are relevant for the 12-month period
+  // A salary record is relevant if:
+  // 1. It was effective at any point during the 12-month window, OR
+  // 2. It started before the window and has no end date (still applicable), OR
+  // 3. It started before the window and ends during/after the window
   const salaryRecords = await db
     .select()
     .from(employeeSalaries)
     .where(
       and(
         eq(employeeSalaries.employeeId, employeeId),
-        eq(employeeSalaries.tenantId, tenantId)
+        eq(employeeSalaries.tenantId, tenantId),
+        // Include records that could be applicable in the 12-month window:
+        // Either effective from is before termination date (could still apply)
+        // We'll filter more precisely in code based on effectiveTo
+        lte(employeeSalaries.effectiveFrom, terminationDate.toISOString())
       )
     )
-    .orderBy(desc(employeeSalaries.effectiveFrom));
+    .orderBy(desc(employeeSalaries.effectiveFrom))
+    .limit(24); // Optimization: limit to reasonable number of records (2 years worth of monthly changes max)
 
   console.log('[STC Calculator] Found', salaryRecords.length, 'salary records');
 

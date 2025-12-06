@@ -565,6 +565,21 @@ export const employeeTerminations = pgTable("employee_terminations", {
 	// Workflow
 	status: text().default('pending').notNull(),
 
+	// Processing progress tracking (for background Inngest processing)
+	processingStatus: text("processing_status").default('idle'), // idle, pending, processing, completed, failed
+	processingProgress: integer("processing_progress").default(0), // 0-100%
+	processingCurrentStep: text("processing_current_step"), // French labels: "Calcul des indemnités...", etc.
+	processingStartedAt: timestamp("processing_started_at", { withTimezone: true, mode: 'string' }),
+	processingCompletedAt: timestamp("processing_completed_at", { withTimezone: true, mode: 'string' }),
+	processingError: text("processing_error"),
+	inngestRunId: text("inngest_run_id"),
+
+	// STC calculation results (populated after background processing completes)
+	stcCalculatedAt: timestamp("stc_calculated_at", { withTimezone: true, mode: 'string' }),
+	proratedSalary: numeric("prorated_salary", { precision: 15, scale: 2 }),
+	totalGross: numeric("total_gross", { precision: 15, scale: 2 }),
+	totalNet: numeric("total_net", { precision: 15, scale: 2 }),
+
 	// Audit
 	createdBy: uuid("created_by"),
 	createdByEmail: text("created_by_email"),
@@ -583,6 +598,7 @@ export const employeeTerminations = pgTable("employee_terminations", {
 	index("idx_terminations_work_cert_doc").using("btree", table.workCertificateDocumentId.asc().nullsLast()),
 	index("idx_terminations_final_payslip_doc").using("btree", table.finalPayslipDocumentId.asc().nullsLast()),
 	index("idx_terminations_cnps_doc").using("btree", table.cnpsAttestationDocumentId.asc().nullsLast()),
+	index("idx_terminations_processing_status").using("btree", table.tenantId.asc().nullsLast(), table.processingStatus.asc().nullsLast()),
 
 	// Foreign keys
 	foreignKey({

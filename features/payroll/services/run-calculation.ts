@@ -21,7 +21,7 @@ import {
   timeEntries,
 } from '@/lib/db/schema';
 import { employmentContracts } from '@/drizzle/schema';
-import { and, eq, lte, gte, or, isNotNull, isNull, sql, desc } from 'drizzle-orm';
+import { and, eq, lte, gte, or, isNotNull, isNull, sql, desc, inArray } from 'drizzle-orm';
 import { calculatePayrollV2 } from './payroll-calculation-v2';
 import {
   calculateFiscalPartsFromDependents,
@@ -976,6 +976,27 @@ export async function calculatePayrollRunOptimized(
       }
     }
 
+    // Update acpLastPaidAt for employees who received ACP payment
+    // This resets their acpPaymentActive flag and records when ACP was paid
+    const employeesWithACP = allLineItemsData
+      .filter((li: any) => li.acpPaymentApplied?.amount > 0)
+      .map((li: any) => li.acpPaymentApplied!.employeeId);
+
+    if (employeesWithACP.length > 0) {
+      console.log(`[PAYROLL OPTIMIZED] Updating acpLastPaidAt for ${employeesWithACP.length} employees who received ACP`);
+      await db.update(employees)
+        .set({
+          acpLastPaidAt: new Date(),
+          acpPaymentActive: false, // Reset for next leave period
+        })
+        .where(
+          and(
+            eq(employees.tenantId, run.tenantId),
+            inArray(employees.id, employeesWithACP)
+          )
+        );
+    }
+
     // Calculate totals
     const totals = allLineItemsData.reduce(
       (acc, item) => {
@@ -1163,6 +1184,22 @@ export async function recalculateSingleEmployee(
       updatedAt: new Date(),
     })
     .where(eq(payrollLineItems.id, currentLineItem.id));
+
+  // Update acpLastPaidAt if employee received ACP in this recalculation
+  if (lineItem.acpPaymentApplied?.amount && lineItem.acpPaymentApplied.amount > 0) {
+    console.log(`[SINGLE RECALC] Updating acpLastPaidAt for employee ${input.employeeId} who received ACP`);
+    await db.update(employees)
+      .set({
+        acpLastPaidAt: new Date(),
+        acpPaymentActive: false, // Reset for next leave period
+      })
+      .where(
+        and(
+          eq(employees.id, input.employeeId),
+          eq(employees.tenantId, input.tenantId)
+        )
+      );
+  }
 
   return {
     success: true,

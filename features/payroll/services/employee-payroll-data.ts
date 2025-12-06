@@ -90,6 +90,14 @@ export interface EmployeePayrollData {
     }>;
     netEffect: number; // disbursements - repayments
   };
+
+  // ACP (Allocations de Congés Payés) payment info
+  // Populated by data providers when employee should receive ACP this period
+  acpPaymentInfo?: {
+    shouldCalculate: boolean;     // true if acpPaymentDate falls in payroll period
+    acpPaymentDate: string;       // ISO date when ACP should be paid
+    acpLastPaidAt: string | null; // Last time ACP was paid (for audit)
+  };
 }
 
 /**
@@ -209,4 +217,11 @@ export interface PayrollLineItemData {
   paymentMethod: string;
   bankAccount: string | null;
   status: string;
+
+  // ACP payment tracking (for updating employee record after payroll)
+  acpPaymentApplied?: {
+    amount: number;
+    employeeId: string;
+    leaveDaysTaken: number;
+  };
 }
