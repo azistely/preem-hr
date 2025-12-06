@@ -13,6 +13,71 @@ import { TRPCError } from '@trpc/server';
 
 export const contractsRouter = createTRPCRouter({
   /**
+   * Check if new contract dates overlap with existing active contracts
+   * Used to prevent creating conflicting contracts while allowing future contracts
+   */
+  checkContractOverlap: protectedProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid(),
+        startDate: z.string(), // New contract start date
+        endDate: z.string().nullable().optional(), // New contract end date (null for CDI/CDDTI)
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { user } = ctx;
+
+      // Find all active contracts for this employee
+      const activeContracts = await db.query.employmentContracts.findMany({
+        where: and(
+          eq(employmentContracts.employeeId, input.employeeId),
+          eq(employmentContracts.tenantId, user.tenantId),
+          eq(employmentContracts.isActive, true)
+        ),
+      });
+
+      // Check for date overlap
+      // Two date ranges overlap if: newStart <= existingEnd AND newEnd >= existingStart
+      const newStart = input.startDate;
+      const newEnd = input.endDate || '9999-12-31'; // CDI/CDDTI = infinite end
+
+      const overlapping = activeContracts.find((contract) => {
+        const existingStart = contract.startDate;
+        const existingEnd = contract.endDate || '9999-12-31';
+
+        return newStart <= existingEnd && newEnd >= existingStart;
+      });
+
+      // Check if there's an active contract that the new one follows (future contract)
+      const precedingContract = activeContracts.find((contract) => {
+        const existingEnd = contract.endDate;
+        // New contract starts after existing ends (no overlap, but there is a preceding contract)
+        return existingEnd && newStart > existingEnd;
+      });
+
+      return {
+        hasOverlap: !!overlapping,
+        overlappingContract: overlapping
+          ? {
+              id: overlapping.id,
+              contractType: overlapping.contractType,
+              startDate: overlapping.startDate,
+              endDate: overlapping.endDate,
+            }
+          : null,
+        // Info about preceding contract (for "future contract allowed" message)
+        precedingContract: !overlapping && precedingContract
+          ? {
+              id: precedingContract.id,
+              contractType: precedingContract.contractType,
+              startDate: precedingContract.startDate,
+              endDate: precedingContract.endDate,
+            }
+          : null,
+      };
+    }),
+
+  /**
    * Update existing contract
    * Allows updating key contract fields (not the type)
    */
@@ -370,17 +435,33 @@ export const contractsRouter = createTRPCRouter({
         });
       }
 
-      // 1. Deactivate existing contracts for employee
-      await db
-        .update(employmentContracts)
-        .set({ isActive: false, updatedAt: new Date().toISOString() })
-        .where(
-          and(
-            eq(employmentContracts.employeeId, input.employeeId),
-            eq(employmentContracts.tenantId, user.tenantId),
-            eq(employmentContracts.isActive, true)
-          )
-        );
+      // 1. Check for overlapping contracts (allows future contracts, blocks overlaps)
+      const newStart = input.startDate;
+      const newEnd = input.endDate || '9999-12-31'; // CDI/CDDTI = infinite end
+
+      const activeContracts = await db.query.employmentContracts.findMany({
+        where: and(
+          eq(employmentContracts.employeeId, input.employeeId),
+          eq(employmentContracts.tenantId, user.tenantId),
+          eq(employmentContracts.isActive, true)
+        ),
+      });
+
+      const overlapping = activeContracts.find((contract) => {
+        const existingStart = contract.startDate;
+        const existingEnd = contract.endDate || '9999-12-31';
+        return newStart <= existingEnd && newEnd >= existingStart;
+      });
+
+      if (overlapping) {
+        const endInfo = overlapping.endDate
+          ? `jusqu'au ${overlapping.endDate}`
+          : '(durée indéterminée)';
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `Les dates chevauchent un contrat ${overlapping.contractType} actif du ${overlapping.startDate} ${endInfo}.`,
+        });
+      }
 
       // 2. Create new contract
       const [contract] = await db

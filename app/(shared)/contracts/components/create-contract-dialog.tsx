@@ -41,12 +41,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, CheckCircle, AlertCircle, Calendar } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, CheckCircle, AlertCircle, Calendar, AlertTriangle, ExternalLink, RefreshCw, CloudOff, Info } from 'lucide-react';
 import { format, addMonths, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { api } from '@/trpc/react';
 import { toast } from 'sonner';
+import { useResilientMutation } from '@/hooks/use-resilient-mutation';
+import { useFormAutoSave } from '@/hooks/use-form-auto-save';
+import { ConnectionStatus } from '@/components/ui/connection-status';
+import Link from 'next/link';
 
 // ============================================================================
 // Schema
@@ -70,14 +74,14 @@ const createContractSchema = z
   })
   .refine(
     (data) => {
-      // CDD and CDDTI must have end date
-      if ((data.contractType === 'CDD' || data.contractType === 'CDDTI' || data.contractType === 'STAGE') && !data.endDate) {
+      // CDD, STAGE, and INTERIM must have end date (CDDTI has no end date - task-based)
+      if (['CDD', 'STAGE', 'INTERIM'].includes(data.contractType) && !data.endDate) {
         return false;
       }
       return true;
     },
     {
-      message: 'La date de fin est requise pour les CDD, CDDTI et STAGE',
+      message: 'La date de fin est requise pour ce type de contrat',
       path: ['endDate'],
     }
   )
@@ -169,8 +173,47 @@ export function CreateContractDialog({
     },
   });
 
+  // Auto-save form data to localStorage
+  const { clearSavedData } = useFormAutoSave({
+    storageKey: 'contract_dialog_create',
+    form,
+    debounceMs: 1500,
+    enabled: open, // Only save when dialog is open
+    onRestore: (data) => {
+      if (Object.keys(data).length > 0) {
+        toast.info('Brouillon restauré', {
+          description: 'Vos données ont été récupérées automatiquement.',
+          icon: <CloudOff className="h-4 w-4" />,
+        });
+        // Restore selected employee ID for active contract check
+        if (data.employeeId) {
+          setSelectedEmployeeId(data.employeeId);
+        }
+      }
+    },
+  });
+
   const contractType = form.watch('contractType');
   const startDate = form.watch('startDate');
+  const endDate = form.watch('endDate');
+
+  // Check for contract date overlap when employee + dates are set
+  const { data: overlapCheck, isLoading: checkingOverlap } =
+    api.contracts.checkContractOverlap.useQuery(
+      {
+        employeeId: selectedEmployeeId,
+        startDate: startDate ? format(startDate, 'yyyy-MM-dd') : '',
+        endDate: endDate ? format(endDate, 'yyyy-MM-dd') : null,
+      },
+      {
+        enabled: !!selectedEmployeeId && !!startDate,
+      }
+    );
+
+  // Determine if form submission should be blocked (only overlapping dates)
+  const hasOverlap = overlapCheck?.hasOverlap;
+  const overlappingContract = overlapCheck?.overlappingContract;
+  const precedingContract = overlapCheck?.precedingContract;
 
   // Auto-set end date based on contract type
   const handleContractTypeChange = (type: string) => {
@@ -180,11 +223,6 @@ export function CreateContractDialog({
       // Default 6 months for CDD
       if (startDate) {
         form.setValue('endDate', addMonths(startDate, 6));
-      }
-    } else if (type === 'CDDTI') {
-      // Default 12 months for CDDTI (max allowed)
-      if (startDate) {
-        form.setValue('endDate', addMonths(startDate, 12));
       }
     } else if (type === 'STAGE') {
       // Default 3 months for internship
@@ -197,15 +235,21 @@ export function CreateContractDialog({
         form.setValue('endDate', addMonths(startDate, 1));
       }
     } else {
-      // CDI has no end date
+      // CDI and CDDTI have no end date (CDDTI ends when task completes)
       form.setValue('endDate', undefined);
     }
   };
 
-  // Create contract mutation
-  const createContract = api.contracts.createContract.useMutation({
-    onSuccess: (data) => {
-      toast.success('Contrat créé avec succès');
+  // Create contract mutation with resilience
+  const createContractMutation = api.contracts.createContract.useMutation();
+
+  const resilientCreate = useResilientMutation({
+    mutation: createContractMutation,
+    successMessage: 'Contrat créé avec succès',
+    errorMessage: 'Erreur lors de la création du contrat',
+    onSuccess: () => {
+      // Clear auto-saved data on successful creation
+      clearSavedData();
       utils.contracts.getAllContracts.invalidate();
       utils.contracts.getContractStats.invalidate();
       onOpenChange(false);
@@ -214,14 +258,17 @@ export function CreateContractDialog({
       setSearchQuery('');
       onSuccess?.();
     },
-    onError: (error) => {
-      toast.error(error.message);
-    },
   });
 
   const onSubmit = async (data: CreateContractFormValues) => {
+    // Block if dates overlap with existing contract
+    if (hasOverlap) {
+      toast.error('Les dates chevauchent un contrat existant');
+      return;
+    }
+
     // Convert dates to ISO strings for API
-    await createContract.mutateAsync({
+    await resilientCreate.mutate({
       ...data,
       startDate: data.startDate.toISOString(),
       endDate: data.endDate?.toISOString(),
@@ -250,7 +297,10 @@ export function CreateContractDialog({
                   <FormLabel>Employé</FormLabel>
                   <Select
                     value={field.value}
-                    onValueChange={field.onChange}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      setSelectedEmployeeId(value);
+                    }}
                   >
                     <FormControl>
                       <SelectTrigger className="min-h-[48px]">
@@ -266,9 +316,71 @@ export function CreateContractDialog({
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    L'employé pour lequel créer le contrat
+                    L&apos;employé pour lequel créer le contrat
                   </FormDescription>
                   <FormMessage />
+
+                  {/* Contract Overlap Check */}
+                  {checkingOverlap && selectedEmployeeId && startDate && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Vérification des contrats existants...
+                    </div>
+                  )}
+
+                  {/* Date Overlap Warning (blocks submission) */}
+                  {hasOverlap && overlappingContract && (
+                    <Alert variant="destructive" className="mt-4">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTitle>Chevauchement de dates</AlertTitle>
+                      <AlertDescription className="space-y-3">
+                        <p>
+                          Les dates chevauchent un contrat {overlappingContract.contractType} actif
+                          du {overlappingContract.startDate}
+                          {overlappingContract.endDate ? ` jusqu'au ${overlappingContract.endDate}` : ' (durée indéterminée)'}.
+                        </p>
+                        <p>
+                          Modifiez les dates ou résiliez le contrat existant.
+                        </p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="min-h-[44px]"
+                          >
+                            <Link href={`/contracts/${overlappingContract.id}`}>
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Voir le contrat
+                            </Link>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            asChild
+                            className="min-h-[44px]"
+                          >
+                            <Link href={`/employees/${selectedEmployeeId}/terminate`}>
+                              Résilier le contrat
+                            </Link>
+                          </Button>
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {/* Future Contract Info (allowed, just informational) */}
+                  {!hasOverlap && precedingContract && (
+                    <Alert className="mt-4 border-blue-200 bg-blue-50 text-blue-800">
+                      <Info className="h-4 w-4" />
+                      <AlertTitle>Contrat futur</AlertTitle>
+                      <AlertDescription>
+                        Ce contrat commencera après la fin du contrat actuel ({precedingContract.contractType} jusqu&apos;au {precedingContract.endDate}).
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </FormItem>
               )}
             />
@@ -350,8 +462,8 @@ export function CreateContractDialog({
               )}
             />
 
-            {/* End Date (for CDD, CDDTI, STAGE, INTERIM) */}
-            {contractType !== 'CDI' && (
+            {/* End Date (for CDD, STAGE, INTERIM only - CDDTI has no end date) */}
+            {['CDD', 'STAGE', 'INTERIM'].includes(contractType) && (
               <FormField
                 control={form.control}
                 name="endDate"
@@ -371,8 +483,9 @@ export function CreateContractDialog({
                       />
                     </FormControl>
                     <FormDescription>
-                      {contractType === 'CDDTI' && 'Maximum 12 mois pour un CDDTI'}
                       {contractType === 'CDD' && 'Maximum 24 mois (renouvellements compris)'}
+                      {contractType === 'STAGE' && 'Durée maximale selon la convention'}
+                      {contractType === 'INTERIM' && 'Durée de la mission'}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -476,31 +589,56 @@ export function CreateContractDialog({
               )}
             />
 
-            <DialogFooter>
+            {/* Connection Status */}
+            <ConnectionStatus
+              isOnline={resilientCreate.isOnline}
+              isRetrying={resilientCreate.isRetrying}
+              retryCount={resilientCreate.retryCount}
+              maxRetries={3}
+            />
+
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              {/* Retry button (shown when can retry) */}
+              {resilientCreate.canRetry && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resilientCreate.retry}
+                  className="min-h-[44px]"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Réessayer
+                </Button>
+              )}
+
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => {
+                  // Note: We don't clear auto-saved data on cancel,
+                  // so user can recover if they accidentally closed
                   onOpenChange(false);
                   form.reset();
                   setSelectedEmployeeId('');
                 }}
-                disabled={createContract.isPending}
+                disabled={resilientCreate.isPending}
                 className="min-h-[44px]"
               >
                 Annuler
               </Button>
               <Button
                 type="submit"
-                disabled={createContract.isPending}
+                disabled={resilientCreate.isPending || !resilientCreate.isOnline || hasOverlap}
                 className="min-h-[56px]"
               >
-                {createContract.isPending ? (
+                {resilientCreate.isPending && !resilientCreate.isRetrying ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : resilientCreate.isRetrying ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
                   <CheckCircle className="h-4 w-4 mr-2" />
                 )}
-                Créer le contrat
+                {resilientCreate.isRetrying ? 'Nouvelle tentative...' : 'Créer le contrat'}
               </Button>
             </DialogFooter>
           </form>

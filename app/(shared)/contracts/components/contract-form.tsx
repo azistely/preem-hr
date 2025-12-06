@@ -29,9 +29,19 @@ import {
   Loader2,
   Copy,
   FileEdit,
+  AlertTriangle,
+  ExternalLink,
+  RefreshCw,
+  CloudOff,
+  Info,
 } from 'lucide-react';
+import { addMonths, format } from 'date-fns';
 
 import { api } from '@/trpc/react';
+import { useResilientMutation } from '@/hooks/use-resilient-mutation';
+import { useFormAutoSave } from '@/hooks/use-form-auto-save';
+import { ConnectionStatus } from '@/components/ui/connection-status';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -75,10 +85,37 @@ const contractFormSchema = z.object({
     required_error: 'Veuillez sélectionner un type de contrat',
   }),
   startDate: z.string().min(1, { message: 'La date de début est requise' }),
+  endDate: z.string().optional(),
   contractHtmlContent: z.string(), // Allow empty for drafts
   contentSource: z.enum(['blank', 'copy']).optional(),
   sourceContractId: z.string().uuid().optional(),
-});
+})
+.refine(
+  (data) => {
+    // CDD, STAGE, and INTERIM must have end date
+    if (['CDD', 'STAGE', 'INTERIM'].includes(data.contractType) && !data.endDate) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: 'La date de fin est requise pour ce type de contrat',
+    path: ['endDate'],
+  }
+)
+.refine(
+  (data) => {
+    // End date must be after start date
+    if (data.endDate && data.startDate && data.endDate <= data.startDate) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: 'La date de fin doit être postérieure à la date de début',
+    path: ['endDate'],
+  }
+);
 
 type ContractFormValues = z.infer<typeof contractFormSchema>;
 
@@ -98,6 +135,7 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
   const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
   const [editorContent, setEditorContent] = useState(initialData?.contractHtmlContent || '');
   const [getEditorContent, setGetEditorContent] = useState<(() => string) | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(initialData?.employeeId || '');
 
   // Queries
   const { data: employees, isLoading: employeesLoading } = api.employees.list.useQuery({
@@ -113,27 +151,117 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
     { enabled: mode === 'create' } // Only load for create mode
   );
 
-  // Mutations
+  // Base mutations
   const createContractMutation = api.contracts.createContract.useMutation();
   const updateContractMutation = api.contracts.updateContract.useMutation();
   const generatePdfMutation = api.documents.generateContractDocument.useMutation();
 
-  // Form
+  // Wrap mutations with resilience
+  const resilientCreate = useResilientMutation({
+    mutation: createContractMutation,
+    successMessage: 'Brouillon sauvegardé',
+    errorMessage: 'Erreur lors de la sauvegarde du brouillon',
+  });
+
+  const resilientUpdate = useResilientMutation({
+    mutation: updateContractMutation,
+    successMessage: 'Brouillon sauvegardé',
+    errorMessage: 'Erreur lors de la sauvegarde du brouillon',
+  });
+
+  const resilientGeneratePdf = useResilientMutation({
+    mutation: generatePdfMutation,
+    successMessage: 'Contrat généré avec succès',
+    errorMessage: 'Erreur lors de la génération du PDF',
+  });
+
+  // Form (must be before watch calls)
   const form = useForm<ContractFormValues>({
     resolver: zodResolver(contractFormSchema),
     defaultValues: {
       employeeId: initialData?.employeeId || '',
       contractType: initialData?.contractType || 'CDI',
       startDate: initialData?.startDate || new Date().toISOString().split('T')[0],
+      endDate: '',
       contractHtmlContent: initialData?.contractHtmlContent || '',
       contentSource: 'blank',
       sourceContractId: '',
     },
   });
 
+  // Watch dates for overlap check
+  const startDateForOverlap = form.watch('startDate');
+  const endDateForOverlap = form.watch('endDate');
+
+  // Check for contract date overlap when employee + dates are set (create mode only)
+  const { data: overlapCheck, isLoading: checkingOverlap } =
+    api.contracts.checkContractOverlap.useQuery(
+      {
+        employeeId: selectedEmployeeId,
+        startDate: startDateForOverlap,
+        endDate: endDateForOverlap || null,
+      },
+      {
+        enabled: mode === 'create' && !!selectedEmployeeId && !!startDateForOverlap,
+      }
+    );
+
+  // Determine if form submission should be blocked (only overlapping dates)
+  const hasOverlap = mode === 'create' && overlapCheck?.hasOverlap;
+  const overlappingContract = overlapCheck?.overlappingContract;
+  const precedingContract = overlapCheck?.precedingContract;
+
+  // Auto-save form data to localStorage (only for new contracts)
+  const { clearSavedData, hasSavedData } = useFormAutoSave({
+    storageKey: mode === 'create' ? 'contract_create' : `contract_edit_${contractId}`,
+    form,
+    debounceMs: 1500,
+    excludeFields: [], // No sensitive fields to exclude
+    enabled: true,
+    onRestore: (data) => {
+      if (Object.keys(data).length > 0) {
+        toast.info('Brouillon restauré', {
+          description: 'Vos données ont été récupérées automatiquement.',
+          icon: <CloudOff className="h-4 w-4" />,
+        });
+        // Restore editor content if present
+        if (data.contractHtmlContent) {
+          setEditorContent(data.contractHtmlContent);
+        }
+        // Restore selected employee ID for active contract check
+        if (data.employeeId) {
+          setSelectedEmployeeId(data.employeeId);
+        }
+      }
+    },
+  });
+
   // Watch content source to load contract when "copy" is selected
   const contentSource = form.watch('contentSource');
   const sourceContractId = form.watch('sourceContractId');
+  const contractType = form.watch('contractType');
+  const startDate = form.watch('startDate');
+
+  // Auto-set end date based on contract type change
+  useEffect(() => {
+    if (!startDate) return;
+
+    const startDateObj = new Date(startDate);
+
+    if (contractType === 'CDD') {
+      // Default 6 months for CDD
+      form.setValue('endDate', format(addMonths(startDateObj, 6), 'yyyy-MM-dd'));
+    } else if (contractType === 'STAGE') {
+      // Default 3 months for internship
+      form.setValue('endDate', format(addMonths(startDateObj, 3), 'yyyy-MM-dd'));
+    } else if (contractType === 'INTERIM') {
+      // Default 1 month for temporary work
+      form.setValue('endDate', format(addMonths(startDateObj, 1), 'yyyy-MM-dd'));
+    } else {
+      // CDI and CDDTI have no end date
+      form.setValue('endDate', '');
+    }
+  }, [contractType, startDate, form]);
 
   useEffect(() => {
     if (contentSource === 'copy' && sourceContractId && existingContracts) {
@@ -161,37 +289,59 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
     form.setValue('contractHtmlContent', html);
   };
 
+  // Combined pending state for all mutations
+  const isPending =
+    resilientCreate.isPending ||
+    resilientUpdate.isPending ||
+    resilientGeneratePdf.isPending;
+
+  const isRetrying =
+    resilientCreate.isRetrying ||
+    resilientUpdate.isRetrying ||
+    resilientGeneratePdf.isRetrying;
+
+  const isOnline = resilientCreate.isOnline; // All hooks share same online state
+
   // Save as draft (no PDF generation)
   const handleSaveDraft = async (values: ContractFormValues) => {
+    // Block if dates overlap with existing contract
+    if (hasOverlap) {
+      toast.error('Les dates chevauchent un contrat existant');
+      return;
+    }
+
     // Get ACTUAL current content from the editor (what user sees)
     const contentToSave = getEditorContent?.() || editorContent || values.contractHtmlContent;
 
-    try {
-      if (mode === 'edit' && contractId) {
-        await updateContractMutation.mutateAsync({
-          id: contractId,
-          contractHtmlContent: contentToSave,
-        });
-        toast.success('Brouillon sauvegardé');
-      } else {
-        const result = await createContractMutation.mutateAsync({
-          employeeId: values.employeeId,
-          contractType: values.contractType,
-          startDate: values.startDate,
-          contractHtmlContent: contentToSave,
-        });
-        toast.success('Brouillon sauvegardé');
-        // Navigate to edit page to continue editing
-        router.push(`/contracts/${result.id}/edit`);
-      }
-    } catch (error) {
-      console.error('Error saving draft:', error);
-      toast.error('Erreur lors de la sauvegarde du brouillon');
+    if (mode === 'edit' && contractId) {
+      await resilientUpdate.mutate({
+        id: contractId,
+        contractHtmlContent: contentToSave,
+      });
+      // Clear auto-saved data after successful save
+      clearSavedData();
+    } else {
+      await resilientCreate.mutate({
+        employeeId: values.employeeId,
+        contractType: values.contractType,
+        startDate: values.startDate,
+        endDate: values.endDate || null,
+        contractHtmlContent: contentToSave,
+      });
+      // Clear auto-saved data after successful save
+      clearSavedData();
+      // Note: Navigation happens via onSuccess callback or manual after checking
     }
   };
 
   // Save and generate PDF
   const handleSaveAndGeneratePdf = async (values: ContractFormValues) => {
+    // Block if has active contract
+    if (hasOverlap) {
+      toast.error('Les dates chevauchent un contrat existant');
+      return;
+    }
+
     // Get ACTUAL current content from the editor (what user sees)
     const contentToSave = getEditorContent?.() || editorContent || values.contractHtmlContent;
 
@@ -215,6 +365,7 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
           employeeId: values.employeeId,
           contractType: values.contractType,
           startDate: values.startDate,
+          endDate: values.endDate || null,
           contractHtmlContent: contentToSave,
         });
         finalContractId = result.id;
@@ -228,12 +379,15 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
           companyRepresentativeTitle: 'DG',
         });
 
+        // Clear auto-saved data after successful generation
+        clearSavedData();
+
         toast.success('Contrat généré avec succès');
         router.push('/contracts');
       }
     } catch (error) {
       console.error('Error generating contract:', error);
-      toast.error('Erreur lors de la génération du contrat');
+      // Error already handled by mutation
     }
   };
 
@@ -288,6 +442,7 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
                                 value={`${employee.firstName} ${employee.lastName} ${employee.employeeNumber}`}
                                 onSelect={() => {
                                   form.setValue('employeeId', employee.id);
+                                  setSelectedEmployeeId(employee.id);
                                   setEmployeeSearchOpen(false);
                                 }}
                               >
@@ -316,6 +471,64 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
                     Recherchez par nom ou numéro d&apos;employé
                   </FormDescription>
                   <FormMessage />
+
+                  {/* Contract Overlap Check */}
+                  {checkingOverlap && selectedEmployeeId && startDateForOverlap && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Vérification des contrats existants...
+                    </div>
+                  )}
+
+                  {/* Date Overlap Warning (blocks submission) */}
+                  {hasOverlap && overlappingContract && (
+                    <Alert variant="destructive" className="mt-4">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTitle>Chevauchement de dates</AlertTitle>
+                      <AlertDescription className="space-y-3">
+                        <p>
+                          Les dates chevauchent un contrat {overlappingContract.contractType} actif
+                          du {overlappingContract.startDate}
+                          {overlappingContract.endDate ? ` jusqu'au ${overlappingContract.endDate}` : ' (durée indéterminée)'}.
+                        </p>
+                        <p>
+                          Modifiez les dates ou résiliez le contrat existant.
+                        </p>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => router.push(`/contracts/${overlappingContract.id}`)}
+                            className="min-h-[44px]"
+                          >
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Voir le contrat
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => router.push(`/employees/${selectedEmployeeId}/terminate`)}
+                            className="min-h-[44px]"
+                          >
+                            Résilier le contrat
+                          </Button>
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {/* Future Contract Info (allowed, just informational) */}
+                  {!hasOverlap && precedingContract && (
+                    <Alert className="mt-4 border-blue-200 bg-blue-50 text-blue-800">
+                      <Info className="h-4 w-4" />
+                      <AlertTitle>Contrat futur</AlertTitle>
+                      <AlertDescription>
+                        Ce contrat commencera après la fin du contrat actuel ({precedingContract.contractType} jusqu&apos;au {precedingContract.endDate}).
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </FormItem>
               )}
             />
@@ -370,6 +583,33 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
                 </FormItem>
               )}
             />
+
+            {/* End Date (for CDD, STAGE, INTERIM only) */}
+            {['CDD', 'STAGE', 'INTERIM'].includes(contractType) && (
+              <FormField
+                control={form.control}
+                name="endDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date de fin *</FormLabel>
+                    <FormControl>
+                      <input
+                        type="date"
+                        className="flex h-14 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        {...field}
+                        min={startDate || undefined}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {contractType === 'CDD' && 'Maximum 24 mois (renouvellements compris)'}
+                      {contractType === 'STAGE' && 'Durée maximale selon la convention'}
+                      {contractType === 'INTERIM' && 'Durée de la mission'}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
           </CardContent>
         </Card>
 
@@ -485,70 +725,94 @@ export function ContractForm({ mode, contractId, initialData }: ContractFormProp
         </Card>
 
         {/* Actions */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-between items-center sticky bottom-4 bg-background p-4 rounded-lg border shadow-lg">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => router.push('/contracts')}
-            className="min-h-[56px] w-full sm:w-auto"
-          >
-            <X className="h-4 w-4 mr-2" />
-            Annuler
-          </Button>
+        <div className="flex flex-col gap-4 sticky bottom-4 bg-background p-4 rounded-lg border shadow-lg">
+          {/* Connection Status */}
+          <ConnectionStatus
+            isOnline={isOnline}
+            isRetrying={isRetrying}
+            retryCount={resilientCreate.retryCount || resilientUpdate.retryCount}
+            maxRetries={3}
+          />
 
-          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => {
-                const values = form.getValues();
-                handleSaveDraft(values);
-              }}
-              disabled={
-                createContractMutation.isPending ||
-                updateContractMutation.isPending
-              }
+              variant="ghost"
+              onClick={() => router.push('/contracts')}
               className="min-h-[56px] w-full sm:w-auto"
             >
-              {createContractMutation.isPending || updateContractMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Sauvegarde...
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Sauvegarder brouillon
-                </>
-              )}
+              <X className="h-4 w-4 mr-2" />
+              Annuler
             </Button>
 
-            <Button
-              type="button"
-              variant="default"
-              onClick={() => {
-                const values = form.getValues();
-                handleSaveAndGeneratePdf(values);
-              }}
-              disabled={
-                createContractMutation.isPending ||
-                updateContractMutation.isPending ||
-                generatePdfMutation.isPending
-              }
-              className="min-h-[56px] w-full sm:w-auto"
-            >
-              {generatePdfMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Génération...
-                </>
-              ) : (
-                <>
-                  <FileText className="h-4 w-4 mr-2" />
-                  Sauvegarder et générer PDF
-                </>
+            <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+              {/* Retry button (shown when can retry) */}
+              {(resilientCreate.canRetry || resilientUpdate.canRetry) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    resilientCreate.retry();
+                    resilientUpdate.retry();
+                  }}
+                  className="min-h-[56px] w-full sm:w-auto"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Réessayer
+                </Button>
               )}
-            </Button>
+
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  const values = form.getValues();
+                  handleSaveDraft(values);
+                }}
+                disabled={isPending || !isOnline || hasOverlap}
+                className="min-h-[56px] w-full sm:w-auto"
+              >
+                {isPending && !isRetrying ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sauvegarde...
+                  </>
+                ) : isRetrying ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Nouvelle tentative...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Sauvegarder brouillon
+                  </>
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                variant="default"
+                onClick={() => {
+                  const values = form.getValues();
+                  handleSaveAndGeneratePdf(values);
+                }}
+                disabled={isPending || !isOnline || hasOverlap}
+                className="min-h-[56px] w-full sm:w-auto"
+              >
+                {generatePdfMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Génération...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Sauvegarder et générer PDF
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </form>
