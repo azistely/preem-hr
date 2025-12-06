@@ -267,17 +267,10 @@ export function SalaryChangeWizard({
   const weeklyHoursRegime = (employeeData as any)?.weeklyHoursRegime || '40h';
 
   /**
-   * Get unit label for component based on contract type
-   * IMPORTANT: For CDDTI employees, transport (code 22) is DAILY, other components are HOURLY
+   * Get unit label for component - always monthly since all salaries are stored as monthly
    */
   const getComponentUnitLabel = (componentCode: string): string => {
-    if (contractType !== 'CDDTI') {
-      return 'FCFA/mois'; // CDI, CDD, etc. - all monthly
-    }
-
-    // CDDTI: Transport is daily, others are hourly
-    const isTransportComponent = componentCode === '22' || componentCode === 'TPT_TRANSPORT_CI';
-    return isTransportComponent ? 'FCFA/jour' : 'FCFA/heure';
+    return 'FCFA/mois';
   };
 
   // Calculate base salary total from all base components
@@ -676,12 +669,10 @@ export function SalaryChangeWizard({
                     <div className="space-y-4 p-4 border rounded-lg bg-blue-50">
                       <div>
                         <FormLabel className="text-lg">
-                          {contractType === 'CDDTI' ? 'Taux horaire' : 'Salaire de base mensuel'} *
+                          Salaire de base mensuel *
                         </FormLabel>
                         <p className="text-sm text-muted-foreground">
-                          {contractType === 'CDDTI'
-                            ? 'Taux de base calculé selon le salaire catégoriel et le régime horaire'
-                            : `Composé de ${baseSalaryDefinitions.length} élément${baseSalaryDefinitions.length > 1 ? 's' : ''}`}
+                          Composé de {baseSalaryDefinitions.length} élément{baseSalaryDefinitions.length > 1 ? 's' : ''}
                         </p>
                       </div>
 
@@ -696,8 +687,8 @@ export function SalaryChangeWizard({
                               <Input
                                 type="number"
                                 min="0"
-                                step={contractType === 'CDDTI' ? '10' : '1000'}
-                                placeholder={contractType === 'CDDTI' ? '410' : (componentDef.defaultValue?.toString() || '75000')}
+                                step="1000"
+                                placeholder={componentDef.defaultValue?.toString() || '75000'}
                                 value={value}
                                 onChange={(e) => {
                                   const newAmount = parseFloat(e.target.value) || 0;
@@ -740,10 +731,10 @@ export function SalaryChangeWizard({
                         <div className="p-3 bg-white rounded border">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">
-                              {contractType === 'CDDTI' ? 'Total taux horaire' : 'Total salaire de base mensuel'}
+                              Total salaire de base mensuel
                             </span>
                             <span className="font-bold text-xl">
-                              {formatCurrencyUtil(baseSalary)} {contractType === 'CDDTI' ? 'FCFA/heure' : 'FCFA/mois'}
+                              {formatCurrencyUtil(baseSalary)} FCFA/mois
                             </span>
                           </div>
                         </div>
@@ -753,14 +744,14 @@ export function SalaryChangeWizard({
                     // Fallback to single baseSalary field if no base components configured
                     <div>
                       <FormLabel className="text-lg">
-                        {contractType === 'CDDTI' ? 'Taux horaire *' : 'Salaire de base mensuel *'}
+                        Salaire de base mensuel *
                       </FormLabel>
                       <div className="relative mt-2">
                         <Input
                           type="number"
                           min="0"
-                          step={contractType === 'CDDTI' ? '10' : '1000'}
-                          placeholder={contractType === 'CDDTI' ? '410' : '75000'}
+                          step="1000"
+                          placeholder="75000"
                           value={baseSalaryInput}
                           onChange={(e) => handleUpdateBaseSalary(e.target.value)}
                           onBlur={() => setBaseSalaryTouched(true)}
@@ -771,9 +762,7 @@ export function SalaryChangeWizard({
                         </span>
                       </div>
                       <FormDescription className="mt-1">
-                        {contractType === 'CDDTI'
-                          ? 'Taux de base calculé selon le salaire catégoriel et le régime horaire'
-                          : paymentFrequency !== 'MONTHLY'
+                        {paymentFrequency !== 'MONTHLY'
                           ? `Sera proraté selon les heures travaillées (paie ${getPaymentFrequencyLabel(paymentFrequency)})`
                           : 'Montant fixe versé chaque mois'}
                       </FormDescription>
