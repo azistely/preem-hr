@@ -126,13 +126,10 @@ export default function EmployeeDetailPage() {
     { enabled: !!employee }
   );
 
-  // Derive rate type from contract type (CDDTI = HOURLY, others use stored rateType)
-  const getEmployeeRateType = (): RateType => {
-    const contractType = (employee as any)?.contract?.contractType;
-    if (contractType === 'CDDTI') {
-      return 'HOURLY';
-    }
-    return ((employee as any)?.rateType as RateType) || 'MONTHLY';
+  // Display rate type - always MONTHLY since salaries are stored and displayed as monthly amounts
+  // Even for CDDTI workers who have an hourly rate, we show the monthly equivalent in the UI
+  const getDisplayRateType = (): RateType => {
+    return 'MONTHLY';
   };
 
   const handleReactivate = async () => {
@@ -308,11 +305,11 @@ export default function EmployeeDetailPage() {
             {(employee as any).currentSalary && (
               <div>
                 <p className="text-sm text-muted-foreground mb-1">
-                  {getGrossSalaryLabel(getEmployeeRateType())}
+                  {getGrossSalaryLabel(getDisplayRateType())}
                 </p>
                 <p className="font-medium text-lg">
                   {(() => {
-                    const rateType = getEmployeeRateType();
+                    const rateType = getDisplayRateType();
                     const baseSalary = parseFloat((employee as any).currentSalary.baseSalary);
                     const contractType = (employee as any)?.contract?.contractType;
                     const componentsAlreadyInRateType = contractType === 'CDDTI';
@@ -727,11 +724,11 @@ export default function EmployeeDetailPage() {
                       {/* Base Salary Only - Always Show First */}
                       <div className="bg-primary/5 p-4 rounded-lg border">
                         <Label className="text-sm text-muted-foreground">
-                          Salaire de base {getEmployeeRateType() === 'DAILY' ? 'journalier' : getEmployeeRateType() === 'HOURLY' ? 'horaire' : 'mensuel'}
+                          Salaire de base {getDisplayRateType() === 'DAILY' ? 'journalier' : getDisplayRateType() === 'HOURLY' ? 'horaire' : 'mensuel'}
                         </Label>
                         <p className="text-2xl font-bold">
                           {(() => {
-                            const rateType = getEmployeeRateType();
+                            const rateType = getDisplayRateType();
                             // Extract base salary from components (Code 11 or 01)
                             const baseComponent = (employee as any).currentSalary.components.find(
                               (c: any) => c.code === '11' || c.code === '01'
@@ -745,7 +742,7 @@ export default function EmployeeDetailPage() {
                       {/* Components Grid */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {(employee as any).currentSalary.components.map((component: any, idx: number) => {
-                          const rateType = getEmployeeRateType();
+                          const rateType = getDisplayRateType();
                           // Base salary (code '11', '01') is already in correct rate type
                           const isBaseSalary = component.code === '11' || component.code === '01';
 
@@ -772,14 +769,14 @@ export default function EmployeeDetailPage() {
                       {/* Total Gross Salary (Base + Allowances) */}
                       <div className="bg-muted/50 p-4 rounded-lg border-t">
                         <Label className="text-sm text-muted-foreground">
-                          Salaire brut total {getEmployeeRateType() === 'DAILY' ? 'journalier' : getEmployeeRateType() === 'HOURLY' ? 'horaire' : 'mensuel'}
+                          Salaire brut total {getDisplayRateType() === 'DAILY' ? 'journalier' : getDisplayRateType() === 'HOURLY' ? 'horaire' : 'mensuel'}
                         </Label>
                         <p className="text-sm text-muted-foreground">
                           (Base + indemnités)
                         </p>
                         <p className="text-2xl font-bold text-primary">
                           {(() => {
-                            const rateType = getEmployeeRateType();
+                            const rateType = getDisplayRateType();
                             const components = (employee as any).currentSalary.components;
                             const contractType = (employee as any)?.contract?.contractType;
                             const componentsAlreadyInRateType = contractType === 'CDDTI';
@@ -888,7 +885,7 @@ export default function EmployeeDetailPage() {
               ) : salaryHistory && salaryHistory.length > 0 ? (
                 <SalaryHistoryTimeline
                   history={salaryHistory as any}
-                  rateType={getEmployeeRateType()}
+                  rateType={getDisplayRateType()}
                   contractType={(employee as any)?.contract?.contractType}
                 />
               ) : null}
@@ -1105,7 +1102,7 @@ export default function EmployeeDetailPage() {
                 transportAllowance: 0,
                 mealAllowance: 0,
               },
-              rateType: getEmployeeRateType(),
+              rateType: getDisplayRateType(),
             }}
             employeeName={`${(employee as any)?.firstName} ${(employee as any)?.lastName}`}
             onSuccess={() => {

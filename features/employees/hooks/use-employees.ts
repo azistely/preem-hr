@@ -9,6 +9,7 @@ import { trpc } from '@/lib/trpc/client';
 
 export interface EmployeeFilters {
   status?: 'active' | 'terminated' | 'suspended';
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE';
   search?: string;
   positionId?: string;
   departmentId?: string;
@@ -22,6 +23,7 @@ export interface EmployeeFilters {
 export function useEmployees(filters?: EmployeeFilters) {
   return trpc.employees.list.useQuery({
     status: filters?.status,
+    contractType: filters?.contractType,
     search: filters?.search,
     positionId: filters?.positionId,
     departmentId: filters?.departmentId,

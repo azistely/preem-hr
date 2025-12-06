@@ -10,7 +10,7 @@
  */
 
 import { db } from '@/lib/db';
-import { employees, employeeSalaries, assignments, positions, employmentContracts } from '@/drizzle/schema';
+import { employees, employeeSalaries, assignments, positions, employmentContracts, departments } from '@/drizzle/schema';
 import { eq, and, or, like, desc, isNull, sql } from 'drizzle-orm';
 import { differenceInMonths } from 'date-fns';
 import { encrypt, decrypt } from '@/lib/crypto';
@@ -166,6 +166,7 @@ export interface UpdateEmployeeInput {
 export interface ListEmployeesInput {
   tenantId: string;
   status?: 'active' | 'terminated' | 'suspended';
+  contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE';
   search?: string;
   positionId?: string;
   departmentId?: string;
@@ -293,13 +294,13 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<typeof
         contractType: contractType,
         contractNumber: `${contractType}-${employeeNumber}`,
         startDate: input.hireDate.toISOString().split('T')[0],
-        endDate: contractType === 'CDD' && input.contractEndDate
+        endDate: (contractType === 'CDD' || contractType === 'CDDTI') && input.contractEndDate
           ? input.contractEndDate.toISOString().split('T')[0]
           : null,
         renewalCount: 0,
         isActive: true,
         cddReason: contractType === 'CDD' ? (input.cddReason || null) : null,
-        cddTotalDurationMonths: contractType === 'CDD' && input.contractEndDate
+        cddTotalDurationMonths: (contractType === 'CDD' || contractType === 'CDDTI') && input.contractEndDate
           ? differenceInMonths(input.contractEndDate, input.hireDate)
           : null,
         cddtiTaskDescription: contractType === 'CDDTI' ? (input.cddtiTaskDescription || null) : null,
@@ -401,6 +402,11 @@ export async function listEmployees(input: ListEmployeesInput) {
   }
   // If status is undefined, show all statuses (no filter)
 
+  // Filter by contract type if provided
+  if (input.contractType) {
+    conditions.push(eq(employees.contractType, input.contractType));
+  }
+
   if (input.search) {
     conditions.push(
       or(
@@ -412,10 +418,25 @@ export async function listEmployees(input: ListEmployeesInput) {
     );
   }
 
-  // Execute query
+  // Execute query with joins to get contract type and current position
   const results = await db
-    .select()
+    .select({
+      employee: employees,
+      contractType: employmentContracts.contractType,
+      positionTitle: positions.title,
+      departmentName: departments.name,
+    })
     .from(employees)
+    .leftJoin(employmentContracts, eq(employees.currentContractId, employmentContracts.id))
+    .leftJoin(
+      assignments,
+      and(
+        eq(assignments.employeeId, employees.id),
+        isNull(assignments.effectiveTo) // Current assignment only
+      )
+    )
+    .leftJoin(positions, eq(assignments.positionId, positions.id))
+    .leftJoin(departments, eq(positions.departmentId, departments.id))
     .where(and(...conditions))
     .orderBy(desc(employees.createdAt))
     .limit(limit + 1); // Fetch one more to determine if there are more pages
@@ -424,7 +445,9 @@ export async function listEmployees(input: ListEmployeesInput) {
   const items = hasMore ? results.slice(0, limit) : results;
 
   // Decrypt PII fields (handle decryption failures gracefully)
-  const decryptedItems = items.map((employee): typeof employees.$inferSelect & { nationalId: string | null; bankAccount: string | null } => {
+  // Also merge contractType from contract if not set on employee
+  const decryptedItems = items.map((row): typeof employees.$inferSelect & { nationalId: string | null; bankAccount: string | null } => {
+    const employee = row.employee;
     let decryptedNationalId = null;
     let decryptedBankAccount = null;
 
@@ -450,6 +473,13 @@ export async function listEmployees(input: ListEmployeesInput) {
 
     return {
       ...employee,
+      // Contract type comes from employmentContracts table (single source of truth)
+      contractType: row.contractType || null,
+      // Current position from assignments -> positions -> departments
+      currentPosition: row.positionTitle ? {
+        title: row.positionTitle,
+        department: row.departmentName || undefined,
+      } : undefined,
       nationalId: decryptedNationalId,
       bankAccount: decryptedBankAccount,
     };
@@ -458,7 +488,7 @@ export async function listEmployees(input: ListEmployeesInput) {
   return {
     employees: decryptedItems,
     hasMore,
-    nextCursor: hasMore ? items[items.length - 1]?.id : undefined,
+    nextCursor: hasMore ? items[items.length - 1]?.employee.id : undefined,
   };
 }
 

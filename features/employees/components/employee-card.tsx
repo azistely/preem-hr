@@ -2,6 +2,7 @@
  * Employee Card
  *
  * Summary card for mobile/grid view with key info
+ * Clear visible "Voir" button for low digital literacy users
  */
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -17,6 +18,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
+
+const CONTRACT_TYPE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
+  CDI: { label: 'CDI', variant: 'default' },
+  CDD: { label: 'CDD', variant: 'secondary' },
+  CDDTI: { label: 'CDDTI', variant: 'secondary' },
+  INTERIM: { label: 'Intérim', variant: 'outline' },
+  STAGE: { label: 'Stage', variant: 'outline' },
+};
 
 interface EmployeeCardProps {
   employee: {
@@ -26,6 +36,7 @@ interface EmployeeCardProps {
     employeeNumber: string;
     status: 'active' | 'terminated' | 'suspended';
     photoUrl?: string | null;
+    contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | null;
     currentPosition?: {
       title: string;
       department?: string;
@@ -57,34 +68,30 @@ export function EmployeeCard({ employee, onEdit, onTerminate }: EmployeeCardProp
           </div>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link href={`/employees/${employee.id}`}>
-                <Eye className="mr-2 h-4 w-4" />
-                Voir le profil
-              </Link>
-            </DropdownMenuItem>
-            {onEdit && (
-              <DropdownMenuItem onClick={() => onEdit(employee.id)}>
-                Modifier
-              </DropdownMenuItem>
-            )}
-            {onTerminate && employee.status === 'active' && (
-              <DropdownMenuItem
-                onClick={() => onTerminate(employee.id)}
-                className="text-destructive"
-              >
-                Terminer le contrat
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {(onEdit || onTerminate) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {onEdit && (
+                <DropdownMenuItem onClick={() => onEdit(employee.id)}>
+                  Modifier
+                </DropdownMenuItem>
+              )}
+              {onTerminate && employee.status === 'active' && (
+                <DropdownMenuItem
+                  onClick={() => onTerminate(employee.id)}
+                  className="text-destructive"
+                >
+                  Terminer le contrat
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
@@ -92,6 +99,15 @@ export function EmployeeCard({ employee, onEdit, onTerminate }: EmployeeCardProp
           <span className="text-sm text-muted-foreground">Statut</span>
           <EmployeeStatusBadge status={employee.status} />
         </div>
+
+        {employee.contractType && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Contrat</span>
+            <Badge variant={CONTRACT_TYPE_LABELS[employee.contractType]?.variant || 'outline'}>
+              {CONTRACT_TYPE_LABELS[employee.contractType]?.label || employee.contractType}
+            </Badge>
+          </div>
+        )}
 
         {employee.currentPosition && (
           <div className="flex items-center justify-between">
@@ -109,10 +125,11 @@ export function EmployeeCard({ employee, onEdit, onTerminate }: EmployeeCardProp
           </div>
         )}
 
-        <Link href={`/employees/${employee.id}`} className="block">
-          <Button className="w-full mt-2 min-h-[44px]" variant="outline">
-            <Eye className="mr-2 h-4 w-4" />
-            Voir les détails
+        {/* Clear visible CTA button - HCI best practice for low digital literacy */}
+        <Link href={`/employees/${employee.id}`} className="block pt-2">
+          <Button className="w-full min-h-[56px] text-lg gap-2" variant="default">
+            <Eye className="h-5 w-5" />
+            Voir le profil
           </Button>
         </Link>
       </CardContent>

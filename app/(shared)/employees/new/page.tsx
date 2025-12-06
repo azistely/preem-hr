@@ -34,6 +34,7 @@ import { buildEmployeeComponents } from '@/features/employees/actions/create-emp
 import Link from 'next/link';
 import { api } from '@/trpc/react';
 import { toast } from 'sonner';
+import { addMonths } from 'date-fns';
 
 // Component schema
 const componentSchema = z.object({
@@ -99,6 +100,7 @@ const createEmployeeSchema = z.object({
   // Step 3: Employment info
   hireDate: z.date(),
   contractType: z.enum(['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE']).optional().default('CDI'),
+  contractEndDate: z.date().optional(),
   positionId: z.string().min(1, 'Le poste est requis'),
   coefficient: z.number().int().min(90).max(1000).optional().default(100),
   rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional().default('MONTHLY'),
@@ -131,6 +133,44 @@ const createEmployeeSchema = z.object({
 }, {
   message: 'La description de la tâche est requise pour les contrats CDDTI (Article 4 Convention Collective)',
   path: ['cddtiTaskDescription'],
+}).refine((data) => {
+  // CDD and CDDTI contracts require end date
+  if ((data.contractType === 'CDD' || data.contractType === 'CDDTI') && !data.contractEndDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'La date de fin est requise pour les contrats CDD et CDDTI',
+  path: ['contractEndDate'],
+}).refine((data) => {
+  // End date must be after hire date
+  if (data.contractEndDate && data.hireDate && data.contractEndDate <= data.hireDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'La date de fin doit être postérieure à la date d\'embauche',
+  path: ['contractEndDate'],
+}).refine((data) => {
+  // CDDTI max duration: 12 months
+  if (data.contractType === 'CDDTI' && data.contractEndDate && data.hireDate) {
+    const maxDate = addMonths(data.hireDate, 12);
+    if (data.contractEndDate > maxDate) return false;
+  }
+  return true;
+}, {
+  message: 'La durée maximale d\'un CDDTI est de 12 mois',
+  path: ['contractEndDate'],
+}).refine((data) => {
+  // CDD max duration: 24 months
+  if (data.contractType === 'CDD' && data.contractEndDate && data.hireDate) {
+    const maxDate = addMonths(data.hireDate, 24);
+    if (data.contractEndDate > maxDate) return false;
+  }
+  return true;
+}, {
+  message: 'La durée maximale d\'un CDD est de 24 mois',
+  path: ['contractEndDate'],
 });
 
 type FormData = z.infer<typeof createEmployeeSchema>;
@@ -317,6 +357,21 @@ export default function NewEmployeePage() {
     switch (currentStep) {
       case 1: // Personal Info
         isValid = await form.trigger(['firstName', 'lastName', 'phone', 'dateOfBirth', 'gender', 'maritalStatus']);
+
+        // Cross-field validation: minimum age 16+
+        if (isValid) {
+          const dateOfBirth = form.getValues('dateOfBirth');
+          if (dateOfBirth) {
+            const age = Math.floor((Date.now() - dateOfBirth.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+            if (age < 16) {
+              form.setError('dateOfBirth', {
+                type: 'manual',
+                message: 'L\'employé doit avoir au moins 16 ans',
+              });
+              isValid = false;
+            }
+          }
+        }
         break;
       case 2: // Personnel Record
         isValid = await form.trigger(['nationalityZone', 'employeeType']);
@@ -324,21 +379,125 @@ export default function NewEmployeePage() {
       case 3: // Employment Info
         isValid = await form.trigger(['hireDate', 'contractType', 'positionId', 'coefficient', 'rateType', 'primaryLocationId']);
 
+        // Cross-field validation for CDD/CDDTI contracts
+        if (isValid) {
+          const contractType = form.getValues('contractType');
+          const hireDate = form.getValues('hireDate');
+          const contractEndDate = form.getValues('contractEndDate');
+
+          // CDD/CDDTI require end date
+          if ((contractType === 'CDD' || contractType === 'CDDTI') && !contractEndDate) {
+            form.setError('contractEndDate', {
+              type: 'manual',
+              message: 'La date de fin est requise pour les contrats CDD et CDDTI',
+            });
+            isValid = false;
+          }
+
+          // End date must be after hire date
+          if (contractEndDate && hireDate && contractEndDate <= hireDate) {
+            form.setError('contractEndDate', {
+              type: 'manual',
+              message: 'La date de fin doit être postérieure à la date d\'embauche',
+            });
+            isValid = false;
+          }
+
+          // CDDTI max 12 months
+          if (contractType === 'CDDTI' && contractEndDate && hireDate) {
+            const maxDate = addMonths(hireDate, 12);
+            if (contractEndDate > maxDate) {
+              form.setError('contractEndDate', {
+                type: 'manual',
+                message: 'La durée maximale d\'un CDDTI est de 12 mois',
+              });
+              isValid = false;
+            }
+          }
+
+          // CDD max 24 months
+          if (contractType === 'CDD' && contractEndDate && hireDate) {
+            const maxDate = addMonths(hireDate, 24);
+            if (contractEndDate > maxDate) {
+              form.setError('contractEndDate', {
+                type: 'manual',
+                message: 'La durée maximale d\'un CDD est de 24 mois',
+              });
+              isValid = false;
+            }
+          }
+
+          // CDDTI requires task description
+          if (contractType === 'CDDTI' && !form.getValues('cddtiTaskDescription')?.trim()) {
+            form.setError('cddtiTaskDescription', {
+              type: 'manual',
+              message: 'La description de la tâche est requise pour les contrats CDDTI',
+            });
+            isValid = false;
+          }
+        }
+
         // Update selected location ID to fetch transport minimum
         if (isValid) {
           const locationId = form.getValues('primaryLocationId');
           setSelectedLocationId(locationId);
         }
         break;
-      case 4: // Dependents
-        isValid = true; // Dependents are optional
+      case 4: { // Dependents
+        const dependents = form.getValues('dependents') || [];
+        const maritalStatus = form.getValues('maritalStatus');
+
+        // Check for multiple spouses
+        const spouseCount = dependents.filter(d => d.relationship === 'spouse').length;
+        if (spouseCount > 1) {
+          form.setError('dependents', {
+            type: 'manual',
+            message: 'Un seul conjoint peut être déclaré',
+          });
+          isValid = false;
+        } else if (spouseCount === 1 && maritalStatus === 'single') {
+          form.setError('dependents', {
+            type: 'manual',
+            message: 'Vous avez déclaré un conjoint mais votre situation matrimoniale est "célibataire". Veuillez corriger.',
+          });
+          isValid = false;
+        } else {
+          isValid = true;
+        }
         break;
-      case 5: // Benefits Enrollment
-        isValid = true; // Benefits enrollment is optional
+      }
+      case 5: { // Benefits Enrollment
+        const enrollments = form.getValues('benefitEnrollments') || [];
+        const hireDateForBenefits = form.getValues('hireDate');
+        isValid = true;
+
+        for (const enrollment of enrollments) {
+          if (enrollment.effectiveFrom && hireDateForBenefits && enrollment.effectiveFrom < hireDateForBenefits) {
+            form.setError('benefitEnrollments', {
+              type: 'manual',
+              message: 'La date d\'effet ne peut pas être antérieure à la date d\'embauche',
+            });
+            isValid = false;
+            break;
+          }
+        }
         break;
-      case 6: // Banking Info
-        isValid = true; // Banking info is optional
+      }
+      case 6: { // Banking Info
+        const bankAccount = form.getValues('bankAccount');
+        const bankName = form.getValues('bankName');
+
+        if (bankAccount && bankAccount.trim() && (!bankName || !bankName.trim())) {
+          form.setError('bankName', {
+            type: 'manual',
+            message: 'Le nom de la banque est requis si un numéro de compte est fourni',
+          });
+          isValid = false;
+        } else {
+          isValid = true;
+        }
         break;
+      }
       case 7: // Salary Info
         // Validate form fields first
         isValid = await form.trigger(['baseSalary', 'baseComponents', 'components']);
@@ -442,6 +601,19 @@ export default function NewEmployeePage() {
 
     if (isValid && currentStep < 8) {
       setCurrentStep(currentStep + 1);
+      // Scroll to top of form for new step
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (!isValid) {
+      // Scroll to first error field for better UX
+      setTimeout(() => {
+        const firstError = document.querySelector('[data-invalid="true"], [aria-invalid="true"], .text-destructive');
+        if (firstError) {
+          firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          // Fallback: scroll to top of form
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 100);
     }
   };
 

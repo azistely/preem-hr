@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Eye, MoreVertical } from 'lucide-react';
 import { EmployeeAvatar } from './employee-avatar';
 import { EmployeeStatusBadge } from './employee-status-badge';
-import { formatCurrency } from '../hooks/use-salary-validation';
 import Link from 'next/link';
 import { CategoryBadge } from '@/components/employees/category-badge';
 import {
@@ -25,6 +24,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
+
+const CONTRACT_TYPE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
+  CDI: { label: 'CDI', variant: 'default' },
+  CDD: { label: 'CDD', variant: 'secondary' },
+  CDDTI: { label: 'CDDTI', variant: 'secondary' },
+  INTERIM: { label: 'Intérim', variant: 'outline' },
+  STAGE: { label: 'Stage', variant: 'outline' },
+};
 
 interface EmployeeTableProps {
   employees: Array<{
@@ -35,12 +43,10 @@ interface EmployeeTableProps {
     status: 'active' | 'terminated' | 'suspended';
     email: string;
     photoUrl?: string | null;
+    contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | null;
     currentPosition?: {
       title: string;
       department?: string;
-    };
-    currentSalary?: {
-      baseSalary: number;
     };
   }>;
   onEdit?: (id: string) => void;
@@ -55,10 +61,10 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
           <TableRow>
             <TableHead>Employé</TableHead>
             <TableHead>Poste</TableHead>
+            <TableHead>Contrat</TableHead>
             <TableHead>Catégorie</TableHead>
-            <TableHead>Salaire brut</TableHead>
             <TableHead>Statut</TableHead>
-            <TableHead className="w-[80px]"></TableHead>
+            <TableHead className="w-[140px]">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -106,6 +112,16 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
                 </TableCell>
 
                 <TableCell>
+                  {employee.contractType ? (
+                    <Badge variant={CONTRACT_TYPE_LABELS[employee.contractType]?.variant || 'outline'}>
+                      {CONTRACT_TYPE_LABELS[employee.contractType]?.label || employee.contractType}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+
+                <TableCell>
                   <CategoryBadge
                     employeeId={employee.id}
                     showCoefficient={false}
@@ -114,45 +130,43 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
                   />
                 </TableCell>
 
-                <TableCell className="font-medium">
-                  {employee.currentSalary
-                    ? formatCurrency(employee.currentSalary.baseSalary)
-                    : '-'}
-                </TableCell>
-
                 <TableCell>
                   <EmployeeStatusBadge status={employee.status} />
                 </TableCell>
 
                 <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]">
-                        <MoreVertical className="h-4 w-4" />
+                  <div className="flex items-center gap-1">
+                    <Link href={`/employees/${employee.id}`}>
+                      <Button variant="default" size="sm" className="min-h-[44px] gap-2">
+                        <Eye className="h-4 w-4" />
+                        Voir
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/employees/${employee.id}`}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Voir le profil
-                        </Link>
-                      </DropdownMenuItem>
-                      {onEdit && (
-                        <DropdownMenuItem onClick={() => onEdit(employee.id)}>
-                          Modifier
-                        </DropdownMenuItem>
-                      )}
-                      {onTerminate && employee.status === 'active' && (
-                        <DropdownMenuItem
-                          onClick={() => onTerminate(employee.id)}
-                          className="text-destructive"
-                        >
-                          Terminer le contrat
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    </Link>
+                    {(onEdit || onTerminate) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {onEdit && (
+                            <DropdownMenuItem onClick={() => onEdit(employee.id)}>
+                              Modifier
+                            </DropdownMenuItem>
+                          )}
+                          {onTerminate && employee.status === 'active' && (
+                            <DropdownMenuItem
+                              onClick={() => onTerminate(employee.id)}
+                              className="text-destructive"
+                            >
+                              Terminer le contrat
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))

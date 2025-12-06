@@ -156,14 +156,6 @@ const createEmployeeSchema = z.object({
   message: 'La date de fin de contrat est requise pour un CDD',
   path: ['contractEndDate'],
 }).refine((data) => {
-  if (data.contractType === 'CDD' && !data.cddReason) {
-    return false;
-  }
-  return true;
-}, {
-  message: 'Le motif du CDD est requis par la loi',
-  path: ['cddReason'],
-}).refine((data) => {
   if (data.contractType === 'CDD' && data.contractEndDate && data.hireDate) {
     return data.hireDate < data.contractEndDate;
   }
@@ -260,6 +252,7 @@ const updateEmployeeSchema = z.object({
 
 const listEmployeesSchema = z.object({
   status: statusEnum.optional(),
+  contractType: z.enum(['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE']).optional(),
   search: z.string().optional(),
   positionId: z.string().uuid().optional(),
   departmentId: z.string().uuid().optional(),

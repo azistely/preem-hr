@@ -47,6 +47,7 @@ import type { ContractType } from '@/components/employees/contract-type-selector
 import { PaymentFrequencySelector } from '@/components/employees/payment-frequency-selector';
 import type { PaymentFrequency, WeeklyHoursRegime } from '@/components/employees/payment-frequency-selector';
 import { toast } from 'sonner';
+import { addMonths } from 'date-fns';
 
 // Schema for creating a new position
 const createPositionSchema = z.object({
@@ -131,6 +132,10 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
                     form.setValue('paymentFrequency', undefined);
                     form.setValue('weeklyHoursRegime', undefined);
                   }
+                  // Clear contract end date when switching to CDI (not required)
+                  if (value === 'CDI' || value === 'INTERIM' || value === 'STAGE') {
+                    form.setValue('contractEndDate', undefined);
+                  }
                 }}
               />
             </FormControl>
@@ -148,7 +153,13 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
             <FormControl>
               <DatePicker
                 value={field.value || null}
-                onChange={field.onChange}
+                onChange={(date) => {
+                  field.onChange(date);
+                  // Clear contract end date when hire date changes to force re-validation
+                  if (form.watch('contractType') === 'CDD' || form.watch('contractType') === 'CDDTI') {
+                    form.setValue('contractEndDate', undefined);
+                  }
+                }}
                 placeholder="Sélectionner une date"
                 fromYear={2000}
                 toYear={new Date().getFullYear()}
@@ -163,6 +174,48 @@ export function EmploymentInfoStep({ form }: EmploymentInfoStepProps) {
           </FormItem>
         )}
       />
+
+      {/* Contract End Date - Required for CDD and CDDTI */}
+      {(form.watch('contractType') === 'CDD' || form.watch('contractType') === 'CDDTI') && (
+        <FormField
+          control={form.control}
+          name="contractEndDate"
+          render={({ field }) => {
+            const contractType = form.watch('contractType');
+            const hireDate = form.watch('hireDate');
+            const maxMonths = contractType === 'CDDTI' ? 12 : 24;
+            const maxDate = hireDate ? addMonths(hireDate, maxMonths) : undefined;
+
+            return (
+              <FormItem className="flex flex-col">
+                <FormLabel>Date de fin de contrat *</FormLabel>
+                <FormControl>
+                  <DatePicker
+                    value={field.value || null}
+                    onChange={field.onChange}
+                    placeholder="Sélectionner une date de fin"
+                    fromYear={new Date().getFullYear()}
+                    toYear={new Date().getFullYear() + 3}
+                    disabled={(date) => {
+                      if (!hireDate) return true;
+                      if (date <= hireDate) return true;
+                      if (maxDate && date > maxDate) return true;
+                      return false;
+                    }}
+                    allowManualInput={true}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {contractType === 'CDDTI'
+                    ? 'Maximum 12 mois pour un CDDTI'
+                    : 'Maximum 24 mois pour un CDD'}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            );
+          }}
+        />
+      )}
 
       <FormField
         control={form.control}

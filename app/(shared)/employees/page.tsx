@@ -28,6 +28,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 
 export default function EmployeesPage() {
   const [status, setStatus] = useState<'active' | 'terminated' | 'suspended' | undefined>(undefined);
+  const [contractType, setContractType] = useState<'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 300);
 
@@ -35,6 +36,7 @@ export default function EmployeesPage() {
 
   const { data, isLoading, error } = useEmployees({
     status,
+    contractType,
     search: debouncedSearch,
   });
 
@@ -101,7 +103,7 @@ export default function EmployeesPage() {
       {/* Filters */}
       <Card className="mb-6">
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -124,6 +126,23 @@ export default function EmployeesPage() {
                 <SelectItem value="active">Actifs uniquement</SelectItem>
                 <SelectItem value="suspended">Suspendus uniquement</SelectItem>
                 <SelectItem value="terminated">Cessés uniquement</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={contractType}
+              onValueChange={(value: any) => setContractType(value === 'all' ? undefined : value)}
+            >
+              <SelectTrigger className="min-h-[48px]">
+                <SelectValue placeholder="Filtrer par contrat" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les contrats</SelectItem>
+                <SelectItem value="CDI">CDI</SelectItem>
+                <SelectItem value="CDD">CDD</SelectItem>
+                <SelectItem value="CDDTI">CDDTI</SelectItem>
+                <SelectItem value="INTERIM">Intérim</SelectItem>
+                <SelectItem value="STAGE">Stage</SelectItem>
               </SelectContent>
             </Select>
           </div>
