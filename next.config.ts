@@ -8,7 +8,10 @@ const nextConfig: NextConfig = {
     '@react-pdf/renderer',
   ],
 
-  // Webpack configuration (for production builds)
+  // Turbopack configuration (Next.js 16+ default)
+  turbopack: {},
+
+  // Webpack configuration (for production builds when using --webpack flag)
   webpack: (config, { isServer }) => {
     if (isServer) {
       config.externals = config.externals || [];
