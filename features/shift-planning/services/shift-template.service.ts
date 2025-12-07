@@ -75,6 +75,12 @@ export async function createShiftTemplate(
     return template;
   } catch (error) {
     if (error instanceof Error) {
+      // Check for unique constraint violation on code
+      if (error.message.includes('unique') || error.message.includes('duplicate') || error.message.includes('23505')) {
+        throw new ShiftTemplateError(
+          `Un modèle avec le code "${data.code}" existe déjà. Veuillez utiliser un code différent.`
+        );
+      }
       throw new ShiftTemplateError(
         `Erreur lors de la création du modèle: ${error.message}`
       );

@@ -16,7 +16,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -58,6 +58,7 @@ import {
   AlertCircle,
   LayoutList,
   Shield,
+  Upload,
 } from 'lucide-react';
 import {
   Collapsible,
@@ -74,6 +75,10 @@ export default function TimeTrackingAdminPage() {
   const [statusTab, setStatusTab] = useState<StatusFilter>('pending');
   const [viewMode, setViewMode] = useState<'detailed' | 'compact'>('detailed');
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
+
+  // Stable reference to today's date (prevents infinite re-renders)
+  const todayRef = useRef(new Date());
+  const today = todayRef.current;
 
   // Calculate date range
   const getDateRange = () => {
@@ -147,7 +152,7 @@ export default function TimeTrackingAdminPage() {
   // Fetch employees needing hours for today
   const { data: employeesNeedingHours } =
     api.timeTracking.getEmployeesNeedingHours.useQuery({
-      date: new Date(),
+      date: today,
     });
 
   // Fetch compliance data
@@ -388,68 +393,87 @@ export default function TimeTrackingAdminPage() {
 
       {/* Quick Actions - show when no pending or when not on pending tab */}
       {(!summary || summary.pendingCount === 0 || statusTab !== 'pending') && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {/* Quick Entry for employees needing hours */}
           {employeesNeedingHours && employeesNeedingHours.length > 0 && (
             <Card className="border-orange-200 bg-orange-50">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center gap-3">
                   <div className="p-3 bg-orange-100 rounded-lg">
                     <Clock className="h-6 w-6 text-orange-600" />
                   </div>
-                  <div className="flex-1">
+                  <div>
                     <h3 className="font-semibold">Saisie rapide</h3>
                     <p className="text-sm text-muted-foreground">
                       {employeesNeedingHours.length}{' '}
                       {employeesNeedingHours.length > 1 ? 'employés' : 'employé'}
                     </p>
                   </div>
-                  <Button
-                    onClick={() => setQuickEntryOpen(true)}
-                    className="min-h-[44px]"
-                  >
-                    Saisir heures
-                  </Button>
                 </div>
+                <Button
+                  onClick={() => setQuickEntryOpen(true)}
+                  className="w-full min-h-[44px]"
+                >
+                  Saisir heures
+                </Button>
               </CardContent>
             </Card>
           )}
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-100 rounded-lg">
-                  <FileEdit className="h-6 w-6 text-blue-600" />
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-purple-100 rounded-lg">
+                  <Upload className="h-6 w-6 text-purple-600" />
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">Saisie manuelle</h3>
+                <div>
+                  <h3 className="font-semibold">Importer pointages</h3>
                   <p className="text-sm text-muted-foreground">
-                    Enregistrer les heures manuellement
+                    Depuis appareil biométrique
                   </p>
                 </div>
-                <Link href="/manager/time-tracking/manual-entry">
-                  <Button className="min-h-[44px]">Ouvrir</Button>
-                </Link>
               </div>
+              <Link href="/admin/time-tracking/import" className="block">
+                <Button className="w-full min-h-[44px]">Importer</Button>
+              </Link>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-100 rounded-lg">
+                  <FileEdit className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Saisie manuelle</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Enregistrer manuellement
+                  </p>
+                </div>
+              </div>
+              <Link href="/manager/time-tracking/manual-entry" className="block">
+                <Button className="w-full min-h-[44px]">Ouvrir</Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
                 <div className="p-3 bg-green-100 rounded-lg">
                   <BarChart3 className="h-6 w-6 text-green-600" />
                 </div>
-                <div className="flex-1">
+                <div>
                   <h3 className="font-semibold">Rapport heures sup</h3>
                   <p className="text-sm text-muted-foreground">
-                    Voir les heures supplémentaires
+                    Voir les heures sup
                   </p>
                 </div>
-                <Link href="/manager/reports/overtime">
-                  <Button className="min-h-[44px]">Ouvrir</Button>
-                </Link>
               </div>
+              <Link href="/manager/reports/overtime" className="block">
+                <Button className="w-full min-h-[44px]">Ouvrir</Button>
+              </Link>
             </CardContent>
           </Card>
         </div>
@@ -767,7 +791,7 @@ export default function TimeTrackingAdminPage() {
       <DailyWorkersQuickEntry
         open={quickEntryOpen}
         onOpenChange={setQuickEntryOpen}
-        date={new Date()}
+        date={today}
         onSuccess={() => {
           refetch();
         }}
