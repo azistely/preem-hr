@@ -7,6 +7,8 @@ import { Toaster } from '@/components/ui/toaster';
 import { Toaster as SonnerToaster } from 'sonner';
 import { WhatsAppSupportButton } from '@/components/whatsapp-support-button';
 import { NavigationProgressBar } from '@/components/navigation/progress-bar';
+import { SpeedInsights } from '@vercel/speed-insights/next';
+import { Analytics } from '@vercel/analytics/next';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -30,6 +32,8 @@ export default function RootLayout({
         <Toaster />
         <SonnerToaster position="top-right" richColors />
         <WhatsAppSupportButton />
+        <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
