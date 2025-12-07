@@ -335,10 +335,16 @@ export async function calculatePayrollRun(
           throw new Error('Aucun salaire trouvé pour cet employé');
         }
 
-        // Get current employment contract to check contract type
+        // Get employment contract to check contract type
+        // For active employees: only select active contracts
+        // For terminated employees: include their terminated contract (needed for final pay calculation)
+        const isTerminatedEmployee = employee.status === 'terminated';
         const currentContract = await db.query.employmentContracts.findFirst({
           where: and(
             eq(employmentContracts.employeeId, employee.id),
+            // For terminated employees, include inactive contracts (they were terminated with the employee)
+            // For active employees, only active contracts
+            isTerminatedEmployee ? undefined : eq(employmentContracts.isActive, true),
             or(
               isNull(employmentContracts.endDate),
               sql`${employmentContracts.endDate} >= ${run.periodStart}`

@@ -8,7 +8,7 @@
  */
 
 import { db } from '@/db';
-import { employeeTerminations, employees } from '@/drizzle/schema';
+import { employeeTerminations, employees, employmentContracts } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { eventBus } from '@/lib/event-bus';
 
@@ -78,6 +78,24 @@ export async function createTermination(input: CreateTerminationInput) {
       and(
         eq(employees.id, input.employeeId),
         eq(employees.tenantId, input.tenantId)
+      )
+    );
+
+  // Terminate active contract(s) for this employee
+  // This ensures data consistency between employee status and contract status
+  await db
+    .update(employmentContracts)
+    .set({
+      isActive: false,
+      terminationDate: input.terminationDate.toISOString().split('T')[0],
+      terminationReason: input.terminationReason,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(
+      and(
+        eq(employmentContracts.employeeId, input.employeeId),
+        eq(employmentContracts.tenantId, input.tenantId),
+        eq(employmentContracts.isActive, true)
       )
     );
 

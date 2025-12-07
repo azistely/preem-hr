@@ -82,7 +82,9 @@ export class OnDemandPayrollDataProvider implements PayrollDataProvider {
     }
 
     // Get contract first to determine if we need time data
-    const contract = await this.fetchContract(employeeId);
+    // Pass employee status to allow terminated employees to access their (now inactive) contract
+    const isTerminatedEmployee = employee.status === 'terminated';
+    const contract = await this.fetchContract(employeeId, isTerminatedEmployee);
     const contractType = contract?.contractType as 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | undefined;
     const rateType = (employee.rateType || 'MONTHLY') as 'MONTHLY' | 'DAILY' | 'HOURLY';
 
@@ -175,10 +177,15 @@ export class OnDemandPayrollDataProvider implements PayrollDataProvider {
     return salaries[0] || null;
   }
 
-  private async fetchContract(employeeId: string) {
+  private async fetchContract(employeeId: string, isTerminatedEmployee: boolean = false) {
+    // For active employees: only select active contracts
+    // For terminated employees: include their terminated contract (needed for final pay calculation)
     return db.query.employmentContracts.findFirst({
       where: and(
         eq(employmentContracts.employeeId, employeeId),
+        // For terminated employees, include inactive contracts (they were terminated with the employee)
+        // For active employees, only active contracts
+        isTerminatedEmployee ? undefined : eq(employmentContracts.isActive, true),
         or(
           isNull(employmentContracts.endDate),
           sql`${employmentContracts.endDate} >= ${this.periodStart}`

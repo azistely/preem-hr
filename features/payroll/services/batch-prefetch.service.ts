@@ -153,6 +153,9 @@ export async function batchFetchContracts(
 
   // Use raw SQL with DISTINCT ON
   // Cast employeeIds array explicitly to uuid[] for PostgreSQL ANY() operator
+  // Include:
+  // - Active contracts (is_active = true) for current employees
+  // - Inactive contracts that were terminated within the payroll period (for final pay calculation)
   const results: any = await db.execute(sql`
     SELECT DISTINCT ON (employee_id)
       id,
@@ -162,6 +165,10 @@ export async function batchFetchContracts(
       end_date
     FROM employment_contracts
     WHERE employee_id = ANY(${sql.raw(`ARRAY[${employeeIds.map(id => `'${id}'::uuid`).join(',')}]`)})
+      AND (
+        is_active = true
+        OR (is_active = false AND termination_date >= ${periodStart})
+      )
       AND (end_date IS NULL OR end_date >= ${periodStart})
     ORDER BY employee_id, start_date DESC
   `);
