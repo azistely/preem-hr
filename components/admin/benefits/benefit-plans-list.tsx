@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { api } from '@/trpc/react';
 import { useToast } from '@/hooks/use-toast';
+import { EditBenefitPlanDialog } from './edit-benefit-plan-dialog';
 import {
   Card,
   CardContent,
@@ -68,10 +69,30 @@ const benefitTypeLabels = {
   other: 'Autre',
 };
 
+interface BenefitPlan {
+  id: string;
+  planName: string;
+  planCode: string;
+  benefitType: string;
+  description: string | null;
+  providerName: string | null;
+  employeeCost: string | null;
+  employerCost: string | null;
+  totalCost: string | null;
+  currency: string | null;
+  costFrequency: string;
+  eligibleEmployeeTypes: string[] | null;
+  waitingPeriodDays: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isActive: boolean;
+}
+
 export function BenefitPlansList() {
   const { toast } = useToast();
   const [benefitTypeFilter, setBenefitTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const [editingPlan, setEditingPlan] = useState<BenefitPlan | null>(null);
 
   // Fetch plans
   const {
@@ -262,7 +283,7 @@ export function BenefitPlansList() {
                       variant="outline"
                       size="sm"
                       className="flex-1 gap-2"
-                      disabled
+                      onClick={() => setEditingPlan(plan as BenefitPlan)}
                     >
                       <Edit className="h-4 w-4" />
                       Modifier
@@ -286,6 +307,16 @@ export function BenefitPlansList() {
             );
           })}
         </div>
+      )}
+
+      {/* Edit Plan Dialog */}
+      {editingPlan && (
+        <EditBenefitPlanDialog
+          plan={editingPlan}
+          open={!!editingPlan}
+          onOpenChange={(open) => !open && setEditingPlan(null)}
+          onSuccess={() => refetch()}
+        />
       )}
     </div>
   );

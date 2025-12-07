@@ -124,7 +124,10 @@ export function CreateBenefitPlanWizard({
     });
   };
 
-  const handleNext = async () => {
+  const handleNext = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     const fields = step === 1
       ? ['planName', 'planCode', 'benefitType']
       : step === 2
@@ -143,7 +146,16 @@ export function CreateBenefitPlanWizard({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        onKeyDown={(e) => {
+          // Prevent Enter key from submitting form on steps 1 and 2
+          if (e.key === 'Enter' && step < 3) {
+            e.preventDefault();
+          }
+        }}
+        className="space-y-6"
+      >
         {/* Progress Indicator */}
         <div className="flex items-center justify-center gap-2 mb-6">
           {[1, 2, 3].map((s) => (
@@ -539,7 +551,7 @@ export function CreateBenefitPlanWizard({
           {step < 3 ? (
             <Button
               type="button"
-              onClick={handleNext}
+              onClick={(e) => handleNext(e)}
               className="flex-1 min-h-[48px]"
             >
               Suivant
