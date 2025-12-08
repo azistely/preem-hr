@@ -24,6 +24,24 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function(A, opts){
+                window.Sonarly = { opts: opts, queue: [] };
+                var s = document.createElement('script');
+                s.src = A;
+                s.async = true;
+                document.head.appendChild(s);
+              })("https://sonarly.dev/static/tracker.js", {
+                projectKey: "Hq2mG3H8rr1A3ZjT3Sak",
+                ingestPoint: "https://sonarly.dev/ingest"
+              });
+            `,
+          }}
+        />
+      </head>
       <body className={inter.className} suppressHydrationWarning>
         <Suspense fallback={null}>
           <NavigationProgressBar />

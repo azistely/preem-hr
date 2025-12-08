@@ -8,13 +8,21 @@ import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { type NextRequest } from 'next/server';
 import { appRouter } from '@/server/routers/_app';
 import { createTRPCContext } from '@/server/api/context';
+import * as Sentry from '@sentry/node';
 
-const handler = (req: NextRequest) =>
-  fetchRequestHandler({
+const handler = (req: NextRequest) => {
+  // Link Sonarly session for error correlation
+  const sonarlySessionId = req.headers.get('x-sonarly-session-id');
+  if (sonarlySessionId) {
+    Sentry.setTag('sonarly.session_id', sonarlySessionId);
+  }
+
+  return fetchRequestHandler({
     endpoint: '/api/trpc',
     req,
     router: appRouter,
     createContext: () => createTRPCContext(),
   });
+};
 
 export { handler as GET, handler as POST };

@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Removed experimental.typedRoutes for Turbopack compatibility
 
+  // Enable sourcemaps for error tracking (Sonarly)
+  productionBrowserSourceMaps: true,
+
   // Server components configuration
   serverExternalPackages: [
     '@react-pdf/renderer',
