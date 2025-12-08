@@ -418,11 +418,12 @@ export async function listEmployees(input: ListEmployeesInput) {
     );
   }
 
-  // Execute query with joins to get contract type and current position
+  // Execute query with joins to get contract type, end date, and current position
   const results = await db
     .select({
       employee: employees,
       contractType: employmentContracts.contractType,
+      contractEndDate: employmentContracts.endDate,
       positionTitle: positions.title,
       departmentName: departments.name,
     })
@@ -475,6 +476,8 @@ export async function listEmployees(input: ListEmployeesInput) {
       ...employee,
       // Contract type comes from employmentContracts table (single source of truth)
       contractType: row.contractType || null,
+      // Contract end date for CDD/CDDTI/INTERIM/STAGE alerts
+      contractEndDate: row.contractEndDate || null,
       // Current position from assignments -> positions -> departments
       currentPosition: row.positionTitle ? {
         title: row.positionTitle,

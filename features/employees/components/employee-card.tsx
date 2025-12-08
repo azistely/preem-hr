@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Eye, MoreVertical } from 'lucide-react';
 import { EmployeeAvatar } from './employee-avatar';
 import { EmployeeStatusBadge } from './employee-status-badge';
+import { ContractEndingBadge, TrialPeriodBadge } from './contract-alert-badges';
 import { formatCurrency } from '../hooks/use-salary-validation';
 import Link from 'next/link';
 import {
@@ -37,6 +38,8 @@ interface EmployeeCardProps {
     status: 'active' | 'terminated' | 'suspended';
     photoUrl?: string | null;
     contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | null;
+    contractEndDate?: string | null;
+    hireDate?: string | Date;
     currentPosition?: {
       title: string;
       department?: string;
@@ -97,7 +100,16 @@ export function EmployeeCard({ employee, onEdit, onTerminate }: EmployeeCardProp
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Statut</span>
-          <EmployeeStatusBadge status={employee.status} />
+          <div className="flex flex-wrap items-center gap-1 justify-end">
+            <EmployeeStatusBadge status={employee.status} />
+            {employee.hireDate && (
+              <TrialPeriodBadge hireDate={employee.hireDate} />
+            )}
+            <ContractEndingBadge
+              contractEndDate={employee.contractEndDate ?? null}
+              contractType={employee.contractType ?? null}
+            />
+          </div>
         </div>
 
         {employee.contractType && (

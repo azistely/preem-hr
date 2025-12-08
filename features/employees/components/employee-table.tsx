@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Eye, MoreVertical } from 'lucide-react';
 import { EmployeeAvatar } from './employee-avatar';
 import { EmployeeStatusBadge } from './employee-status-badge';
+import { ContractEndingBadge, TrialPeriodBadge } from './contract-alert-badges';
 import Link from 'next/link';
 import { CategoryBadge } from '@/components/employees/category-badge';
 import {
@@ -44,6 +45,8 @@ interface EmployeeTableProps {
     email: string;
     photoUrl?: string | null;
     contractType?: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | null;
+    contractEndDate?: string | null;
+    hireDate?: string | Date;
     currentPosition?: {
       title: string;
       department?: string;
@@ -131,7 +134,16 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
                 </TableCell>
 
                 <TableCell>
-                  <EmployeeStatusBadge status={employee.status} />
+                  <div className="flex flex-wrap items-center gap-1">
+                    <EmployeeStatusBadge status={employee.status} />
+                    {employee.hireDate && (
+                      <TrialPeriodBadge hireDate={employee.hireDate} />
+                    )}
+                    <ContractEndingBadge
+                      contractEndDate={employee.contractEndDate ?? null}
+                      contractType={employee.contractType ?? null}
+                    />
+                  </div>
                 </TableCell>
 
                 <TableCell>
