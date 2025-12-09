@@ -9,7 +9,7 @@
  * Documents generated:
  * 1. Certificat de Travail (Work Certificate)
  * 2. Bulletin de Paie Final (Final Payslip)
- * 3. Attestation CNPS (CNPS Attestation)
+ * 3. Relevé Nominatif de Salaire (CNPS Salary Statement)
  */
 
 'use client';
@@ -65,8 +65,8 @@ const documents = [
     deadline: 'Immédiatement',
   },
   {
-    title: 'Attestation CNPS',
-    description: 'Récapitulatif des cotisations sociales durant l\'emploi',
+    title: 'Relevé Nominatif de Salaire',
+    description: 'Récapitulatif des cotisations CNPS durant l\'emploi',
     icon: Shield,
     color: 'text-purple-600',
     bgColor: 'bg-purple-50',

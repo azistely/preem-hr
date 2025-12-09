@@ -147,7 +147,7 @@ export function DepartureTypeStep({ form, employee }: DepartureTypeStepProps) {
               <FormControl>
                 <RadioGroup
                   onValueChange={field.onChange}
-                  value={field.value}
+                  value={field.value ?? ''}
                   className="grid grid-cols-1 md:grid-cols-2 gap-4"
                 >
                   {availableTypes.map((type) => {

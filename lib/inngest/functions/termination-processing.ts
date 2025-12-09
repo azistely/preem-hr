@@ -5,7 +5,7 @@
  * - STC (Solde de Tout Compte) calculation
  * - Work Certificate generation (48h deadline per Convention Collective Art. 40)
  * - Final Payslip generation (includes terminal payroll calculation)
- * - CNPS Attestation generation (15 day deadline per Convention Collective Art. 40)
+ * - Relevé Nominatif de Salaire generation (15 day deadline per Convention Collective Art. 40)
  *
  * Designed for West African 3G connections with unreliable connectivity.
  * Uses step functions for durability and automatic retry on failure.
@@ -241,10 +241,10 @@ export const terminationProcessingFunction = inngest.createFunction(
       }
     });
 
-    // Step 4: Generate CNPS Attestation
+    // Step 4: Generate Relevé Nominatif de Salaire (CNPS Salary Statement)
     await step.run('generate-cnps-attestation', async () => {
-      console.log('[Inngest] Step 4: Generating CNPS Attestation...');
-      await updateProgress(terminationId, tenantId, 'processing', 75, 'Attestation CNPS...');
+      console.log('[Inngest] Step 4: Generating Relevé Nominatif de Salaire...');
+      await updateProgress(terminationId, tenantId, 'processing', 75, 'Relevé nominatif...');
 
       try {
         const result = await generateCNPSAttestation({
@@ -254,12 +254,12 @@ export const terminationProcessingFunction = inngest.createFunction(
           uploadedByUserId,
         });
 
-        await updateProgress(terminationId, tenantId, 'processing', 90, 'Attestation générée');
-        console.log('[Inngest] CNPS Attestation generated:', result.url);
+        await updateProgress(terminationId, tenantId, 'processing', 90, 'Relevé nominatif généré');
+        console.log('[Inngest] Relevé Nominatif de Salaire generated:', result.url);
         return result;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Erreur lors de la génération de l'attestation";
-        await updateProgress(terminationId, tenantId, 'failed', 75, 'Attestation CNPS échouée', errorMessage);
+        const errorMessage = error instanceof Error ? error.message : "Erreur lors de la génération du relevé nominatif";
+        await updateProgress(terminationId, tenantId, 'failed', 75, 'Relevé nominatif échoué', errorMessage);
         throw error;
       }
     });

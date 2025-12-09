@@ -457,10 +457,13 @@ export const terminationsRouter = createTRPCRouter({
           totalNet: true,
           yearsOfService: true,
           averageSalary12M: true,
-          // Document URLs (available after generation)
+          // Document IDs and URLs (available after generation)
           workCertificateDocumentId: true,
+          workCertificateUrl: true,
           finalPayslipDocumentId: true,
+          finalPayslipUrl: true,
           cnpsAttestationDocumentId: true,
+          cnpsAttestationUrl: true,
         },
       });
 
@@ -494,11 +497,14 @@ export const terminationsRouter = createTRPCRouter({
           yearsOfService: termination.yearsOfService ? parseFloat(termination.yearsOfService) : 0,
           averageSalary12M: termination.averageSalary12M ? parseFloat(termination.averageSalary12M) : 0,
         } : null,
-        // Document IDs (if generated)
+        // Document IDs and URLs (if generated)
         documents: {
           workCertificateId: termination.workCertificateDocumentId,
+          workCertificateUrl: termination.workCertificateUrl,
           finalPayslipId: termination.finalPayslipDocumentId,
+          finalPayslipUrl: termination.finalPayslipUrl,
           cnpsAttestationId: termination.cnpsAttestationDocumentId,
+          cnpsAttestationUrl: termination.cnpsAttestationUrl,
         },
       };
     }),

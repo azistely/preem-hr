@@ -643,7 +643,8 @@ async function fetchEmployeeData(employeeId: string, tenantId: string): Promise<
   }
 
   // Fetch current contract (most recent active contract)
-  const [contract] = await db
+  // First try to find an active contract
+  let [contract] = await db
     .select()
     .from(employmentContracts)
     .where(
@@ -653,11 +654,28 @@ async function fetchEmployeeData(employeeId: string, tenantId: string): Promise<
         eq(employmentContracts.isActive, true)
       )
     )
-    .orderBy(desc(employmentContracts.startDate)) // ← Fix: Order by start date to get most recent active contract
+    .orderBy(desc(employmentContracts.startDate))
     .limit(1);
 
+  // If no active contract, look for the most recent contract (may have just been terminated)
+  // This handles the case where createTermination() deactivates the contract before
+  // the Inngest background job runs calculateSTC()
   if (!contract) {
-    throw new Error('Contrat actif non trouvé');
+    [contract] = await db
+      .select()
+      .from(employmentContracts)
+      .where(
+        and(
+          eq(employmentContracts.employeeId, employeeId),
+          eq(employmentContracts.tenantId, tenantId)
+        )
+      )
+      .orderBy(desc(employmentContracts.startDate))
+      .limit(1);
+  }
+
+  if (!contract) {
+    throw new Error('Contrat non trouvé');
   }
 
   // Fetch current salary

@@ -1,5 +1,5 @@
 /**
- * CNPS Attestation PDF Template
+ * Relevé Nominatif de Salaire PDF Template
  *
  * Convention Collective Article 40 - Must be issued within 15 days of termination
  *
@@ -189,7 +189,7 @@ export function CNPSAttestationPDF({ data }: { data: CNPSAttestationData }) {
         </View>
 
         {/* Title */}
-        <Text style={styles.title}>ATTESTATION DE COTISATIONS CNPS</Text>
+        <Text style={styles.title}>RELEVÉ NOMINATIF DE SALAIRE</Text>
 
         {/* Introduction */}
         <View style={styles.section}>

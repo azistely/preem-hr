@@ -228,7 +228,19 @@ export function TerminateEmployeeWizard({
 
   // Advance to confirmation step when processing completes
   useEffect(() => {
+    console.log('[Wizard] Progress state:', {
+      terminationId,
+      isCompleted,
+      isProcessing,
+      isFailed,
+      progress,
+      currentStep,
+      percentComplete,
+      progressCurrentStep,
+    });
+
     if (isCompleted && terminationId) {
+      console.log('[Wizard] Processing completed! Advancing to step 5...');
       form.setValue('documentsGenerated', true);
       queryClient.invalidateQueries();
       toast({
@@ -237,7 +249,7 @@ export function TerminateEmployeeWizard({
       });
       setCurrentStep(5);
     }
-  }, [isCompleted, terminationId, queryClient, toast, form]);
+  }, [isCompleted, terminationId, queryClient, toast, form, isProcessing, isFailed, progress, currentStep, percentComplete, progressCurrentStep]);
 
   const handleNext = async () => {
     // Step-specific validation
@@ -379,14 +391,19 @@ export function TerminateEmployeeWizard({
           />
         );
       case 4:
-        // Show progress indicator when processing is in progress
-        if (terminationId && (progress?.status === 'pending' || progress?.status === 'processing')) {
+        // Show progress indicator when:
+        // 1. Mutations are pending (creating termination / starting processing)
+        // 2. We have a terminationId and are waiting for/receiving progress updates
+        const isMutationPending = createTermination.isPending || startTerminationProcessing.isPending;
+        const isWaitingForProgress = terminationId && (!progress || progress?.status === 'pending' || progress?.status === 'processing');
+
+        if (isMutationPending || isWaitingForProgress) {
           return (
             <div className="space-y-6">
               <TerminationProgress
-                status={progress?.status ?? 'pending'}
-                percentComplete={percentComplete}
-                currentStep={progressCurrentStep}
+                status={isMutationPending ? 'pending' : (progress?.status ?? 'pending')}
+                percentComplete={isMutationPending ? 0 : percentComplete}
+                currentStep={isMutationPending ? 'Création de la cessation...' : progressCurrentStep}
                 isOnline={isOnline}
                 estimatedTimeRemaining={estimatedTimeRemaining}
                 formatTimeRemaining={formatTimeRemaining}
@@ -416,7 +433,7 @@ export function TerminateEmployeeWizard({
         }
         return <DocumentGenerationStep form={form} employee={employee} />;
       case 5:
-        return <ConfirmationStep form={form} employee={employee} />;
+        return <ConfirmationStep form={form} employee={employee} documents={documents} />;
       default:
         return null;
     }

@@ -1,7 +1,7 @@
 /**
- * CNPS Attestation Generator Service
+ * Relevé Nominatif de Salaire Generator Service
  *
- * Generates PDF attestations for CNPS (Caisse Nationale de Prévoyance Sociale) contributions
+ * Generates PDF salary statements for CNPS (Caisse Nationale de Prévoyance Sociale) contributions
  * Convention Collective Article 40 - Must be issued within 15 days
  *
  * Integrated with uploadedDocuments system for:
@@ -43,7 +43,7 @@ interface GenerateCNPSAttestationInput {
 }
 
 /**
- * Generate CNPS attestation PDF and upload to Supabase Storage
+ * Generate Relevé Nominatif de Salaire PDF and upload to Supabase Storage
  */
 export async function generateCNPSAttestation(input: GenerateCNPSAttestationInput) {
   // 1. Fetch termination record
@@ -229,7 +229,7 @@ export async function generateCNPSAttestation(input: GenerateCNPSAttestationInpu
     });
 
   if (uploadError) {
-    throw new Error(`Failed to upload CNPS attestation: ${uploadError.message}`);
+    throw new Error(`Failed to upload Relevé Nominatif de Salaire: ${uploadError.message}`);
   }
 
   // 10. Get public URL
@@ -247,7 +247,7 @@ export async function generateCNPSAttestation(input: GenerateCNPSAttestationInpu
       employeeId: termination.employeeId,
       documentCategory: 'cnps_attestation',
       documentSubcategory: null,
-      fileName: `Attestation_CNPS_${employee.lastName}_${employee.firstName}_v${versionNumber}.pdf`,
+      fileName: `Releve_Nominatif_Salaire_${employee.lastName}_${employee.firstName}_v${versionNumber}.pdf`,
       fileUrl: publicUrl,
       fileSize: pdfBuffer.length,
       mimeType: 'application/pdf',
@@ -302,7 +302,7 @@ export async function generateCNPSAttestation(input: GenerateCNPSAttestationInpu
     });
   } catch (error) {
     // Log error but don't fail the generation
-    console.error('[CNPS Attestation] Failed to send email notification:', error);
+    console.error('[Relevé Nominatif de Salaire] Failed to send email notification:', error);
   }
 
   return {

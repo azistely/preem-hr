@@ -33,9 +33,17 @@ interface ConfirmationStepProps {
     firstName: string;
     lastName: string;
   };
+  documents?: {
+    workCertificateId: string | null;
+    workCertificateUrl: string | null;
+    finalPayslipId: string | null;
+    finalPayslipUrl: string | null;
+    cnpsAttestationId: string | null;
+    cnpsAttestationUrl: string | null;
+  };
 }
 
-export function ConfirmationStep({ form, employee }: ConfirmationStepProps) {
+export function ConfirmationStep({ form, employee, documents: documentData }: ConfirmationStepProps) {
   const stcResult = form.getValues('stcResult');
   const terminationId = form.getValues('terminationId');
   const departureType = form.getValues('departureType');
@@ -69,6 +77,8 @@ export function ConfirmationStep({ form, employee }: ConfirmationStepProps) {
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
       category: 'work_certificate',
+      documentId: documentData?.workCertificateId,
+      url: documentData?.workCertificateUrl,
     },
     {
       title: 'Bulletin de Paie Final',
@@ -76,13 +86,17 @@ export function ConfirmationStep({ form, employee }: ConfirmationStepProps) {
       color: 'text-green-600',
       bgColor: 'bg-green-50',
       category: 'final_payslip',
+      documentId: documentData?.finalPayslipId,
+      url: documentData?.finalPayslipUrl,
     },
     {
-      title: 'Attestation CNPS',
+      title: 'Relevé Nominatif de Salaire',
       icon: Shield,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
       category: 'cnps_attestation',
+      documentId: documentData?.cnpsAttestationId,
+      url: documentData?.cnpsAttestationUrl,
     },
   ];
 
@@ -154,27 +168,44 @@ export function ConfirmationStep({ form, employee }: ConfirmationStepProps) {
           <div className="space-y-3">
             {documents.map((doc) => {
               const Icon = doc.icon;
+              const hasDocument = !!doc.documentId;
+              const hasUrl = !!doc.url;
+
               return (
                 <Card key={doc.title} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className={`rounded-lg p-2 ${doc.bgColor}`}>
-                          <Icon className={`h-5 w-5 ${doc.color}`} />
+                          {hasDocument ? (
+                            <CheckCircle2 className="h-5 w-5 text-green-600" />
+                          ) : (
+                            <Icon className={`h-5 w-5 ${doc.color}`} />
+                          )}
                         </div>
                         <div>
                           <p className="font-medium">{doc.title}</p>
                           <p className="text-xs text-muted-foreground">
-                            Versionnage et signature électronique disponibles
+                            {hasDocument ? 'Document généré avec succès' : 'En attente de génération'}
                           </p>
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!hasUrl}
+                          onClick={() => hasUrl && window.open(doc.url!, '_blank')}
+                        >
                           <Download className="h-4 w-4 mr-2" />
                           Télécharger
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!hasUrl}
+                          onClick={() => hasUrl && window.open(doc.url!, '_blank')}
+                        >
                           <ExternalLink className="h-4 w-4 mr-2" />
                           Voir
                         </Button>

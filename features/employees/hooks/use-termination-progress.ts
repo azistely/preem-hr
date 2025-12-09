@@ -103,18 +103,19 @@ export function useTerminationProgress(
     { terminationId: terminationId! },
     {
       enabled: enabled && !!terminationId,
-      // Poll during pending and processing states
+      // Poll during pending, processing, and idle states
+      // Note: 'idle' is included because there's a race condition where the query
+      // can return before the mutation sets processingStatus to 'pending'
       refetchInterval: (query) => {
         const data = query.state.data;
-        // Keep polling during pending (waiting for Inngest) and processing
-        if (data?.status === 'pending' || data?.status === 'processing') {
-          return currentPollInterval;
+        // Stop polling only when completed or failed
+        if (data?.status === 'completed' || data?.status === 'failed') {
+          console.log('[useTerminationProgress] Stopping polling - status:', data.status);
+          return false;
         }
-        // Also keep polling if no data yet (initial load) or if there was an error
-        if (!data || query.state.error) {
-          return currentPollInterval;
-        }
-        return false; // Stop polling when completed, failed, or idle
+        // Keep polling for idle, pending, processing, no data, or error
+        console.log('[useTerminationProgress] Continuing to poll - status:', data?.status);
+        return currentPollInterval;
       },
       // Refetch when window regains focus
       refetchOnWindowFocus: true,
@@ -148,6 +149,23 @@ export function useTerminationProgress(
   const isProcessing = progress?.status === 'processing';
   const isCompleted = progress?.status === 'completed';
   const isFailed = progress?.status === 'failed';
+
+  // Debug logging
+  useEffect(() => {
+    if (terminationId) {
+      console.log('[useTerminationProgress] State update:', {
+        terminationId,
+        status: progress?.status,
+        isCompleted,
+        isProcessing,
+        isPending,
+        progress: progress?.progress,
+        currentStep: progress?.currentStep,
+        isFetching,
+        isLoading,
+      });
+    }
+  }, [terminationId, progress, isCompleted, isProcessing, isPending, isFetching, isLoading]);
 
   // Calculate estimated time remaining
   const estimatedTimeRemaining = useCallback(() => {
@@ -193,11 +211,14 @@ export function useTerminationProgress(
     // STC results (available after calculation)
     stcResults: progress?.stcResults ?? null,
 
-    // Document IDs (available after generation)
+    // Document IDs and URLs (available after generation)
     documents: progress?.documents ?? {
       workCertificateId: null,
+      workCertificateUrl: null,
       finalPayslipId: null,
+      finalPayslipUrl: null,
       cnpsAttestationId: null,
+      cnpsAttestationUrl: null,
     },
 
     // Time estimates

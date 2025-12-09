@@ -137,14 +137,14 @@ export function generateEmployeeTerminationEmail(data: TerminationDocumentsEmail
 
       ${documents.cnpsAttestation ? `
       <div class="document-card">
-        <div class="document-title">🏛️ Attestation CNPS</div>
+        <div class="document-title">🏛️ Relevé Nominatif de Salaire</div>
         <div class="document-meta">
           Généré le ${new Date(documents.cnpsAttestation.generatedAt).toLocaleDateString('fr-FR')}
         </div>
         <p style="font-size: 14px; margin: 10px 0;">
-          Récapitulatif de vos cotisations sociales pour faire valoir vos droits.
+          Récapitulatif de vos cotisations sociales pour faire valoir vos droits auprès de la CNPS.
         </p>
-        <a href="${documents.cnpsAttestation.url}" class="download-button">Télécharger l'attestation</a>
+        <a href="${documents.cnpsAttestation.url}" class="download-button">Télécharger le relevé</a>
       </div>
       ` : ''}
     </div>
@@ -182,7 +182,7 @@ export function generateHRTerminationEmail(data: TerminationDocumentsEmailData &
 
   const documentsGenerated = [
     documents.workCertificate && 'Certificat de travail',
-    documents.cnpsAttestation && 'Attestation CNPS',
+    documents.cnpsAttestation && 'Relevé Nominatif de Salaire',
     documents.finalPayslip && 'Bulletin de paie final',
   ].filter(Boolean);
 
@@ -289,7 +289,7 @@ export function generateHRTerminationEmail(data: TerminationDocumentsEmailData &
 
       ${!documents.cnpsAttestation ? `
       <div class="summary-item">
-        <span>Attestation CNPS</span>
+        <span>Relevé Nominatif de Salaire</span>
         <span class="status-badge status-pending">En attente</span>
       </div>
       ` : ''}
@@ -306,7 +306,7 @@ export function generateHRTerminationEmail(data: TerminationDocumentsEmailData &
     <ul>
       <li>Certificat de travail: 48 heures ✅</li>
       <li>Paiement final: 8 jours</li>
-      <li>Attestation CNPS: 15 jours</li>
+      <li>Relevé Nominatif de Salaire: 15 jours</li>
     </ul>
 
     <p>Cordialement,<br>
