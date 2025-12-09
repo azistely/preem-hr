@@ -16,7 +16,7 @@ import { createTRPCRouter, publicProcedure, protectedProcedure, managerProcedure
 import * as timeOffService from '@/features/time-off/services/time-off.service';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { timeOffPolicies, timeOffRequests, timeOffBalances, employees, tenants } from '@/drizzle/schema';
+import { timeOffPolicies, timeOffRequests, timeOffBalances, employees, tenants, uploadedDocuments } from '@/drizzle/schema';
 import { eq, and, sql, like, or, gte, lte, inArray, ne, desc } from 'drizzle-orm';
 import { countBusinessDaysExcludingHolidays, calculateReturnDate, getHolidaysInRange } from '@/features/time-tracking/services/holiday.service';
 import type {
@@ -41,6 +41,7 @@ export const timeOffRouter = createTRPCRouter({
         handoverNotes: z.string().optional(),
         isDeductibleForACP: z.boolean().default(true),
         justificationDocumentUrl: z.string().optional(),
+        justificationDocumentId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -56,13 +57,18 @@ export const timeOffRouter = createTRPCRouter({
           isDeductibleForAcp: input.isDeductibleForACP,
         });
 
-        // Update justification document if provided
-        if (input.justificationDocumentUrl && request.id) {
+        // Update justification document if provided (URL or ID)
+        if ((input.justificationDocumentUrl || input.justificationDocumentId) && request.id) {
           await db
             .update(timeOffRequests)
             .set({
-              justificationDocumentUrl: input.justificationDocumentUrl,
-              justificationDocumentUploadedAt: new Date(),
+              ...(input.justificationDocumentUrl && {
+                justificationDocumentUrl: input.justificationDocumentUrl,
+                justificationDocumentUploadedAt: new Date(),
+              }),
+              ...(input.justificationDocumentId && {
+                justificationDocumentId: input.justificationDocumentId,
+              }),
             })
             .where(eq(timeOffRequests.id, request.id));
         }
@@ -806,22 +812,40 @@ export const timeOffRouter = createTRPCRouter({
             .where(eq(employees.id, request.employeeId))
             .limit(1);
 
-          // Fetch policy
+          // Fetch policy with metadata
           const [policy] = await db
             .select({
               id: timeOffPolicies.id,
               name: timeOffPolicies.name,
               policyType: timeOffPolicies.policyType,
               tenantId: timeOffPolicies.tenantId,
+              metadata: timeOffPolicies.metadata,
             })
             .from(timeOffPolicies)
             .where(eq(timeOffPolicies.id, request.policyId))
             .limit(1);
 
+          // Fetch justification document if exists
+          let justificationDocument = null;
+          if (request.justificationDocumentId) {
+            const [doc] = await db
+              .select({
+                id: uploadedDocuments.id,
+                fileName: uploadedDocuments.fileName,
+                fileUrl: uploadedDocuments.fileUrl,
+                mimeType: uploadedDocuments.mimeType,
+              })
+              .from(uploadedDocuments)
+              .where(eq(uploadedDocuments.id, request.justificationDocumentId))
+              .limit(1);
+            justificationDocument = doc || null;
+          }
+
           return {
             ...request,
             employee,
             policy,
+            justificationDocument,
           };
         })
       );

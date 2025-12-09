@@ -27,6 +27,8 @@ import {
   Plane,
   Home,
   Download,
+  FileWarning,
+  ExternalLink,
 } from 'lucide-react';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
@@ -84,6 +86,10 @@ export interface LeaveRequest {
     id: string;
     name: string;
     policyType: string;
+    metadata?: {
+      permission_category?: string;
+      min_tenure_months?: number;
+    } | null;
   };
   startDate: string;
   endDate: string;
@@ -95,6 +101,13 @@ export interface LeaveRequest {
     balance: string;
     used: string;
     pending: string;
+  } | null;
+  justificationDocumentId?: string | null;
+  justificationDocument?: {
+    id: string;
+    fileName: string;
+    fileUrl: string;
+    mimeType: string;
   } | null;
 }
 
@@ -247,6 +260,53 @@ export function LeaveRequestCard({
             <div className="rounded-lg bg-muted p-3">
               <p className="text-sm font-medium mb-1">Raison:</p>
               <p className="text-sm text-muted-foreground">{request.reason}</p>
+            </div>
+          )}
+
+          {/* Justificatif - Show for exceptional permissions (famille_legale) and sick leave */}
+          {(request.policy.metadata?.permission_category === 'famille_legale' || request.policy.policyType === 'sick_leave') && (
+            <div className={`rounded-lg p-3 ${
+              request.justificationDocument
+                ? 'bg-green-50 border border-green-200'
+                : 'bg-amber-50 border border-amber-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {request.justificationDocument ? (
+                    <>
+                      <FileText className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">
+                        {request.policy.policyType === 'sick_leave' ? 'Certificat médical fourni' : 'Justificatif fourni'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <FileWarning className="h-4 w-4 text-amber-600" />
+                      <span className="text-sm font-medium text-amber-800">
+                        {request.policy.policyType === 'sick_leave' ? 'Certificat médical manquant' : 'Justificatif manquant'}
+                      </span>
+                    </>
+                  )}
+                </div>
+                {request.justificationDocument && (
+                  <a
+                    href={request.justificationDocument.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-sm text-green-700 hover:text-green-900 hover:underline"
+                  >
+                    <span>{request.justificationDocument.fileName}</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+              {!request.justificationDocument && (
+                <p className="text-xs text-amber-700 mt-1">
+                  {request.policy.policyType === 'sick_leave'
+                    ? 'Un certificat médical est requis pour les congés maladie'
+                    : 'Article 25.12: Un justificatif est requis pour les permissions exceptionnelles'}
+                </p>
+              )}
             </div>
           )}
 

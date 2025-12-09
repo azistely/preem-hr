@@ -39,10 +39,11 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { trpc } from '@/lib/trpc/client';
 import { toast } from 'sonner';
-import { Calendar as CalendarIcon, AlertCircle, Settings, Info } from 'lucide-react';
+import { Calendar as CalendarIcon, AlertCircle, Settings, Info, Upload, FileText, X } from 'lucide-react';
 import { fr } from 'date-fns/locale';
 import { addDays, format } from 'date-fns';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { UploadDocumentDialog } from '@/components/documents/upload-document-dialog';
 
 const timeOffRequestSchema = z.object({
   policyId: z.string().uuid('Sélectionnez un type de congé'),
@@ -55,6 +56,7 @@ const timeOffRequestSchema = z.object({
   reason: z.string().optional(),
   handoverNotes: z.string().optional(),
   isDeductibleForACP: z.boolean(),
+  justificationDocumentId: z.string().uuid().optional(),
 });
 
 type TimeOffRequestForm = z.infer<typeof timeOffRequestSchema>;
@@ -66,6 +68,13 @@ interface TimeOffRequestFormProps {
 
 export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestFormProps) {
   const utils = trpc.useUtils();
+
+  // State for document upload
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadedDocument, setUploadedDocument] = useState<{
+    id: string;
+    fileName: string;
+  } | null>(null);
 
   // Get current user to check roles
   const { data: currentUser } = trpc.auth.me.useQuery();
@@ -89,6 +98,7 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
       utils.timeOff.getEmployeeRequests.invalidate({ employeeId });
       utils.timeOff.getAllBalances.invalidate({ employeeId });
       form.reset();
+      setUploadedDocument(null); // Reset uploaded document
       onSuccess?.();
     },
     onError: (error) => {
@@ -133,6 +143,14 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
   const selectedPolicyDetails = policies?.find((p) => p.id === selectedPolicy);
   const isUnpaidLeave = selectedPolicyDetails?.accrualMethod === 'none' || !selectedPolicyDetails?.isPaid;
 
+  // Check if this is an exceptional permission (Article 25.12 - famille_legale) or sick leave
+  const policyMetadata = selectedPolicyDetails?.metadata as { permission_category?: string } | null;
+  const isExceptionalPermission = policyMetadata?.permission_category === 'famille_legale';
+  const isSickLeave = selectedPolicyDetails?.policyType === 'sick_leave';
+
+  // Justificatif required for exceptional permissions AND sick leave
+  const requiresJustificatif = isExceptionalPermission || isSickLeave;
+
   // Get balance for selected policy (only for paid leave)
   const selectedBalance = balances?.find((b) => b.policyId === selectedPolicy);
   const availableBalance = preview?.availableBalance ?? (selectedBalance
@@ -142,8 +160,17 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
   // Check if sufficient balance (skip check for unpaid leave)
   const hasSufficientBalance = preview?.hasSufficientBalance ?? (isUnpaidLeave || businessDays <= availableBalance);
 
+  // Check if justificatif is required but missing (for exceptional permissions or sick leave)
+  const isMissingRequiredJustificatif = requiresJustificatif && !uploadedDocument;
+
   // Submit handler
   const onSubmit = async (data: TimeOffRequestForm) => {
+    // Check if justificatif is required but missing (for exceptional permissions)
+    if (isMissingRequiredJustificatif) {
+      toast.error('Un justificatif est requis pour les permissions exceptionnelles (Article 25.12)');
+      return;
+    }
+
     // Skip balance check for unpaid leave
     if (!isUnpaidLeave && !hasSufficientBalance) {
       toast.error(`Solde insuffisant (disponible: ${availableBalance.toFixed(1)} jours)`);
@@ -158,7 +185,7 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
       reason: data.reason,
       handoverNotes: data.handoverNotes,
       isDeductibleForACP: data.isDeductibleForACP,
-      // Note: Justification documents can be uploaded after request approval
+      justificationDocumentId: uploadedDocument?.id,
     });
   };
 
@@ -363,14 +390,96 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
               )}
             />
 
-            {/* Justification Document Note */}
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Documents justificatifs :</strong> Vous pourrez télécharger des documents
-                justificatifs (certificat médical, etc.) après l'approbation de votre demande.
-              </AlertDescription>
-            </Alert>
+            {/* Exceptional Permission Notice (Article 25.12) - Only for famille_legale */}
+            {isExceptionalPermission && (
+              <Alert className="border-blue-500 bg-blue-50">
+                <Info className="h-5 w-5 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  <p className="font-medium">Permission exceptionnelle (Article 25.12)</p>
+                  <p className="text-sm mt-1">
+                    Si l'événement a lieu loin de votre domicile, vous pouvez demander des jours
+                    supplémentaires (non payés) pour le trajet.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Justificatif Upload Section - REQUIRED for exceptional permissions AND sick leave */}
+            {requiresJustificatif && (
+              <div className="space-y-4">
+                <div className={`border rounded-lg p-4 space-y-3 ${!uploadedDocument ? 'border-amber-500 bg-amber-50' : 'border-green-500 bg-green-50'}`}>
+                  <div className="flex items-center gap-2">
+                    <FileText className={`h-5 w-5 ${!uploadedDocument ? 'text-amber-600' : 'text-green-600'}`} />
+                    <span className="font-medium">Justificatif (obligatoire)</span>
+                    {!uploadedDocument && (
+                      <Badge variant="destructive" className="text-xs">Requis</Badge>
+                    )}
+                  </div>
+
+                  {uploadedDocument ? (
+                    <div className="flex items-center justify-between bg-green-100 border border-green-300 rounded-md p-3">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-green-600" />
+                        <span className="text-sm text-green-800 font-medium">{uploadedDocument.fileName}</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setUploadedDocument(null)}
+                        className="h-8 w-8 p-0 text-green-600 hover:text-red-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full min-h-[48px] border-amber-500 text-amber-700 hover:bg-amber-100"
+                      onClick={() => setShowUploadDialog(true)}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Télécharger le justificatif
+                    </Button>
+                  )}
+
+                  <p className="text-sm text-amber-700">
+                    {isSickLeave
+                      ? 'Un certificat médical est requis pour les congés maladie.'
+                      : 'Article 25.12: Un justificatif est requis pour les permissions exceptionnelles (acte de mariage, certificat de décès, etc.)'}
+                  </p>
+                </div>
+
+                {/* Upload Dialog */}
+                <UploadDocumentDialog
+                  open={showUploadDialog}
+                  onOpenChange={setShowUploadDialog}
+                  employeeId={employeeId}
+                  defaultCategory="leave_justification"
+                  onUploadSuccess={(result) => {
+                    if (result?.documentId) {
+                      setUploadedDocument({
+                        id: result.documentId,
+                        fileName: 'Document téléchargé', // The dialog doesn't return filename, use generic
+                      });
+                    }
+                    setShowUploadDialog(false);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* General Justification Note (for leaves that don't require upfront justificatif) */}
+            {!requiresJustificatif && (
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Documents justificatifs :</strong> Vous pourrez télécharger des documents
+                  justificatifs après l'approbation de votre demande si nécessaire.
+                </AlertDescription>
+              </Alert>
+            )}
 
             {/* HR-only: ACP Deductibility */}
             {isHRUser && (
@@ -411,12 +520,19 @@ export function TimeOffRequestForm({ employeeId, onSuccess }: TimeOffRequestForm
             {/* Submit button */}
             <Button
               type="submit"
-              disabled={requestMutation.isPending || !hasSufficientBalance}
+              disabled={requestMutation.isPending || !hasSufficientBalance || isMissingRequiredJustificatif}
               className="w-full min-h-[56px] text-lg"
               size="lg"
             >
               {requestMutation.isPending ? 'Envoi en cours...' : 'Envoyer la demande'}
             </Button>
+
+            {/* Missing justificatif warning */}
+            {isMissingRequiredJustificatif && (
+              <p className="text-center text-sm text-destructive">
+                Veuillez télécharger un justificatif avant de soumettre la demande
+              </p>
+            )}
           </form>
         </Form>
       </CardContent>

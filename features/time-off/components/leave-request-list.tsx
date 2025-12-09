@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, XCircle, CheckCircle, AlertCircle, Wallet, Settings } from 'lucide-react';
+import { Calendar, Clock, XCircle, CheckCircle, AlertCircle, Wallet, Settings, FileText, FileWarning } from 'lucide-react';
 import { format, differenceInBusinessDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { trpc } from '@/lib/trpc/client';
@@ -49,10 +49,12 @@ interface TimeOffRequest {
   reviewedAt?: string | null;
   isDeductibleForAcp?: boolean;
   justificationDocumentUrl?: string | null;
+  justificationDocumentId?: string | null;
   policy?: {
     id: string;
     name: string;
     policyType: string;
+    metadata?: { permission_category?: string } | null;
   };
 }
 
@@ -270,6 +272,36 @@ export function LeaveRequestList({ requests, employeeId, canApprove = false }: L
                       <p className="text-sm text-muted-foreground">
                         <span className="font-medium">Note de révision:</span> {request.reviewNotes}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Justificatif Status - Show for exceptional permissions (Article 25.12) and sick leave */}
+                  {(request.policy?.metadata?.permission_category === 'famille_legale' || request.policy?.policyType === 'sick_leave') && (
+                    <div className={`mt-3 p-3 rounded-md border ${request.justificationDocumentId ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      <div className="flex items-center gap-2">
+                        {request.justificationDocumentId ? (
+                          <>
+                            <FileText className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium text-green-800">
+                              {request.policy?.policyType === 'sick_leave' ? 'Certificat médical fourni' : 'Justificatif fourni (Article 25.12)'}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <FileWarning className="h-4 w-4 text-red-600" />
+                            <span className="text-sm font-medium text-red-800">
+                              {request.policy?.policyType === 'sick_leave' ? 'Certificat médical manquant' : 'Justificatif manquant'}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      {!request.justificationDocumentId && (
+                        <p className="text-xs text-red-700 mt-1">
+                          {request.policy?.policyType === 'sick_leave'
+                            ? 'Un certificat médical est requis pour les congés maladie.'
+                            : 'Un justificatif est requis pour les permissions exceptionnelles (Article 25.12)'}
+                        </p>
+                      )}
                     </div>
                   )}
 

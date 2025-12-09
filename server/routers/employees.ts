@@ -26,6 +26,7 @@ import { getMinimumWageHelper } from '@/lib/compliance/coefficient-validation.se
 import { db } from '@/lib/db';
 import { employeeBenefitEnrollments, employees, employeeDependents, uploadedDocuments } from '@/drizzle/schema';
 import { createClient } from '@/lib/supabase/server';
+import { initializeEmployeeBalances } from '@/features/time-off/services/time-off.service';
 
 // Zod Schemas
 const genderEnum = z.enum(['male', 'female']);
@@ -429,6 +430,25 @@ export const employeesRouter = createTRPCRouter({
               updatedBy: ctx.user.id,
             })
             .where(eq(employees.id, employee.id));
+        }
+
+        // Initialize time-off balances for eligible employees (CDI/CDD/CDDTI)
+        // This creates leave balances for all active policies (annual leave, sick leave, permissions, etc.)
+        const eligibleContractTypes = ['CDI', 'CDD', 'CDDTI'];
+        if (eligibleContractTypes.includes(input.contractType || 'CDI')) {
+          try {
+            await initializeEmployeeBalances(
+              employee.id,
+              ctx.user.tenantId,
+              input.hireDate,
+              input.contractType || 'CDI',
+              undefined // No balance override
+            );
+            console.log('[Employee Create] Initialized time-off balances for employee:', employee.id);
+          } catch (balanceError) {
+            // Log error but don't fail employee creation - balances can be initialized later
+            console.error('[Employee Create] Failed to initialize time-off balances:', balanceError);
+          }
         }
 
         // Emit employee.hired event

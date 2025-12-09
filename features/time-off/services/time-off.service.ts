@@ -12,9 +12,10 @@ import {
   employees,
   tenants,
 } from '@/drizzle/schema';
-import { and, eq, gte, lte, or, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, or, isNull, sql, inArray } from 'drizzle-orm';
 import {
   differenceInCalendarDays,
+  differenceInMonths,
   eachDayOfInterval,
   isWeekend as isWeekendDate,
   isBefore,
@@ -79,6 +80,35 @@ async function calculateBusinessDaysWithHolidays(
 }
 
 /**
+ * Get total paid permissions (famille_legale) used by employee this year
+ * Used to enforce the 10-day annual limit per Article 25.12
+ */
+async function getPermissionsUsedThisYear(employeeId: string, tenantId: string): Promise<number> {
+  const currentYear = new Date().getFullYear();
+  const yearStart = `${currentYear}-01-01`;
+  const yearEnd = `${currentYear}-12-31`;
+
+  const result = await db
+    .select({
+      total: sql<string>`COALESCE(SUM(CAST(${timeOffRequests.totalDays} AS NUMERIC)), 0)`,
+    })
+    .from(timeOffRequests)
+    .innerJoin(timeOffPolicies, eq(timeOffRequests.policyId, timeOffPolicies.id))
+    .where(
+      and(
+        eq(timeOffRequests.employeeId, employeeId),
+        eq(timeOffRequests.tenantId, tenantId),
+        sql`${timeOffPolicies.metadata}->>'permission_category' = 'famille_legale'`,
+        gte(timeOffRequests.startDate, yearStart),
+        lte(timeOffRequests.startDate, yearEnd),
+        inArray(timeOffRequests.status, ['pending', 'approved'])
+      )
+    );
+
+  return parseFloat(result[0]?.total || '0');
+}
+
+/**
  * Request time off
  */
 export async function requestTimeOff(input: TimeOffRequestInput) {
@@ -100,6 +130,44 @@ export async function requestTimeOff(input: TimeOffRequestInput) {
 
   if (!employee) {
     throw new TimeOffError('Employé non trouvé', 'EMPLOYEE_NOT_FOUND');
+  }
+
+  // Parse policy metadata for permission-specific validations
+  const policyMetadata = policy.metadata as Record<string, unknown> | null;
+
+  // VALIDATION: Check minimum tenure for permissions exceptionnelles (Article 25.12)
+  // Employee must have 6+ months of service to be eligible for paid family permissions
+  if (policyMetadata?.min_tenure_months) {
+    const minTenureMonths = Number(policyMetadata.min_tenure_months);
+    const hireDate = new Date(employee.hireDate);
+    const monthsEmployed = differenceInMonths(new Date(), hireDate);
+
+    if (monthsEmployed < minTenureMonths) {
+      throw new TimeOffError(
+        `Ancienneté insuffisante pour cette permission. Requis: ${minTenureMonths} mois, Actuel: ${monthsEmployed} mois (Article 25.12)`,
+        'INSUFFICIENT_TENURE',
+        { requiredMonths: minTenureMonths, currentMonths: monthsEmployed }
+      );
+    }
+  }
+
+  // VALIDATION: Check 10-day annual limit for "famille légale" permissions (Article 25.12)
+  // Total paid permissions cannot exceed 10 days per year across all permission types
+  if (policyMetadata?.permission_category === 'famille_legale') {
+    const usedThisYear = await getPermissionsUsedThisYear(employeeId, tenantId);
+    // We need to calculate total days first - but it's calculated later.
+    // For now, we'll do a preliminary calculation
+    const preliminaryDays = differenceInCalendarDays(endDate, startDate) + 1;
+    const maxAnnualPermissions = 10;
+
+    if (usedThisYear + preliminaryDays > maxAnnualPermissions) {
+      const remaining = Math.max(0, maxAnnualPermissions - usedThisYear);
+      throw new TimeOffError(
+        `Limite annuelle de permissions exceptionnelles dépassée. Utilisé: ${usedThisYear.toFixed(1)}j, Demandé: ~${preliminaryDays}j, Maximum: ${maxAnnualPermissions}j/an, Restant: ${remaining.toFixed(1)}j (Article 25.12)`,
+        'PERMISSION_LIMIT_EXCEEDED',
+        { usedDays: usedThisYear, requestedDays: preliminaryDays, maxDays: maxAnnualPermissions, remainingDays: remaining }
+      );
+    }
   }
 
   // Get tenant to determine country (using tenantId from input)

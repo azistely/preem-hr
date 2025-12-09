@@ -83,6 +83,8 @@ export async function seedTimeOffPoliciesForTenant(
     effectiveFrom: new Date().toISOString().split('T')[0], // Today
     effectiveTo: null,
     createdBy: createdBy || null,
+    // Copy metadata from template (includes permission_category, min_tenure_months for Article 25.12 compliance)
+    metadata: template.metadata || null,
   }));
 
   // 3. Batch insert all policies
@@ -193,6 +195,8 @@ export async function reseedTimeOffPolicies(
     effectiveFrom: new Date().toISOString().split('T')[0],
     effectiveTo: null,
     createdBy: null,
+    // Copy metadata from template (includes permission_category, min_tenure_months for Article 25.12 compliance)
+    metadata: template.metadata || null,
   }));
 
   const insertedPolicies = await db

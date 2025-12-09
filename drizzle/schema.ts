@@ -1707,6 +1707,7 @@ export const timeOffPolicies = pgTable("time_off_policies", {
 	complianceLevel: varchar("compliance_level", { length: 20 }),
 	legalReference: text("legal_reference"),
 	eligibleGender: text("eligible_gender"),
+	metadata: jsonb(),
 }, (table) => [
 	foreignKey({
 			columns: [table.createdBy],
@@ -2754,6 +2755,8 @@ export const timeOffRequests = pgTable("time_off_requests", {
 	// TRUE = Deduct from paid days (unpaid leave: permission, congé sans solde, grève)
 	// FALSE = Don't deduct from paid days (paid leave: congés annuels, maladie, maternité)
 	isDeductibleForAcp: boolean("is_deductible_for_acp").default(true).notNull(),
+	// Justificatif document for exceptional permissions (Article 25.12)
+	justificationDocumentId: uuid("justification_document_id"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
@@ -2787,6 +2790,11 @@ export const timeOffRequests = pgTable("time_off_requests", {
 			foreignColumns: [leavePlanningPeriods.id],
 			name: "time_off_requests_planning_period_id_fkey"
 		}),
+	foreignKey({
+			columns: [table.justificationDocumentId],
+			foreignColumns: [uploadedDocuments.id],
+			name: "time_off_requests_justification_document_id_fkey"
+		}).onDelete("set null"),
 	pgPolicy("tenant_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text)) OR ((auth.jwt() ->> 'role'::text) = 'super_admin'::text))`, withCheck: sql`((tenant_id)::text = (auth.jwt() ->> 'tenant_id'::text))`  }),
 	check("valid_dates", sql`start_date <= end_date`),
 	check("valid_status_request", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text, 'planned'::text])`),
