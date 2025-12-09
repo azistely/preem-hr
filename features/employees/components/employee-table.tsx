@@ -137,7 +137,10 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
                   <div className="flex flex-wrap items-center gap-1">
                     <EmployeeStatusBadge status={employee.status} />
                     {employee.hireDate && (
-                      <TrialPeriodBadge hireDate={employee.hireDate} />
+                      <TrialPeriodBadge
+                        hireDate={employee.hireDate}
+                        contractType={employee.contractType ?? null}
+                      />
                     )}
                     <ContractEndingBadge
                       contractEndDate={employee.contractEndDate ?? null}

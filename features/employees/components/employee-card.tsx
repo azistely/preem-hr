@@ -103,7 +103,10 @@ export function EmployeeCard({ employee, onEdit, onTerminate }: EmployeeCardProp
           <div className="flex flex-wrap items-center gap-1 justify-end">
             <EmployeeStatusBadge status={employee.status} />
             {employee.hireDate && (
-              <TrialPeriodBadge hireDate={employee.hireDate} />
+              <TrialPeriodBadge
+                hireDate={employee.hireDate}
+                contractType={employee.contractType ?? null}
+              />
             )}
             <ContractEndingBadge
               contractEndDate={employee.contractEndDate ?? null}

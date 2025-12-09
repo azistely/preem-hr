@@ -17,6 +17,7 @@ interface ContractEndingBadgeProps {
 
 interface TrialPeriodBadgeProps {
   hireDate: string | Date;
+  contractType: 'CDI' | 'CDD' | 'CDDTI' | 'INTERIM' | 'STAGE' | null;
 }
 
 /**
@@ -42,8 +43,14 @@ function isContractEnding(
 
 /**
  * Check if employee is still in trial period (first 3 months)
+ * Only applies to CDI contracts
  */
-function isInTrialPeriod(hireDate: string | Date): boolean {
+function isInTrialPeriod(hireDate: string | Date, contractType: string | null): boolean {
+  // Trial period only applies to CDI contracts
+  if (contractType !== 'CDI') {
+    return false;
+  }
+
   const today = new Date();
   const hire = new Date(hireDate);
   const trialEndDate = addMonths(hire, 3);
@@ -76,10 +83,10 @@ export function ContractEndingBadge({
 
 /**
  * Trial Period Badge
- * Shows "PÉRIODE D'ESSAI" with info style when employee is in first 3 months
+ * Shows "PÉRIODE D'ESSAI" with info style when CDI employee is in first 3 months
  */
-export function TrialPeriodBadge({ hireDate }: TrialPeriodBadgeProps) {
-  if (!hireDate || !isInTrialPeriod(hireDate)) {
+export function TrialPeriodBadge({ hireDate, contractType }: TrialPeriodBadgeProps) {
+  if (!hireDate || !isInTrialPeriod(hireDate, contractType)) {
     return null;
   }
 
