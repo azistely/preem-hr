@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Eye, MoreVertical } from 'lucide-react';
 import { EmployeeAvatar } from './employee-avatar';
 import { EmployeeStatusBadge } from './employee-status-badge';
-import { ContractEndingBadge, TrialPeriodBadge } from './contract-alert-badges';
+import { ContractInfoCell } from './contract-alert-badges';
 import Link from 'next/link';
 import { CategoryBadge } from '@/components/employees/category-badge';
 import {
@@ -25,15 +25,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
-
-const CONTRACT_TYPE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
-  CDI: { label: 'CDI', variant: 'default' },
-  CDD: { label: 'CDD', variant: 'secondary' },
-  CDDTI: { label: 'CDDTI', variant: 'secondary' },
-  INTERIM: { label: 'Intérim', variant: 'outline' },
-  STAGE: { label: 'Stage', variant: 'outline' },
-};
 
 interface EmployeeTableProps {
   employees: Array<{
@@ -115,13 +106,11 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
                 </TableCell>
 
                 <TableCell>
-                  {employee.contractType ? (
-                    <Badge variant={CONTRACT_TYPE_LABELS[employee.contractType]?.variant || 'outline'}>
-                      {CONTRACT_TYPE_LABELS[employee.contractType]?.label || employee.contractType}
-                    </Badge>
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )}
+                  <ContractInfoCell
+                    contractType={employee.contractType ?? null}
+                    contractEndDate={employee.contractEndDate ?? null}
+                    hireDate={employee.hireDate ?? null}
+                  />
                 </TableCell>
 
                 <TableCell>
@@ -134,19 +123,7 @@ export function EmployeeTable({ employees, onEdit, onTerminate }: EmployeeTableP
                 </TableCell>
 
                 <TableCell>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <EmployeeStatusBadge status={employee.status} />
-                    {employee.hireDate && (
-                      <TrialPeriodBadge
-                        hireDate={employee.hireDate}
-                        contractType={employee.contractType ?? null}
-                      />
-                    )}
-                    <ContractEndingBadge
-                      contractEndDate={employee.contractEndDate ?? null}
-                      contractType={employee.contractType ?? null}
-                    />
-                  </div>
+                  <EmployeeStatusBadge status={employee.status} />
                 </TableCell>
 
                 <TableCell>

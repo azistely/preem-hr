@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Eye, MoreVertical } from 'lucide-react';
 import { EmployeeAvatar } from './employee-avatar';
 import { EmployeeStatusBadge } from './employee-status-badge';
-import { ContractEndingBadge, TrialPeriodBadge } from './contract-alert-badges';
+import { ContractInfoCompact } from './contract-alert-badges';
 import { formatCurrency } from '../hooks/use-salary-validation';
 import Link from 'next/link';
 import {
@@ -19,15 +19,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
-
-const CONTRACT_TYPE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
-  CDI: { label: 'CDI', variant: 'default' },
-  CDD: { label: 'CDD', variant: 'secondary' },
-  CDDTI: { label: 'CDDTI', variant: 'secondary' },
-  INTERIM: { label: 'Intérim', variant: 'outline' },
-  STAGE: { label: 'Stage', variant: 'outline' },
-};
 
 interface EmployeeCardProps {
   employee: {
@@ -100,29 +91,17 @@ export function EmployeeCard({ employee, onEdit, onTerminate }: EmployeeCardProp
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Statut</span>
-          <div className="flex flex-wrap items-center gap-1 justify-end">
-            <EmployeeStatusBadge status={employee.status} />
-            {employee.hireDate && (
-              <TrialPeriodBadge
-                hireDate={employee.hireDate}
-                contractType={employee.contractType ?? null}
-              />
-            )}
-            <ContractEndingBadge
-              contractEndDate={employee.contractEndDate ?? null}
-              contractType={employee.contractType ?? null}
-            />
-          </div>
+          <EmployeeStatusBadge status={employee.status} />
         </div>
 
-        {employee.contractType && (
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Contrat</span>
-            <Badge variant={CONTRACT_TYPE_LABELS[employee.contractType]?.variant || 'outline'}>
-              {CONTRACT_TYPE_LABELS[employee.contractType]?.label || employee.contractType}
-            </Badge>
-          </div>
-        )}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">Contrat</span>
+          <ContractInfoCompact
+            contractType={employee.contractType ?? null}
+            contractEndDate={employee.contractEndDate ?? null}
+            hireDate={employee.hireDate ?? null}
+          />
+        </div>
 
         {employee.currentPosition && (
           <div className="flex items-center justify-between">
