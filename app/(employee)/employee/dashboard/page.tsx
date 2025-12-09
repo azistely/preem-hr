@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Calendar } from "lucide-react";
+import { Clock, Calendar, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { api } from "@/server/api/client";
 import { QuickActionCard } from "@/components/dashboard/quick-action-card";
@@ -78,6 +78,12 @@ export default function EmployeeDashboardPage() {
             description={`Solde: ${leaveBalance.remaining} jours`}
             onClick={() => router.push('/time-off')}
           />
+          <QuickActionCard
+            icon={FileText}
+            title="Demander un Document"
+            description="Attestation, certificat..."
+            onClick={() => router.push('/employee/document-requests')}
+          />
         </div>
 
         {/* Collapsible Sections */}
@@ -147,7 +153,7 @@ export default function EmployeeDashboardPage() {
           />
 
           {/* Quick Actions - Side by side */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <QuickActionCard
               icon={Clock}
               title="Pointer"
@@ -159,6 +165,12 @@ export default function EmployeeDashboardPage() {
               title="Demander Congé"
               description={`${leaveBalance.remaining} jours disponibles`}
               onClick={() => router.push('/time-off')}
+            />
+            <QuickActionCard
+              icon={FileText}
+              title="Demander un Document"
+              description="Attestation, certificat..."
+              onClick={() => router.push('/employee/document-requests')}
             />
           </div>
 

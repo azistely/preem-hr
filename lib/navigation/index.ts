@@ -48,7 +48,7 @@ import {
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
-// Employee Navigation (SIMPLIFIED - 8 items total)
+// Employee Navigation (SIMPLIFIED - 9 items total)
 export const employeeMobileSections: NavSection[] = [
   {
     title: "",
@@ -75,6 +75,7 @@ export const employeeMobileSections: NavSection[] = [
     title: "Documents",
     items: [
       { icon: FileStack, label: "Mes documents", href: "/employee/documents" },
+      { icon: FileSignature, label: "Demander un document", href: "/employee/document-requests" },
     ],
   },
   {
@@ -111,6 +112,7 @@ export const employeeDesktopSections: NavSection[] = [
     title: "Documents",
     items: [
       { icon: FileStack, label: "Mes documents", href: "/employee/documents" },
+      { icon: FileSignature, label: "Demander un document", href: "/employee/document-requests" },
     ],
   },
   {
@@ -154,6 +156,7 @@ export const managerMobileSections: NavSection[] = [
     title: "Documents",
     items: [
       { icon: FileStack, label: "Documents équipe", href: "/manager/documents" },
+      { icon: FileSignature, label: "Demander un document", href: "/manager/document-requests" },
     ],
   },
 ];
@@ -190,6 +193,7 @@ export const managerDesktopSections: NavSection[] = [
     title: "Documents",
     items: [
       { icon: FileStack, label: "Documents équipe", href: "/manager/documents" },
+      { icon: FileSignature, label: "Demander un document", href: "/manager/document-requests" },
     ],
   },
 ];
@@ -248,6 +252,7 @@ export const hrManagerMobileSections: NavSection[] = [
     title: "Documents",
     items: [
       { icon: FileStack, label: "Gestion des documents", href: "/admin/documents" },
+      { icon: FileSignature, label: "Demandes de documents", href: "/admin/document-requests" },
     ],
   },
   {
@@ -346,6 +351,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     title: "Documents",
     items: [
       { icon: FileStack, label: "Gestion des documents", href: "/admin/documents" },
+      { icon: FileSignature, label: "Demandes de documents", href: "/admin/document-requests" },
     ],
   },
   {

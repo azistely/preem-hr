@@ -31,6 +31,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/employee/profile/edit': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/my-schedule': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/employee/documents': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/employee/document-requests': ['employee', 'manager', 'hr_manager', 'tenant_admin', 'super_admin'],
 
   // Manager routes
   '/manager/dashboard': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
@@ -41,6 +42,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/manager/reports/overtime': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/shift-planning': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
   '/manager/documents': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
+  '/manager/document-requests': ['manager', 'hr_manager', 'tenant_admin', 'super_admin'],
 
   // Admin dashboard (HR Manager+)
   '/admin/dashboard': ['hr_manager', 'tenant_admin', 'super_admin'],
@@ -64,6 +66,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/admin/benefits': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/shift-planning': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/documents': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/admin/document-requests': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/admin/salary-advances': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // AI Import System (HR Manager+)

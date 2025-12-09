@@ -55,6 +55,7 @@ import { leavePlanningRouter } from './leave-planning';
 import { notificationsRouter } from './notifications';
 import { aiImportRouter } from './ai-import';
 import { invitationsRouter } from './invitations';
+import { documentRequestsRouter } from './document-requests';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -107,6 +108,7 @@ export const appRouter = createTRPCRouter({
   shiftPlanning: shiftPlanningRouter,
   acp: acpRouter,
   invitations: invitationsRouter,
+  documentRequests: documentRequestsRouter,
 });
 
 // Export type definition of API
