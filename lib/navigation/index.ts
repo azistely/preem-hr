@@ -45,6 +45,7 @@ import {
   Heart,
   Wallet,
   FileSignature,
+  ClipboardList,
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
@@ -244,6 +245,9 @@ export const hrManagerMobileSections: NavSection[] = [
   {
     title: "Conformité",
     items: [
+      { icon: ClipboardList, label: "Tableau de bord", href: "/compliance" },
+      { icon: FileText, label: "Dossiers", href: "/compliance/trackers" },
+      { icon: CheckSquare, label: "Actions", href: "/compliance/action-items" },
       { icon: BookOpen, label: "Registre du personnel", href: "/compliance/registre-personnel" },
       { icon: AlertCircle, label: "Suivi des CDD", href: "/compliance/cdd" },
     ],
@@ -343,6 +347,9 @@ export const hrManagerDesktopSections: NavSection[] = [
   {
     title: "Conformité",
     items: [
+      { icon: ClipboardList, label: "Tableau de bord", href: "/compliance" },
+      { icon: FileText, label: "Dossiers", href: "/compliance/trackers" },
+      { icon: CheckSquare, label: "Actions", href: "/compliance/action-items" },
       { icon: BookOpen, label: "Registre du personnel", href: "/compliance/registre-personnel" },
       { icon: AlertCircle, label: "Suivi des CDD", href: "/compliance/cdd" },
     ],

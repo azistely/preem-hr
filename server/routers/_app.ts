@@ -56,6 +56,9 @@ import { notificationsRouter } from './notifications';
 import { aiImportRouter } from './ai-import';
 import { invitationsRouter } from './invitations';
 import { documentRequestsRouter } from './document-requests';
+import { complianceTrackerTypesRouter } from './compliance-tracker-types';
+import { complianceTrackersRouter } from './compliance-trackers';
+import { complianceActionItemsRouter } from './compliance-action-items';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -109,6 +112,9 @@ export const appRouter = createTRPCRouter({
   acp: acpRouter,
   invitations: invitationsRouter,
   documentRequests: documentRequestsRouter,
+  complianceTrackerTypes: complianceTrackerTypesRouter,
+  complianceTrackers: complianceTrackersRouter,
+  complianceActionItems: complianceActionItemsRouter,
 });
 
 // Export type definition of API

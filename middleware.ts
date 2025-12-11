@@ -137,6 +137,11 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/settings/sectors': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // Compliance (HR Manager+)
+  '/compliance': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/compliance/trackers': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/compliance/trackers/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/compliance/trackers/[id]': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/compliance/action-items': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/compliance/registre-personnel': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/compliance/cdd': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/compliance/declarations': ['hr_manager', 'tenant_admin', 'super_admin'],

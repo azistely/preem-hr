@@ -53,6 +53,12 @@ import {
 import { leaveReminder20Days } from '@/lib/inngest/functions/leave-reminder-20d';
 import { leaveReminder15Days } from '@/lib/inngest/functions/leave-reminder-15d';
 
+// Compliance Tracker Reminders
+import {
+  complianceActionReminders,
+  complianceWeeklySummary,
+} from '@/lib/inngest/functions/compliance-reminders';
+
 // Termination background processing (3G resilience)
 import {
   terminationProcessingFunction,
@@ -114,6 +120,10 @@ const handler = serve({
     // Leave Planning System
     leaveReminder20Days,
     leaveReminder15Days,
+
+    // Compliance Tracker Reminders
+    complianceActionReminders,
+    complianceWeeklySummary,
 
     // Termination background processing (3G resilience)
     terminationProcessingFunction,
