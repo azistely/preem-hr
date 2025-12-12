@@ -59,6 +59,10 @@ import { documentRequestsRouter } from './document-requests';
 import { complianceTrackerTypesRouter } from './compliance-tracker-types';
 import { complianceTrackersRouter } from './compliance-trackers';
 import { complianceActionItemsRouter } from './compliance-action-items';
+import { performanceRouter } from './performance';
+import { trainingRouter } from './training';
+import { hrFormsRouter } from './hr-forms';
+import { hrWorkflowsRouter } from './hr-workflows';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -115,6 +119,10 @@ export const appRouter = createTRPCRouter({
   complianceTrackerTypes: complianceTrackerTypesRouter,
   complianceTrackers: complianceTrackersRouter,
   complianceActionItems: complianceActionItemsRouter,
+  performance: performanceRouter,
+  training: trainingRouter,
+  hrForms: hrFormsRouter,
+  hrWorkflows: hrWorkflowsRouter,
 });
 
 // Export type definition of API

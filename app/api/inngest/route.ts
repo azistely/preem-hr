@@ -65,6 +65,10 @@ import {
   terminationProcessingFailedFunction,
 } from '@/lib/inngest/functions/termination-processing';
 
+// HR Workflow Engine (Performance & Training modules)
+import { hrWorkflowFunctions } from '@/lib/inngest/functions/hr-workflow-executor';
+import { performanceTrainingIntegrationFunctions } from '@/lib/inngest/functions/performance-training-integration';
+
 /**
  * Register all Inngest functions with the API route
  * The serve() function automatically handles:
@@ -128,6 +132,12 @@ const handler = serve({
     // Termination background processing (3G resilience)
     terminationProcessingFunction,
     terminationProcessingFailedFunction,
+
+    // HR Workflow Engine (Performance & Training modules)
+    ...hrWorkflowFunctions,
+
+    // Performance ↔ Training Integration
+    ...performanceTrainingIntegrationFunctions,
   ],
 
   // Streaming: Return results as they complete (improves performance)

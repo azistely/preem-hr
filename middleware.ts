@@ -146,6 +146,42 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/compliance/cdd': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/compliance/declarations': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/compliance/inspection': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Performance Management (HR Manager+)
+  '/performance': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/cycles': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/cycles/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/cycles/[id]': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/evaluations': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/evaluations/[id]': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/objectives': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/feedback': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/calibration': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/settings': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/settings/templates': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/performance/settings/competencies': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Training Management (HR Manager+)
+  '/training': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/catalog': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/catalog/[id]': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/sessions': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/sessions/[id]': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/requests': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/requests/new': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/plans': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/plans/[id]': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/certifications': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/history': ['hr_manager', 'tenant_admin', 'super_admin'],
+
+  // Competencies Management (HR Manager+)
+  '/competencies': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/competencies/catalog': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/competencies/profiles': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/competencies/assessment': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/competencies/assessment/self': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/competencies/gap-analysis': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/competencies/skills': ['hr_manager', 'tenant_admin', 'super_admin'],
 };
 
 /**

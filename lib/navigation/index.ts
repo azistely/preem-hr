@@ -46,6 +46,14 @@ import {
   Wallet,
   FileSignature,
   ClipboardList,
+  // Performance & Training icons
+  Target,
+  Star,
+  MessageSquare,
+  GraduationCap,
+  BookMarked,
+  UserCog,
+  Layers,
 } from "lucide-react";
 import { NavItem, NavSection } from "@/components/navigation/sidebar";
 
@@ -260,6 +268,26 @@ export const hrManagerMobileSections: NavSection[] = [
     ],
   },
   {
+    title: "Performance",
+    items: [
+      { icon: Activity, label: "Tableau de bord", href: "/performance" },
+      { icon: Target, label: "Cycles d'évaluation", href: "/performance/cycles" },
+      { icon: Star, label: "Évaluations", href: "/performance/evaluations" },
+      { icon: CheckSquare, label: "Objectifs", href: "/performance/objectives" },
+      { icon: MessageSquare, label: "Feedback", href: "/performance/feedback" },
+    ],
+  },
+  {
+    title: "Formation",
+    items: [
+      { icon: GraduationCap, label: "Tableau de bord", href: "/training" },
+      { icon: BookMarked, label: "Catalogue", href: "/training/catalog" },
+      { icon: Calendar, label: "Sessions", href: "/training/sessions" },
+      { icon: Layers, label: "Plans de formation", href: "/training/plans" },
+      { icon: UserCog, label: "Compétences", href: "/competencies" },
+    ],
+  },
+  {
     title: "Automatisation",
     items: [
       { icon: Zap, label: "Rappels automatiques", href: "/automation" },
@@ -299,6 +327,24 @@ export const hrManagerAdvancedSections: NavSection[] = [
     items: [
       { icon: Clock, label: "Heures Supplémentaires", href: "/admin/policies/overtime" },
       { icon: BarChart3, label: "Suivi des Automatisations", href: "/workflows/analytics" },
+    ],
+  },
+  {
+    title: "Configuration Performance",
+    items: [
+      { icon: FileText, label: "Modèles d'évaluation", href: "/performance/settings/templates" },
+      { icon: Target, label: "Catalogue compétences", href: "/performance/settings/competencies" },
+      { icon: BarChart, label: "Calibration", href: "/performance/calibration" },
+    ],
+  },
+  {
+    title: "Configuration Formation",
+    items: [
+      { icon: ClipboardList, label: "Demandes", href: "/training/requests" },
+      { icon: Award, label: "Certifications", href: "/training/certifications" },
+      { icon: History, label: "Historique", href: "/training/history" },
+      { icon: UserCog, label: "Évaluation compétences", href: "/competencies/assessment" },
+      { icon: TrendingUp, label: "Analyse des gaps", href: "/competencies/gap-analysis" },
     ],
   },
 ];
@@ -359,6 +405,26 @@ export const hrManagerDesktopSections: NavSection[] = [
     items: [
       { icon: FileStack, label: "Gestion des documents", href: "/admin/documents" },
       { icon: FileSignature, label: "Demandes de documents", href: "/admin/document-requests" },
+    ],
+  },
+  {
+    title: "Performance",
+    items: [
+      { icon: Activity, label: "Tableau de bord", href: "/performance" },
+      { icon: Target, label: "Cycles d'évaluation", href: "/performance/cycles" },
+      { icon: Star, label: "Évaluations", href: "/performance/evaluations" },
+      { icon: CheckSquare, label: "Objectifs", href: "/performance/objectives" },
+      { icon: MessageSquare, label: "Feedback", href: "/performance/feedback" },
+    ],
+  },
+  {
+    title: "Formation",
+    items: [
+      { icon: GraduationCap, label: "Tableau de bord", href: "/training" },
+      { icon: BookMarked, label: "Catalogue", href: "/training/catalog" },
+      { icon: Calendar, label: "Sessions", href: "/training/sessions" },
+      { icon: Layers, label: "Plans de formation", href: "/training/plans" },
+      { icon: UserCog, label: "Compétences", href: "/competencies" },
     ],
   },
   {

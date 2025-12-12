@@ -852,3 +852,168 @@ export function createEvent<T extends EventName>(
 ): z.infer<(typeof eventSchemas)[T]> {
   return { name, data } as z.infer<(typeof eventSchemas)[T]>;
 }
+
+// ============================================================================
+// HR WORKFLOW EVENTS (Performance & Training Modules)
+// ============================================================================
+
+/**
+ * Event: hr.workflow.start
+ * Triggered when an HR workflow instance should start
+ */
+export const hrWorkflowStartEventSchema = z.object({
+  name: z.literal('hr.workflow.start'),
+  data: z.object({
+    instanceId: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type HrWorkflowStartEvent = z.infer<typeof hrWorkflowStartEventSchema>;
+
+/**
+ * Event: hr.workflow.step.ready
+ * Triggered when a workflow step is ready for execution
+ */
+export const hrWorkflowStepReadyEventSchema = z.object({
+  name: z.literal('hr.workflow.step.ready'),
+  data: z.object({
+    stepInstanceId: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type HrWorkflowStepReadyEvent = z.infer<typeof hrWorkflowStepReadyEventSchema>;
+
+/**
+ * Event: hr.workflow.advance
+ * Triggered when a workflow should advance to the next step
+ */
+export const hrWorkflowAdvanceEventSchema = z.object({
+  name: z.literal('hr.workflow.advance'),
+  data: z.object({
+    instanceId: z.string().uuid(),
+    completedStepId: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type HrWorkflowAdvanceEvent = z.infer<typeof hrWorkflowAdvanceEventSchema>;
+
+/**
+ * Event: hr.workflow.completed
+ * Triggered when an HR workflow completes
+ */
+export const hrWorkflowCompletedEventSchema = z.object({
+  name: z.literal('hr.workflow.completed'),
+  data: z.object({
+    instanceId: z.string().uuid(),
+    definitionId: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type HrWorkflowCompletedEvent = z.infer<typeof hrWorkflowCompletedEventSchema>;
+
+/**
+ * Event: evaluation.cycle.started
+ * Triggered when a performance evaluation cycle starts
+ */
+export const evaluationCycleStartedEventSchema = z.object({
+  name: z.literal('evaluation.cycle.started'),
+  data: z.object({
+    cycleId: z.string().uuid(),
+    cycleName: z.string(),
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+    employeeCount: z.number().positive(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type EvaluationCycleStartedEvent = z.infer<typeof evaluationCycleStartedEventSchema>;
+
+/**
+ * Event: evaluation.submitted
+ * Triggered when an evaluation is submitted
+ */
+export const evaluationSubmittedEventSchema = z.object({
+  name: z.literal('evaluation.submitted'),
+  data: z.object({
+    evaluationId: z.string().uuid(),
+    cycleId: z.string().uuid(),
+    evaluatorId: z.string().uuid(),
+    subjectEmployeeId: z.string().uuid(),
+    evaluationType: z.enum(['self', 'manager', 'peer', '360']),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type EvaluationSubmittedEvent = z.infer<typeof evaluationSubmittedEventSchema>;
+
+/**
+ * Event: training.request.submitted
+ * Triggered when a training request is submitted
+ */
+export const trainingRequestSubmittedEventSchema = z.object({
+  name: z.literal('training.request.submitted'),
+  data: z.object({
+    requestId: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    courseId: z.string().uuid().optional(),
+    courseName: z.string(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type TrainingRequestSubmittedEvent = z.infer<typeof trainingRequestSubmittedEventSchema>;
+
+/**
+ * Event: training.completed
+ * Triggered when an employee completes a training
+ */
+export const trainingCompletedEventSchema = z.object({
+  name: z.literal('training.completed'),
+  data: z.object({
+    enrollmentId: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    courseId: z.string().uuid(),
+    courseName: z.string(),
+    completionStatus: z.enum(['passed', 'failed', 'incomplete']),
+    score: z.number().optional(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type TrainingCompletedEvent = z.infer<typeof trainingCompletedEventSchema>;
+
+/**
+ * Event: competency.gap.identified
+ * Triggered when a competency gap is identified
+ */
+export const competencyGapIdentifiedEventSchema = z.object({
+  name: z.literal('competency.gap.identified'),
+  data: z.object({
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    competencyId: z.string().uuid(),
+    competencyName: z.string(),
+    currentLevel: z.number(),
+    targetLevel: z.number(),
+    gap: z.number(),
+    tenantId: z.string().uuid(),
+    metadata: eventMetadataSchema.optional(),
+  }),
+});
+
+export type CompetencyGapIdentifiedEvent = z.infer<typeof competencyGapIdentifiedEventSchema>;

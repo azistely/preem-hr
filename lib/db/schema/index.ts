@@ -31,3 +31,9 @@ export * from './acp';
 export * from './user-invitations';
 export * from './document-requests';
 export * from './compliance-tracker';
+
+// HR Modules - Performance & Training
+export * from './hr-workflows';
+export * from './hr-forms';
+export * from './performance';
+export * from './training';
