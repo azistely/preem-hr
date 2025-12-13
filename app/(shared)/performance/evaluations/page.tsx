@@ -72,8 +72,16 @@ export default function EvaluationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cycleIdParam = searchParams.get('cycleId');
+  const typeParam = searchParams.get('type'); // Support ?type=self or ?type=manager from guide
 
-  const [selectedTab, setSelectedTab] = useState('my');
+  // Map URL type param to tab
+  const getInitialTab = () => {
+    if (typeParam === 'self') return 'self';
+    if (typeParam === 'manager') return 'manager';
+    return 'my';
+  };
+
+  const [selectedTab, setSelectedTab] = useState(getInitialTab);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
@@ -82,6 +90,22 @@ export default function EvaluationsPage() {
     api.performance.evaluations.list.useQuery({
       myEvaluations: true,
       cycleId: cycleIdParam || undefined,
+      limit: 50,
+    });
+
+  // Fetch self-evaluations (for type-filtered tab)
+  const { data: selfEvaluationsData, isLoading: selfEvaluationsLoading } =
+    api.performance.evaluations.list.useQuery({
+      cycleId: cycleIdParam || undefined,
+      evaluationType: 'self',
+      limit: 50,
+    });
+
+  // Fetch manager evaluations (for type-filtered tab)
+  const { data: managerEvaluationsData, isLoading: managerEvaluationsLoading } =
+    api.performance.evaluations.list.useQuery({
+      cycleId: cycleIdParam || undefined,
+      evaluationType: 'manager',
       limit: 50,
     });
 
@@ -100,11 +124,17 @@ export default function EvaluationsPage() {
   });
 
   const myEvaluations = myEvaluationsData?.data ?? [];
+  const selfEvaluations = selfEvaluationsData?.data ?? [];
+  const managerEvaluations = managerEvaluationsData?.data ?? [];
   const allEvaluations = allEvaluationsData?.data ?? [];
   const cycles = cyclesData?.data ?? [];
 
-  // Count pending evaluations
+  // Count evaluations
   const pendingCount = myEvaluations.length;
+  const selfCompleted = selfEvaluations.filter(e => ['submitted', 'validated', 'shared'].includes(e.status)).length;
+  const selfTotal = selfEvaluations.length;
+  const managerCompleted = managerEvaluations.filter(e => ['submitted', 'validated', 'shared'].includes(e.status)).length;
+  const managerTotal = managerEvaluations.length;
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -125,19 +155,37 @@ export default function EvaluationsPage() {
 
       {/* Tabs */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="w-full sm:w-auto">
+        <TabsList className="w-full sm:w-auto grid grid-cols-2 sm:flex sm:flex-wrap gap-1">
           <TabsTrigger value="my" className="min-h-[44px]">
             <ClipboardCheck className="mr-2 h-4 w-4" />
-            Mes évaluations
+            A completer
             {pendingCount > 0 && (
               <Badge variant="secondary" className="ml-2">
                 {pendingCount}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="all" className="min-h-[44px]">
+          <TabsTrigger value="self" className="min-h-[44px]">
+            <UserCheck className="mr-2 h-4 w-4" />
+            Auto-evaluations
+            {selfTotal > 0 && (
+              <Badge variant={selfCompleted === selfTotal ? 'default' : 'secondary'} className="ml-2">
+                {selfCompleted}/{selfTotal}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="manager" className="min-h-[44px]">
             <Users className="mr-2 h-4 w-4" />
-            Toutes les évaluations
+            Evaluations RH
+            {managerTotal > 0 && (
+              <Badge variant={managerCompleted === managerTotal ? 'default' : 'secondary'} className="ml-2">
+                {managerCompleted}/{managerTotal}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="all" className="min-h-[44px]">
+            <Inbox className="mr-2 h-4 w-4" />
+            Tout voir
           </TabsTrigger>
         </TabsList>
 
@@ -197,6 +245,174 @@ export default function EvaluationsPage() {
                   </Link>
                 );
               })}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Self Evaluations Tab */}
+        <TabsContent value="self" className="space-y-4 mt-4">
+          {/* Progress header */}
+          {selfTotal > 0 && (
+            <Card className="bg-muted/30">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Progression des auto-evaluations</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selfCompleted === selfTotal
+                        ? 'Tous les employes ont complete leur auto-evaluation'
+                        : `${selfTotal - selfCompleted} employe(s) n'ont pas encore repondu`}
+                    </p>
+                  </div>
+                  <Badge variant={selfCompleted === selfTotal ? 'default' : 'secondary'} className="text-lg px-4 py-1">
+                    {selfCompleted}/{selfTotal}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {selfEvaluationsLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-20 w-full" />
+              ))}
+            </div>
+          ) : selfEvaluations.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <UserCheck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">Aucune auto-evaluation</h3>
+                <p className="text-muted-foreground">
+                  Les auto-evaluations apparaitront ici une fois le cycle lance.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {selfEvaluations.map((evaluation) => (
+                <Link
+                  key={evaluation.id}
+                  href={`/performance/evaluations/${evaluation.id}`}
+                >
+                  <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className={`p-2 rounded-lg ${
+                            ['submitted', 'validated', 'shared'].includes(evaluation.status)
+                              ? 'bg-green-100'
+                              : 'bg-amber-100'
+                          }`}>
+                            {['submitted', 'validated', 'shared'].includes(evaluation.status)
+                              ? <CheckCircle2 className="h-5 w-5 text-green-600" />
+                              : <Clock className="h-5 w-5 text-amber-600" />
+                            }
+                          </div>
+                          <div>
+                            <p className="font-medium">
+                              {evaluation.employee?.firstName} {evaluation.employee?.lastName}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {evaluation.cycle?.name}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={statusColors[evaluation.status]}>
+                            {statusLabels[evaluation.status]}
+                          </Badge>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Manager Evaluations Tab */}
+        <TabsContent value="manager" className="space-y-4 mt-4">
+          {/* Progress header */}
+          {managerTotal > 0 && (
+            <Card className="bg-muted/30">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Progression de vos evaluations</p>
+                    <p className="text-sm text-muted-foreground">
+                      {managerCompleted === managerTotal
+                        ? 'Vous avez complete toutes vos evaluations'
+                        : `Il vous reste ${managerTotal - managerCompleted} evaluation(s) a completer`}
+                    </p>
+                  </div>
+                  <Badge variant={managerCompleted === managerTotal ? 'default' : 'secondary'} className="text-lg px-4 py-1">
+                    {managerCompleted}/{managerTotal}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {managerEvaluationsLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-20 w-full" />
+              ))}
+            </div>
+          ) : managerEvaluations.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">Aucune evaluation manager</h3>
+                <p className="text-muted-foreground">
+                  Les evaluations apparaitront ici une fois le cycle lance.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {managerEvaluations.map((evaluation) => (
+                <Link
+                  key={evaluation.id}
+                  href={`/performance/evaluations/${evaluation.id}`}
+                >
+                  <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className={`p-2 rounded-lg ${
+                            ['submitted', 'validated', 'shared'].includes(evaluation.status)
+                              ? 'bg-green-100'
+                              : 'bg-primary/10'
+                          }`}>
+                            {['submitted', 'validated', 'shared'].includes(evaluation.status)
+                              ? <CheckCircle2 className="h-5 w-5 text-green-600" />
+                              : <Users className="h-5 w-5 text-primary" />
+                            }
+                          </div>
+                          <div>
+                            <p className="font-medium">
+                              {evaluation.employee?.firstName} {evaluation.employee?.lastName}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {evaluation.cycle?.name}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={statusColors[evaluation.status]}>
+                            {statusLabels[evaluation.status]}
+                          </Badge>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
             </div>
           )}
         </TabsContent>

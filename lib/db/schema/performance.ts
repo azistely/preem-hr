@@ -19,6 +19,7 @@ import { tenants } from './tenants';
 import { users } from './users';
 import { employees } from './employees';
 import { departments } from './departments';
+import { positions } from './positions';
 import { tenantUser } from './roles';
 import { hrFormTemplates } from './hr-forms';
 
@@ -88,6 +89,7 @@ export const performanceCycles = pgTable('performance_cycles', {
   includePeerFeedback: boolean('include_peer_feedback').notNull().default(false),
   include360Feedback: boolean('include_360_feedback').notNull().default(false),
   includeCalibration: boolean('include_calibration').notNull().default(false),
+  includeCompetencies: boolean('include_competencies').notNull().default(false),
 
   // Company size optimization
   companySizeProfile: text('company_size_profile').default('medium'), // small, medium, large
@@ -122,8 +124,13 @@ export const competencies = pgTable('competencies', {
   // Category
   category: text('category').notNull(), // 'technique', 'comportemental', 'leadership', 'metier'
 
-  // Proficiency levels definition (1-5 with descriptions)
-  proficiencyLevels: jsonb('proficiency_levels').notNull().$type<Array<{
+  // Scale type (null = use tenant default)
+  // Options: 'french_descriptive', 'numeric_1_5', 'numeric_1_4', 'numeric_1_3', 'numeric_1_10', 'letter_grade', 'percentage', 'custom'
+  scaleType: text('scale_type'),
+
+  // Proficiency levels definition (for custom scales or when scaleType is set)
+  // null = use scale template from scaleType or tenant default
+  proficiencyLevels: jsonb('proficiency_levels').$type<Array<{
     level: number;
     name: string;
     description: string;
@@ -161,7 +168,11 @@ export const jobRoleCompetencies = pgTable('job_role_competencies', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
 
-  // Role identification (can be jobTitle or departmentId)
+  // Role identification - proper FK to positions table
+  positionId: uuid('position_id').references(() => positions.id, { onDelete: 'cascade' }),
+
+  // Legacy field - kept for backward compatibility during migration
+  // TODO: Remove after data migration
   jobTitle: text('job_title'),
   departmentId: uuid('department_id').references(() => departments.id, { onDelete: 'set null' }),
 
@@ -328,6 +339,38 @@ export const competencyRatings = pgTable('competency_ratings', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   pgPolicy('competency_ratings_tenant_isolation', {
+    as: 'permissive',
+    for: 'all',
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);
+
+// ============================================================================
+// OBJECTIVE EVALUATION SCORES TABLE
+// ============================================================================
+
+/**
+ * Stores objective scores per evaluation
+ * This allows self-evaluation and manager-evaluation to have independent scores
+ * for the same objectives without overwriting each other.
+ */
+export const objectiveEvaluationScores = pgTable('objective_evaluation_scores', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  evaluationId: uuid('evaluation_id').notNull().references(() => evaluations.id, { onDelete: 'cascade' }),
+  objectiveId: uuid('objective_id').notNull().references(() => objectives.id, { onDelete: 'cascade' }),
+
+  // Score (0-100)
+  score: numeric('score', { precision: 5, scale: 2 }).notNull(),
+  comment: text('comment'),
+
+  // Audit
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  pgPolicy('objective_evaluation_scores_tenant_isolation', {
     as: 'permissive',
     for: 'all',
     to: tenantUser,
@@ -529,6 +572,9 @@ export type NewEvaluation = typeof evaluations.$inferInsert;
 export type CompetencyRating = typeof competencyRatings.$inferSelect;
 export type NewCompetencyRating = typeof competencyRatings.$inferInsert;
 
+export type ObjectiveEvaluationScore = typeof objectiveEvaluationScores.$inferSelect;
+export type NewObjectiveEvaluationScore = typeof objectiveEvaluationScores.$inferInsert;
+
 export type ContinuousFeedback = typeof continuousFeedback.$inferSelect;
 export type NewContinuousFeedback = typeof continuousFeedback.$inferInsert;
 
@@ -580,6 +626,10 @@ export const jobRoleCompetenciesRelations = relations(jobRoleCompetencies, ({ on
   tenant: one(tenants, {
     fields: [jobRoleCompetencies.tenantId],
     references: [tenants.id],
+  }),
+  position: one(positions, {
+    fields: [jobRoleCompetencies.positionId],
+    references: [positions.id],
   }),
   competency: one(competencies, {
     fields: [jobRoleCompetencies.competencyId],
@@ -658,6 +708,7 @@ export const evaluationsRelations = relations(evaluations, ({ one, many }) => ({
   }),
   competencyRatings: many(competencyRatings),
   calibrationRatings: many(calibrationRatings),
+  objectiveScores: many(objectiveEvaluationScores),
 }));
 
 export const competencyRatingsRelations = relations(competencyRatings, ({ one }) => ({
@@ -672,6 +723,21 @@ export const competencyRatingsRelations = relations(competencyRatings, ({ one })
   competency: one(competencies, {
     fields: [competencyRatings.competencyId],
     references: [competencies.id],
+  }),
+}));
+
+export const objectiveEvaluationScoresRelations = relations(objectiveEvaluationScores, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [objectiveEvaluationScores.tenantId],
+    references: [tenants.id],
+  }),
+  evaluation: one(evaluations, {
+    fields: [objectiveEvaluationScores.evaluationId],
+    references: [evaluations.id],
+  }),
+  objective: one(objectives, {
+    fields: [objectiveEvaluationScores.objectiveId],
+    references: [objectives.id],
   }),
 }));
 

@@ -15,6 +15,7 @@ import {
   objectives,
   evaluations,
   competencyRatings,
+  objectiveEvaluationScores,
   continuousFeedback,
   oneOnOneMeetings,
   calibrationSessions,
@@ -22,7 +23,10 @@ import {
   employees,
   hrFormTemplates,
   departments,
+  tenants,
 } from '@/lib/db/schema';
+import { positions } from '@/lib/db/schema/positions';
+import { assignments } from '@/lib/db/schema/assignments';
 import { and, eq, desc, asc, sql, gte, lte, isNull, or, inArray, count } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
@@ -30,6 +34,91 @@ import {
   applyPerformanceCycleDefaults,
   getPerformanceWizardSteps,
 } from '@/lib/hr-modules/services/smart-defaults.service';
+import {
+  getCompetencyScale,
+  normalizeScore,
+  getMaxLevel,
+  DEFAULT_SCALE_TYPE,
+  type ProficiencyLevel,
+} from '@/lib/constants/competency-scales';
+import type { CompetencyScaleType, TenantSettings } from '@/lib/db/schema/tenant-settings.schema';
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get employee's current active position from assignments table
+ * Returns the primary assignment position that is currently active
+ */
+async function getEmployeeCurrentPosition(
+  db: typeof import('@/lib/db').db,
+  employeeId: string,
+  tenantId: string
+) {
+  const today = new Date().toISOString().split('T')[0];
+
+  const [assignment] = await db
+    .select({
+      position: positions,
+    })
+    .from(assignments)
+    .innerJoin(positions, eq(assignments.positionId, positions.id))
+    .where(and(
+      eq(assignments.employeeId, employeeId),
+      eq(assignments.tenantId, tenantId),
+      eq(assignments.assignmentType, 'primary'),
+      lte(assignments.effectiveFrom, today),
+      or(isNull(assignments.effectiveTo), gte(assignments.effectiveTo, today))
+    ))
+    .limit(1);
+
+  return assignment?.position ?? null;
+}
+
+/**
+ * Get competencies assigned to a position through jobRoleCompetencies table
+ * Returns competencies with required level and critical flag
+ */
+async function getPositionCompetencies(
+  db: typeof import('@/lib/db').db,
+  positionId: string,
+  tenantId: string
+) {
+  const results = await db
+    .select({
+      competency: competencies,
+      requiredLevel: jobRoleCompetencies.requiredLevel,
+      isCritical: jobRoleCompetencies.isCritical,
+    })
+    .from(jobRoleCompetencies)
+    .innerJoin(competencies, eq(jobRoleCompetencies.competencyId, competencies.id))
+    .where(and(
+      eq(jobRoleCompetencies.positionId, positionId),
+      eq(jobRoleCompetencies.tenantId, tenantId),
+      eq(competencies.isActive, true)
+    ))
+    .orderBy(competencies.displayOrder);
+
+  return results;
+}
+
+/**
+ * Get tenant's default competency scale from settings
+ */
+async function getTenantDefaultScale(
+  db: typeof import('@/lib/db').db,
+  tenantId: string
+): Promise<CompetencyScaleType> {
+  const [tenant] = await db
+    .select({ settings: tenants.settings })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+
+  const settings = tenant?.settings as TenantSettings | null;
+  return settings?.performance?.defaultCompetencyScale ?? DEFAULT_SCALE_TYPE;
+}
 
 // ============================================================================
 // PERFORMANCE CYCLES
@@ -204,6 +293,7 @@ export const performanceRouter = createTRPCRouter({
         includeManagerEvaluation: z.boolean().default(true),
         includePeerFeedback: z.boolean().default(false),
         include360Feedback: z.boolean().default(false),
+        includeCompetencies: z.boolean().default(true),
         includeCalibration: z.boolean().default(false),
         companySizeProfile: z.enum(['small', 'medium', 'large']).optional(),
       }))
@@ -248,6 +338,7 @@ export const performanceRouter = createTRPCRouter({
             includeManagerEvaluation: input.includeManagerEvaluation,
             includePeerFeedback: input.includePeerFeedback,
             include360Feedback: input.include360Feedback,
+            includeCompetencies: input.includeCompetencies,
             includeCalibration: input.includeCalibration,
             companySizeProfile: input.companySizeProfile,
             status: 'planning',
@@ -274,6 +365,7 @@ export const performanceRouter = createTRPCRouter({
         includeManagerEvaluation: z.boolean().optional(),
         includePeerFeedback: z.boolean().optional(),
         include360Feedback: z.boolean().optional(),
+        includeCompetencies: z.boolean().optional(),
         includeCalibration: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -379,6 +471,24 @@ export const performanceRouter = createTRPCRouter({
           });
         }
 
+        // Enforce: objectives must exist before launch if includeObjectives is enabled
+        if (cycle.includeObjectives) {
+          const [objectiveCount] = await ctx.db
+            .select({ count: count() })
+            .from(objectives)
+            .where(and(
+              eq(objectives.tenantId, tenantId),
+              eq(objectives.cycleId, cycle.id)
+            ));
+
+          if (objectiveCount.count === 0) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Vous devez définir au moins un objectif avant de lancer le cycle. Les objectifs sont requis car "Inclure les objectifs" est activé.',
+            });
+          }
+        }
+
         // Get target employees
         let targetEmployees: { id: string; reportingManagerId: string | null }[];
         if (input.employeeIds && input.employeeIds.length > 0) {
@@ -422,14 +532,15 @@ export const performanceRouter = createTRPCRouter({
             });
           }
 
-          // Manager evaluation
-          if (cycle.includeManagerEvaluation && emp.reportingManagerId) {
+          // Manager evaluation - create for ALL employees (even without reporting manager)
+          // If no reportingManagerId, set evaluatorId to null - HR managers/admins can evaluate
+          if (cycle.includeManagerEvaluation) {
             evaluationsToCreate.push({
               tenantId,
               cycleId: cycle.id,
               employeeId: emp.id,
               evaluationType: 'manager',
-              evaluatorId: emp.reportingManagerId,
+              evaluatorId: emp.reportingManagerId, // Can be null - HR/admins can evaluate
               status: 'pending',
             });
           }
@@ -639,8 +750,8 @@ export const performanceRouter = createTRPCRouter({
           });
         }
 
-        // Get competency ratings if any
-        const ratings = await ctx.db
+        // Get competency ratings if any (existing ratings for this evaluation)
+        const existingRatings = await ctx.db
           .select({
             rating: competencyRatings,
             competency: competencies,
@@ -649,13 +760,183 @@ export const performanceRouter = createTRPCRouter({
           .leftJoin(competencies, eq(competencyRatings.competencyId, competencies.id))
           .where(eq(competencyRatings.evaluationId, input.id));
 
+        // Load position competencies if cycle has includeCompetencies enabled
+        let positionCompetencies: Array<{
+          competency: typeof competencies.$inferSelect;
+          requiredLevel: number;
+          isCritical: boolean;
+          proficiencyLevels: ProficiencyLevel[];
+        }> = [];
+        let selfCompetencyRatings: typeof existingRatings = [];
+
+        if (result.cycle?.includeCompetencies && result.evaluation.employeeId) {
+          // Get employee's current position
+          const position = await getEmployeeCurrentPosition(ctx.db, result.evaluation.employeeId, tenantId);
+
+          if (position) {
+            // Get competencies for this position
+            const rawCompetencies = await getPositionCompetencies(ctx.db, position.id, tenantId);
+
+            // Get tenant's default scale for resolving competency scales
+            const tenantDefaultScale = await getTenantDefaultScale(ctx.db, tenantId);
+
+            // Resolve proficiency levels for each competency
+            positionCompetencies = rawCompetencies.map(pc => ({
+              competency: pc.competency,
+              requiredLevel: pc.requiredLevel,
+              isCritical: pc.isCritical,
+              proficiencyLevels: getCompetencyScale(
+                {
+                  scaleType: pc.competency.scaleType,
+                  proficiencyLevels: pc.competency.proficiencyLevels as ProficiencyLevel[] | null,
+                },
+                tenantDefaultScale
+              ),
+            }));
+          }
+
+          // For manager evaluations, also get self-evaluation competency ratings for comparison
+          if (result.evaluation.evaluationType === 'manager' && result.evaluation.cycleId) {
+            const [selfEval] = await ctx.db
+              .select({ id: evaluations.id })
+              .from(evaluations)
+              .where(and(
+                eq(evaluations.tenantId, tenantId),
+                eq(evaluations.employeeId, result.evaluation.employeeId),
+                eq(evaluations.cycleId, result.evaluation.cycleId),
+                eq(evaluations.evaluationType, 'self')
+              ));
+
+            if (selfEval) {
+              selfCompetencyRatings = await ctx.db
+                .select({
+                  rating: competencyRatings,
+                  competency: competencies,
+                })
+                .from(competencyRatings)
+                .leftJoin(competencies, eq(competencyRatings.competencyId, competencies.id))
+                .where(eq(competencyRatings.evaluationId, selfEval.id));
+            }
+          }
+        }
+
+        // Get objectives for this employee in this cycle
+        // Include: individual objectives, team objectives (all team objectives for now), company objectives
+        // Note: employees table doesn't have departmentId, so we include all team objectives
+
+        // Build conditions for objectives:
+        // 1. Individual objectives for this employee
+        // 2. Team objectives (all team objectives since we can't filter by department)
+        // 3. Company-wide objectives
+        const objectiveConditions = [
+          eq(objectives.tenantId, tenantId),
+          eq(objectives.cycleId, result.evaluation.cycleId!),
+        ];
+
+        const employeeObjectives = await ctx.db
+          .select({
+            id: objectives.id,
+            title: objectives.title,
+            description: objectives.description,
+            objectiveLevel: objectives.objectiveLevel,
+            objectiveType: objectives.objectiveType,
+            status: objectives.status,
+            weight: objectives.weight,
+            targetValue: objectives.targetValue,
+            currentValue: objectives.currentValue,
+            targetUnit: objectives.targetUnit,
+            dueDate: objectives.dueDate,
+            achievementScore: objectives.achievementScore,
+            achievementNotes: objectives.achievementNotes,
+          })
+          .from(objectives)
+          .where(and(
+            ...objectiveConditions,
+            or(
+              // Individual objectives for this employee
+              and(
+                eq(objectives.objectiveLevel, 'individual'),
+                eq(objectives.employeeId, result.evaluation.employeeId!)
+              ),
+              // Team objectives (include all since employees don't have departmentId)
+              eq(objectives.objectiveLevel, 'team'),
+              // Company-wide objectives
+              eq(objectives.objectiveLevel, 'company')
+            )
+          ))
+          .orderBy(
+            asc(objectives.objectiveLevel), // company first, then team, then individual
+            desc(objectives.weight)
+          );
+
+        // Get objective scores for THIS evaluation
+        const thisEvalScores = await ctx.db
+          .select()
+          .from(objectiveEvaluationScores)
+          .where(eq(objectiveEvaluationScores.evaluationId, input.id));
+
+        // For manager evaluations, also get the self-evaluation scores for comparison
+        let selfEvalScores: typeof thisEvalScores = [];
+        if (result.evaluation.evaluationType === 'manager' && result.evaluation.employeeId && result.evaluation.cycleId) {
+          // Find the self-evaluation for this employee in this cycle
+          const [selfEval] = await ctx.db
+            .select({ id: evaluations.id })
+            .from(evaluations)
+            .where(and(
+              eq(evaluations.tenantId, tenantId),
+              eq(evaluations.employeeId, result.evaluation.employeeId),
+              eq(evaluations.cycleId, result.evaluation.cycleId),
+              eq(evaluations.evaluationType, 'self')
+            ));
+
+          if (selfEval) {
+            selfEvalScores = await ctx.db
+              .select()
+              .from(objectiveEvaluationScores)
+              .where(eq(objectiveEvaluationScores.evaluationId, selfEval.id));
+          }
+        }
+
+        // Map scores to objectives for easy lookup
+        const objectiveScoresMap = new Map(thisEvalScores.map(s => [s.objectiveId, { score: s.score, comment: s.comment }]));
+        const selfScoresMap = new Map(selfEvalScores.map(s => [s.objectiveId, { score: s.score, comment: s.comment }]));
+
+        // Map existing competency ratings by competencyId for easy lookup
+        const existingRatingsMap = new Map(existingRatings.map(r => [r.rating.competencyId, r]));
+        const selfCompetencyRatingsMap = new Map(selfCompetencyRatings.map(r => [r.rating.competencyId, r]));
+
         return {
           ...result.evaluation,
           employee: result.employee,
           cycle: result.cycle,
-          competencyRatings: ratings.map(r => ({
+          // Existing competency ratings for this evaluation
+          competencyRatings: existingRatings.map(r => ({
             ...r.rating,
             competency: r.competency,
+          })),
+          // Position competencies (what employee should be evaluated on)
+          positionCompetencies: positionCompetencies.map(pc => ({
+            competency: pc.competency,
+            requiredLevel: pc.requiredLevel,
+            isCritical: pc.isCritical,
+            proficiencyLevels: pc.proficiencyLevels,
+            // Include existing rating if any
+            existingRating: existingRatingsMap.get(pc.competency.id)?.rating ?? null,
+            // Include self-rating for manager evaluations
+            selfRating: selfCompetencyRatingsMap.get(pc.competency.id)?.rating ?? null,
+          })),
+          objectives: employeeObjectives,
+          // Objective scores for this evaluation
+          objectiveScores: thisEvalScores.map(s => ({
+            objectiveId: s.objectiveId,
+            score: parseFloat(s.score),
+            comment: s.comment,
+          })),
+          // Self-evaluation scores (only for manager evaluations)
+          selfEvalObjectiveScores: selfEvalScores.map(s => ({
+            objectiveId: s.objectiveId,
+            score: parseFloat(s.score),
+            comment: s.comment,
           })),
         };
       }),
@@ -671,7 +952,14 @@ export const performanceRouter = createTRPCRouter({
         developmentPlanComment: z.string().optional(),
         competencyRatings: z.array(z.object({
           competencyId: z.string().uuid(),
-          rating: z.number().min(1).max(5),
+          rating: z.number().min(0).max(100), // 0-100 for percentage scales, 1-10 for others
+          comment: z.string().optional(),
+          expectedLevel: z.number().optional(), // From position competency mapping
+          maxLevel: z.number().min(1).default(5), // Max level of the scale for normalization
+        })).optional(),
+        objectiveScores: z.array(z.object({
+          objectiveId: z.string().uuid(),
+          score: z.number().min(0).max(100),
           comment: z.string().optional(),
         })).optional(),
       }))
@@ -726,8 +1014,14 @@ export const performanceRouter = createTRPCRouter({
           .where(eq(evaluations.id, input.id))
           .returning();
 
-        // Add competency ratings if provided
+        // Handle competency ratings if provided
         if (input.competencyRatings && input.competencyRatings.length > 0) {
+          // Delete existing ratings first (allows re-submit/draft save)
+          await ctx.db
+            .delete(competencyRatings)
+            .where(eq(competencyRatings.evaluationId, input.id));
+
+          // Insert new competency ratings
           await ctx.db.insert(competencyRatings).values(
             input.competencyRatings.map(cr => ({
               tenantId,
@@ -735,6 +1029,46 @@ export const performanceRouter = createTRPCRouter({
               competencyId: cr.competencyId,
               rating: cr.rating,
               comment: cr.comment,
+              expectedLevel: cr.expectedLevel, // For gap analysis
+            }))
+          );
+
+          // Calculate normalized competencies score (0-100)
+          // Each rating is normalized based on its scale's max level
+          const normalizedScores = input.competencyRatings.map(cr => {
+            const maxLevel = cr.maxLevel || 5;
+            // For percentage scales (maxLevel=100), rating is already 0-100
+            if (maxLevel === 100) {
+              return cr.rating;
+            }
+            // For discrete scales, normalize to 0-100
+            return normalizeScore(cr.rating, maxLevel);
+          });
+
+          const avgNormalizedScore = normalizedScores.reduce((sum, score) => sum + score, 0) / normalizedScores.length;
+
+          // Update competenciesScore on the evaluation (numeric type expects string)
+          await ctx.db
+            .update(evaluations)
+            .set({ competenciesScore: (Math.round(avgNormalizedScore * 100) / 100).toString() }) // Round to 2 decimals
+            .where(eq(evaluations.id, input.id));
+        }
+
+        // Save objective scores to separate table (allows self vs manager scores to coexist)
+        if (input.objectiveScores && input.objectiveScores.length > 0) {
+          // First, delete any existing scores for this evaluation (in case of re-submit/draft save)
+          await ctx.db
+            .delete(objectiveEvaluationScores)
+            .where(eq(objectiveEvaluationScores.evaluationId, input.id));
+
+          // Insert new scores
+          await ctx.db.insert(objectiveEvaluationScores).values(
+            input.objectiveScores.map(score => ({
+              tenantId,
+              evaluationId: input.id,
+              objectiveId: score.objectiveId,
+              score: score.score.toString(),
+              comment: score.comment,
             }))
           );
         }
@@ -780,6 +1114,130 @@ export const performanceRouter = createTRPCRouter({
           .returning();
 
         return updated;
+      }),
+
+    // Validate evaluations (HR action - move from submitted to validated)
+    validate: protectedProcedure
+      .input(z.object({
+        ids: z.array(z.string().uuid()).min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+        const userRole = ctx.user.role;
+
+        // Check user has HR permissions (admin, tenant_admin, or hr_manager)
+        if (!['super_admin', 'tenant_admin', 'hr_manager', 'admin'].includes(userRole ?? '')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Seuls les responsables RH peuvent valider les évaluations',
+          });
+        }
+
+        // Verify all evaluations exist and are in submitted status
+        const evaluationsList = await ctx.db
+          .select()
+          .from(evaluations)
+          .where(and(
+            eq(evaluations.tenantId, tenantId),
+            inArray(evaluations.id, input.ids)
+          ));
+
+        if (evaluationsList.length !== input.ids.length) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Certaines évaluations n\'ont pas été trouvées',
+          });
+        }
+
+        const notSubmitted = evaluationsList.filter(e => e.status !== 'submitted');
+        if (notSubmitted.length > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `${notSubmitted.length} évaluation(s) ne sont pas en attente de validation`,
+          });
+        }
+
+        // Update all to validated
+        await ctx.db
+          .update(evaluations)
+          .set({
+            status: 'validated',
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(evaluations.tenantId, tenantId),
+            inArray(evaluations.id, input.ids)
+          ));
+
+        return { success: true, count: input.ids.length };
+      }),
+
+    // Share evaluations (HR action - move from validated to shared, notifies employees)
+    share: protectedProcedure
+      .input(z.object({
+        ids: z.array(z.string().uuid()).min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+        const userRole = ctx.user.role;
+
+        // Check user has HR permissions
+        if (!['super_admin', 'tenant_admin', 'hr_manager', 'admin'].includes(userRole ?? '')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Seuls les responsables RH peuvent partager les évaluations',
+          });
+        }
+
+        // Verify all evaluations exist and are in validated status
+        const evaluationsList = await ctx.db
+          .select({
+            evaluation: evaluations,
+            employee: {
+              id: employees.id,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+              email: employees.email,
+            },
+          })
+          .from(evaluations)
+          .innerJoin(employees, eq(evaluations.employeeId, employees.id))
+          .where(and(
+            eq(evaluations.tenantId, tenantId),
+            inArray(evaluations.id, input.ids)
+          ));
+
+        if (evaluationsList.length !== input.ids.length) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Certaines évaluations n\'ont pas été trouvées',
+          });
+        }
+
+        const notValidated = evaluationsList.filter(e => e.evaluation.status !== 'validated');
+        if (notValidated.length > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `${notValidated.length} évaluation(s) ne sont pas validées. Validez-les d'abord.`,
+          });
+        }
+
+        // Update all to shared
+        await ctx.db
+          .update(evaluations)
+          .set({
+            status: 'shared',
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(evaluations.tenantId, tenantId),
+            inArray(evaluations.id, input.ids)
+          ));
+
+        // TODO: Send notification emails to employees
+        // For now, just return success. Email notifications can be added later.
+
+        return { success: true, count: input.ids.length };
       }),
   }),
 
@@ -866,6 +1324,10 @@ export const performanceRouter = createTRPCRouter({
       .mutation(async ({ ctx, input }) => {
         const tenantId = ctx.user.tenantId;
 
+        // Admin/HR created objectives are auto-approved, employee created are draft
+        const isAdminOrHR = ['super_admin', 'tenant_admin', 'hr_manager', 'admin'].includes(ctx.user.role);
+        const initialStatus = isAdminOrHR ? 'approved' : 'draft';
+
         const [created] = await ctx.db
           .insert(objectives)
           .values({
@@ -882,7 +1344,7 @@ export const performanceRouter = createTRPCRouter({
             targetValue: input.targetValue,
             targetUnit: input.targetUnit,
             dueDate: input.dueDate,
-            status: 'draft',
+            status: initialStatus,
             createdBy: ctx.user.id,
           })
           .returning();
@@ -1119,6 +1581,321 @@ export const performanceRouter = createTRPCRouter({
         .orderBy(asc(competencies.category));
 
       return categories.map(c => c.category);
+    }),
+  }),
+
+  // ============================================================================
+  // POSITION COMPETENCIES
+  // ============================================================================
+
+  positionCompetencies: createTRPCRouter({
+    /**
+     * List competencies assigned to a position
+     */
+    list: hrManagerProcedure
+      .input(z.object({
+        positionId: z.string().uuid(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Verify position belongs to tenant
+        const [position] = await ctx.db
+          .select()
+          .from(positions)
+          .where(and(
+            eq(positions.id, input.positionId),
+            eq(positions.tenantId, tenantId)
+          ));
+
+        if (!position) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Poste non trouvé',
+          });
+        }
+
+        // Get competencies assigned to this position
+        const assignedCompetencies = await ctx.db
+          .select({
+            mapping: jobRoleCompetencies,
+            competency: competencies,
+          })
+          .from(jobRoleCompetencies)
+          .innerJoin(competencies, eq(jobRoleCompetencies.competencyId, competencies.id))
+          .where(and(
+            eq(jobRoleCompetencies.positionId, input.positionId),
+            eq(jobRoleCompetencies.tenantId, tenantId),
+            eq(competencies.isActive, true)
+          ))
+          .orderBy(asc(competencies.displayOrder), asc(competencies.name));
+
+        return {
+          position,
+          competencies: assignedCompetencies.map(ac => ({
+            id: ac.mapping.id,
+            competencyId: ac.competency.id,
+            code: ac.competency.code,
+            name: ac.competency.name,
+            description: ac.competency.description,
+            category: ac.competency.category,
+            proficiencyLevels: ac.competency.proficiencyLevels,
+            isCore: ac.competency.isCore,
+            requiredLevel: ac.mapping.requiredLevel,
+            isCritical: ac.mapping.isCritical,
+          })),
+        };
+      }),
+
+    /**
+     * Add a competency to a position
+     */
+    add: hrManagerProcedure
+      .input(z.object({
+        positionId: z.string().uuid(),
+        competencyId: z.string().uuid(),
+        requiredLevel: z.number().min(1).max(10).default(3),
+        isCritical: z.boolean().default(false),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Verify position belongs to tenant
+        const [position] = await ctx.db
+          .select()
+          .from(positions)
+          .where(and(
+            eq(positions.id, input.positionId),
+            eq(positions.tenantId, tenantId)
+          ));
+
+        if (!position) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Poste non trouvé',
+          });
+        }
+
+        // Verify competency belongs to tenant and is active
+        const [competency] = await ctx.db
+          .select()
+          .from(competencies)
+          .where(and(
+            eq(competencies.id, input.competencyId),
+            eq(competencies.tenantId, tenantId),
+            eq(competencies.isActive, true)
+          ));
+
+        if (!competency) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Compétence non trouvée',
+          });
+        }
+
+        // Check if already assigned
+        const [existing] = await ctx.db
+          .select()
+          .from(jobRoleCompetencies)
+          .where(and(
+            eq(jobRoleCompetencies.positionId, input.positionId),
+            eq(jobRoleCompetencies.competencyId, input.competencyId),
+            eq(jobRoleCompetencies.tenantId, tenantId)
+          ));
+
+        if (existing) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Cette compétence est déjà assignée à ce poste',
+          });
+        }
+
+        // Add the competency to the position
+        const [created] = await ctx.db
+          .insert(jobRoleCompetencies)
+          .values({
+            tenantId,
+            positionId: input.positionId,
+            competencyId: input.competencyId,
+            requiredLevel: input.requiredLevel,
+            isCritical: input.isCritical,
+            createdBy: ctx.user.id,
+          })
+          .returning();
+
+        return {
+          ...created,
+          competency,
+        };
+      }),
+
+    /**
+     * Update a position competency mapping (change required level or critical flag)
+     */
+    update: hrManagerProcedure
+      .input(z.object({
+        id: z.string().uuid(),
+        requiredLevel: z.number().min(1).max(10).optional(),
+        isCritical: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Verify mapping exists and belongs to tenant
+        const [existing] = await ctx.db
+          .select()
+          .from(jobRoleCompetencies)
+          .where(and(
+            eq(jobRoleCompetencies.id, input.id),
+            eq(jobRoleCompetencies.tenantId, tenantId)
+          ));
+
+        if (!existing) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Mapping non trouvé',
+          });
+        }
+
+        const { id, ...updates } = input;
+
+        const [updated] = await ctx.db
+          .update(jobRoleCompetencies)
+          .set(updates)
+          .where(eq(jobRoleCompetencies.id, id))
+          .returning();
+
+        return updated;
+      }),
+
+    /**
+     * Remove a competency from a position
+     */
+    remove: hrManagerProcedure
+      .input(z.object({
+        id: z.string().uuid(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Verify mapping exists and belongs to tenant
+        const [existing] = await ctx.db
+          .select()
+          .from(jobRoleCompetencies)
+          .where(and(
+            eq(jobRoleCompetencies.id, input.id),
+            eq(jobRoleCompetencies.tenantId, tenantId)
+          ));
+
+        if (!existing) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Mapping non trouvé',
+          });
+        }
+
+        await ctx.db
+          .delete(jobRoleCompetencies)
+          .where(eq(jobRoleCompetencies.id, input.id));
+
+        return { success: true };
+      }),
+
+    /**
+     * Bulk add competencies to a position
+     */
+    bulkAdd: hrManagerProcedure
+      .input(z.object({
+        positionId: z.string().uuid(),
+        competencies: z.array(z.object({
+          competencyId: z.string().uuid(),
+          requiredLevel: z.number().min(1).max(10).default(3),
+          isCritical: z.boolean().default(false),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Verify position belongs to tenant
+        const [position] = await ctx.db
+          .select()
+          .from(positions)
+          .where(and(
+            eq(positions.id, input.positionId),
+            eq(positions.tenantId, tenantId)
+          ));
+
+        if (!position) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Poste non trouvé',
+          });
+        }
+
+        // Get existing assignments
+        const existingMappings = await ctx.db
+          .select({ competencyId: jobRoleCompetencies.competencyId })
+          .from(jobRoleCompetencies)
+          .where(and(
+            eq(jobRoleCompetencies.positionId, input.positionId),
+            eq(jobRoleCompetencies.tenantId, tenantId)
+          ));
+
+        const existingCompetencyIds = new Set(existingMappings.map(m => m.competencyId));
+
+        // Filter out already assigned competencies
+        const newCompetencies = input.competencies.filter(
+          c => !existingCompetencyIds.has(c.competencyId)
+        );
+
+        if (newCompetencies.length === 0) {
+          return { added: 0 };
+        }
+
+        // Insert new mappings
+        await ctx.db.insert(jobRoleCompetencies).values(
+          newCompetencies.map(c => ({
+            tenantId,
+            positionId: input.positionId,
+            competencyId: c.competencyId,
+            requiredLevel: c.requiredLevel,
+            isCritical: c.isCritical,
+            createdBy: ctx.user.id,
+          }))
+        );
+
+        return { added: newCompetencies.length };
+      }),
+
+    /**
+     * List positions that have no competencies assigned
+     * Used by the cycle readiness check to identify gaps
+     */
+    listMissing: hrManagerProcedure.query(async ({ ctx }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Find positions with NO competencies assigned
+      const results = await ctx.db
+        .select({
+          id: positions.id,
+          title: positions.title,
+        })
+        .from(positions)
+        .leftJoin(jobRoleCompetencies, and(
+          eq(positions.id, jobRoleCompetencies.positionId),
+          eq(jobRoleCompetencies.tenantId, tenantId)
+        ))
+        .where(and(
+          eq(positions.tenantId, tenantId),
+          eq(positions.status, 'active')
+        ))
+        .groupBy(positions.id)
+        .having(sql`count(${jobRoleCompetencies.id}) = 0`);
+
+      return results.map(p => ({
+        id: p.id,
+        title: p.title,
+      }));
     }),
   }),
 
@@ -1602,6 +2379,303 @@ export const performanceRouter = createTRPCRouter({
   }),
 
   // ============================================================================
+  // EVALUATION GUIDE (Simplified flow for non-HR users)
+  // ============================================================================
+
+  /**
+   * Get status data for the evaluation guide component
+   * Returns progress through the 4-step evaluation flow
+   */
+  getGuideStatus: protectedProcedure.query(async ({ ctx }) => {
+    const tenantId = ctx.user.tenantId;
+
+    // Get most recent active cycle (or most recent cycle if none active)
+    const [activeCycle] = await ctx.db
+      .select({
+        id: performanceCycles.id,
+        name: performanceCycles.name,
+        status: performanceCycles.status,
+        periodStart: performanceCycles.periodStart,
+        periodEnd: performanceCycles.periodEnd,
+        resultsReleaseDate: performanceCycles.resultsReleaseDate,
+        includeSelfEvaluation: performanceCycles.includeSelfEvaluation,
+        includeManagerEvaluation: performanceCycles.includeManagerEvaluation,
+        includeObjectives: performanceCycles.includeObjectives,
+        includeCompetencies: performanceCycles.includeCompetencies,
+        includeCalibration: performanceCycles.includeCalibration,
+      })
+      .from(performanceCycles)
+      .where(and(
+        eq(performanceCycles.tenantId, tenantId),
+        or(
+          eq(performanceCycles.status, 'active'),
+          eq(performanceCycles.status, 'planning'),
+          eq(performanceCycles.status, 'objective_setting')
+        )
+      ))
+      .orderBy(desc(performanceCycles.createdAt))
+      .limit(1);
+
+    // If no active cycle, return empty state
+    if (!activeCycle) {
+      return {
+        activeCycle: null,
+        selfEvalProgress: { completed: 0, total: 0 },
+        managerEvalProgress: { completed: 0, total: 0 },
+        objectivesProgress: { completed: 0, total: 0 },
+        resultsShared: false,
+      };
+    }
+
+    // Get self-evaluation progress
+    const [selfEvalStats] = await ctx.db
+      .select({
+        total: sql<number>`count(*)::int`,
+        completed: sql<number>`count(*) FILTER (WHERE ${evaluations.status} IN ('submitted', 'validated', 'shared'))::int`,
+      })
+      .from(evaluations)
+      .where(and(
+        eq(evaluations.cycleId, activeCycle.id),
+        eq(evaluations.tenantId, tenantId),
+        eq(evaluations.evaluationType, 'self')
+      ));
+
+    // Get manager evaluation progress
+    const [managerEvalStats] = await ctx.db
+      .select({
+        total: sql<number>`count(*)::int`,
+        completed: sql<number>`count(*) FILTER (WHERE ${evaluations.status} IN ('submitted', 'validated', 'shared'))::int`,
+      })
+      .from(evaluations)
+      .where(and(
+        eq(evaluations.cycleId, activeCycle.id),
+        eq(evaluations.tenantId, tenantId),
+        eq(evaluations.evaluationType, 'manager')
+      ));
+
+    // Get objectives progress (count of objectives with individual employees assigned)
+    // "Completed" means objectives have been assigned to employees
+    const [objectivesStats] = await ctx.db
+      .select({
+        total: sql<number>`count(*)::int`,
+        completed: sql<number>`count(*) FILTER (WHERE ${objectives.status} = 'approved')::int`,
+      })
+      .from(objectives)
+      .where(and(
+        eq(objectives.cycleId, activeCycle.id),
+        eq(objectives.tenantId, tenantId)
+      ));
+
+    // Check if results have been shared (cycle is closed or resultsReleaseDate is in the past)
+    const resultsShared = activeCycle.status === 'closed' ||
+      (activeCycle.resultsReleaseDate && new Date(activeCycle.resultsReleaseDate) <= new Date());
+
+    return {
+      activeCycle: {
+        id: activeCycle.id,
+        name: activeCycle.name,
+        status: activeCycle.status,
+        periodStart: activeCycle.periodStart,
+        periodEnd: activeCycle.periodEnd,
+        includeSelfEvaluation: activeCycle.includeSelfEvaluation,
+        includeManagerEvaluation: activeCycle.includeManagerEvaluation,
+        includeObjectives: activeCycle.includeObjectives,
+        includeCompetencies: activeCycle.includeCompetencies,
+        includeCalibration: activeCycle.includeCalibration,
+      },
+      selfEvalProgress: {
+        completed: selfEvalStats?.completed ?? 0,
+        total: selfEvalStats?.total ?? 0,
+      },
+      managerEvalProgress: {
+        completed: managerEvalStats?.completed ?? 0,
+        total: managerEvalStats?.total ?? 0,
+      },
+      objectivesProgress: {
+        completed: objectivesStats?.completed ?? 0,
+        total: objectivesStats?.total ?? 0,
+      },
+      resultsShared: !!resultsShared,
+    };
+  }),
+
+  /**
+   * Get pre-launch readiness checks for a performance cycle
+   * Returns validation checks that must pass before launching the cycle
+   * Used by CycleProgressSidebar to display blockers
+   */
+  getReadinessChecks: hrManagerProcedure
+    .input(z.object({ cycleId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Get cycle
+      const [cycle] = await ctx.db
+        .select()
+        .from(performanceCycles)
+        .where(and(
+          eq(performanceCycles.id, input.cycleId),
+          eq(performanceCycles.tenantId, tenantId)
+        ));
+
+      if (!cycle) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Cycle non trouvé',
+        });
+      }
+
+      type ReadinessCheck = {
+        id: string;
+        label: string;
+        description: string;
+        status: 'passed' | 'failed' | 'warning';
+        blocksLaunch: boolean;
+        actionHref?: string;
+        details?: {
+          count?: number;
+          items?: Array<{ id: string; name: string }>;
+        };
+      };
+
+      const checks: ReadinessCheck[] = [];
+
+      // CHECK 1: Active employees exist
+      const [empCount] = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(employees)
+        .where(and(
+          eq(employees.tenantId, tenantId),
+          eq(employees.status, 'active')
+        ));
+
+      checks.push({
+        id: 'employees',
+        label: 'Employés actifs',
+        description: (empCount?.count ?? 0) > 0
+          ? `${empCount?.count ?? 0} employé(s) seront évalués`
+          : 'Aucun employé actif trouvé',
+        status: (empCount?.count ?? 0) > 0 ? 'passed' : 'failed',
+        blocksLaunch: true,
+        actionHref: '/employees',
+        details: { count: empCount?.count ?? 0 },
+      });
+
+      // CHECK 2: Dates valid
+      const datesValid = cycle.periodStart && cycle.periodEnd &&
+        new Date(cycle.periodStart) < new Date(cycle.periodEnd);
+      checks.push({
+        id: 'dates',
+        label: 'Dates du cycle',
+        description: datesValid
+          ? 'Période correctement configurée'
+          : 'Dates invalides ou manquantes',
+        status: datesValid ? 'passed' : 'failed',
+        blocksLaunch: true,
+        actionHref: `/performance/cycles/${input.cycleId}`,
+      });
+
+      // CHECK 3: Competencies (only if competency evaluation is enabled)
+      if (cycle.includeCompetencies) {
+        // Find active employees with primary positions that have NO competencies assigned
+        const today = new Date().toISOString().split('T')[0];
+
+        const employeesWithoutPositionCompetencies = await ctx.db
+          .select({
+            employeeId: employees.id,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+            positionId: positions.id,
+            positionTitle: positions.title,
+          })
+          .from(employees)
+          .innerJoin(assignments, and(
+            eq(employees.id, assignments.employeeId),
+            eq(assignments.assignmentType, 'primary'),
+            lte(assignments.effectiveFrom, today),
+            or(isNull(assignments.effectiveTo), gte(assignments.effectiveTo, today))
+          ))
+          .innerJoin(positions, eq(assignments.positionId, positions.id))
+          .leftJoin(jobRoleCompetencies, and(
+            eq(positions.id, jobRoleCompetencies.positionId),
+            eq(jobRoleCompetencies.tenantId, tenantId)
+          ))
+          .where(and(
+            eq(employees.tenantId, tenantId),
+            eq(employees.status, 'active')
+          ))
+          .groupBy(
+            employees.id,
+            employees.firstName,
+            employees.lastName,
+            positions.id,
+            positions.title
+          )
+          .having(sql`count(${jobRoleCompetencies.id}) = 0`);
+
+        const missingCount = employeesWithoutPositionCompetencies.length;
+
+        checks.push({
+          id: 'competencies',
+          label: 'Compétences des postes',
+          description: missingCount > 0
+            ? `${missingCount} employé(s) ont des postes sans compétences définies`
+            : 'Tous les postes ont des compétences assignées',
+          status: missingCount > 0 ? 'failed' : 'passed',
+          blocksLaunch: true,
+          actionHref: '/positions?filter=missing-competencies',
+          details: {
+            count: missingCount,
+            items: employeesWithoutPositionCompetencies.slice(0, 5).map(e => ({
+              id: e.positionId,
+              name: `${e.firstName} ${e.lastName} - ${e.positionTitle}`,
+            })),
+          },
+        });
+      }
+
+      // CHECK 4: Objectives (only if objectives are enabled)
+      if (cycle.includeObjectives) {
+        const [objectiveStats] = await ctx.db
+          .select({
+            total: sql<number>`count(*)::int`,
+            approved: sql<number>`count(*) FILTER (WHERE ${objectives.status} = 'approved')::int`,
+          })
+          .from(objectives)
+          .where(and(
+            eq(objectives.cycleId, input.cycleId),
+            eq(objectives.tenantId, tenantId)
+          ));
+
+        const hasApprovedObjectives = (objectiveStats?.approved ?? 0) > 0;
+
+        checks.push({
+          id: 'objectives',
+          label: 'Objectifs définis',
+          description: hasApprovedObjectives
+            ? `${objectiveStats?.approved ?? 0} objectif(s) approuvé(s)`
+            : 'Aucun objectif approuvé pour ce cycle',
+          status: hasApprovedObjectives ? 'passed' : 'failed',
+          blocksLaunch: true,
+          actionHref: `/performance/cycles/${input.cycleId}?tab=objectives`,
+          details: {
+            count: objectiveStats?.approved ?? 0,
+          },
+        });
+      }
+
+      // Compute canLaunch: all blocking checks must pass
+      const canLaunch = checks.every(c => c.status === 'passed' || !c.blocksLaunch);
+
+      return {
+        cycleId: input.cycleId,
+        cycleStatus: cycle.status,
+        checks,
+        canLaunch,
+      };
+    }),
+
+  // ============================================================================
   // DASHBOARD
   // ============================================================================
 
@@ -1751,5 +2825,43 @@ export const performanceRouter = createTRPCRouter({
         overdueObjectives,
       };
     }),
+  }),
+
+  // ============================================================================
+  // DEPARTMENTS (for team objectives)
+  // ============================================================================
+
+  departments: createTRPCRouter({
+    list: protectedProcedure
+      .input(z.object({
+        status: z.enum(['active', 'inactive']).optional(),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+        const conditions = [eq(departments.tenantId, tenantId)];
+
+        if (input?.status) {
+          conditions.push(eq(departments.status, input.status));
+        } else {
+          // Default to active departments
+          conditions.push(eq(departments.status, 'active'));
+        }
+
+        const departmentsList = await ctx.db
+          .select({
+            id: departments.id,
+            name: departments.name,
+            code: departments.code,
+            description: departments.description,
+            parentDepartmentId: departments.parentDepartmentId,
+            managerId: departments.managerId,
+            status: departments.status,
+          })
+          .from(departments)
+          .where(and(...conditions))
+          .orderBy(asc(departments.name));
+
+        return departmentsList;
+      }),
   }),
 });

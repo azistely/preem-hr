@@ -41,7 +41,22 @@ import {
   CheckCircle2,
   AlertCircle,
   Star,
+  Target,
+  Building,
+  Users,
+  TrendingUp,
+  Award,
 } from 'lucide-react';
+import { CompetencyRatingInput, type CompetencyRatingValue } from '@/components/performance/competency-rating-input';
+import { isPercentageScale, type ProficiencyLevel } from '@/lib/constants/competency-scales';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Status badge styling
@@ -115,6 +130,41 @@ const ratingLabels = [
   'Excellent',
 ];
 
+// Objective level icons and labels
+const levelIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  company: Building,
+  team: Users,
+  individual: User,
+};
+
+const levelLabels: Record<string, string> = {
+  company: 'Entreprise',
+  team: 'Équipe',
+  individual: 'Individuel',
+};
+
+const levelColors: Record<string, string> = {
+  company: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
+  team: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
+  individual: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+};
+
+// Objective score type
+type ObjectiveScore = {
+  objectiveId: string;
+  score: number; // 0-100
+  comment: string;
+};
+
+// Competency rating type for form state
+type CompetencyRating = {
+  competencyId: string;
+  rating: number;
+  comment: string;
+  expectedLevel?: number;
+  maxLevel: number;
+};
+
 export default function EvaluationDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -129,6 +179,10 @@ export default function EvaluationDetailPage() {
   const [improvementAreasComment, setImprovementAreasComment] = useState('');
   const [developmentPlanComment, setDevelopmentPlanComment] = useState('');
   const [generalComment, setGeneralComment] = useState('');
+  const [objectiveScores, setObjectiveScores] = useState<Record<string, ObjectiveScore>>({});
+  const [competencyRatings, setCompetencyRatings] = useState<Record<string, CompetencyRating>>({});
+  const [objectivesExpanded, setObjectivesExpanded] = useState(true);
+  const [competenciesExpanded, setCompetenciesExpanded] = useState(true);
 
   const utils = api.useUtils();
 
@@ -148,8 +202,48 @@ export default function EvaluationDetailPage() {
       if (evaluation.improvementAreasComment) setImprovementAreasComment(evaluation.improvementAreasComment);
       if (evaluation.developmentPlanComment) setDevelopmentPlanComment(evaluation.developmentPlanComment);
       if (evaluation.generalComment) setGeneralComment(evaluation.generalComment);
+
+      // Initialize objective scores from loaded data
+      if (evaluation.objectiveScores && evaluation.objectiveScores.length > 0) {
+        const initialScores: Record<string, ObjectiveScore> = {};
+        evaluation.objectiveScores.forEach(score => {
+          initialScores[score.objectiveId] = {
+            objectiveId: score.objectiveId,
+            score: score.score,
+            comment: score.comment ?? '',
+          };
+        });
+        setObjectiveScores(initialScores);
+      }
+
+      // Initialize competency ratings from loaded data
+      if (evaluation.competencyRatings && evaluation.competencyRatings.length > 0 && evaluation.positionCompetencies) {
+        const initialRatings: Record<string, CompetencyRating> = {};
+        evaluation.competencyRatings.forEach(rating => {
+          // Find the position competency to get maxLevel
+          const posCompetency = evaluation.positionCompetencies?.find(pc => pc.competency.id === rating.competencyId);
+          const proficiencyLevels = posCompetency?.proficiencyLevels ?? [];
+          const maxLevel = proficiencyLevels.length > 0
+            ? Math.max(...proficiencyLevels.map(l => l.level))
+            : 5;
+
+          initialRatings[rating.competencyId] = {
+            competencyId: rating.competencyId,
+            rating: rating.rating,
+            comment: rating.comment ?? '',
+            expectedLevel: rating.expectedLevel ?? undefined,
+            maxLevel,
+          };
+        });
+        setCompetencyRatings(initialRatings);
+      }
     }
   }, [evaluation]);
+
+  // Create map for self-evaluation scores (for manager evaluations)
+  const selfEvalScoresMap = new Map(
+    (evaluation?.selfEvalObjectiveScores ?? []).map(s => [s.objectiveId, s])
+  );
 
   // Save draft mutation
   const saveDraft = api.performance.evaluations.saveDraft.useMutation({
@@ -177,31 +271,102 @@ export default function EvaluationDetailPage() {
     },
   });
 
+  // Update objective score
+  const updateObjectiveScore = useCallback((objectiveId: string, score: number, comment: string = '') => {
+    setObjectiveScores(prev => ({
+      ...prev,
+      [objectiveId]: { objectiveId, score, comment },
+    }));
+  }, []);
+
+  // Update competency rating
+  const updateCompetencyRating = useCallback((
+    competencyId: string,
+    value: CompetencyRatingValue,
+    expectedLevel: number | undefined,
+    maxLevel: number
+  ) => {
+    setCompetencyRatings(prev => ({
+      ...prev,
+      [competencyId]: {
+        competencyId,
+        rating: value.rating,
+        comment: value.comment,
+        expectedLevel,
+        maxLevel,
+      },
+    }));
+  }, []);
+
+  // Calculate average objective score (weighted if weights exist)
+  const calculateObjectivesScore = useCallback(() => {
+    const objectives = evaluation?.objectives ?? [];
+    if (objectives.length === 0) return null;
+
+    const scoredObjectives = objectives.filter(obj => objectiveScores[obj.id]?.score !== undefined);
+    if (scoredObjectives.length === 0) return null;
+
+    let totalWeight = 0;
+    let weightedSum = 0;
+
+    scoredObjectives.forEach(obj => {
+      const weight = obj.weight ? parseFloat(obj.weight) : 1;
+      const score = objectiveScores[obj.id]?.score ?? 0;
+      weightedSum += score * weight;
+      totalWeight += weight;
+    });
+
+    return totalWeight > 0 ? Math.round(weightedSum / totalWeight) : null;
+  }, [evaluation?.objectives, objectiveScores]);
+
+  const objectivesAverageScore = calculateObjectivesScore();
+
   // Save handler
   const handleSave = useCallback(() => {
     setIsSaving(true);
     saveDraft.mutate({
       id: evaluationId,
-      responses: {},
+      responses: { objectiveScores },
       overallRating: overallRating.toString(),
     });
-  }, [evaluationId, overallRating, saveDraft]);
+  }, [evaluationId, overallRating, objectiveScores, saveDraft]);
 
   // Submit handler
   const handleSubmit = useCallback(() => {
+    // Convert objectiveScores from Record to Array
+    const objectiveScoresArray = Object.values(objectiveScores).map(score => ({
+      objectiveId: score.objectiveId,
+      score: score.score,
+      comment: score.comment || undefined,
+    }));
+
+    // Convert competencyRatings from Record to Array
+    const competencyRatingsArray = Object.values(competencyRatings).map(rating => ({
+      competencyId: rating.competencyId,
+      rating: rating.rating,
+      comment: rating.comment || undefined,
+      expectedLevel: rating.expectedLevel,
+      maxLevel: rating.maxLevel,
+    }));
+
     submitEvaluation.mutate({
       id: evaluationId,
-      responses: {},
+      responses: { objectiveScores }, // Keep for backward compatibility
       overallRating: overallRating.toString(),
+      overallScore: objectivesAverageScore?.toString(),
       strengthsComment,
       improvementAreasComment,
       developmentPlanComment,
+      objectiveScores: objectiveScoresArray.length > 0 ? objectiveScoresArray : undefined,
+      competencyRatings: competencyRatingsArray.length > 0 ? competencyRatingsArray : undefined,
     });
-  }, [evaluationId, overallRating, strengthsComment, improvementAreasComment, developmentPlanComment, submitEvaluation]);
+  }, [evaluationId, overallRating, objectiveScores, objectivesAverageScore, strengthsComment, improvementAreasComment, developmentPlanComment, competencyRatings, submitEvaluation]);
 
   // Validation
   const canSubmit = overallRating > 0;
   const isEditable = evaluation?.status === 'pending' || evaluation?.status === 'in_progress';
+  const hasObjectives = (evaluation?.objectives?.length ?? 0) > 0;
+  const hasCompetencies = (evaluation?.positionCompetencies?.length ?? 0) > 0;
 
   if (isLoading) {
     return (
@@ -331,6 +496,271 @@ export default function EvaluationDetailPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Objectives Section */}
+      {hasObjectives && (
+        <Collapsible open={objectivesExpanded} onOpenChange={setObjectivesExpanded}>
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <Target className="h-5 w-5" />
+                    Objectifs à évaluer
+                  </CardTitle>
+                  <Badge variant="secondary">
+                    {evaluation.objectives?.length} objectif{(evaluation.objectives?.length ?? 0) > 1 ? 's' : ''}
+                  </Badge>
+                  {objectivesAverageScore !== null && (
+                    <Badge variant={objectivesAverageScore >= 70 ? 'default' : objectivesAverageScore >= 50 ? 'secondary' : 'destructive'}>
+                      Score moyen: {objectivesAverageScore}%
+                    </Badge>
+                  )}
+                </div>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    {objectivesExpanded ? (
+                      <>
+                        Réduire
+                        <ChevronUp className="ml-2 h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        Voir les objectifs
+                        <ChevronDown className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+              <CardDescription>
+                {evaluation.evaluationType === 'self'
+                  ? 'Évaluez votre propre atteinte de chaque objectif (0-100%)'
+                  : 'Évaluez l\'atteinte de chaque objectif par l\'employé (0-100%)'}
+              </CardDescription>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-4 pt-0">
+                {/* Group objectives by level */}
+                {['company', 'team', 'individual'].map(level => {
+                  const levelObjectives = evaluation.objectives?.filter(o => o.objectiveLevel === level) ?? [];
+                  if (levelObjectives.length === 0) return null;
+
+                  const LevelIcon = levelIcons[level] || Target;
+
+                  return (
+                    <div key={level} className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-1.5 rounded ${levelColors[level]}`}>
+                          <LevelIcon className="h-4 w-4" />
+                        </div>
+                        <span className="font-medium text-sm">{levelLabels[level]}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {levelObjectives.length}
+                        </Badge>
+                      </div>
+
+                      <div className="space-y-3 pl-8">
+                        {levelObjectives.map(objective => {
+                          const currentScore = objectiveScores[objective.id]?.score;
+                          const hasScore = currentScore !== undefined;
+
+                          return (
+                            <div
+                              key={objective.id}
+                              className="p-4 border rounded-lg space-y-3 bg-card hover:bg-muted/50 transition-colors"
+                            >
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <h4 className="font-medium">{objective.title}</h4>
+                                    {objective.weight && (
+                                      <Badge variant="outline" className="text-xs">
+                                        Poids: {objective.weight}%
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {objective.description && (
+                                    <p className="text-sm text-muted-foreground mb-2">
+                                      {objective.description}
+                                    </p>
+                                  )}
+                                  {objective.targetValue && (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <TrendingUp className="h-3 w-3" />
+                                      <span>
+                                        Cible: {objective.targetValue}
+                                        {objective.targetUnit && ` ${objective.targetUnit}`}
+                                        {objective.currentValue && (
+                                          <span className="text-foreground font-medium">
+                                            {' '}• Actuel: {objective.currentValue}
+                                            {objective.targetUnit && ` ${objective.targetUnit}`}
+                                          </span>
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Score input */}
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-4">
+                                  <Label className="text-sm whitespace-nowrap">
+                                    Score d'atteinte
+                                  </Label>
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      value={currentScore ?? ''}
+                                      onChange={(e) => {
+                                        const value = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                        updateObjectiveScore(objective.id, value);
+                                      }}
+                                      disabled={!isEditable}
+                                      placeholder="0-100"
+                                      className="w-24 min-h-[44px]"
+                                    />
+                                    <span className="text-sm text-muted-foreground">%</span>
+                                    {hasScore && (
+                                      <Progress
+                                        value={currentScore}
+                                        className="flex-1 h-2"
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4 pl-[100px]">
+                                  {hasScore && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {currentScore >= 90 ? '🌟 Excellent' :
+                                       currentScore >= 70 ? '✅ Atteint' :
+                                       currentScore >= 50 ? '⚠️ Partiellement atteint' :
+                                       '❌ Non atteint'}
+                                    </p>
+                                  )}
+                                  {/* Show self-evaluation score for manager evaluations */}
+                                  {evaluation.evaluationType === 'manager' && selfEvalScoresMap.has(objective.id) && (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-blue-50 dark:bg-blue-950 px-2 py-1 rounded">
+                                      <User className="h-3 w-3" />
+                                      <span>Auto-évaluation: {selfEvalScoresMap.get(objective.id)?.score}%</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Summary */}
+                {objectivesAverageScore !== null && (
+                  <div className="mt-4 p-4 bg-muted rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Score moyen des objectifs</span>
+                      <div className="flex items-center gap-2">
+                        <Progress value={objectivesAverageScore} className="w-32 h-3" />
+                        <span className="font-bold text-lg">{objectivesAverageScore}%</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+      )}
+
+      {/* Competencies Section */}
+      {hasCompetencies && (
+        <Collapsible open={competenciesExpanded} onOpenChange={setCompetenciesExpanded}>
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <Award className="h-5 w-5" />
+                    Compétences du poste
+                  </CardTitle>
+                  <Badge variant="secondary">
+                    {evaluation?.positionCompetencies?.length} compétence{(evaluation?.positionCompetencies?.length ?? 0) > 1 ? 's' : ''}
+                  </Badge>
+                </div>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    {competenciesExpanded ? (
+                      <>
+                        Réduire
+                        <ChevronUp className="ml-2 h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        Voir les compétences
+                        <ChevronDown className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+              <CardDescription>
+                {evaluation?.evaluationType === 'self'
+                  ? 'Évaluez votre niveau de maîtrise pour chaque compétence'
+                  : 'Évaluez le niveau de maîtrise de l\'employé pour chaque compétence'}
+              </CardDescription>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-4 pt-0">
+                {evaluation?.positionCompetencies?.map((posCompetency) => {
+                  const competency = posCompetency.competency;
+                  const proficiencyLevels = posCompetency.proficiencyLevels as ProficiencyLevel[];
+                  // Check if this is a percentage scale based on the proficiency levels
+                  const isPercentage = proficiencyLevels.some(l => l.level === 100) && proficiencyLevels.length <= 5;
+                  const maxLevel = isPercentage
+                    ? 100
+                    : proficiencyLevels.length > 0
+                      ? Math.max(...proficiencyLevels.map(l => l.level))
+                      : 5;
+
+                  const currentRating = competencyRatings[competency.id];
+                  // selfRating is the full competency_ratings row from position competencies
+                  const selfRatingValue = posCompetency.selfRating?.rating;
+
+                  return (
+                    <CompetencyRatingInput
+                      key={competency.id}
+                      competency={{
+                        id: competency.id,
+                        name: competency.name,
+                        description: competency.description,
+                        category: competency.category,
+                      }}
+                      proficiencyLevels={proficiencyLevels}
+                      requiredLevel={posCompetency.requiredLevel}
+                      isCritical={posCompetency.isCritical}
+                      value={currentRating ? { rating: currentRating.rating, comment: currentRating.comment } : undefined}
+                      selfRating={selfRatingValue}
+                      onChange={(value) => updateCompetencyRating(
+                        competency.id,
+                        value,
+                        posCompetency.requiredLevel,
+                        maxLevel
+                      )}
+                      evaluationType={evaluation.evaluationType as 'self' | 'manager'}
+                      disabled={!isEditable}
+                      isPercentageScale={isPercentage}
+                    />
+                  );
+                })}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       )}
 
       {/* Evaluation Form */}

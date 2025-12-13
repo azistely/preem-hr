@@ -82,6 +82,33 @@ export const OnboardingStateSchema = z.object({
 });
 
 /**
+ * Competency Scale Types
+ * Available rating scales for competency evaluation
+ */
+export const CompetencyScaleType = z.enum([
+  "french_descriptive", // Non acquis → Expert (1-5)
+  "numeric_1_5",        // 1-5 simple numeric
+  "numeric_1_4",        // 1-4 (no neutral option)
+  "numeric_1_3",        // 1-3 simple
+  "numeric_1_10",       // 1-10 detailed
+  "letter_grade",       // A-F grades
+  "percentage",         // 0-100% slider
+  "custom",             // Custom defined levels
+]);
+
+export type CompetencyScaleType = z.infer<typeof CompetencyScaleType>;
+
+/**
+ * Performance Settings
+ * Configuration for performance management module
+ */
+export const PerformanceSettingsSchema = z.object({
+  // Default competency rating scale for the organization
+  // Can be overridden at individual competency level
+  defaultCompetencyScale: CompetencyScaleType.optional().default("french_descriptive"),
+});
+
+/**
  * Tenant Settings (Complete)
  * Top-level schema that encompasses all tenant configuration
  */
@@ -105,6 +132,9 @@ export const TenantSettingsSchema = z.object({
     description: z.string().optional(),
   })).optional(),
 
+  // Performance management settings
+  performance: PerformanceSettingsSchema.optional(),
+
   // Allow additional fields for future extensions
 }).passthrough();
 
@@ -115,6 +145,7 @@ export type CompanyGeneralInfo = z.infer<typeof CompanyGeneralInfoSchema>;
 export type CompanyLegalInfo = z.infer<typeof CompanyLegalInfoSchema>;
 export type FundAccount = z.infer<typeof FundAccountSchema>;
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
+export type PerformanceSettings = z.infer<typeof PerformanceSettingsSchema>;
 export type TenantSettings = z.infer<typeof TenantSettingsSchema>;
 
 /**

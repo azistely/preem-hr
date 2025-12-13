@@ -55,8 +55,10 @@ import {
   BarChart3,
   UserCheck,
   FileText,
+  Share2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useSearchParams } from 'next/navigation';
 
 // Status badge colors
 const statusColors: Record<string, string> = {
@@ -101,10 +103,13 @@ const evaluationStatusColors: Record<string, string> = {
 export default function CycleDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const cycleId = params.id as string;
+  const actionParam = searchParams.get('action'); // Support ?action=release from guide
 
   const [showLaunchDialog, setShowLaunchDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(actionParam === 'release'); // Open share dialog if action=release
   const [selectedTab, setSelectedTab] = useState('overview');
 
   const utils = api.useUtils();
@@ -125,6 +130,13 @@ export default function CycleDetailPage() {
   const { data: objectivesData, isLoading: objectivesLoading } = api.performance.objectives.list.useQuery(
     { cycleId, limit: 50 },
     { enabled: !!cycleId }
+  );
+
+  // Fetch readiness checks for pre-launch validation (hard block per plan)
+  const shouldFetchReadiness = cycle && (cycle.status === 'planning' || cycle.status === 'objective_setting');
+  const { data: readinessData } = api.performance.getReadinessChecks.useQuery(
+    { cycleId },
+    { enabled: !!cycleId && !!shouldFetchReadiness }
   );
 
   // Mutations
@@ -157,6 +169,21 @@ export default function CycleDetailPage() {
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la suppression');
+    },
+  });
+
+  // Release results mutation - mark cycle as closed and evaluations as shared
+  const releaseResults = api.performance.cycles.updateStatus.useMutation({
+    onSuccess: () => {
+      toast.success('Resultats partages avec les employes');
+      setShowShareDialog(false);
+      utils.performance.cycles.getById.invalidate({ id: cycleId });
+      utils.performance.evaluations.list.invalidate({ cycleId });
+      // Clear the action param from URL
+      router.replace(`/performance/cycles/${cycleId}`);
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erreur lors du partage des resultats');
     },
   });
 
@@ -208,9 +235,26 @@ export default function CycleDetailPage() {
   const managerEvaluations = evaluations.filter((e) => e.evaluationType === 'manager');
 
   // Status actions
-  const canLaunch = cycle.status === 'planning' || cycle.status === 'objective_setting';
+  // Can launch when:
+  // - Status check + objectives check (legacy)
+  // - AND readiness checks pass (hard block per plan - competencies, employees, dates)
+  const hasApprovedObjectives = objectives.filter(o => o.status === 'approved').length > 0;
+  const needsObjectives = cycle.includeObjectives && !hasApprovedObjectives &&
+    (cycle.status === 'planning' || cycle.status === 'objective_setting');
+  const statusAllowsLaunch = cycle.includeObjectives
+    ? cycle.status === 'objective_setting' && hasApprovedObjectives  // Must define objectives first
+    : (cycle.status === 'planning' || cycle.status === 'objective_setting');
+  // Hard block: readiness checks must pass (includes competencies, employees, dates, objectives)
+  const readinessAllowsLaunch = readinessData?.canLaunch ?? false;
+  // Can only launch if both status conditions AND readiness checks pass
+  const canLaunch = statusAllowsLaunch && readinessAllowsLaunch;
+  const failedReadinessChecks = readinessData?.checks.filter(c => c.status === 'failed') ?? [];
   const canDelete = cycle.status === 'planning';
   const canClose = cycle.status === 'active' || cycle.status === 'calibration';
+  // Can share when all evaluations are complete (or at least cycle is active/calibration)
+  const allEvaluationsComplete = evaluations.length > 0 &&
+    evaluations.every(e => ['submitted', 'validated', 'shared'].includes(e.status));
+  const canShareResults = (cycle.status === 'active' || cycle.status === 'calibration') && allEvaluationsComplete;
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -255,17 +299,55 @@ export default function CycleDetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {canLaunch && (
+          {/* Button to go to objectives tab - shown when objectives need to be defined */}
+          {needsObjectives && (
             <Button
-              onClick={() => setShowLaunchDialog(true)}
+              onClick={() => {
+                // If still in planning, transition to objective_setting first
+                if (cycle.status === 'planning') {
+                  updateStatus.mutate({ id: cycleId, status: 'objective_setting' });
+                }
+                // Switch to objectives tab
+                setSelectedTab('objectives');
+              }}
+              disabled={updateStatus.isPending}
               className="min-h-[48px]"
             >
-              <Play className="mr-2 h-4 w-4" />
-              Lancer le cycle
+              <Target className="mr-2 h-4 w-4" />
+              Définir les objectifs
             </Button>
           )}
 
-          {canClose && (
+          {/* Launch button - hard blocked until ALL readiness checks pass */}
+          {statusAllowsLaunch && (
+            <div className="flex flex-col items-start gap-1">
+              <Button
+                onClick={() => setShowLaunchDialog(true)}
+                className="min-h-[48px]"
+                disabled={!canLaunch}
+              >
+                <Play className="mr-2 h-4 w-4" />
+                {canLaunch ? 'Lancer le cycle' : 'Résoudre les problèmes'}
+              </Button>
+              {!canLaunch && failedReadinessChecks.length > 0 && (
+                <span className="text-xs text-destructive">
+                  {failedReadinessChecks.length} vérification{failedReadinessChecks.length > 1 ? 's' : ''} à résoudre
+                </span>
+              )}
+            </div>
+          )}
+
+          {canShareResults && (
+            <Button
+              onClick={() => setShowShareDialog(true)}
+              className="min-h-[48px] bg-green-600 hover:bg-green-700"
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              Partager les résultats
+            </Button>
+          )}
+
+          {canClose && !canShareResults && (
             <Button
               variant="outline"
               onClick={() => updateStatus.mutate({ id: cycleId, status: 'closed' })}
@@ -866,6 +948,82 @@ export default function CycleDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Share Results Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={(open) => {
+        setShowShareDialog(open);
+        // Clear URL param when closing dialog
+        if (!open && actionParam === 'release') {
+          router.replace(`/performance/cycles/${cycleId}`);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-green-600" />
+              Partager les résultats
+            </DialogTitle>
+            <DialogDescription>
+              Les employés pourront voir leurs évaluations et les notes de leur manager.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {/* Summary */}
+            <div className="rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+                <p className="font-medium text-green-800 dark:text-green-200">Prêt à partager</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Évaluations</p>
+                  <p className="font-medium">{evaluations.length} terminées</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Employés concernés</p>
+                  <p className="font-medium">
+                    {new Set(evaluations.map(e => e.employeeId)).size} personnes
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* What happens */}
+            <div className="rounded-lg bg-muted p-4">
+              <p className="text-sm font-medium mb-2">Ce qui va se passer:</p>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Les employés recevront une notification</li>
+                <li>• Ils pourront consulter leur évaluation complète</li>
+                <li>• Le cycle sera marqué comme clôturé</li>
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowShareDialog(false);
+                if (actionParam === 'release') {
+                  router.replace(`/performance/cycles/${cycleId}`);
+                }
+              }}
+              className="min-h-[48px]"
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={() => releaseResults.mutate({ id: cycleId, status: 'closed' })}
+              disabled={releaseResults.isPending}
+              className="min-h-[48px] bg-green-600 hover:bg-green-700"
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              {releaseResults.isPending ? 'Partage en cours...' : 'Confirmer le partage'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

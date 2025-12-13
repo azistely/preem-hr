@@ -107,6 +107,7 @@ export default function NewObjectivePage() {
   const [targetUnit, setTargetUnit] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [employeeId, setEmployeeId] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
 
   // Fetch cycles
   const { data: cyclesData, isLoading: cyclesLoading } = api.performance.cycles.list.useQuery({
@@ -118,6 +119,11 @@ export default function NewObjectivePage() {
   const { data: employeesData, isLoading: employeesLoading } = api.employees.list.useQuery({
     status: 'active',
     limit: 100,
+  });
+
+  // Fetch departments (for team objectives)
+  const { data: departmentsData, isLoading: departmentsLoading } = api.performance.departments.list.useQuery({
+    status: 'active',
   });
 
   // Create mutation
@@ -133,6 +139,7 @@ export default function NewObjectivePage() {
 
   const cycles = cyclesData?.data ?? [];
   const employees = employeesData?.employees ?? [];
+  const departmentsList = departmentsData ?? [];
 
   // Set default cycle if only one active
   useEffect(() => {
@@ -165,6 +172,7 @@ export default function NewObjectivePage() {
       targetUnit: targetUnit || undefined,
       dueDate: dueDate || undefined,
       employeeId: objectiveLevel === 'individual' && employeeId ? employeeId : undefined,
+      departmentId: objectiveLevel === 'team' && departmentId ? departmentId : undefined,
     });
   };
 
@@ -269,7 +277,54 @@ export default function NewObjectivePage() {
           </CardContent>
         </Card>
 
-        {/* Step 2b: Select Employee (for individual objectives) */}
+        {/* Step 2b: Select Department (for team objectives) */}
+        {objectiveLevel === 'team' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Département / Équipe concerné
+              </CardTitle>
+              <CardDescription>
+                À quelle équipe ou département est attribué cet objectif ?
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {departmentsLoading ? (
+                <Skeleton className="h-12 w-full" />
+              ) : departmentsList.length === 0 ? (
+                <div className="text-center py-4">
+                  <p className="text-muted-foreground mb-2">
+                    Aucun département configuré
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Contactez votre administrateur pour créer des départements
+                  </p>
+                </div>
+              ) : (
+                <Select value={departmentId} onValueChange={setDepartmentId}>
+                  <SelectTrigger className="min-h-[48px]">
+                    <SelectValue placeholder="Choisir un département..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentsList.map((dept) => (
+                      <SelectItem key={dept.id} value={dept.id}>
+                        {dept.name}
+                        {dept.code && (
+                          <span className="text-muted-foreground ml-2">
+                            ({dept.code})
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Step 2c: Select Employee (for individual objectives) */}
         {objectiveLevel === 'individual' && (
           <Card>
             <CardHeader>

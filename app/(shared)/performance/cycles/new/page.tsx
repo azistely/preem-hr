@@ -48,21 +48,22 @@ import {
   Target,
   ClipboardList,
   Star,
+  Award,
 } from 'lucide-react';
 
-// Wizard steps
+// Wizard steps - Simple user-friendly labels
 const STEPS = [
-  { id: 'basics', title: 'Informations', icon: ClipboardList },
-  { id: 'period', title: 'Période', icon: CalendarIcon },
-  { id: 'options', title: 'Options', icon: Target },
-  { id: 'confirm', title: 'Confirmation', icon: Check },
+  { id: 'basics', title: 'Type', icon: ClipboardList },
+  { id: 'period', title: 'Dates', icon: CalendarIcon },
+  { id: 'options', title: 'Etapes', icon: Target },
+  { id: 'confirm', title: 'Resume', icon: Check },
 ];
 
-// Cycle types with French labels (must match API enum)
+// Cycle types with user-friendly French labels (must match API enum)
 const CYCLE_TYPES = [
-  { value: 'annual', label: 'Évaluation annuelle', description: 'Une fois par an' },
-  { value: 'semi_annual', label: 'Évaluation semestrielle', description: 'Deux fois par an' },
-  { value: 'quarterly', label: 'Évaluation trimestrielle', description: 'Quatre fois par an' },
+  { value: 'annual', label: 'Une fois par an', description: 'Recommande pour la plupart des entreprises', recommended: true },
+  { value: 'semi_annual', label: 'Deux fois par an', description: 'Ideal pour un suivi plus frequent' },
+  { value: 'quarterly', label: 'Quatre fois par an', description: 'Pour les equipes agiles' },
 ] as const;
 
 type CycleType = 'annual' | 'semi_annual' | 'quarterly';
@@ -77,6 +78,7 @@ interface FormData {
   includeManagerEvaluation: boolean;
   includePeerFeedback: boolean;
   includeObjectives: boolean;
+  includeCompetencies: boolean;
   includeCalibration: boolean;
   selfEvaluationDeadline: Date | null;
   managerEvaluationDeadline: Date | null;
@@ -104,6 +106,7 @@ export default function NewPerformanceCyclePage() {
     includeManagerEvaluation: true,
     includePeerFeedback: false,
     includeObjectives: true,
+    includeCompetencies: true,
     includeCalibration: false,
     selfEvaluationDeadline: addMonths(defaultEnd, 1),
     managerEvaluationDeadline: addMonths(defaultEnd, 2),
@@ -219,6 +222,7 @@ export default function NewPerformanceCyclePage() {
       includeManagerEvaluation: formData.includeManagerEvaluation,
       includePeerFeedback: formData.includePeerFeedback,
       includeObjectives: formData.includeObjectives,
+      includeCompetencies: formData.includeCompetencies,
       includeCalibration: formData.includeCalibration,
       selfEvaluationDeadline: formData.selfEvaluationDeadline?.toISOString().split('T')[0],
       managerEvaluationDeadline: formData.managerEvaluationDeadline?.toISOString().split('T')[0],
@@ -236,9 +240,9 @@ export default function NewPerformanceCyclePage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Nouveau cycle d'évaluation</h1>
+          <h1 className="text-2xl font-bold">Lancer une evaluation</h1>
           <p className="text-muted-foreground">
-            Étape {currentStep + 1} sur {STEPS.length}
+            Etape {currentStep + 1} sur {STEPS.length}: {STEPS[currentStep].title}
           </p>
         </div>
       </div>
@@ -283,11 +287,14 @@ export default function NewPerformanceCyclePage() {
           {/* Step 1: Basics */}
           {currentStep === 0 && (
             <div className="space-y-6">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="cycleType" className="text-base font-medium">
-                  Type de cycle <span className="text-destructive">*</span>
+                  A quelle frequence voulez-vous evaluer?
                 </Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <p className="text-sm text-muted-foreground -mt-1">
+                  Choisissez la periodicite qui convient a votre entreprise
+                </p>
+                <div className="grid grid-cols-1 gap-3">
                   {CYCLE_TYPES.map((type) => (
                     <button
                       key={type.value}
@@ -299,7 +306,12 @@ export default function NewPerformanceCyclePage() {
                           : 'border-muted hover:border-primary/50'
                       }`}
                     >
-                      <div className="font-medium">{type.label}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{type.label}</div>
+                        {'recommended' in type && type.recommended && (
+                          <Badge variant="secondary" className="text-xs">Recommande</Badge>
+                        )}
+                      </div>
                       <div className="text-sm text-muted-foreground">{type.description}</div>
                     </button>
                   ))}
@@ -308,26 +320,29 @@ export default function NewPerformanceCyclePage() {
 
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-base font-medium">
-                  Nom du cycle <span className="text-destructive">*</span>
+                  Donnez un nom a cette evaluation
                 </Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => updateFormData({ name: e.target.value })}
-                  placeholder="Ex: Évaluation annuelle 2024"
+                  placeholder="Ex: Evaluation annuelle 2024"
                   className="min-h-[48px]"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Ce nom sera visible par tous les employes
+                </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="description" className="text-base font-medium">
-                  Description (optionnel)
+                  Ajoutez une description (optionnel)
                 </Label>
                 <Textarea
                   id="description"
                   value={formData.description}
                   onChange={(e) => updateFormData({ description: e.target.value })}
-                  placeholder="Décrivez les objectifs de ce cycle d'évaluation..."
+                  placeholder="Ex: Evaluation de fin d'annee pour tous les employes..."
                   rows={3}
                 />
               </div>
@@ -416,7 +431,12 @@ export default function NewPerformanceCyclePage() {
           {currentStep === 2 && (
             <div className="space-y-6">
               <div className="space-y-4">
-                <Label className="text-base font-medium">Composantes de l'évaluation</Label>
+                <div>
+                  <Label className="text-base font-medium">Quelles etapes pour cette evaluation?</Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Cochez les etapes que vous souhaitez inclure dans ce cycle
+                  </p>
+                </div>
 
                 <div className="space-y-3">
                   <label className="flex items-start gap-3 p-4 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
@@ -428,9 +448,12 @@ export default function NewPerformanceCyclePage() {
                       className="mt-1"
                     />
                     <div>
-                      <div className="font-medium">Auto-évaluation</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">Les employes s'evaluent eux-memes</div>
+                        <Badge variant="secondary" className="text-xs">Recommande</Badge>
+                      </div>
                       <div className="text-sm text-muted-foreground">
-                        L'employé évalue sa propre performance
+                        Chaque employe note sa propre performance avant votre evaluation
                       </div>
                     </div>
                   </label>
@@ -444,9 +467,12 @@ export default function NewPerformanceCyclePage() {
                       className="mt-1"
                     />
                     <div>
-                      <div className="font-medium">Évaluation manager</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">Vous evaluez vos employes</div>
+                        <Badge variant="secondary" className="text-xs">Recommande</Badge>
+                      </div>
                       <div className="text-sm text-muted-foreground">
-                        Le manager évalue la performance de l'employé
+                        Vous notez la performance de chaque employe
                       </div>
                     </div>
                   </label>
@@ -460,10 +486,11 @@ export default function NewPerformanceCyclePage() {
                       className="mt-1"
                     />
                     <div>
-                      <div className="font-medium">Feedback des pairs</div>
+                      <div className="font-medium">Les collegues donnent leur avis</div>
                       <div className="text-sm text-muted-foreground">
-                        Les collègues peuvent donner leur feedback
+                        Permet aux collegues de donner un feedback sur les autres membres de l'equipe
                       </div>
+                      <Badge variant="outline" className="mt-1 text-xs">Optionnel</Badge>
                     </div>
                   </label>
 
@@ -476,14 +503,34 @@ export default function NewPerformanceCyclePage() {
                       className="mt-1"
                     />
                     <div>
-                      <div className="font-medium">Objectifs</div>
+                      <div className="font-medium">Suivre les objectifs</div>
                       <div className="text-sm text-muted-foreground">
-                        Suivi des objectifs individuels et d'équipe
+                        Definir et suivre les objectifs de chaque employe pendant ce cycle
                       </div>
+                      <Badge variant="outline" className="mt-1 text-xs">Optionnel</Badge>
                     </div>
                   </label>
 
                   <label className="flex items-start gap-3 p-4 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
+                    <Checkbox
+                      checked={formData.includeCompetencies}
+                      onCheckedChange={(checked) =>
+                        updateFormData({ includeCompetencies: !!checked })
+                      }
+                      className="mt-1"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">Evaluer les competences</div>
+                        <Badge variant="secondary" className="text-xs">Recommande</Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Evaluer les competences techniques et comportementales associees au poste
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-3 p-4 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors bg-muted/20">
                     <Checkbox
                       checked={formData.includeCalibration}
                       onCheckedChange={(checked) =>
@@ -492,11 +539,11 @@ export default function NewPerformanceCyclePage() {
                       className="mt-1"
                     />
                     <div>
-                      <div className="font-medium">Calibration</div>
+                      <div className="font-medium text-muted-foreground">Harmoniser les notes (Calibration)</div>
                       <div className="text-sm text-muted-foreground">
-                        Session de calibration pour harmoniser les évaluations
+                        Session de revue pour harmoniser les notes entre evaluateurs
                       </div>
-                      <Badge variant="outline" className="mt-1">Grandes entreprises</Badge>
+                      <Badge variant="outline" className="mt-1 text-xs">Grandes entreprises (50+ employes)</Badge>
                     </div>
                   </label>
                 </div>
@@ -542,13 +589,16 @@ export default function NewPerformanceCyclePage() {
                       <Badge variant="secondary">Auto-évaluation</Badge>
                     )}
                     {formData.includeManagerEvaluation && (
-                      <Badge variant="secondary">Évaluation manager</Badge>
+                      <Badge variant="secondary">Évaluation RH</Badge>
                     )}
                     {formData.includePeerFeedback && (
                       <Badge variant="secondary">Feedback pairs</Badge>
                     )}
                     {formData.includeObjectives && (
                       <Badge variant="secondary">Objectifs</Badge>
+                    )}
+                    {formData.includeCompetencies && (
+                      <Badge variant="secondary">Compétences</Badge>
                     )}
                     {formData.includeCalibration && (
                       <Badge variant="secondary">Calibration</Badge>

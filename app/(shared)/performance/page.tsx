@@ -104,7 +104,7 @@ export default function PerformanceDashboard() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Gestion de la Performance</h1>
           <p className="text-muted-foreground">
-            Évaluations, objectifs et développement des compétences
+            Evaluations, objectifs et developpement des competences
           </p>
         </div>
         <div className="flex gap-2">

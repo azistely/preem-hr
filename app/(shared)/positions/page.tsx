@@ -1,7 +1,8 @@
 /**
  * Positions List Page
  *
- * Lists all positions with create/edit actions
+ * Lists all positions with create/edit actions.
+ * Supports ?filter=missing-competencies to show only positions without competencies.
  */
 
 'use client';
@@ -16,13 +17,42 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Briefcase, Loader2, Network } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Briefcase, Loader2, Network, AlertTriangle, X } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { usePositions } from '@/features/employees/hooks/use-positions';
 import { formatCurrency } from '@/features/employees/hooks/use-salary-validation';
+import { api } from '@/trpc/react';
+import { useMemo } from 'react';
 
 export default function PositionsPage() {
+  const searchParams = useSearchParams();
+  const filterMissing = searchParams.get('filter') === 'missing-competencies';
+
   const { data: positions, isLoading, error } = usePositions('active');
+
+  // Fetch positions with missing competencies when filtered
+  const { data: positionsWithMissing, isLoading: missingLoading } =
+    api.performance.positionCompetencies.listMissing.useQuery(undefined, {
+      enabled: filterMissing,
+    });
+
+  // Create a Set of position IDs with missing competencies for efficient lookup
+  const missingCompetenciesIds = useMemo(() => {
+    if (!positionsWithMissing) return new Set<string>();
+    return new Set(positionsWithMissing.map((p) => p.id));
+  }, [positionsWithMissing]);
+
+  // Filter positions based on the filter query param
+  const displayedPositions = useMemo(() => {
+    if (!positions) return [];
+    if (!filterMissing) return positions;
+    return positions.filter((p: any) => missingCompetenciesIds.has(p.id));
+  }, [positions, filterMissing, missingCompetenciesIds]);
+
+  const isLoadingAny = isLoading || (filterMissing && missingLoading);
 
   return (
     <div className="container mx-auto py-8">
@@ -54,8 +84,27 @@ export default function PositionsPage() {
         </div>
       </div>
 
+      {/* Filter Alert Banner */}
+      {filterMissing && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between">
+            <span>
+              Ces postes n&apos;ont pas de compétences définies. Ajoutez des compétences pour pouvoir
+              lancer le cycle d&apos;évaluation.
+            </span>
+            <Link href="/positions">
+              <Button variant="outline" size="sm" className="ml-4">
+                <X className="h-4 w-4 mr-1" />
+                Voir tous les postes
+              </Button>
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Loading State */}
-      {isLoading && (
+      {isLoadingAny && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -73,25 +122,51 @@ export default function PositionsPage() {
       )}
 
       {/* Positions Table */}
-      {!isLoading && !error && (
+      {!isLoadingAny && !error && (
         <Card>
           <CardHeader>
-            <CardTitle>Tous les postes</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>
+                {filterMissing ? 'Postes sans compétences' : 'Tous les postes'}
+              </CardTitle>
+              {filterMissing && displayedPositions.length > 0 && (
+                <Badge variant="destructive">
+                  {displayedPositions.length} poste{displayedPositions.length > 1 ? 's' : ''} à
+                  corriger
+                </Badge>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
-            {!positions || positions.length === 0 ? (
+            {displayedPositions.length === 0 ? (
               <div className="text-center py-12">
                 <Briefcase className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Aucun poste créé</h3>
-                <p className="text-muted-foreground mb-6">
-                  Créez votre premier poste pour commencer à structurer votre organisation
-                </p>
-                <Link href="/positions/new">
-                  <Button className="min-h-[56px]">
-                    <Plus className="mr-2 h-5 w-5" />
-                    Créer un poste
-                  </Button>
-                </Link>
+                {filterMissing ? (
+                  <>
+                    <h3 className="text-lg font-semibold mb-2 text-green-600">
+                      Tous les postes ont des compétences
+                    </h3>
+                    <p className="text-muted-foreground mb-6">
+                      Vous pouvez lancer le cycle d&apos;évaluation
+                    </p>
+                    <Link href="/performance">
+                      <Button className="min-h-[44px]">Retour au Performance</Button>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-lg font-semibold mb-2">Aucun poste créé</h3>
+                    <p className="text-muted-foreground mb-6">
+                      Créez votre premier poste pour commencer à structurer votre organisation
+                    </p>
+                    <Link href="/positions/new">
+                      <Button className="min-h-[56px]">
+                        <Plus className="mr-2 h-5 w-5" />
+                        Créer un poste
+                      </Button>
+                    </Link>
+                  </>
+                )}
               </div>
             ) : (
               <div className="border rounded-lg">
@@ -109,18 +184,26 @@ export default function PositionsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {positions.map((position: any) => (
-                      <TableRow key={position.id}>
-                        <TableCell className="font-medium">{position.title}</TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {position.code || '-'}
+                    {displayedPositions.map((position: any) => (
+                      <TableRow
+                        key={position.id}
+                        className={
+                          filterMissing || missingCompetenciesIds.has(position.id)
+                            ? 'bg-destructive/5'
+                            : ''
+                        }
+                      >
+                        <TableCell className="font-medium">
+                          {position.title}
+                          {missingCompetenciesIds.has(position.id) && !filterMissing && (
+                            <Badge variant="destructive" className="ml-2 text-xs">
+                              Sans compétences
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {position.jobFunction || '-'}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {position.jobTrade || '-'}
-                        </TableCell>
+                        <TableCell className="font-mono text-sm">{position.code || '-'}</TableCell>
+                        <TableCell className="text-sm">{position.jobFunction || '-'}</TableCell>
+                        <TableCell className="text-sm">{position.jobTrade || '-'}</TableCell>
                         <TableCell>{position.department || '-'}</TableCell>
                         <TableCell>{position.headcount || 1}</TableCell>
                         <TableCell>
@@ -134,9 +217,18 @@ export default function PositionsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="sm">
-                            Modifier
-                          </Button>
+                          <Link href={`/positions/${position.id}`}>
+                            <Button
+                              variant={
+                                filterMissing || missingCompetenciesIds.has(position.id)
+                                  ? 'default'
+                                  : 'ghost'
+                              }
+                              size="sm"
+                            >
+                              {filterMissing ? 'Ajouter compétences' : 'Voir / Modifier'}
+                            </Button>
+                          </Link>
                         </TableCell>
                       </TableRow>
                     ))}
