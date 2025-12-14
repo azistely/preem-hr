@@ -52,6 +52,20 @@ export type PerformanceCycleStatus = 'planning' | 'objective_setting' | 'active'
  */
 export type CompanySizeProfile = 'small' | 'medium' | 'large';
 
+/**
+ * Custom/quick question for a cycle
+ * These are lightweight questions added directly during cycle creation
+ */
+export interface CycleCustomQuestion {
+  id: string;
+  question: string;
+  type: 'rating' | 'text' | 'textarea' | 'select';
+  required: boolean;
+  options?: string[]; // For select type
+  helpText?: string;
+  appliesTo: 'self' | 'manager' | 'both';
+}
+
 // ============================================================================
 // PERFORMANCE CYCLES TABLE
 // ============================================================================
@@ -90,6 +104,19 @@ export const performanceCycles = pgTable('performance_cycles', {
   include360Feedback: boolean('include_360_feedback').notNull().default(false),
   includeCalibration: boolean('include_calibration').notNull().default(false),
   includeCompetencies: boolean('include_competencies').notNull().default(false),
+
+  // Template assignments by department/position (overrides default evaluationTemplateId)
+  // Format: [{ departmentId?: string, positionId?: string, evaluationType: 'self'|'manager', templateId: string }]
+  templateAssignments: jsonb('template_assignments').$type<Array<{
+    departmentId?: string;
+    positionId?: string;
+    evaluationType: 'self' | 'manager' | 'peer' | '360';
+    templateId: string;
+  }>>(),
+
+  // Quick/custom questions specific to this cycle (supplement or replace templates)
+  // These are lightweight questions added directly during cycle creation
+  customQuestions: jsonb('custom_questions').$type<CycleCustomQuestion[]>(),
 
   // Company size optimization
   companySizeProfile: text('company_size_profile').default('medium'), // small, medium, large
@@ -270,6 +297,9 @@ export const evaluations = pgTable('evaluations', {
   // Evaluator (who is evaluating)
   evaluatorId: uuid('evaluator_id').references(() => employees.id, { onDelete: 'set null' }), // NULL for self-evaluation
   evaluationType: text('evaluation_type').notNull().default('self'), // self, manager, peer, 360_report
+
+  // Template used for this evaluation (resolved at launch time based on employee's dept/position)
+  templateId: uuid('template_id').references(() => hrFormTemplates.id, { onDelete: 'set null' }),
 
   // Form submission reference
   formSubmissionId: uuid('form_submission_id'), // References hr_form_submissions.id
@@ -697,6 +727,10 @@ export const evaluationsRelations = relations(evaluations, ({ one, many }) => ({
     fields: [evaluations.evaluatorId],
     references: [employees.id],
     relationName: 'evaluations_evaluator',
+  }),
+  template: one(hrFormTemplates, {
+    fields: [evaluations.templateId],
+    references: [hrFormTemplates.id],
   }),
   validatedByUser: one(users, {
     fields: [evaluations.validatedBy],

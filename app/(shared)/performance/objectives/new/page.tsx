@@ -95,6 +95,7 @@ export default function NewObjectivePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cycleIdParam = searchParams.get('cycleId');
+  const utils = api.useUtils();
 
   // Form state
   const [cycleId, setCycleId] = useState(cycleIdParam || '');
@@ -130,6 +131,7 @@ export default function NewObjectivePage() {
   const createObjective = api.performance.objectives.create.useMutation({
     onSuccess: () => {
       toast.success('Objectif créé avec succès !');
+      utils.performance.getGuideStatus.invalidate();
       router.push(`/performance/objectives${cycleId ? `?cycleId=${cycleId}` : ''}`);
     },
     onError: (error) => {

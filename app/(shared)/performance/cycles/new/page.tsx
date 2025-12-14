@@ -15,6 +15,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/trpc/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,7 +34,10 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { format, addMonths, startOfYear, endOfYear, startOfMonth, endOfMonth } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -49,13 +53,24 @@ import {
   ClipboardList,
   Star,
   Award,
+  FileText,
+  Plus,
+  Eye,
+  Lock,
+  MessageSquarePlus,
+  Trash2,
+  GripVertical,
+  Building2,
+  ChevronDown,
 } from 'lucide-react';
+import { nanoid } from 'nanoid';
 
 // Wizard steps - Simple user-friendly labels
 const STEPS = [
   { id: 'basics', title: 'Type', icon: ClipboardList },
   { id: 'period', title: 'Dates', icon: CalendarIcon },
   { id: 'options', title: 'Etapes', icon: Target },
+  { id: 'questions', title: 'Questions', icon: FileText },
   { id: 'confirm', title: 'Resume', icon: Check },
 ];
 
@@ -67,6 +82,25 @@ const CYCLE_TYPES = [
 ] as const;
 
 type CycleType = 'annual' | 'semi_annual' | 'quarterly';
+
+// Custom question type
+interface CustomQuestion {
+  id: string;
+  question: string;
+  type: 'rating' | 'text' | 'textarea' | 'select';
+  required: boolean;
+  options?: string[];
+  helpText?: string;
+  appliesTo: 'self' | 'manager' | 'both';
+}
+
+// Template assignment by department/position
+interface TemplateAssignment {
+  departmentId?: string;
+  positionId?: string;
+  evaluationType: 'self' | 'manager';
+  templateId: string;
+}
 
 interface FormData {
   name: string;
@@ -82,11 +116,21 @@ interface FormData {
   includeCalibration: boolean;
   selfEvaluationDeadline: Date | null;
   managerEvaluationDeadline: Date | null;
+  // Template selection
+  evaluationTemplateId: string | null; // Default template for all evaluations
+  selfEvaluationTemplateId: string | null; // Specific template for self-evaluation
+  managerEvaluationTemplateId: string | null; // Specific template for manager evaluation
+  // Department-specific template overrides
+  templateAssignments: TemplateAssignment[];
+  useDepartmentTemplates: boolean; // Toggle for department-level customization
+  // Custom questions for this cycle
+  customQuestions: CustomQuestion[];
 }
 
 export default function NewPerformanceCyclePage() {
   const router = useRouter();
   const { toast } = useToast();
+  const utils = api.useUtils();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -110,7 +154,30 @@ export default function NewPerformanceCyclePage() {
     includeCalibration: false,
     selfEvaluationDeadline: addMonths(defaultEnd, 1),
     managerEvaluationDeadline: addMonths(defaultEnd, 2),
+    evaluationTemplateId: null,
+    selfEvaluationTemplateId: null,
+    managerEvaluationTemplateId: null,
+    templateAssignments: [],
+    useDepartmentTemplates: false,
+    customQuestions: [],
   });
+
+  // Fetch departments for department-specific templates
+  const { data: departments } = api.performance.departments.list.useQuery({ status: 'active' });
+
+  // Fetch available templates
+  const { data: templatesData, isLoading: isLoadingTemplates } = api.hrForms.templates.list.useQuery({
+    module: 'performance',
+    limit: 100,
+  });
+
+  const templates = templatesData?.data ?? [];
+  const selfEvalTemplates = templates.filter(t =>
+    t.category === 'self_evaluation' || t.category === 'manager_evaluation'
+  );
+  const managerEvalTemplates = templates.filter(t =>
+    t.category === 'manager_evaluation' || t.category === 'self_evaluation'
+  );
 
   // Create cycle mutation
   const createCycle = api.performance.cycles.create.useMutation({
@@ -119,6 +186,8 @@ export default function NewPerformanceCyclePage() {
         title: 'Cycle créé',
         description: `Le cycle "${data.name}" a été créé avec succès.`,
       });
+      // Invalidate sidebar queries to show the new cycle
+      utils.performance.getGuideStatus.invalidate();
       router.push(`/performance/cycles/${data.id}`);
     },
     onError: (error) => {
@@ -201,7 +270,9 @@ export default function NewPerformanceCyclePage() {
         return formData.periodStart && formData.periodEnd && formData.periodStart < formData.periodEnd;
       case 2: // Options
         return formData.includeSelfEvaluation || formData.includeManagerEvaluation;
-      case 3: // Confirm
+      case 3: // Questions (templates are optional)
+        return true;
+      case 4: // Confirm
         return true;
       default:
         return false;
@@ -211,6 +282,12 @@ export default function NewPerformanceCyclePage() {
   // Submit form
   const handleSubmit = useCallback(async () => {
     setIsSubmitting(true);
+
+    // Use the self-evaluation template as default, or manager eval template if no self-eval
+    const effectiveTemplateId = formData.selfEvaluationTemplateId
+      || formData.managerEvaluationTemplateId
+      || formData.evaluationTemplateId
+      || undefined;
 
     createCycle.mutate({
       name: formData.name,
@@ -226,8 +303,39 @@ export default function NewPerformanceCyclePage() {
       includeCalibration: formData.includeCalibration,
       selfEvaluationDeadline: formData.selfEvaluationDeadline?.toISOString().split('T')[0],
       managerEvaluationDeadline: formData.managerEvaluationDeadline?.toISOString().split('T')[0],
+      evaluationTemplateId: effectiveTemplateId,
+      templateAssignments: formData.templateAssignments.length > 0 ? formData.templateAssignments : undefined,
+      customQuestions: formData.customQuestions.length > 0 ? formData.customQuestions : undefined,
     });
   }, [formData, createCycle]);
+
+  // Add a new custom question
+  const addCustomQuestion = useCallback(() => {
+    const newQuestion: CustomQuestion = {
+      id: nanoid(8),
+      question: '',
+      type: 'rating',
+      required: true,
+      appliesTo: 'both',
+    };
+    updateFormData({ customQuestions: [...formData.customQuestions, newQuestion] });
+  }, [formData.customQuestions, updateFormData]);
+
+  // Update a custom question
+  const updateCustomQuestion = useCallback((id: string, updates: Partial<CustomQuestion>) => {
+    updateFormData({
+      customQuestions: formData.customQuestions.map(q =>
+        q.id === id ? { ...q, ...updates } : q
+      ),
+    });
+  }, [formData.customQuestions, updateFormData]);
+
+  // Remove a custom question
+  const removeCustomQuestion = useCallback((id: string) => {
+    updateFormData({
+      customQuestions: formData.customQuestions.filter(q => q.id !== id),
+    });
+  }, [formData.customQuestions, updateFormData]);
 
   // Progress percentage
   const progress = ((currentStep + 1) / STEPS.length) * 100;
@@ -551,8 +659,305 @@ export default function NewPerformanceCyclePage() {
             </div>
           )}
 
-          {/* Step 4: Confirm */}
+          {/* Step 4: Questions/Templates */}
           {currentStep === 3 && (
+            <div className="space-y-6">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  Choisissez les questions que vos employés devront répondre. Vous pouvez utiliser un modèle existant ou créer le vôtre.
+                </AlertDescription>
+              </Alert>
+
+              {isLoadingTemplates ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              ) : templates.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-8">
+                    <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="font-semibold mb-2">Aucun modèle disponible</h3>
+                    <p className="text-sm text-muted-foreground text-center mb-4">
+                      Créez votre premier modèle d'évaluation pour personnaliser les questions
+                    </p>
+                    <Link href="/performance/templates/new">
+                      <Button variant="outline">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Créer un modèle
+                      </Button>
+                    </Link>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-6">
+                  {/* Self-Evaluation Template */}
+                  {formData.includeSelfEvaluation && (
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-base font-medium">
+                          Questions pour l'auto-évaluation
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Ce modèle sera utilisé quand les employés s'évaluent eux-mêmes
+                        </p>
+                      </div>
+                      <Select
+                        value={formData.selfEvaluationTemplateId || ''}
+                        onValueChange={(value) =>
+                          updateFormData({ selfEvaluationTemplateId: value || null })
+                        }
+                      >
+                        <SelectTrigger className="min-h-[48px]">
+                          <SelectValue placeholder="Sélectionner un modèle..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selfEvalTemplates.map((template) => (
+                            <SelectItem key={template.id} value={template.id}>
+                              <div className="flex items-center gap-2">
+                                {template.isSystem && <Lock className="h-3 w-3 text-muted-foreground" />}
+                                {template.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {formData.selfEvaluationTemplateId && (
+                        <TemplatePreviewCard
+                          template={templates.find(t => t.id === formData.selfEvaluationTemplateId)}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Manager Evaluation Template */}
+                  {formData.includeManagerEvaluation && (
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-base font-medium">
+                          Questions pour l'évaluation manager
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Ce modèle sera utilisé quand les managers évaluent leurs équipes
+                        </p>
+                      </div>
+                      <Select
+                        value={formData.managerEvaluationTemplateId || ''}
+                        onValueChange={(value) =>
+                          updateFormData({ managerEvaluationTemplateId: value || null })
+                        }
+                      >
+                        <SelectTrigger className="min-h-[48px]">
+                          <SelectValue placeholder="Sélectionner un modèle..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="same-as-self">
+                            Utiliser le même modèle que l'auto-évaluation
+                          </SelectItem>
+                          {managerEvalTemplates.map((template) => (
+                            <SelectItem key={template.id} value={template.id}>
+                              <div className="flex items-center gap-2">
+                                {template.isSystem && <Lock className="h-3 w-3 text-muted-foreground" />}
+                                {template.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {formData.managerEvaluationTemplateId && formData.managerEvaluationTemplateId !== 'same-as-self' && (
+                        <TemplatePreviewCard
+                          template={templates.find(t => t.id === formData.managerEvaluationTemplateId)}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Department-specific template overrides */}
+                  {departments && departments.length > 0 && (
+                    <Collapsible
+                      open={formData.useDepartmentTemplates}
+                      onOpenChange={(open) => updateFormData({ useDepartmentTemplates: open })}
+                      className="space-y-3 pt-4 border-t"
+                    >
+                      <CollapsibleTrigger asChild>
+                        <div className="flex items-center justify-between cursor-pointer">
+                          <div>
+                            <Label className="text-base font-medium flex items-center gap-2">
+                              <Building2 className="h-4 w-4" />
+                              Personnaliser par département
+                            </Label>
+                            <p className="text-sm text-muted-foreground">
+                              Utiliser des modèles différents selon les départements
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={formData.useDepartmentTemplates}
+                              onCheckedChange={(checked) => updateFormData({ useDepartmentTemplates: checked })}
+                            />
+                            <ChevronDown className={`h-4 w-4 transition-transform ${formData.useDepartmentTemplates ? 'rotate-180' : ''}`} />
+                          </div>
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-4 pt-3">
+                        {departments.map((dept: { id: string; name: string }) => {
+                          const selfAssignment = formData.templateAssignments.find(
+                            a => a.departmentId === dept.id && a.evaluationType === 'self'
+                          );
+                          const managerAssignment = formData.templateAssignments.find(
+                            a => a.departmentId === dept.id && a.evaluationType === 'manager'
+                          );
+
+                          return (
+                            <Card key={dept.id} className="p-4">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Building2 className="h-4 w-4 text-muted-foreground" />
+                                <span className="font-medium">{dept.name}</span>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {formData.includeSelfEvaluation && (
+                                  <div>
+                                    <Label className="text-sm text-muted-foreground mb-1 block">Auto-évaluation</Label>
+                                    <Select
+                                      value={selfAssignment?.templateId || 'default'}
+                                      onValueChange={(value) => {
+                                        const newAssignments = formData.templateAssignments.filter(
+                                          a => !(a.departmentId === dept.id && a.evaluationType === 'self')
+                                        );
+                                        if (value !== 'default') {
+                                          newAssignments.push({
+                                            departmentId: dept.id,
+                                            evaluationType: 'self',
+                                            templateId: value,
+                                          });
+                                        }
+                                        updateFormData({ templateAssignments: newAssignments });
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-9">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="default">Par défaut</SelectItem>
+                                        {selfEvalTemplates.map((t) => (
+                                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )}
+                                {formData.includeManagerEvaluation && (
+                                  <div>
+                                    <Label className="text-sm text-muted-foreground mb-1 block">Évaluation manager</Label>
+                                    <Select
+                                      value={managerAssignment?.templateId || 'default'}
+                                      onValueChange={(value) => {
+                                        const newAssignments = formData.templateAssignments.filter(
+                                          a => !(a.departmentId === dept.id && a.evaluationType === 'manager')
+                                        );
+                                        if (value !== 'default') {
+                                          newAssignments.push({
+                                            departmentId: dept.id,
+                                            evaluationType: 'manager',
+                                            templateId: value,
+                                          });
+                                        }
+                                        updateFormData({ templateAssignments: newAssignments });
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-9">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="default">Par défaut</SelectItem>
+                                        {managerEvalTemplates.map((t) => (
+                                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )}
+                              </div>
+                            </Card>
+                          );
+                        })}
+                        <p className="text-xs text-muted-foreground">
+                          Les départements sans modèle personnalisé utiliseront les modèles par défaut ci-dessus.
+                        </p>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
+
+                  {/* Link to create new template */}
+                  <div className="pt-4 border-t">
+                    <Link href="/performance/templates/new">
+                      <Button variant="outline" className="w-full min-h-[48px]">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Créer un nouveau modèle
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Custom Questions Section */}
+              <div className="pt-6 border-t">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <Label className="text-base font-medium flex items-center gap-2">
+                      <MessageSquarePlus className="h-4 w-4" />
+                      Questions rapides (optionnel)
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Ajoutez des questions spécifiques à ce cycle, en plus du modèle choisi
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addCustomQuestion}
+                    className="min-h-[44px]"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Ajouter
+                  </Button>
+                </div>
+
+                {formData.customQuestions.length > 0 && (
+                  <div className="space-y-4">
+                    {formData.customQuestions.map((q, index) => (
+                      <QuickQuestionEditor
+                        key={q.id}
+                        question={q}
+                        index={index}
+                        onUpdate={(updates) => updateCustomQuestion(q.id, updates)}
+                        onRemove={() => removeCustomQuestion(q.id)}
+                        showManagerOption={formData.includeManagerEvaluation}
+                        showSelfOption={formData.includeSelfEvaluation}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {formData.customQuestions.length === 0 && (
+                  <Card className="border-dashed">
+                    <CardContent className="flex flex-col items-center justify-center py-6 text-center">
+                      <MessageSquarePlus className="h-8 w-8 text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">
+                        Aucune question rapide ajoutée.
+                        <br />
+                        Ces questions s'ajoutent au modèle sélectionné.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Confirm */}
+          {currentStep === 4 && (
             <div className="space-y-6">
               <Alert>
                 <Check className="h-4 w-4" />
@@ -605,6 +1010,42 @@ export default function NewPerformanceCyclePage() {
                     )}
                   </div>
                 </div>
+
+                {/* Template info */}
+                {(formData.selfEvaluationTemplateId || formData.managerEvaluationTemplateId) && (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Modèles de questions:</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.selfEvaluationTemplateId && (
+                        <Badge variant="outline">
+                          Auto-éval: {templates.find(t => t.id === formData.selfEvaluationTemplateId)?.name || 'Modèle sélectionné'}
+                        </Badge>
+                      )}
+                      {formData.managerEvaluationTemplateId && formData.managerEvaluationTemplateId !== 'same-as-self' && (
+                        <Badge variant="outline">
+                          Manager: {templates.find(t => t.id === formData.managerEvaluationTemplateId)?.name || 'Modèle sélectionné'}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Custom questions summary */}
+                {formData.customQuestions.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Questions rapides:</Label>
+                    <div className="space-y-1">
+                      {formData.customQuestions.map((q, i) => (
+                        <div key={q.id} className="flex items-center gap-2 text-sm">
+                          <Badge variant="outline" className="text-xs">
+                            {q.appliesTo === 'both' ? 'Tous' : q.appliesTo === 'self' ? 'Auto-éval' : 'Manager'}
+                          </Badge>
+                          <span className="truncate">{q.question || `Question ${i + 1}`}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {formData.description && (
                   <div className="space-y-2">
@@ -660,5 +1101,228 @@ export default function NewPerformanceCyclePage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Template Preview Card - shows a compact preview of the selected template
+interface TemplatePreviewCardProps {
+  template?: {
+    id: string;
+    name: string;
+    description: string | null;
+    category: string;
+    isSystem: boolean;
+    definition: {
+      fields?: Array<{ type: string; label: string }>;
+    };
+  };
+}
+
+function TemplatePreviewCard({ template }: TemplatePreviewCardProps) {
+  if (!template) return null;
+
+  const questionCount = template.definition?.fields?.filter(
+    (f) => f.type !== 'heading' && f.type !== 'paragraph'
+  ).length ?? 0;
+
+  return (
+    <div className="p-3 bg-muted/50 rounded-lg border">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            {template.isSystem && <Lock className="h-3 w-3 text-muted-foreground" />}
+            <span className="font-medium text-sm truncate">{template.name}</span>
+          </div>
+          {template.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2">{template.description}</p>
+          )}
+        </div>
+        <Badge variant="outline" className="text-xs shrink-0">
+          {questionCount} question{questionCount > 1 ? 's' : ''}
+        </Badge>
+      </div>
+      {template.definition?.fields && template.definition.fields.length > 0 && (
+        <div className="mt-2 pt-2 border-t">
+          <p className="text-xs text-muted-foreground mb-1">Aperçu:</p>
+          <ul className="text-xs space-y-0.5">
+            {template.definition.fields
+              .filter((f) => f.type !== 'heading' && f.type !== 'paragraph')
+              .slice(0, 3)
+              .map((field, i) => (
+                <li key={i} className="truncate flex items-center gap-1">
+                  <span className="text-muted-foreground">•</span>
+                  {field.label}
+                </li>
+              ))}
+            {questionCount > 3 && (
+              <li className="text-muted-foreground">+{questionCount - 3} autres questions</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Quick Question Editor Component
+const QUESTION_TYPES = [
+  { value: 'rating', label: 'Note (1-5)', icon: Star },
+  { value: 'text', label: 'Texte court', icon: FileText },
+  { value: 'textarea', label: 'Texte long', icon: FileText },
+  { value: 'select', label: 'Choix multiple', icon: ClipboardList },
+] as const;
+
+const APPLIES_TO_OPTIONS = [
+  { value: 'both', label: 'Tous' },
+  { value: 'self', label: 'Auto-évaluation' },
+  { value: 'manager', label: 'Évaluation manager' },
+] as const;
+
+interface QuickQuestionEditorProps {
+  question: CustomQuestion;
+  index: number;
+  onUpdate: (updates: Partial<CustomQuestion>) => void;
+  onRemove: () => void;
+  showManagerOption: boolean;
+  showSelfOption: boolean;
+}
+
+function QuickQuestionEditor({
+  question,
+  index,
+  onUpdate,
+  onRemove,
+  showManagerOption,
+  showSelfOption,
+}: QuickQuestionEditorProps) {
+  return (
+    <Card className="p-4">
+      <div className="space-y-4">
+        {/* Header with remove button */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Question {index + 1}</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Question text */}
+        <div className="space-y-2">
+          <Label htmlFor={`q-${question.id}`} className="text-sm">
+            Question <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id={`q-${question.id}`}
+            value={question.question}
+            onChange={(e) => onUpdate({ question: e.target.value })}
+            placeholder="Ex: Comment évaluez-vous votre performance ce trimestre?"
+            className="min-h-[44px]"
+          />
+        </div>
+
+        {/* Type and settings row */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Question type */}
+          <div className="space-y-2">
+            <Label className="text-sm">Type</Label>
+            <Select
+              value={question.type}
+              onValueChange={(value: CustomQuestion['type']) => onUpdate({ type: value })}
+            >
+              <SelectTrigger className="min-h-[44px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {QUESTION_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    <div className="flex items-center gap-2">
+                      <t.icon className="h-3 w-3" />
+                      {t.label}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Applies to */}
+          <div className="space-y-2">
+            <Label className="text-sm">S'applique à</Label>
+            <Select
+              value={question.appliesTo}
+              onValueChange={(value: CustomQuestion['appliesTo']) => onUpdate({ appliesTo: value })}
+            >
+              <SelectTrigger className="min-h-[44px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {APPLIES_TO_OPTIONS.filter((opt) => {
+                  if (opt.value === 'self' && !showSelfOption) return false;
+                  if (opt.value === 'manager' && !showManagerOption) return false;
+                  if (opt.value === 'both' && (!showSelfOption || !showManagerOption)) return false;
+                  return true;
+                }).map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Required checkbox */}
+          <div className="space-y-2">
+            <Label className="text-sm">Obligatoire</Label>
+            <div className="flex items-center min-h-[44px]">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={question.required}
+                  onCheckedChange={(checked) => onUpdate({ required: !!checked })}
+                />
+                <span className="text-sm">Réponse requise</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Options for select type */}
+        {question.type === 'select' && (
+          <div className="space-y-2">
+            <Label className="text-sm">Options (une par ligne)</Label>
+            <Textarea
+              value={question.options?.join('\n') || ''}
+              onChange={(e) =>
+                onUpdate({
+                  options: e.target.value.split('\n').filter((o) => o.trim()),
+                })
+              }
+              placeholder="Option 1&#10;Option 2&#10;Option 3"
+              rows={3}
+            />
+          </div>
+        )}
+
+        {/* Help text (optional) */}
+        <div className="space-y-2">
+          <Label className="text-sm text-muted-foreground">
+            Texte d'aide (optionnel)
+          </Label>
+          <Input
+            value={question.helpText || ''}
+            onChange={(e) => onUpdate({ helpText: e.target.value || undefined })}
+            placeholder="Instructions supplémentaires pour l'utilisateur"
+            className="min-h-[44px]"
+          />
+        </div>
+      </div>
+    </Card>
   );
 }

@@ -64,6 +64,7 @@ const feedbackTypes = [
 
 export default function NewFeedbackPage() {
   const router = useRouter();
+  const utils = api.useUtils();
 
   // Form state
   const [employeeId, setEmployeeId] = useState('');
@@ -84,6 +85,7 @@ export default function NewFeedbackPage() {
   const createFeedback = api.performance.feedback.create.useMutation({
     onSuccess: () => {
       toast.success('Feedback envoyé avec succès !');
+      utils.performance.getGuideStatus.invalidate();
       router.push('/performance/feedback');
     },
     onError: (error) => {

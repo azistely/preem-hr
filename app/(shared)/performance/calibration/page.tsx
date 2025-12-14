@@ -229,6 +229,7 @@ export default function CalibrationPage() {
       setSessionDate('');
       setSelectedSessionId(data.id);
       utils.performance.calibration.sessions.list.invalidate();
+      utils.performance.getGuideStatus.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la création');
@@ -242,6 +243,7 @@ export default function CalibrationPage() {
       setShowRatingDialog(false);
       setEditingRating(null);
       utils.performance.calibration.ratings.list.invalidate();
+      utils.performance.getGuideStatus.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la mise à jour');

@@ -133,6 +133,9 @@ export const hrFormsRouter = createTRPCRouter({
         scoringConfig: z.any().optional(), // FormScoringConfig
         defaultRatingScale: z.any().optional(), // RatingScaleConfig
         isActive: z.boolean().default(true),
+        // Targeting
+        targetDepartments: z.array(z.string()).optional(),
+        targetPositions: z.array(z.string()).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const tenantId = ctx.user.tenantId;
@@ -155,6 +158,8 @@ export const hrFormsRouter = createTRPCRouter({
             isSystem: false,
             version: 1,
             createdBy: ctx.user.id,
+            targetDepartments: input.targetDepartments ?? null,
+            targetPositions: input.targetPositions ?? null,
           })
           .returning();
 
@@ -174,6 +179,9 @@ export const hrFormsRouter = createTRPCRouter({
         scoringConfig: z.any().optional(), // FormScoringConfig
         defaultRatingScale: z.any().optional(),
         isActive: z.boolean().optional(),
+        // Targeting
+        targetDepartments: z.array(z.string()).optional(),
+        targetPositions: z.array(z.string()).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const tenantId = ctx.user.tenantId;
@@ -210,6 +218,8 @@ export const hrFormsRouter = createTRPCRouter({
           updateData.definition = input.definition;
           updateData.version = current.version + 1;
         }
+        if (input.targetDepartments !== undefined) updateData.targetDepartments = input.targetDepartments;
+        if (input.targetPositions !== undefined) updateData.targetPositions = input.targetPositions;
 
         const [updated] = await ctx.db
           .update(hrFormTemplates)

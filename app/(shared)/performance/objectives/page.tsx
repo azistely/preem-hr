@@ -241,15 +241,20 @@ export default function ObjectivesPage() {
 
   const utils = api.useUtils();
 
-  // Fetch cycles for filter
+  // Fetch cycles for filter (include planning, objective_setting, and active cycles)
   const { data: cyclesData } = api.performance.cycles.list.useQuery({
-    status: 'active',
-    limit: 20,
+    limit: 50,
   });
+
+  // Get guide status to auto-select active cycle
+  const { data: guideStatus } = api.performance.getGuideStatus.useQuery();
+
+  // Determine effective cycle ID - use URL param, or auto-select from guide status
+  const effectiveCycleId = cycleIdParam || guideStatus?.activeCycle?.id || null;
 
   // Fetch objectives
   const { data: objectivesData, isLoading } = api.performance.objectives.list.useQuery({
-    cycleId: cycleIdParam || undefined,
+    cycleId: effectiveCycleId || undefined,
     objectiveLevel: selectedTab !== 'all' ? selectedTab : undefined,
     status: statusFilter !== 'all'
       ? statusFilter as 'draft' | 'proposed' | 'approved' | 'in_progress' | 'completed' | 'cancelled'
@@ -264,6 +269,8 @@ export default function ObjectivesPage() {
       setShowCreateDialog(false);
       resetForm();
       utils.performance.objectives.list.invalidate();
+      // Invalidate sidebar to update objectives progress
+      utils.performance.getGuideStatus.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la création');
@@ -277,6 +284,8 @@ export default function ObjectivesPage() {
       setEditingObjective(null);
       resetForm();
       utils.performance.objectives.list.invalidate();
+      // Invalidate sidebar to update objectives progress
+      utils.performance.getGuideStatus.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la mise à jour');
@@ -288,13 +297,18 @@ export default function ObjectivesPage() {
     onSuccess: () => {
       toast.success('Objectif supprimé');
       utils.performance.objectives.list.invalidate();
+      // Invalidate sidebar to update objectives progress
+      utils.performance.getGuideStatus.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la suppression');
     },
   });
 
-  const cycles = cyclesData?.data ?? [];
+  // Filter cycles to only show non-closed ones for objective creation
+  const cycles = (cyclesData?.data ?? []).filter(
+    (c) => c.status !== 'closed' && c.status !== 'calibration'
+  );
   const objectives = objectivesData?.data ?? [];
 
   // Stats
@@ -316,13 +330,13 @@ export default function ObjectivesPage() {
   };
 
   const handleCreate = () => {
-    if (!cycleIdParam) {
+    if (!effectiveCycleId) {
       toast.error('Veuillez sélectionner un cycle');
       return;
     }
 
     createObjective.mutate({
-      cycleId: cycleIdParam,
+      cycleId: effectiveCycleId,
       title: formData.title,
       description: formData.description || undefined,
       objectiveLevel: formData.objectiveLevel,
@@ -380,7 +394,7 @@ export default function ObjectivesPage() {
         </div>
         <Button
           onClick={() => setShowCreateDialog(true)}
-          disabled={!cycleIdParam}
+          disabled={!effectiveCycleId}
           className="min-h-[48px]"
         >
           <Plus className="mr-2 h-4 w-4" />
@@ -439,7 +453,7 @@ export default function ObjectivesPage() {
           <div className="flex flex-col sm:flex-row gap-4">
             {cycles.length > 0 && (
               <Select
-                value={cycleIdParam || 'none'}
+                value={effectiveCycleId || 'none'}
                 onValueChange={(value) => {
                   if (value === 'none') {
                     router.push('/performance/objectives');
@@ -455,7 +469,7 @@ export default function ObjectivesPage() {
                   <SelectItem value="none">Tous les cycles</SelectItem>
                   {cycles.map((cycle) => (
                     <SelectItem key={cycle.id} value={cycle.id}>
-                      {cycle.name}
+                      {cycle.name} {cycle.status === 'active' && '(Actif)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -513,11 +527,11 @@ export default function ObjectivesPage() {
                 <Target className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-2">Aucun objectif</h3>
                 <p className="text-muted-foreground mb-6">
-                  {!cycleIdParam
-                    ? 'Sélectionnez un cycle pour voir les objectifs'
+                  {!effectiveCycleId
+                    ? 'Aucun cycle actif. Créez un cycle de performance pour commencer.'
                     : 'Créez votre premier objectif pour commencer'}
                 </p>
-                {cycleIdParam && (
+                {effectiveCycleId && (
                   <Button onClick={() => setShowCreateDialog(true)}>
                     <Plus className="mr-2 h-4 w-4" />
                     Créer un objectif

@@ -114,6 +114,7 @@ interface GuideData {
 interface StepStatuses {
   cycleCreation: StepStatus;
   objectives: StepStatus;
+  launch: StepStatus;
   competencies: StepStatus;
   selfEvaluation: StepStatus;
   managerEvaluation: StepStatus;
@@ -141,7 +142,21 @@ function getStepStatuses(data: GuideData): StepStatuses {
     }
   }
 
-  // Step 3: Competencies (if enabled) - handled via readiness checks, so this is more of a display step
+  // Step 3: Launch cycle
+  let launch: StepStatus = 'locked';
+  if (data.activeCycle) {
+    const cycleStatus = data.activeCycle.status;
+    if (cycleStatus === 'planning' || cycleStatus === 'objective_setting') {
+      // Cycle not yet launched
+      const objectivesReady = objectives === 'completed' || objectives === 'in_progress' || !data.activeCycle.includeObjectives;
+      launch = objectivesReady ? 'ready' : 'locked';
+    } else {
+      // Cycle is active or beyond
+      launch = 'completed';
+    }
+  }
+
+  // Step 4: Competencies (if enabled) - handled via readiness checks, so this is more of a display step
   let competencies: StepStatus = 'locked';
   if (data.activeCycle) {
     if (!data.activeCycle.includeCompetencies) {
@@ -243,6 +258,7 @@ function getStepStatuses(data: GuideData): StepStatuses {
   return {
     cycleCreation,
     objectives,
+    launch,
     competencies,
     selfEvaluation,
     managerEvaluation,
@@ -451,8 +467,15 @@ function SidebarContent({
 
   const statuses = getStepStatuses(guideData);
 
-  // Build steps
+  // Build steps - organized as PRE-LAUNCH (config) then POST-LAUNCH (evaluation)
+  const cycleNotLaunched = guideData.activeCycle &&
+    (guideData.activeCycle.status === 'planning' || guideData.activeCycle.status === 'objective_setting');
+  const cycleLaunched = guideData.activeCycle &&
+    (guideData.activeCycle.status === 'active' || guideData.activeCycle.status === 'calibration' || guideData.activeCycle.status === 'closed');
+
   const allSteps: (StepConfig | null)[] = [
+    // ===== PRE-LAUNCH PHASE =====
+    // Step 1: Create cycle (always)
     {
       number: 1,
       title: 'Créer le cycle',
@@ -464,35 +487,73 @@ function SidebarContent({
         : { label: 'Créer', href: '/performance/cycles/new' },
       statusLabel: guideData.activeCycle ? `Cycle: ${guideData.activeCycle.name}` : 'Créez un cycle',
     },
-    guideData.activeCycle?.includeObjectives
+    // Step 2: Competencies - configure BEFORE launch (if enabled)
+    guideData.activeCycle?.includeCompetencies
       ? {
           number: 2,
+          title: 'Compétences des postes',
+          description: 'Définir pour chaque poste',
+          icon: GraduationCap,
+          // Check if competencies check passed in readiness
+          status: cycleLaunched
+            ? 'completed' as StepStatus
+            : (readinessData?.checks.find(c => c.id === 'competencies')?.status === 'passed'
+                ? 'completed' as StepStatus
+                : 'ready' as StepStatus),
+          action: { label: 'Configurer', href: '/positions?filter=missing-competencies' },
+          statusLabel: cycleLaunched
+            ? 'Configuré'
+            : (readinessData?.checks.find(c => c.id === 'competencies')?.status === 'passed'
+                ? 'Tous les postes OK'
+                : readinessData?.checks.find(c => c.id === 'competencies')?.description ?? 'Vérification...'),
+        }
+      : null,
+    // Step 3: Objectives - define BEFORE launch (if enabled)
+    guideData.activeCycle?.includeObjectives
+      ? {
+          number: 3,
           title: 'Objectifs',
-          description: 'Assignez aux employés',
+          description: 'Définir et approuver',
           icon: Target,
-          status: statuses.objectives,
+          status: cycleLaunched ? 'completed' as StepStatus : statuses.objectives,
           progress: guideData.objectivesProgress,
           action:
             guideData.activeCycle && statuses.objectives !== 'locked'
               ? { label: 'Gérer', href: `/performance/cycles/${guideData.activeCycle.id}?tab=objectives` }
               : null,
-          statusLabel: getObjectivesLabel(statuses.objectives, guideData.objectivesProgress),
+          statusLabel: cycleLaunched
+            ? 'Définis'
+            : getObjectivesLabel(statuses.objectives, guideData.objectivesProgress),
         }
       : null,
-    guideData.activeCycle?.includeCompetencies
+    // Step 4: Launch cycle - THE GATE between config and evaluation phases
+    // Uses readinessData.canLaunch for accurate status based on ALL cycle options
+    // ALWAYS SHOW - shows as "completed" after launch, "ready/locked" before
+    guideData.activeCycle
       ? {
-          number: 3,
-          title: 'Compétences',
-          description: 'Évaluées dans les évaluations',
-          icon: GraduationCap,
-          status: statuses.competencies,
-          action:
-            guideData.activeCycle && statuses.competencies !== 'locked'
-              ? { label: 'Voir postes', href: '/positions' }
-              : null,
-          statusLabel: getCompetenciesLabel(statuses.competencies),
+          number: 4,
+          title: 'Lancer le cycle',
+          description: 'Démarrer les évaluations',
+          icon: Rocket,
+          // Status: completed after launch, otherwise based on readinessData.canLaunch
+          status: cycleLaunched
+            ? 'completed' as StepStatus
+            : (readinessData?.canLaunch ? 'ready' as StepStatus : 'locked' as StepStatus),
+          action: cycleLaunched
+            ? { label: 'Voir', href: `/performance/cycles/${guideData.activeCycle.id}` }
+            : (readinessData?.canLaunch
+                ? { label: 'Lancer', href: `/performance/cycles/${guideData.activeCycle.id}?action=launch` }
+                : null),
+          statusLabel: cycleLaunched
+            ? 'Cycle actif'
+            : (readinessData?.canLaunch
+                ? 'Prêt à lancer'
+                : readinessData
+                  ? `${readinessData.checks.filter(c => c.status === 'failed').length} prérequis manquant(s)`
+                  : 'Vérification...'),
         }
       : null,
+    // ===== POST-LAUNCH PHASE (Evaluation) =====
     guideData.activeCycle?.includeSelfEvaluation
       ? {
           number: 4,
@@ -703,13 +764,14 @@ export function CycleProgressSidebar() {
     localStorage.setItem('cycle-sidebar-collapsed', String(isCollapsed));
   }, [isCollapsed]);
 
-  // Fetch guide status
+  // Fetch guide status - refetch on window focus for real-time updates
   const {
     data: guideData,
     isLoading: guideLoading,
     error: guideError,
   } = api.performance.getGuideStatus.useQuery(undefined, {
-    staleTime: 30000,
+    staleTime: 5000, // 5 seconds - refresh quickly to reflect changes
+    refetchOnWindowFocus: true,
   });
 
   // Fetch readiness checks (only if we have an active cycle in planning status)
@@ -722,7 +784,8 @@ export function CycleProgressSidebar() {
     { cycleId: cycleId! },
     {
       enabled: !!cycleId && !!shouldFetchReadiness,
-      staleTime: 30000,
+      staleTime: 5000, // 5 seconds - refresh quickly to reflect changes
+      refetchOnWindowFocus: true,
     }
   );
 
@@ -861,6 +924,19 @@ function getObjectivesLabel(status: StepStatus, progress: { completed: number; t
       return `${progress.completed}/${progress.total} approuvés`;
     case 'completed':
       return progress.total > 0 ? 'Objectifs prêts' : 'Non requis';
+  }
+}
+
+function getLaunchLabel(status: StepStatus): string {
+  switch (status) {
+    case 'locked':
+      return 'Définissez objectifs';
+    case 'ready':
+      return 'Prêt à lancer';
+    case 'in_progress':
+      return 'En cours...';
+    case 'completed':
+      return 'Cycle lancé';
   }
 }
 

@@ -250,6 +250,7 @@ export default function EvaluationDetailPage() {
     onSuccess: () => {
       toast.success('Brouillon enregistré');
       utils.performance.evaluations.getById.invalidate({ id: evaluationId });
+      utils.performance.getGuideStatus.invalidate();
       setIsSaving(false);
     },
     onError: (error) => {
@@ -265,6 +266,10 @@ export default function EvaluationDetailPage() {
       setShowSubmitDialog(false);
       utils.performance.evaluations.getById.invalidate({ id: evaluationId });
       utils.performance.evaluations.list.invalidate();
+      // Invalidate sidebar queries to reflect updated progress
+      utils.performance.getGuideStatus.invalidate();
+      // Redirect to evaluations list
+      router.push('/performance/evaluations');
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la soumission');

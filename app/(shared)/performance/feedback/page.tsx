@@ -195,6 +195,7 @@ export default function FeedbackPage() {
       setShowCreateDialog(false);
       resetForm();
       utils.performance.feedback.list.invalidate();
+      utils.performance.getGuideStatus.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de l\'envoi');

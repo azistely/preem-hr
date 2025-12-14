@@ -146,6 +146,9 @@ export default function CycleDetailPage() {
       setShowLaunchDialog(false);
       utils.performance.cycles.getById.invalidate({ id: cycleId });
       utils.performance.evaluations.list.invalidate({ cycleId });
+      // Invalidate sidebar queries to reflect the launched state
+      utils.performance.getGuideStatus.invalidate();
+      utils.performance.getReadinessChecks.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors du lancement du cycle');
@@ -156,6 +159,8 @@ export default function CycleDetailPage() {
     onSuccess: () => {
       toast.success('Statut mis à jour');
       utils.performance.cycles.getById.invalidate({ id: cycleId });
+      // Invalidate sidebar queries to reflect status change
+      utils.performance.getGuideStatus.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la mise à jour');
@@ -165,6 +170,8 @@ export default function CycleDetailPage() {
   const deleteCycle = api.performance.cycles.delete.useMutation({
     onSuccess: () => {
       toast.success('Cycle supprimé');
+      // Invalidate sidebar queries
+      utils.performance.getGuideStatus.invalidate();
       router.push('/performance/cycles');
     },
     onError: (error) => {
@@ -179,6 +186,7 @@ export default function CycleDetailPage() {
       setShowShareDialog(false);
       utils.performance.cycles.getById.invalidate({ id: cycleId });
       utils.performance.evaluations.list.invalidate({ cycleId });
+      utils.performance.getGuideStatus.invalidate();
       // Clear the action param from URL
       router.replace(`/performance/cycles/${cycleId}`);
     },

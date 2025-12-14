@@ -288,6 +288,13 @@ export const performanceRouter = createTRPCRouter({
         calibrationDeadline: z.string().optional(),
         resultsReleaseDate: z.string().optional(),
         evaluationTemplateId: z.string().uuid().optional(),
+        // Template assignments by department/position (overrides default)
+        templateAssignments: z.array(z.object({
+          departmentId: z.string().uuid().optional(),
+          positionId: z.string().uuid().optional(),
+          evaluationType: z.enum(['self', 'manager']),
+          templateId: z.string().uuid(),
+        })).optional(),
         includeObjectives: z.boolean().default(true),
         includeSelfEvaluation: z.boolean().default(true),
         includeManagerEvaluation: z.boolean().default(true),
@@ -296,6 +303,16 @@ export const performanceRouter = createTRPCRouter({
         includeCompetencies: z.boolean().default(true),
         includeCalibration: z.boolean().default(false),
         companySizeProfile: z.enum(['small', 'medium', 'large']).optional(),
+        // Custom/quick questions specific to this cycle
+        customQuestions: z.array(z.object({
+          id: z.string(),
+          question: z.string().min(1),
+          type: z.enum(['rating', 'text', 'textarea', 'select']),
+          required: z.boolean(),
+          options: z.array(z.string()).optional(),
+          helpText: z.string().optional(),
+          appliesTo: z.enum(['self', 'manager', 'both']),
+        })).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const tenantId = ctx.user.tenantId;
@@ -333,6 +350,7 @@ export const performanceRouter = createTRPCRouter({
             calibrationDeadline: input.calibrationDeadline,
             resultsReleaseDate: input.resultsReleaseDate,
             evaluationTemplateId: input.evaluationTemplateId,
+            templateAssignments: input.templateAssignments ?? null,
             includeObjectives: input.includeObjectives,
             includeSelfEvaluation: input.includeSelfEvaluation,
             includeManagerEvaluation: input.includeManagerEvaluation,
@@ -341,6 +359,7 @@ export const performanceRouter = createTRPCRouter({
             includeCompetencies: input.includeCompetencies,
             includeCalibration: input.includeCalibration,
             companySizeProfile: input.companySizeProfile,
+            customQuestions: input.customQuestions,
             status: 'planning',
             createdBy: ctx.user.id,
           })
@@ -360,6 +379,23 @@ export const performanceRouter = createTRPCRouter({
         calibrationDeadline: z.string().nullable().optional(),
         resultsReleaseDate: z.string().nullable().optional(),
         evaluationTemplateId: z.string().uuid().nullable().optional(),
+        // Template assignments by department/position (overrides default)
+        templateAssignments: z.array(z.object({
+          departmentId: z.string().uuid().optional(),
+          positionId: z.string().uuid().optional(),
+          evaluationType: z.enum(['self', 'manager']),
+          templateId: z.string().uuid(),
+        })).nullable().optional(),
+        // Custom/quick questions specific to this cycle
+        customQuestions: z.array(z.object({
+          id: z.string(),
+          question: z.string().min(1),
+          type: z.enum(['rating', 'text', 'textarea', 'select']),
+          required: z.boolean(),
+          options: z.array(z.string()).optional(),
+          helpText: z.string().optional(),
+          appliesTo: z.enum(['self', 'manager', 'both']),
+        })).nullable().optional(),
         includeObjectives: z.boolean().optional(),
         includeSelfEvaluation: z.boolean().optional(),
         includeManagerEvaluation: z.boolean().optional(),
@@ -489,25 +525,110 @@ export const performanceRouter = createTRPCRouter({
           }
         }
 
-        // Get target employees
-        let targetEmployees: { id: string; reportingManagerId: string | null }[];
+        // Get target employees with their position and department info for template resolution
+        let targetEmployees: {
+          id: string;
+          reportingManagerId: string | null;
+          departmentId: string | null;
+          positionId: string | null;
+        }[];
+
         if (input.employeeIds && input.employeeIds.length > 0) {
-          targetEmployees = await ctx.db
-            .select({ id: employees.id, reportingManagerId: employees.reportingManagerId })
+          // Fetch specific employees with their current position via assignments
+          // Department is on positions table, not employees
+          const employeesWithPositions = await ctx.db
+            .select({
+              id: employees.id,
+              reportingManagerId: employees.reportingManagerId,
+              positionId: assignments.positionId,
+              departmentId: positions.departmentId,
+            })
             .from(employees)
+            .leftJoin(assignments, and(
+              eq(assignments.employeeId, employees.id),
+              eq(assignments.assignmentType, 'primary'),
+              lte(assignments.effectiveFrom, sql`CURRENT_DATE`),
+              or(
+                isNull(assignments.effectiveTo),
+                gte(assignments.effectiveTo, sql`CURRENT_DATE`)
+              )
+            ))
+            .leftJoin(positions, eq(positions.id, assignments.positionId))
             .where(and(
               eq(employees.tenantId, tenantId),
               inArray(employees.id, input.employeeIds)
             ));
+          targetEmployees = employeesWithPositions;
         } else {
-          targetEmployees = await ctx.db
-            .select({ id: employees.id, reportingManagerId: employees.reportingManagerId })
+          // Fetch all active employees with their current position
+          // Department is on positions table, not employees
+          const employeesWithPositions = await ctx.db
+            .select({
+              id: employees.id,
+              reportingManagerId: employees.reportingManagerId,
+              positionId: assignments.positionId,
+              departmentId: positions.departmentId,
+            })
             .from(employees)
+            .leftJoin(assignments, and(
+              eq(assignments.employeeId, employees.id),
+              eq(assignments.assignmentType, 'primary'),
+              lte(assignments.effectiveFrom, sql`CURRENT_DATE`),
+              or(
+                isNull(assignments.effectiveTo),
+                gte(assignments.effectiveTo, sql`CURRENT_DATE`)
+              )
+            ))
+            .leftJoin(positions, eq(positions.id, assignments.positionId))
             .where(and(
               eq(employees.tenantId, tenantId),
               eq(employees.status, 'active')
             ));
+          targetEmployees = employeesWithPositions;
         }
+
+        // Helper function to resolve template for an employee based on assignments
+        const resolveTemplateForEmployee = (
+          emp: { departmentId: string | null; positionId: string | null },
+          evaluationType: 'self' | 'manager' | 'peer' | '360'
+        ): string | null => {
+          const assignments = cycle.templateAssignments as Array<{
+            departmentId?: string;
+            positionId?: string;
+            evaluationType: 'self' | 'manager' | 'peer' | '360';
+            templateId: string;
+          }> | null;
+
+          if (!assignments || assignments.length === 0) {
+            // Fall back to cycle default template
+            return cycle.evaluationTemplateId;
+          }
+
+          // Priority 1: Position-specific + evaluation type match
+          if (emp.positionId) {
+            const positionMatch = assignments.find(
+              a => a.positionId === emp.positionId && a.evaluationType === evaluationType
+            );
+            if (positionMatch) return positionMatch.templateId;
+          }
+
+          // Priority 2: Department-specific + evaluation type match
+          if (emp.departmentId) {
+            const deptMatch = assignments.find(
+              a => a.departmentId === emp.departmentId && a.evaluationType === evaluationType
+            );
+            if (deptMatch) return deptMatch.templateId;
+          }
+
+          // Priority 3: Evaluation type only (no dept/position specified)
+          const typeOnlyMatch = assignments.find(
+            a => !a.departmentId && !a.positionId && a.evaluationType === evaluationType
+          );
+          if (typeOnlyMatch) return typeOnlyMatch.templateId;
+
+          // Fall back to cycle default template
+          return cycle.evaluationTemplateId;
+        };
 
         // Create evaluations for each employee
         const evaluationsToCreate: Array<{
@@ -516,6 +637,7 @@ export const performanceRouter = createTRPCRouter({
           employeeId: string;
           evaluationType: string;
           evaluatorId: string | null;
+          templateId: string | null;
           status: string;
         }> = [];
 
@@ -528,6 +650,7 @@ export const performanceRouter = createTRPCRouter({
               employeeId: emp.id,
               evaluationType: 'self',
               evaluatorId: emp.id,
+              templateId: resolveTemplateForEmployee(emp, 'self'),
               status: 'pending',
             });
           }
@@ -541,6 +664,7 @@ export const performanceRouter = createTRPCRouter({
               employeeId: emp.id,
               evaluationType: 'manager',
               evaluatorId: emp.reportingManagerId, // Can be null - HR/admins can evaluate
+              templateId: resolveTemplateForEmployee(emp, 'manager'),
               status: 'pending',
             });
           }
@@ -981,9 +1105,15 @@ export const performanceRouter = createTRPCRouter({
           });
         }
 
-        // Verify user is the evaluator
+        // Verify user is authorized to submit:
+        // - The evaluator themselves (employeeId matches)
+        // - HR managers/admins can submit any evaluation in their tenant
         const employeeId = ctx.user.employeeId;
-        if (!employeeId || evaluation.evaluatorId !== employeeId) {
+        const userRole = ctx.user.role;
+        const isEvaluator = employeeId && evaluation.evaluatorId === employeeId;
+        const isHROrAdmin = userRole === 'super_admin' || userRole === 'tenant_admin' || userRole === 'hr_manager';
+
+        if (!isEvaluator && !isHROrAdmin) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'Vous n\'êtes pas autorisé à soumettre cette évaluation',
