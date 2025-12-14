@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   ArrowLeft,
   Target,
@@ -35,6 +36,7 @@ import {
   Percent,
   FileText,
   CheckCircle2,
+  Briefcase,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -108,7 +110,9 @@ export default function NewObjectivePage() {
   const [targetUnit, setTargetUnit] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [employeeId, setEmployeeId] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
+  // Multi-select for team objectives
+  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
+  const [selectedPositionIds, setSelectedPositionIds] = useState<string[]>([]);
 
   // Fetch cycles
   const { data: cyclesData, isLoading: cyclesLoading } = api.performance.cycles.list.useQuery({
@@ -127,6 +131,9 @@ export default function NewObjectivePage() {
     status: 'active',
   });
 
+  // Fetch positions (for team objectives)
+  const { data: positionsData, isLoading: positionsLoading } = api.positions.list.useQuery({});
+
   // Create mutation
   const createObjective = api.performance.objectives.create.useMutation({
     onSuccess: () => {
@@ -142,6 +149,7 @@ export default function NewObjectivePage() {
   const cycles = cyclesData?.data ?? [];
   const employees = employeesData?.employees ?? [];
   const departmentsList = departmentsData ?? [];
+  const positionsList = positionsData ?? [];
 
   // Set default cycle if only one active
   useEffect(() => {
@@ -163,6 +171,18 @@ export default function NewObjectivePage() {
       return;
     }
 
+    // Require employee for individual objectives
+    if (objectiveLevel === 'individual' && !employeeId) {
+      toast.error('Veuillez sélectionner un collaborateur pour l\'objectif individuel');
+      return;
+    }
+
+    // Require at least one department OR position for team objectives
+    if (objectiveLevel === 'team' && selectedDepartmentIds.length === 0 && selectedPositionIds.length === 0) {
+      toast.error('Veuillez sélectionner au moins un département ou un poste pour l\'objectif d\'équipe');
+      return;
+    }
+
     createObjective.mutate({
       cycleId,
       title: title.trim(),
@@ -174,7 +194,8 @@ export default function NewObjectivePage() {
       targetUnit: targetUnit || undefined,
       dueDate: dueDate || undefined,
       employeeId: objectiveLevel === 'individual' && employeeId ? employeeId : undefined,
-      departmentId: objectiveLevel === 'team' && departmentId ? departmentId : undefined,
+      targetDepartmentIds: objectiveLevel === 'team' && selectedDepartmentIds.length > 0 ? selectedDepartmentIds : undefined,
+      targetPositionIds: objectiveLevel === 'team' && selectedPositionIds.length > 0 ? selectedPositionIds : undefined,
     });
   };
 
@@ -279,48 +300,144 @@ export default function NewObjectivePage() {
           </CardContent>
         </Card>
 
-        {/* Step 2b: Select Department (for team objectives) */}
+        {/* Step 2b: Select Departments and/or Positions (for team objectives) */}
         {objectiveLevel === 'team' && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                Département / Équipe concerné
+                Cible de l'objectif d'équipe
               </CardTitle>
               <CardDescription>
-                À quelle équipe ou département est attribué cet objectif ?
+                Sélectionnez les départements et/ou postes concernés par cet objectif.
+                Tous les employés correspondants seront inclus.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              {departmentsLoading ? (
-                <Skeleton className="h-12 w-full" />
-              ) : departmentsList.length === 0 ? (
-                <div className="text-center py-4">
-                  <p className="text-muted-foreground mb-2">
+            <CardContent className="space-y-6">
+              {/* Departments selection */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Building className="h-4 w-4 text-muted-foreground" />
+                  <Label className="font-medium">Départements</Label>
+                  {selectedDepartmentIds.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      ({selectedDepartmentIds.length} sélectionné{selectedDepartmentIds.length > 1 ? 's' : ''})
+                    </span>
+                  )}
+                </div>
+                {departmentsLoading ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : departmentsList.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
                     Aucun département configuré
                   </p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {departmentsList.map((dept) => {
+                      const isChecked = selectedDepartmentIds.includes(dept.id);
+                      return (
+                        <label
+                          key={dept.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isChecked
+                              ? 'border-primary bg-primary/5'
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
+                              } else {
+                                setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
+                              }
+                            }}
+                          />
+                          <span className="flex-1 text-sm">
+                            {dept.name}
+                            {dept.code && (
+                              <span className="text-muted-foreground ml-1">
+                                ({dept.code})
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Positions selection */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-muted-foreground" />
+                  <Label className="font-medium">Postes</Label>
+                  {selectedPositionIds.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      ({selectedPositionIds.length} sélectionné{selectedPositionIds.length > 1 ? 's' : ''})
+                    </span>
+                  )}
+                </div>
+                {positionsLoading ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : positionsList.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    Contactez votre administrateur pour créer des départements
+                    Aucun poste configuré
+                  </p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {positionsList.map((pos) => {
+                      const isChecked = selectedPositionIds.includes(pos.id);
+                      return (
+                        <label
+                          key={pos.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isChecked
+                              ? 'border-primary bg-primary/5'
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedPositionIds([...selectedPositionIds, pos.id]);
+                              } else {
+                                setSelectedPositionIds(selectedPositionIds.filter(id => id !== pos.id));
+                              }
+                            }}
+                          />
+                          <span className="flex-1 text-sm">
+                            {pos.title}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Selection summary */}
+              {(selectedDepartmentIds.length > 0 || selectedPositionIds.length > 0) && (
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    Cet objectif s'appliquera à tous les employés{' '}
+                    {selectedDepartmentIds.length > 0 && selectedPositionIds.length > 0
+                      ? 'des départements et postes sélectionnés'
+                      : selectedDepartmentIds.length > 0
+                        ? `de ${selectedDepartmentIds.length} département${selectedDepartmentIds.length > 1 ? 's' : ''}`
+                        : `occupant ${selectedPositionIds.length} poste${selectedPositionIds.length > 1 ? 's' : ''}`
+                    }.
                   </p>
                 </div>
-              ) : (
-                <Select value={departmentId} onValueChange={setDepartmentId}>
-                  <SelectTrigger className="min-h-[48px]">
-                    <SelectValue placeholder="Choisir un département..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departmentsList.map((dept) => (
-                      <SelectItem key={dept.id} value={dept.id}>
-                        {dept.name}
-                        {dept.code && (
-                          <span className="text-muted-foreground ml-2">
-                            ({dept.code})
-                          </span>
-                        )}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               )}
             </CardContent>
           </Card>

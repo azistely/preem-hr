@@ -36,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import Link from 'next/link';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
@@ -224,10 +225,9 @@ export default function ObjectivesPage() {
 
   const [selectedTab, setSelectedTab] = useState<'all' | 'company' | 'team' | 'individual'>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingObjective, setEditingObjective] = useState<string | null>(null);
 
-  // Form state
+  // Form state (for edit only)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -260,21 +260,6 @@ export default function ObjectivesPage() {
       ? statusFilter as 'draft' | 'proposed' | 'approved' | 'in_progress' | 'completed' | 'cancelled'
       : undefined,
     limit: 100,
-  });
-
-  // Create mutation
-  const createObjective = api.performance.objectives.create.useMutation({
-    onSuccess: () => {
-      toast.success('Objectif créé avec succès');
-      setShowCreateDialog(false);
-      resetForm();
-      utils.performance.objectives.list.invalidate();
-      // Invalidate sidebar to update objectives progress
-      utils.performance.getGuideStatus.invalidate();
-    },
-    onError: (error) => {
-      toast.error(error.message || 'Erreur lors de la création');
-    },
   });
 
   // Update mutation
@@ -329,25 +314,6 @@ export default function ObjectivesPage() {
     });
   };
 
-  const handleCreate = () => {
-    if (!effectiveCycleId) {
-      toast.error('Veuillez sélectionner un cycle');
-      return;
-    }
-
-    createObjective.mutate({
-      cycleId: effectiveCycleId,
-      title: formData.title,
-      description: formData.description || undefined,
-      objectiveLevel: formData.objectiveLevel,
-      objectiveType: formData.objectiveType,
-      weight: formData.weight || undefined,
-      targetValue: formData.targetValue || undefined,
-      targetUnit: formData.targetUnit || undefined,
-      dueDate: formData.dueDate || undefined,
-    });
-  };
-
   const handleEdit = (objective: typeof objectives[0]) => {
     setFormData({
       title: objective.title,
@@ -392,13 +358,11 @@ export default function ObjectivesPage() {
             Gérez les objectifs de performance
           </p>
         </div>
-        <Button
-          onClick={() => setShowCreateDialog(true)}
-          disabled={!effectiveCycleId}
-          className="min-h-[48px]"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Nouvel objectif
+        <Button asChild className="min-h-[48px]">
+          <Link href={effectiveCycleId ? `/performance/objectives/new?cycleId=${effectiveCycleId}` : '/performance/objectives/new'}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nouvel objectif
+          </Link>
         </Button>
       </div>
 
@@ -531,12 +495,12 @@ export default function ObjectivesPage() {
                     ? 'Aucun cycle actif. Créez un cycle de performance pour commencer.'
                     : 'Créez votre premier objectif pour commencer'}
                 </p>
-                {effectiveCycleId && (
-                  <Button onClick={() => setShowCreateDialog(true)}>
+                <Button asChild>
+                  <Link href={effectiveCycleId ? `/performance/objectives/new?cycleId=${effectiveCycleId}` : '/performance/objectives/new'}>
                     <Plus className="mr-2 h-4 w-4" />
                     Créer un objectif
-                  </Button>
-                )}
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           ) : (
@@ -554,12 +518,11 @@ export default function ObjectivesPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Create/Edit Dialog */}
+      {/* Edit Dialog */}
       <Dialog
-        open={showCreateDialog || !!editingObjective}
+        open={!!editingObjective}
         onOpenChange={(open) => {
           if (!open) {
-            setShowCreateDialog(false);
             setEditingObjective(null);
             resetForm();
           }
@@ -567,13 +530,9 @@ export default function ObjectivesPage() {
       >
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>
-              {editingObjective ? 'Modifier l\'objectif' : 'Nouvel objectif'}
-            </DialogTitle>
+            <DialogTitle>Modifier l'objectif</DialogTitle>
             <DialogDescription>
-              {editingObjective
-                ? 'Modifiez les informations de l\'objectif'
-                : 'Définissez un nouvel objectif de performance'}
+              Modifiez les informations de l'objectif
             </DialogDescription>
           </DialogHeader>
 
@@ -697,7 +656,6 @@ export default function ObjectivesPage() {
             <Button
               variant="outline"
               onClick={() => {
-                setShowCreateDialog(false);
                 setEditingObjective(null);
                 resetForm();
               }}
@@ -706,19 +664,11 @@ export default function ObjectivesPage() {
               Annuler
             </Button>
             <Button
-              onClick={editingObjective ? handleUpdate : handleCreate}
-              disabled={
-                !formData.title ||
-                createObjective.isPending ||
-                updateObjective.isPending
-              }
+              onClick={handleUpdate}
+              disabled={!formData.title || updateObjective.isPending}
               className="min-h-[48px]"
             >
-              {(createObjective.isPending || updateObjective.isPending)
-                ? 'Enregistrement...'
-                : editingObjective
-                ? 'Mettre à jour'
-                : 'Créer'}
+              {updateObjective.isPending ? 'Enregistrement...' : 'Mettre à jour'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -27,7 +27,7 @@ import {
 } from '@/lib/db/schema';
 import { positions } from '@/lib/db/schema/positions';
 import { assignments } from '@/lib/db/schema/assignments';
-import { and, eq, desc, asc, sql, gte, lte, isNull, or, inArray, count } from 'drizzle-orm';
+import { and, eq, desc, asc, sql, gte, lte, isNull, or, inArray, count, type SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
   detectCompanySize,
@@ -945,17 +945,59 @@ export const performanceRouter = createTRPCRouter({
         }
 
         // Get objectives for this employee in this cycle
-        // Include: individual objectives, team objectives (all team objectives for now), company objectives
-        // Note: employees table doesn't have departmentId, so we include all team objectives
+        // Include: individual objectives, team objectives (filtered by dept/position), company objectives
+
+        // Get employee's current position for team objective filtering
+        let employeePosition: { id: string; departmentId: string | null } | null = null;
+        if (result.evaluation.employeeId) {
+          const pos = await getEmployeeCurrentPosition(ctx.db, result.evaluation.employeeId, tenantId);
+          if (pos) {
+            employeePosition = { id: pos.id, departmentId: pos.departmentId };
+          }
+        }
 
         // Build conditions for objectives:
         // 1. Individual objectives for this employee
-        // 2. Team objectives (all team objectives since we can't filter by department)
+        // 2. Team objectives matching employee's department OR position
         // 3. Company-wide objectives
         const objectiveConditions = [
           eq(objectives.tenantId, tenantId),
           eq(objectives.cycleId, result.evaluation.cycleId!),
         ];
+
+        // Build team objective conditions based on employee's position/department
+        const teamObjectiveConditions: SQL[] = [];
+
+        if (employeePosition) {
+          // Legacy single departmentId match
+          if (employeePosition.departmentId) {
+            teamObjectiveConditions.push(
+              and(
+                eq(objectives.objectiveLevel, 'team'),
+                eq(objectives.departmentId, employeePosition.departmentId)
+              )!
+            );
+            // New: targetDepartmentIds array contains employee's department
+            teamObjectiveConditions.push(
+              and(
+                eq(objectives.objectiveLevel, 'team'),
+                sql`${objectives.targetDepartmentIds} @> ${JSON.stringify([employeePosition.departmentId])}::jsonb`
+              )!
+            );
+          }
+          // New: targetPositionIds array contains employee's position
+          teamObjectiveConditions.push(
+            and(
+              eq(objectives.objectiveLevel, 'team'),
+              sql`${objectives.targetPositionIds} @> ${JSON.stringify([employeePosition.id])}::jsonb`
+            )!
+          );
+        }
+
+        // If no position found, include all team objectives (fallback)
+        if (teamObjectiveConditions.length === 0) {
+          teamObjectiveConditions.push(eq(objectives.objectiveLevel, 'team'));
+        }
 
         const employeeObjectives = await ctx.db
           .select({
@@ -982,8 +1024,8 @@ export const performanceRouter = createTRPCRouter({
                 eq(objectives.objectiveLevel, 'individual'),
                 eq(objectives.employeeId, result.evaluation.employeeId!)
               ),
-              // Team objectives (include all since employees don't have departmentId)
-              eq(objectives.objectiveLevel, 'team'),
+              // Team objectives matching employee's dept/position
+              ...teamObjectiveConditions,
               // Company-wide objectives
               eq(objectives.objectiveLevel, 'company')
             )
@@ -1440,7 +1482,9 @@ export const performanceRouter = createTRPCRouter({
       .input(z.object({
         cycleId: z.string().uuid(),
         employeeId: z.string().uuid().optional(),
-        departmentId: z.string().uuid().optional(),
+        departmentId: z.string().uuid().optional(), // Legacy single department
+        targetDepartmentIds: z.array(z.string().uuid()).optional(), // Multi-department for team objectives
+        targetPositionIds: z.array(z.string().uuid()).optional(), // Multi-position for team objectives
         parentObjectiveId: z.string().uuid().optional(),
         title: z.string().min(1),
         description: z.string().optional(),
@@ -1454,6 +1498,26 @@ export const performanceRouter = createTRPCRouter({
       .mutation(async ({ ctx, input }) => {
         const tenantId = ctx.user.tenantId;
 
+        // Validate: individual objectives require employeeId
+        if (input.objectiveLevel === 'individual' && !input.employeeId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Les objectifs individuels nécessitent la sélection d\'un collaborateur',
+          });
+        }
+
+        // Validate: team objectives require at least one department OR position
+        if (input.objectiveLevel === 'team') {
+          const hasDepartment = input.departmentId || (input.targetDepartmentIds && input.targetDepartmentIds.length > 0);
+          const hasPosition = input.targetPositionIds && input.targetPositionIds.length > 0;
+          if (!hasDepartment && !hasPosition) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Les objectifs d\'équipe nécessitent la sélection d\'au moins un département ou poste',
+            });
+          }
+        }
+
         // Admin/HR created objectives are auto-approved, employee created are draft
         const isAdminOrHR = ['super_admin', 'tenant_admin', 'hr_manager', 'admin'].includes(ctx.user.role);
         const initialStatus = isAdminOrHR ? 'approved' : 'draft';
@@ -1465,6 +1529,8 @@ export const performanceRouter = createTRPCRouter({
             cycleId: input.cycleId,
             employeeId: input.employeeId,
             departmentId: input.departmentId,
+            targetDepartmentIds: input.targetDepartmentIds,
+            targetPositionIds: input.targetPositionIds,
             parentObjectiveId: input.parentObjectiveId,
             title: input.title,
             description: input.description,

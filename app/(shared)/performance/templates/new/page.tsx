@@ -480,10 +480,12 @@ export default function NewTemplatePage() {
                                   field={field}
                                   isEditing={editingField?.id === field.id}
                                   onEdit={() => setEditingField(field)}
+                                  onClose={() => setEditingField(null)}
                                   onDelete={() => deleteField(field.id)}
                                   onDuplicate={() => duplicateField(field)}
                                   onMoveUp={() => moveField(field.id, 'up')}
                                   onMoveDown={() => moveField(field.id, 'down')}
+                                  onUpdate={(updates) => updateField(field.id, updates)}
                                 />
                               ))
                             )}
@@ -510,37 +512,8 @@ export default function NewTemplatePage() {
           </Card>
         </div>
 
-        {/* Right: Field Editor / Targeting */}
+        {/* Right: Targeting only (Field Editor is now inline) */}
         <div className="space-y-6">
-          {/* Field Editor */}
-          {editingField ? (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-lg">Modifier la question</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setEditingField(null)}
-                >
-                  Fermer
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FieldEditor
-                  field={editingField}
-                  onChange={(updates) => updateField(editingField.id, updates)}
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                <Settings2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Cliquez sur une question pour la modifier</p>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Targeting */}
           <Card>
             <CardHeader>
@@ -689,71 +662,107 @@ export default function NewTemplatePage() {
   );
 }
 
-// Field Item in list
+// Field Item in list - INLINE EXPANDABLE EDITOR
 function FieldItem({
   field,
   isEditing,
   onEdit,
+  onClose,
   onDelete,
   onDuplicate,
   onMoveUp,
   onMoveDown,
+  onUpdate,
 }: {
   field: FormFieldDefinition;
   isEditing: boolean;
   onEdit: () => void;
+  onClose: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onUpdate: (updates: Partial<FormFieldDefinition>) => void;
 }) {
   const typeConfig = FIELD_TYPES.find(t => t.type === field.type);
   const Icon = typeConfig?.icon ?? Type;
 
   return (
-    <div
-      className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${
-        isEditing ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-      }`}
-      onClick={onEdit}
-    >
-      <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
-      <Icon className="h-4 w-4 text-muted-foreground" />
-      <span className="flex-1 text-sm truncate">{field.label}</span>
-      {field.required && <Badge variant="destructive" className="text-xs">Requis</Badge>}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-          <Button variant="ghost" size="icon" className="h-7 w-7">
-            <MoreHorizontal className="h-4 w-4" />
+    <div className={`rounded-lg border transition-all ${isEditing ? 'border-primary shadow-sm' : 'hover:border-muted-foreground/30'}`}>
+      {/* Header row - always visible */}
+      <div
+        className={`flex items-center gap-2 p-3 cursor-pointer ${isEditing ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+        onClick={() => isEditing ? onClose() : onEdit()}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <span className="flex-1 text-sm font-medium truncate">
+          {field.label || <span className="text-muted-foreground italic">Sans titre</span>}
+        </span>
+        {field.required && <Badge variant="destructive" className="text-xs">Requis</Badge>}
+
+        {/* Visual hint to configure */}
+        {!isEditing && !field.label && (
+          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50">
+            <Settings2 className="h-3 w-3 mr-1" />
+            Configurer
+          </Badge>
+        )}
+
+        {isEditing ? (
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+            Fermer
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveUp(); }}>
-            Monter
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveDown(); }}>
-            Descendre
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
-            <Copy className="mr-2 h-4 w-4" />
-            Dupliquer
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="text-destructive"
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Supprimer
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        ) : (
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-primary" onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+            <Settings2 className="h-3 w-3 mr-1" />
+            Modifier
+          </Button>
+        )}
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+            <Button variant="ghost" size="icon" className="h-7 w-7">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveUp(); }}>
+              Monter
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveDown(); }}>
+              Descendre
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
+              <Copy className="mr-2 h-4 w-4" />
+              Dupliquer
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              className="text-destructive"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Supprimer
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Inline editor - shows when editing */}
+      {isEditing && (
+        <div className="p-4 pt-0 border-t bg-muted/20">
+          <div className="pt-4 space-y-4">
+            <InlineFieldEditor field={field} onChange={onUpdate} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Field Editor
-function FieldEditor({
+// Inline Field Editor - embedded directly in the field item
+function InlineFieldEditor({
   field,
   onChange,
 }: {

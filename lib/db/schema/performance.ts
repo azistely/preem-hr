@@ -232,7 +232,11 @@ export const objectives = pgTable('objectives', {
 
   // Ownership
   employeeId: uuid('employee_id').references(() => employees.id, { onDelete: 'cascade' }), // NULL for company/team objectives
-  departmentId: uuid('department_id').references(() => departments.id, { onDelete: 'set null' }),
+  departmentId: uuid('department_id').references(() => departments.id, { onDelete: 'set null' }), // Legacy single FK
+
+  // Multi-target for team objectives (can target multiple departments and/or positions)
+  targetDepartmentIds: jsonb('target_department_ids').$type<string[]>(), // Array of department UUIDs
+  targetPositionIds: jsonb('target_position_ids').$type<string[]>(), // Array of position UUIDs
 
   // Objective details
   title: text('title').notNull(),
