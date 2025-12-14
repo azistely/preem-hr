@@ -2497,6 +2497,79 @@ export const performanceRouter = createTRPCRouter({
 
           return created;
         }),
+
+      updateStatus: hrManagerProcedure
+        .input(z.object({
+          sessionId: z.string().uuid(),
+          status: z.enum(['scheduled', 'in_progress', 'completed']),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          const tenantId = ctx.user.tenantId;
+
+          // Verify session exists and belongs to tenant
+          const [session] = await ctx.db
+            .select()
+            .from(calibrationSessions)
+            .where(and(
+              eq(calibrationSessions.id, input.sessionId),
+              eq(calibrationSessions.tenantId, tenantId)
+            ))
+            .limit(1);
+
+          if (!session) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'Session de calibration non trouvée',
+            });
+          }
+
+          // Update status
+          const [updated] = await ctx.db
+            .update(calibrationSessions)
+            .set({
+              status: input.status,
+              updatedAt: new Date(),
+            })
+            .where(eq(calibrationSessions.id, input.sessionId))
+            .returning();
+
+          // If completing session, calculate and save results summary
+          if (input.status === 'completed') {
+            // Get all ratings for this session
+            const ratings = await ctx.db
+              .select()
+              .from(calibrationRatings)
+              .where(eq(calibrationRatings.calibrationSessionId, input.sessionId));
+
+            // Calculate distribution by 9-box position
+            const distribution: Record<string, number> = {};
+            let adjustments = 0;
+
+            for (const rating of ratings) {
+              const boxKey = `${rating.performanceAxis}-${rating.potentialAxis}`;
+              distribution[boxKey] = (distribution[boxKey] || 0) + 1;
+
+              // Count adjustments (where calibratedRating differs from originalRating)
+              if (rating.calibratedRating && rating.calibratedRating !== rating.originalRating) {
+                adjustments++;
+              }
+            }
+
+            // Update with results summary
+            await ctx.db
+              .update(calibrationSessions)
+              .set({
+                resultsSummary: {
+                  totalEmployees: ratings.length,
+                  ratingDistribution: distribution,
+                  adjustments,
+                },
+              })
+              .where(eq(calibrationSessions.id, input.sessionId));
+          }
+
+          return updated;
+        }),
     }),
 
     ratings: createTRPCRouter({

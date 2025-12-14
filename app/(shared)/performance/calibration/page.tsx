@@ -49,6 +49,9 @@ import {
   Grid3X3,
   ChevronRight,
   Check,
+  Play,
+  CheckCircle2,
+  BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -185,6 +188,7 @@ export default function CalibrationPage() {
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showRatingDialog, setShowRatingDialog] = useState(false);
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
 
   // Create session form state
   const [sessionName, setSessionName] = useState('');
@@ -250,6 +254,23 @@ export default function CalibrationPage() {
     },
   });
 
+  // Update session status mutation
+  const updateSessionStatus = api.performance.calibration.sessions.updateStatus.useMutation({
+    onSuccess: (data) => {
+      if (data.status === 'in_progress') {
+        toast.success('Session de calibration démarrée');
+      } else if (data.status === 'completed') {
+        toast.success('Session de calibration terminée');
+        setShowCompleteDialog(false);
+      }
+      utils.performance.calibration.sessions.list.invalidate();
+      utils.performance.getGuideStatus.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erreur lors de la mise à jour');
+    },
+  });
+
   const handleCreateSession = () => {
     if (!selectedCycleId) {
       toast.error('Sélectionnez un cycle d\'abord');
@@ -292,6 +313,22 @@ export default function CalibrationPage() {
       potentialAxis: editingRating.potentialAxis,
       calibratedRating: editingRating.calibratedRating,
       justification: editingRating.justification || undefined,
+    });
+  };
+
+  const handleStartSession = () => {
+    if (!selectedSessionId) return;
+    updateSessionStatus.mutate({
+      sessionId: selectedSessionId,
+      status: 'in_progress',
+    });
+  };
+
+  const handleCompleteSession = () => {
+    if (!selectedSessionId) return;
+    updateSessionStatus.mutate({
+      sessionId: selectedSessionId,
+      status: 'completed',
     });
   };
 
@@ -441,39 +478,77 @@ export default function CalibrationPage() {
                   <CardDescription>{selectedSession.description}</CardDescription>
                 )}
               </div>
-              <Badge
-                variant={
-                  selectedSession.status === 'completed'
-                    ? 'default'
+              <div className="flex items-center gap-3">
+                <Badge
+                  variant={
+                    selectedSession.status === 'completed'
+                      ? 'default'
+                      : selectedSession.status === 'in_progress'
+                      ? 'secondary'
+                      : 'outline'
+                  }
+                >
+                  {selectedSession.status === 'completed'
+                    ? 'Terminée'
                     : selectedSession.status === 'in_progress'
-                    ? 'secondary'
-                    : 'outline'
-                }
-              >
-                {selectedSession.status === 'completed'
-                  ? 'Terminée'
-                  : selectedSession.status === 'in_progress'
-                  ? 'En cours'
-                  : 'Planifiée'}
-              </Badge>
+                    ? 'En cours'
+                    : 'Planifiée'}
+                </Badge>
+                {/* Action buttons based on status */}
+                {selectedSession.status === 'scheduled' && (
+                  <Button
+                    size="sm"
+                    onClick={handleStartSession}
+                    disabled={updateSessionStatus.isPending}
+                    className="min-h-[36px]"
+                  >
+                    <Play className="mr-2 h-4 w-4" />
+                    Démarrer
+                  </Button>
+                )}
+                {selectedSession.status === 'in_progress' && (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowCompleteDialog(true)}
+                    disabled={updateSessionStatus.isPending}
+                    className="min-h-[36px]"
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Terminer
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-6 text-sm text-muted-foreground">
-              {selectedSession.sessionDate && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                {selectedSession.sessionDate && (
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    {new Date(selectedSession.sessionDate).toLocaleDateString('fr-FR', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  {new Date(selectedSession.sessionDate).toLocaleDateString('fr-FR', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                  })}
+                  <Users className="h-4 w-4" />
+                  {ratings?.length ?? 0} employé(s)
+                </div>
+              </div>
+              {/* Show results summary for completed sessions */}
+              {selectedSession.status === 'completed' && selectedSession.resultsSummary && (
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <BarChart3 className="h-4 w-4" />
+                    <span>
+                      {(selectedSession.resultsSummary as { adjustments?: number })?.adjustments ?? 0} ajustement(s)
+                    </span>
+                  </div>
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                {ratings?.length ?? 0} employé(s)
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -687,6 +762,54 @@ export default function CalibrationPage() {
             >
               <Check className="mr-2 h-4 w-4" />
               {updateRating.isPending ? 'Enregistrement...' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete session confirmation dialog */}
+      <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Terminer la session de calibration</DialogTitle>
+            <DialogDescription>
+              Confirmez-vous la clôture de cette session ? Les notes calibrées seront finalisées.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <div className="p-4 bg-muted rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Session</span>
+                <span className="font-medium">{selectedSession?.name}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Employés calibrés</span>
+                <span className="font-medium">{ratings?.length ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Positions ajustées</span>
+                <span className="font-medium">
+                  {ratings?.filter(r => r.calibratedRating && r.calibratedRating !== r.originalRating).length ?? 0}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowCompleteDialog(false)}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleCompleteSession}
+              disabled={updateSessionStatus.isPending}
+              className="min-h-[44px]"
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              {updateSessionStatus.isPending ? 'Finalisation...' : 'Terminer la session'}
             </Button>
           </DialogFooter>
         </DialogContent>
