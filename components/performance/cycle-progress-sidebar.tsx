@@ -593,7 +593,7 @@ function SidebarContent({
           status: statuses.calibration,
           action:
             guideData.activeCycle && statuses.calibration !== 'locked'
-              ? { label: 'Calibrer', href: `/performance/cycles/${guideData.activeCycle.id}?tab=calibration` }
+              ? { label: 'Calibrer', href: '/performance/calibration' }
               : null,
           statusLabel: getCalibrationLabel(statuses.calibration),
         }

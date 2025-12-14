@@ -105,12 +105,14 @@ export default function CycleDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cycleId = params.id as string;
-  const actionParam = searchParams.get('action'); // Support ?action=release from guide
+  const actionParam = searchParams.get('action'); // Support ?action=launch, ?action=release from sidebar
+  const tabParam = searchParams.get('tab'); // Support ?tab=objectives, ?tab=calibration from sidebar
 
-  const [showLaunchDialog, setShowLaunchDialog] = useState(false);
+  const [showLaunchDialog, setShowLaunchDialog] = useState(actionParam === 'launch'); // Open launch dialog if action=launch
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(actionParam === 'release'); // Open share dialog if action=release
-  const [selectedTab, setSelectedTab] = useState('overview');
+  // Initialize tab from URL param, default to 'overview'
+  const [selectedTab, setSelectedTab] = useState(tabParam || 'overview');
 
   const utils = api.useUtils();
 

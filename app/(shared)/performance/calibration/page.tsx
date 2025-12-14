@@ -323,11 +323,17 @@ export default function CalibrationPage() {
             <DialogHeader>
               <DialogTitle>Créer une session de calibration</DialogTitle>
               <DialogDescription>
-                Planifiez une session pour calibrer les évaluations
+                Planifiez une session pour calibrer les évaluations du cycle sélectionné
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
+              {/* Show selected cycle */}
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">Cycle sélectionné</p>
+                <p className="font-medium">{cycles.find(c => c.id === selectedCycleId)?.name}</p>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="sessionName">Nom de la session *</Label>
                 <Input

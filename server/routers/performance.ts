@@ -2465,6 +2465,36 @@ export const performanceRouter = createTRPCRouter({
             })
             .returning();
 
+          // Auto-populate calibration ratings with completed evaluations from the cycle
+          // Get evaluations that are submitted or validated (ready for calibration)
+          const eligibleEvaluations = await ctx.db
+            .select({
+              id: evaluations.id,
+              overallScore: evaluations.overallScore,
+              overallRating: evaluations.overallRating,
+            })
+            .from(evaluations)
+            .where(and(
+              eq(evaluations.cycleId, input.cycleId),
+              eq(evaluations.tenantId, tenantId),
+              inArray(evaluations.status, ['submitted', 'validated'])
+            ));
+
+          // Create calibration ratings for each eligible evaluation
+          if (eligibleEvaluations.length > 0) {
+            await ctx.db.insert(calibrationRatings).values(
+              eligibleEvaluations.map((ev) => ({
+                tenantId,
+                calibrationSessionId: created.id,
+                evaluationId: ev.id,
+                originalRating: ev.overallRating ?? ev.overallScore?.toString() ?? 'N/A',
+                // Initialize at center of 9-box grid (2,2 = "Solide")
+                performanceAxis: 2,
+                potentialAxis: 2,
+              }))
+            );
+          }
+
           return created;
         }),
     }),
