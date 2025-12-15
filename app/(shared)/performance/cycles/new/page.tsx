@@ -13,7 +13,7 @@
 
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/trpc/react';
@@ -62,17 +62,41 @@ import {
   GripVertical,
   Building2,
   ChevronDown,
+  User,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
+import { EmployeePicker } from '@/components/hr-modules/forms/fields/employee-picker';
 
 // Wizard steps - Simple user-friendly labels
 const STEPS = [
+  { id: 'scope', title: 'Qui', icon: Users },
   { id: 'basics', title: 'Type', icon: ClipboardList },
   { id: 'period', title: 'Dates', icon: CalendarIcon },
   { id: 'options', title: 'Etapes', icon: Target },
   { id: 'questions', title: 'Questions', icon: FileText },
   { id: 'confirm', title: 'Resume', icon: Check },
 ];
+
+// Cycle scope options
+const CYCLE_SCOPES = [
+  { value: 'company', label: 'Tous les employés', description: 'Évaluation de toute l\'entreprise', icon: Building2, recommended: true },
+  { value: 'departments', label: 'Par département(s)', description: 'Évaluation ciblée sur un ou plusieurs départements', icon: Users },
+  { value: 'positions', label: 'Par poste(s)', description: 'Évaluation par fonction (ex: tous les développeurs)', icon: Target },
+  { value: 'individual', label: 'Un employé', description: 'Évaluation individuelle (période d\'essai, fin CDD, etc.)', icon: User },
+] as const;
+
+// Individual evaluation reasons
+const INDIVIDUAL_REASONS = [
+  { value: 'probation', label: 'Fin de période d\'essai' },
+  { value: 'cdd_renewal', label: 'Renouvellement CDD' },
+  { value: 'cddti_check', label: 'Point CDDTI' },
+  { value: 'performance_improvement', label: 'Plan d\'amélioration' },
+  { value: 'promotion', label: 'Évaluation pour promotion' },
+  { value: 'other', label: 'Autre' },
+] as const;
+
+type CycleScope = 'company' | 'departments' | 'positions' | 'individual';
+type IndividualReason = 'probation' | 'cdd_renewal' | 'cddti_check' | 'performance_improvement' | 'promotion' | 'other';
 
 // Cycle types with user-friendly French labels (must match API enum)
 const CYCLE_TYPES = [
@@ -103,6 +127,15 @@ interface TemplateAssignment {
 }
 
 interface FormData {
+  // Scope - who is being evaluated
+  cycleScope: CycleScope;
+  targetDepartmentIds: string[];
+  targetPositionIds: string[];
+  // Individual employee fields
+  targetEmployeeId: string | null;
+  individualReason: IndividualReason | null;
+  individualNotes: string;
+  // Basic info
   name: string;
   description: string;
   cycleType: CycleType;
@@ -141,16 +174,26 @@ export default function NewPerformanceCyclePage() {
 
   // Form state with smart defaults
   const [formData, setFormData] = useState<FormData>({
+    // Scope fields - who is being evaluated
+    cycleScope: 'company',
+    targetDepartmentIds: [],
+    targetPositionIds: [],
+    // Individual employee fields
+    targetEmployeeId: null,
+    individualReason: null,
+    individualNotes: '',
+    // Basic info
     name: `Évaluation annuelle ${currentYear}`,
     description: '',
     cycleType: 'annual',
     periodStart: defaultStart,
     periodEnd: defaultEnd,
-    includeSelfEvaluation: true,
-    includeManagerEvaluation: true,
+    // All options default to false - user explicitly enables what they need
+    includeSelfEvaluation: false,
+    includeManagerEvaluation: false,
     includePeerFeedback: false,
-    includeObjectives: true,
-    includeCompetencies: true,
+    includeObjectives: false,
+    includeCompetencies: false,
     includeCalibration: false,
     selfEvaluationDeadline: addMonths(defaultEnd, 1),
     managerEvaluationDeadline: addMonths(defaultEnd, 2),
@@ -162,8 +205,38 @@ export default function NewPerformanceCyclePage() {
     customQuestions: [],
   });
 
-  // Fetch departments for department-specific templates
+  // Fetch departments for scope selection and templates
   const { data: departments } = api.performance.departments.list.useQuery({ status: 'active' });
+
+  // Fetch positions for scope selection
+  const { data: positions } = api.positions.list.useQuery({ status: 'active' });
+
+  // Employee filter state (for narrowing down the employee picker)
+  const [employeeFilterDepartmentId, setEmployeeFilterDepartmentId] = useState<string | null>(null);
+  const [employeeFilterPositionId, setEmployeeFilterPositionId] = useState<string | null>(null);
+
+  // Fetch selected employee for display (only when individual scope is selected)
+  const { data: selectedEmployee } = api.employees.getById.useQuery(
+    { id: formData.targetEmployeeId! },
+    { enabled: !!formData.targetEmployeeId && formData.cycleScope === 'individual' }
+  );
+
+  // Auto-update name when employee data loads (for individual evaluations)
+  const prevEmployeeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      formData.cycleScope === 'individual' &&
+      selectedEmployee &&
+      formData.individualReason &&
+      formData.targetEmployeeId !== prevEmployeeIdRef.current
+    ) {
+      const reasonLabel = INDIVIDUAL_REASONS.find(r => r.value === formData.individualReason)?.label || '';
+      const employeeName = `${selectedEmployee.firstName} ${selectedEmployee.lastName}`;
+      const autoName = `${reasonLabel} - ${employeeName}`;
+      setFormData(prev => ({ ...prev, name: autoName }));
+      prevEmployeeIdRef.current = formData.targetEmployeeId;
+    }
+  }, [selectedEmployee, formData.cycleScope, formData.individualReason, formData.targetEmployeeId]);
 
   // Fetch available templates
   const { data: templatesData, isLoading: isLoadingTemplates } = api.hrForms.templates.list.useQuery({
@@ -248,31 +321,52 @@ export default function NewPerformanceCyclePage() {
     });
   }, [updateFormData]);
 
-  // Navigation
+  // Navigation - skip step 1 (frequency) for individual evaluations
   const goNext = useCallback(() => {
     if (currentStep < STEPS.length - 1) {
-      setCurrentStep((prev) => prev + 1);
+      let nextStep = currentStep + 1;
+      // Skip step 1 (frequency) for individual evaluations - not relevant for one-time evals
+      if (currentStep === 0 && formData.cycleScope === 'individual') {
+        nextStep = 2; // Jump to period step
+      }
+      setCurrentStep(nextStep);
     }
-  }, [currentStep]);
+  }, [currentStep, formData.cycleScope]);
 
   const goBack = useCallback(() => {
     if (currentStep > 0) {
-      setCurrentStep((prev) => prev - 1);
+      let prevStep = currentStep - 1;
+      // Skip step 1 (frequency) for individual evaluations
+      if (currentStep === 2 && formData.cycleScope === 'individual') {
+        prevStep = 0; // Jump back to scope step
+      }
+      setCurrentStep(prevStep);
     }
-  }, [currentStep]);
+  }, [currentStep, formData.cycleScope]);
 
   // Validate current step
   const isStepValid = useCallback(() => {
     switch (currentStep) {
-      case 0: // Basics
+      case 0: // Scope - who is being evaluated
+        if (formData.cycleScope === 'departments') {
+          return formData.targetDepartmentIds.length > 0;
+        }
+        if (formData.cycleScope === 'positions') {
+          return formData.targetPositionIds.length > 0;
+        }
+        if (formData.cycleScope === 'individual') {
+          return !!formData.targetEmployeeId && !!formData.individualReason;
+        }
+        return true; // company scope is always valid
+      case 1: // Basics
         return formData.name.trim().length > 0 && formData.cycleType;
-      case 1: // Period
+      case 2: // Period
         return formData.periodStart && formData.periodEnd && formData.periodStart < formData.periodEnd;
-      case 2: // Options
+      case 3: // Options
         return formData.includeSelfEvaluation || formData.includeManagerEvaluation;
-      case 3: // Questions (templates are optional)
+      case 4: // Questions (templates are optional)
         return true;
-      case 4: // Confirm
+      case 5: // Confirm
         return true;
       default:
         return false;
@@ -283,13 +377,35 @@ export default function NewPerformanceCyclePage() {
   const handleSubmit = useCallback(async () => {
     setIsSubmitting(true);
 
-    // Use the self-evaluation template as default, or manager eval template if no self-eval
-    const effectiveTemplateId = formData.selfEvaluationTemplateId
-      || formData.managerEvaluationTemplateId
-      || formData.evaluationTemplateId
+    // Helper to validate UUID format
+    const isValidUUID = (id: string | null): id is string => {
+      if (!id) return false;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      return uuidRegex.test(id);
+    };
+
+    // Filter out the special "same-as-self" value and validate UUIDs
+    const managerTemplateId = formData.managerEvaluationTemplateId === 'same-as-self'
+      ? formData.selfEvaluationTemplateId
+      : formData.managerEvaluationTemplateId;
+
+    // Use the self-evaluation template as default, only if it's a valid UUID
+    const effectiveTemplateId =
+      (isValidUUID(formData.selfEvaluationTemplateId) ? formData.selfEvaluationTemplateId : null)
+      || (isValidUUID(managerTemplateId) ? managerTemplateId : null)
+      || (isValidUUID(formData.evaluationTemplateId) ? formData.evaluationTemplateId : null)
       || undefined;
 
     createCycle.mutate({
+      // Scope fields
+      cycleScope: formData.cycleScope,
+      targetDepartmentIds: formData.targetDepartmentIds.length > 0 ? formData.targetDepartmentIds : undefined,
+      targetPositionIds: formData.targetPositionIds.length > 0 ? formData.targetPositionIds : undefined,
+      // Individual employee fields
+      targetEmployeeId: formData.targetEmployeeId || undefined,
+      individualReason: formData.individualReason || undefined,
+      individualNotes: formData.individualNotes || undefined,
+      // Basic info
       name: formData.name,
       description: formData.description || undefined,
       cycleType: formData.cycleType,
@@ -363,7 +479,14 @@ export default function NewPerformanceCyclePage() {
         {STEPS.map((step, index) => {
           const Icon = step.icon;
           const isActive = index === currentStep;
-          const isComplete = index < currentStep;
+          // Step 1 (frequency) is skipped for individual evaluations
+          const isSkipped = index === 1 && formData.cycleScope === 'individual';
+          const isComplete = index < currentStep || isSkipped;
+
+          // Hide skipped step entirely for cleaner UX
+          if (isSkipped) {
+            return null;
+          }
 
           return (
             <div
@@ -392,15 +515,319 @@ export default function NewPerformanceCyclePage() {
       {/* Step Content */}
       <Card>
         <CardContent className="pt-6">
-          {/* Step 1: Basics */}
+          {/* Step 0: Scope - Who is being evaluated */}
           {currentStep === 0 && (
             <div className="space-y-6">
               <div className="space-y-3">
-                <Label htmlFor="cycleType" className="text-base font-medium">
-                  A quelle frequence voulez-vous evaluer?
+                <Label className="text-base font-medium">
+                  Qui voulez-vous évaluer?
                 </Label>
                 <p className="text-sm text-muted-foreground -mt-1">
-                  Choisissez la periodicite qui convient a votre entreprise
+                  Choisissez le périmètre de cette évaluation
+                </p>
+                <div className="grid grid-cols-1 gap-3">
+                  {CYCLE_SCOPES.map((scope) => {
+                    const Icon = scope.icon;
+                    return (
+                      <button
+                        key={scope.value}
+                        type="button"
+                        onClick={() => {
+                          updateFormData({
+                            cycleScope: scope.value,
+                            // Reset dependent fields when scope changes
+                            targetDepartmentIds: [],
+                            targetPositionIds: [],
+                            targetEmployeeId: null,
+                            individualReason: null,
+                            individualNotes: '',
+                          });
+                          // Reset employee filters
+                          setEmployeeFilterDepartmentId(null);
+                          setEmployeeFilterPositionId(null);
+                        }}
+                        className={`p-4 rounded-lg border-2 text-left transition-all ${
+                          formData.cycleScope === scope.value
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted hover:border-primary/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-5 w-5" />
+                          <div className="font-medium">{scope.label}</div>
+                          {'recommended' in scope && scope.recommended && (
+                            <Badge variant="secondary" className="text-xs">Recommandé</Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground ml-7">{scope.description}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Department(s) Selection */}
+              {formData.cycleScope === 'departments' && (
+                <div className="space-y-4 p-4 bg-muted/50 rounded-lg border">
+                  <div className="space-y-2">
+                    <Label className="text-base font-medium flex items-center gap-2">
+                      <Building2 className="h-4 w-4" />
+                      Sélectionner le(s) département(s) <span className="text-destructive">*</span>
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Cochez les départements à inclure dans cette évaluation
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto">
+                    {departments?.map((dept: { id: string; name: string }) => {
+                      const isSelected = formData.targetDepartmentIds.includes(dept.id);
+                      return (
+                        <label
+                          key={dept.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-primary bg-primary/5'
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={(checked) => {
+                              const newIds = checked
+                                ? [...formData.targetDepartmentIds, dept.id]
+                                : formData.targetDepartmentIds.filter(id => id !== dept.id);
+                              updateFormData({
+                                targetDepartmentIds: newIds,
+                                name: newIds.length === 1
+                                  ? `Évaluation ${departments?.find((d: { id: string }) => d.id === newIds[0])?.name} ${currentYear}`
+                                  : newIds.length > 1
+                                  ? `Évaluation ${newIds.length} départements ${currentYear}`
+                                  : formData.name,
+                              });
+                            }}
+                          />
+                          <span className="font-medium">{dept.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {formData.targetDepartmentIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t">
+                      <span className="text-sm text-muted-foreground">Sélectionnés:</span>
+                      {formData.targetDepartmentIds.map((id) => {
+                        const dept = departments?.find((d: { id: string }) => d.id === id);
+                        return (
+                          <Badge key={id} variant="secondary" className="gap-1">
+                            {dept?.name}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newIds = formData.targetDepartmentIds.filter(dId => dId !== id);
+                                updateFormData({ targetDepartmentIds: newIds });
+                              }}
+                              className="ml-1 hover:text-destructive"
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Position(s) Selection */}
+              {formData.cycleScope === 'positions' && (
+                <div className="space-y-4 p-4 bg-muted/50 rounded-lg border">
+                  <div className="space-y-2">
+                    <Label className="text-base font-medium flex items-center gap-2">
+                      <Target className="h-4 w-4" />
+                      Sélectionner le(s) poste(s) <span className="text-destructive">*</span>
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Cochez les postes à inclure dans cette évaluation (tous les employés de ces postes seront évalués)
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto">
+                    {positions?.map((pos: { id: string; title: string }) => {
+                      const isSelected = formData.targetPositionIds.includes(pos.id);
+                      return (
+                        <label
+                          key={pos.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-primary bg-primary/5'
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={(checked) => {
+                              const newIds = checked
+                                ? [...formData.targetPositionIds, pos.id]
+                                : formData.targetPositionIds.filter(id => id !== pos.id);
+                              updateFormData({
+                                targetPositionIds: newIds,
+                                name: newIds.length === 1
+                                  ? `Évaluation ${positions?.find((p: { id: string }) => p.id === newIds[0])?.title} ${currentYear}`
+                                  : newIds.length > 1
+                                  ? `Évaluation ${newIds.length} postes ${currentYear}`
+                                  : formData.name,
+                              });
+                            }}
+                          />
+                          <span className="font-medium">{pos.title}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {formData.targetPositionIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t">
+                      <span className="text-sm text-muted-foreground">Sélectionnés:</span>
+                      {formData.targetPositionIds.map((id) => {
+                        const pos = positions?.find((p: { id: string }) => p.id === id);
+                        return (
+                          <Badge key={id} variant="secondary" className="gap-1">
+                            {pos?.title}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newIds = formData.targetPositionIds.filter(pId => pId !== id);
+                                updateFormData({ targetPositionIds: newIds });
+                              }}
+                              className="ml-1 hover:text-destructive"
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Individual Employee Selection */}
+              {formData.cycleScope === 'individual' && (
+                <div className="space-y-4 p-4 bg-muted/50 rounded-lg border">
+                  {/* Filters to narrow down employees */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Filtrer par département</Label>
+                      <Select
+                        value={employeeFilterDepartmentId || 'all'}
+                        onValueChange={(value) => setEmployeeFilterDepartmentId(value === 'all' ? null : value)}
+                      >
+                        <SelectTrigger className="min-h-[44px]">
+                          <SelectValue placeholder="Tous les départements" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Tous les départements</SelectItem>
+                          {departments?.map((dept: { id: string; name: string }) => (
+                            <SelectItem key={dept.id} value={dept.id}>
+                              {dept.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-muted-foreground">Filtrer par poste</Label>
+                      <Select
+                        value={employeeFilterPositionId || 'all'}
+                        onValueChange={(value) => setEmployeeFilterPositionId(value === 'all' ? null : value)}
+                      >
+                        <SelectTrigger className="min-h-[44px]">
+                          <SelectValue placeholder="Tous les postes" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Tous les postes</SelectItem>
+                          {positions?.map((pos: { id: string; title: string }) => (
+                            <SelectItem key={pos.id} value={pos.id}>
+                              {pos.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <EmployeePicker
+                    label="Sélectionner l'employé"
+                    required
+                    value={formData.targetEmployeeId || undefined}
+                    onChange={(value) => {
+                      const empId = value as string | null;
+                      updateFormData({
+                        targetEmployeeId: empId,
+                      });
+                    }}
+                    placeholder="Rechercher un employé..."
+                    departmentId={employeeFilterDepartmentId || undefined}
+                    positionId={employeeFilterPositionId || undefined}
+                  />
+
+                  <div className="space-y-2">
+                    <Label className="text-base font-medium">
+                      Motif de l'évaluation <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={formData.individualReason || ''}
+                      onValueChange={(value) => {
+                        const reason = value as IndividualReason;
+                        const reasonLabel = INDIVIDUAL_REASONS.find(r => r.value === reason)?.label || '';
+                        // Auto-generate name based on reason and employee (if selected)
+                        const employeeName = selectedEmployee
+                          ? `${selectedEmployee.firstName} ${selectedEmployee.lastName}`
+                          : '';
+                        const autoName = employeeName
+                          ? `${reasonLabel} - ${employeeName}`
+                          : reasonLabel;
+                        updateFormData({
+                          individualReason: reason,
+                          name: autoName,
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="min-h-[48px]">
+                        <SelectValue placeholder="Sélectionner un motif..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INDIVIDUAL_REASONS.map((reason) => (
+                          <SelectItem key={reason.value} value={reason.value}>
+                            {reason.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-base font-medium">
+                      Notes (optionnel)
+                    </Label>
+                    <Textarea
+                      value={formData.individualNotes}
+                      onChange={(e) => updateFormData({ individualNotes: e.target.value })}
+                      placeholder="Contexte ou informations supplémentaires..."
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 1: Basics */}
+          {currentStep === 1 && (
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <Label htmlFor="cycleType" className="text-base font-medium">
+                  À quelle fréquence voulez-vous évaluer?
+                </Label>
+                <p className="text-sm text-muted-foreground -mt-1">
+                  Choisissez la périodicité qui convient à votre entreprise
                 </p>
                 <div className="grid grid-cols-1 gap-3">
                   {CYCLE_TYPES.map((type) => (
@@ -417,7 +844,7 @@ export default function NewPerformanceCyclePage() {
                       <div className="flex items-center gap-2">
                         <div className="font-medium">{type.label}</div>
                         {'recommended' in type && type.recommended && (
-                          <Badge variant="secondary" className="text-xs">Recommande</Badge>
+                          <Badge variant="secondary" className="text-xs">Recommandé</Badge>
                         )}
                       </div>
                       <div className="text-sm text-muted-foreground">{type.description}</div>
@@ -428,17 +855,17 @@ export default function NewPerformanceCyclePage() {
 
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-base font-medium">
-                  Donnez un nom a cette evaluation
+                  Donnez un nom à cette évaluation
                 </Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => updateFormData({ name: e.target.value })}
-                  placeholder="Ex: Evaluation annuelle 2024"
+                  placeholder="Ex: Évaluation annuelle 2024"
                   className="min-h-[48px]"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Ce nom sera visible par tous les employes
+                  Ce nom sera visible par tous les employés
                 </p>
               </div>
 
@@ -450,7 +877,7 @@ export default function NewPerformanceCyclePage() {
                   id="description"
                   value={formData.description}
                   onChange={(e) => updateFormData({ description: e.target.value })}
-                  placeholder="Ex: Evaluation de fin d'annee pour tous les employes..."
+                  placeholder="Ex: Évaluation de fin d'année pour tous les employés..."
                   rows={3}
                 />
               </div>
@@ -458,20 +885,23 @@ export default function NewPerformanceCyclePage() {
           )}
 
           {/* Step 2: Period */}
-          {currentStep === 1 && (
+          {currentStep === 2 && (
             <div className="space-y-6">
               <Alert>
                 <Info className="h-4 w-4" />
                 <AlertDescription>
-                  Les dates ont été pré-remplies en fonction du type de cycle choisi.
-                  Vous pouvez les modifier si nécessaire.
+                  {formData.cycleScope === 'individual'
+                    ? 'Définissez la période couverte par cette évaluation (ex: période d\'essai, période du CDD).'
+                    : 'Les dates ont été pré-remplies en fonction du type de cycle choisi. Vous pouvez les modifier si nécessaire.'
+                  }
                 </AlertDescription>
               </Alert>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label className="text-base font-medium">
-                    Date de début <span className="text-destructive">*</span>
+                    {formData.cycleScope === 'individual' ? 'Début de la période évaluée' : 'Date de début'}{' '}
+                    <span className="text-destructive">*</span>
                   </Label>
                   <Popover>
                     <PopoverTrigger asChild>
@@ -497,7 +927,8 @@ export default function NewPerformanceCyclePage() {
 
                 <div className="space-y-2">
                   <Label className="text-base font-medium">
-                    Date de fin <span className="text-destructive">*</span>
+                    {formData.cycleScope === 'individual' ? 'Fin de la période évaluée' : 'Date de fin'}{' '}
+                    <span className="text-destructive">*</span>
                   </Label>
                   <Popover>
                     <PopoverTrigger asChild>
@@ -524,7 +955,7 @@ export default function NewPerformanceCyclePage() {
 
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-sm">
-                  <strong>Durée du cycle:</strong>{' '}
+                  <strong>{formData.cycleScope === 'individual' ? 'Durée de la période:' : 'Durée du cycle:'}</strong>{' '}
                   {Math.ceil(
                     (formData.periodEnd.getTime() - formData.periodStart.getTime()) /
                       (1000 * 60 * 60 * 24)
@@ -536,13 +967,21 @@ export default function NewPerformanceCyclePage() {
           )}
 
           {/* Step 3: Options */}
-          {currentStep === 2 && (
+          {currentStep === 3 && (
             <div className="space-y-6">
               <div className="space-y-4">
                 <div>
-                  <Label className="text-base font-medium">Quelles etapes pour cette evaluation?</Label>
+                  <Label className="text-base font-medium">
+                    {formData.cycleScope === 'individual'
+                      ? 'Quelles étapes pour cette évaluation individuelle?'
+                      : 'Quelles étapes pour cette évaluation?'
+                    }
+                  </Label>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Cochez les etapes que vous souhaitez inclure dans ce cycle
+                    {formData.cycleScope === 'individual'
+                      ? 'Cochez les étapes que vous souhaitez inclure'
+                      : 'Cochez les étapes que vous souhaitez inclure dans ce cycle'
+                    }
                   </p>
                 </div>
 
@@ -557,11 +996,19 @@ export default function NewPerformanceCyclePage() {
                     />
                     <div>
                       <div className="flex items-center gap-2">
-                        <div className="font-medium">Les employes s'evaluent eux-memes</div>
-                        <Badge variant="secondary" className="text-xs">Recommande</Badge>
+                        <div className="font-medium">
+                          {formData.cycleScope === 'individual'
+                            ? "L'employé s'évalue lui-même"
+                            : 'Les employés s\'évaluent eux-mêmes'
+                          }
+                        </div>
+                        <Badge variant="secondary" className="text-xs">Recommandé</Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        Chaque employe note sa propre performance avant votre evaluation
+                        {formData.cycleScope === 'individual'
+                          ? "L'employé note sa propre performance avant votre évaluation"
+                          : 'Chaque employé note sa propre performance avant votre évaluation'
+                        }
                       </div>
                     </div>
                   </label>
@@ -576,11 +1023,19 @@ export default function NewPerformanceCyclePage() {
                     />
                     <div>
                       <div className="flex items-center gap-2">
-                        <div className="font-medium">Vous evaluez vos employes</div>
-                        <Badge variant="secondary" className="text-xs">Recommande</Badge>
+                        <div className="font-medium">
+                          {formData.cycleScope === 'individual'
+                            ? "Vous évaluez l'employé"
+                            : 'Vous évaluez vos employés'
+                          }
+                        </div>
+                        <Badge variant="secondary" className="text-xs">Recommandé</Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        Vous notez la performance de chaque employe
+                        {formData.cycleScope === 'individual'
+                          ? "Vous notez la performance de l'employé"
+                          : 'Vous notez la performance de chaque employé'
+                        }
                       </div>
                     </div>
                   </label>
@@ -628,39 +1083,40 @@ export default function NewPerformanceCyclePage() {
                       className="mt-1"
                     />
                     <div>
-                      <div className="flex items-center gap-2">
-                        <div className="font-medium">Evaluer les competences</div>
-                        <Badge variant="secondary" className="text-xs">Recommande</Badge>
-                      </div>
+                      <div className="font-medium">Evaluer les competences</div>
                       <div className="text-sm text-muted-foreground">
                         Evaluer les competences techniques et comportementales associees au poste
                       </div>
+                      <Badge variant="outline" className="mt-1 text-xs">Requiert configuration des postes</Badge>
                     </div>
                   </label>
 
-                  <label className="flex items-start gap-3 p-4 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors bg-muted/20">
-                    <Checkbox
-                      checked={formData.includeCalibration}
-                      onCheckedChange={(checked) =>
-                        updateFormData({ includeCalibration: !!checked })
-                      }
-                      className="mt-1"
-                    />
-                    <div>
-                      <div className="font-medium text-muted-foreground">Harmoniser les notes (Calibration)</div>
-                      <div className="text-sm text-muted-foreground">
-                        Session de revue pour harmoniser les notes entre evaluateurs
+                  {/* Hide calibration for individual evaluations - doesn't make sense for 1 person */}
+                  {formData.cycleScope !== 'individual' && (
+                    <label className="flex items-start gap-3 p-4 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors bg-muted/20">
+                      <Checkbox
+                        checked={formData.includeCalibration}
+                        onCheckedChange={(checked) =>
+                          updateFormData({ includeCalibration: !!checked })
+                        }
+                        className="mt-1"
+                      />
+                      <div>
+                        <div className="font-medium text-muted-foreground">Harmoniser les notes (Calibration)</div>
+                        <div className="text-sm text-muted-foreground">
+                          Session de revue pour harmoniser les notes entre évaluateurs
+                        </div>
+                        <Badge variant="outline" className="mt-1 text-xs">Grandes entreprises (50+ employés)</Badge>
                       </div>
-                      <Badge variant="outline" className="mt-1 text-xs">Grandes entreprises (50+ employes)</Badge>
-                    </div>
-                  </label>
+                    </label>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
           {/* Step 4: Questions/Templates */}
-          {currentStep === 3 && (
+          {currentStep === 4 && (
             <div className="space-y-6">
               <Alert>
                 <Info className="h-4 w-4" />
@@ -957,7 +1413,7 @@ export default function NewPerformanceCyclePage() {
           )}
 
           {/* Step 5: Confirm */}
-          {currentStep === 4 && (
+          {currentStep === 5 && (
             <div className="space-y-6">
               <Alert>
                 <Check className="h-4 w-4" />
@@ -968,16 +1424,74 @@ export default function NewPerformanceCyclePage() {
 
               <div className="space-y-4">
                 <div className="p-4 bg-muted rounded-lg space-y-3">
+                  {/* Scope information */}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Périmètre:</span>
+                    <span className="font-medium">
+                      {CYCLE_SCOPES.find((s) => s.value === formData.cycleScope)?.label}
+                    </span>
+                  </div>
+                  {formData.cycleScope === 'departments' && formData.targetDepartmentIds.length > 0 && (
+                    <div className="flex justify-between items-start gap-4">
+                      <span className="text-muted-foreground shrink-0">Départements:</span>
+                      <div className="flex flex-wrap gap-1 justify-end">
+                        {formData.targetDepartmentIds.map((id) => (
+                          <Badge key={id} variant="secondary" className="text-xs">
+                            {departments?.find((d: { id: string }) => d.id === id)?.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {formData.cycleScope === 'positions' && formData.targetPositionIds.length > 0 && (
+                    <div className="flex justify-between items-start gap-4">
+                      <span className="text-muted-foreground shrink-0">Postes:</span>
+                      <div className="flex flex-wrap gap-1 justify-end">
+                        {formData.targetPositionIds.map((id) => (
+                          <Badge key={id} variant="secondary" className="text-xs">
+                            {positions?.find((p: { id: string }) => p.id === id)?.title}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {formData.cycleScope === 'individual' && formData.targetEmployeeId && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Employé:</span>
+                        <span className="font-medium">
+                          {selectedEmployee
+                            ? `${selectedEmployee.firstName} ${selectedEmployee.lastName}`
+                            : 'Employé sélectionné'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Motif:</span>
+                        <Badge variant="secondary" className="text-xs">
+                          {INDIVIDUAL_REASONS.find((r) => r.value === formData.individualReason)?.label}
+                        </Badge>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Nom:</span>
                     <span className="font-medium">{formData.name}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Type:</span>
-                    <span className="font-medium">
-                      {CYCLE_TYPES.find((t) => t.value === formData.cycleType)?.label}
-                    </span>
-                  </div>
+                  {/* Hide cycle type for individual evaluations - not relevant */}
+                  {formData.cycleScope !== 'individual' && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Type:</span>
+                      <span className="font-medium">
+                        {CYCLE_TYPES.find((t) => t.value === formData.cycleType)?.label}
+                      </span>
+                    </div>
+                  )}
+                  {formData.cycleScope === 'individual' && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Type:</span>
+                      <span className="font-medium">Évaluation ponctuelle</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Période:</span>
                     <span className="font-medium">

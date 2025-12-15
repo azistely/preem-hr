@@ -42,6 +42,18 @@ import {
   type ProficiencyLevel,
 } from '@/lib/constants/competency-scales';
 import type { CompetencyScaleType, TenantSettings } from '@/lib/db/schema/tenant-settings.schema';
+import {
+  generateEvaluationExcel,
+  generateEvaluationCSV,
+  getEvaluationExportFilename,
+  type EvaluationExportData,
+} from '@/features/performance/services/evaluation-export';
+import {
+  generateObjectivesExcel,
+  generateObjectivesCSV,
+  getObjectivesExportFilename,
+  type ObjectiveExportData,
+} from '@/features/performance/services/objectives-export';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -165,6 +177,7 @@ export const performanceRouter = createTRPCRouter({
       .input(z.object({
         status: z.string().optional(),
         year: z.number().optional(),
+        cycleScope: z.enum(['company', 'departments', 'positions', 'department', 'individual']).optional(),
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
       }))
@@ -182,9 +195,49 @@ export const performanceRouter = createTRPCRouter({
           );
         }
 
+        if (input.cycleScope) {
+          conditions.push(eq(performanceCycles.cycleScope, input.cycleScope));
+        }
+
+        // Select cycles with target employee and department info
         const cyclesList = await ctx.db
-          .select()
+          .select({
+            id: performanceCycles.id,
+            tenantId: performanceCycles.tenantId,
+            name: performanceCycles.name,
+            description: performanceCycles.description,
+            cycleType: performanceCycles.cycleType,
+            status: performanceCycles.status,
+            periodStart: performanceCycles.periodStart,
+            periodEnd: performanceCycles.periodEnd,
+            includeSelfEvaluation: performanceCycles.includeSelfEvaluation,
+            includeManagerEvaluation: performanceCycles.includeManagerEvaluation,
+            includePeerFeedback: performanceCycles.includePeerFeedback,
+            includeObjectives: performanceCycles.includeObjectives,
+            includeCompetencies: performanceCycles.includeCompetencies,
+            includeCalibration: performanceCycles.includeCalibration,
+            selfEvaluationDeadline: performanceCycles.selfEvaluationDeadline,
+            managerEvaluationDeadline: performanceCycles.managerEvaluationDeadline,
+            evaluationTemplateId: performanceCycles.evaluationTemplateId,
+            templateAssignments: performanceCycles.templateAssignments,
+            customQuestions: performanceCycles.customQuestions,
+            cycleScope: performanceCycles.cycleScope,
+            targetEmployeeId: performanceCycles.targetEmployeeId,
+            targetDepartmentId: performanceCycles.targetDepartmentId,
+            individualReason: performanceCycles.individualReason,
+            individualNotes: performanceCycles.individualNotes,
+            createdAt: performanceCycles.createdAt,
+            updatedAt: performanceCycles.updatedAt,
+            // Target employee info
+            targetEmployeeFirstName: employees.firstName,
+            targetEmployeeLastName: employees.lastName,
+            targetEmployeeNumber: employees.employeeNumber,
+            // Target department info
+            targetDepartmentName: departments.name,
+          })
           .from(performanceCycles)
+          .leftJoin(employees, eq(performanceCycles.targetEmployeeId, employees.id))
+          .leftJoin(departments, eq(performanceCycles.targetDepartmentId, departments.id))
           .where(and(...conditions))
           .orderBy(desc(performanceCycles.periodStart))
           .limit(input.limit)
@@ -217,7 +270,42 @@ export const performanceRouter = createTRPCRouter({
 
         return {
           data: cyclesList.map(cycle => ({
-            ...cycle,
+            id: cycle.id,
+            tenantId: cycle.tenantId,
+            name: cycle.name,
+            description: cycle.description,
+            cycleType: cycle.cycleType,
+            status: cycle.status,
+            periodStart: cycle.periodStart,
+            periodEnd: cycle.periodEnd,
+            includeSelfEvaluation: cycle.includeSelfEvaluation,
+            includeManagerEvaluation: cycle.includeManagerEvaluation,
+            includePeerFeedback: cycle.includePeerFeedback,
+            includeObjectives: cycle.includeObjectives,
+            includeCompetencies: cycle.includeCompetencies,
+            includeCalibration: cycle.includeCalibration,
+            selfEvaluationDeadline: cycle.selfEvaluationDeadline,
+            managerEvaluationDeadline: cycle.managerEvaluationDeadline,
+            evaluationTemplateId: cycle.evaluationTemplateId,
+            templateAssignments: cycle.templateAssignments,
+            customQuestions: cycle.customQuestions,
+            cycleScope: cycle.cycleScope || 'company',
+            targetEmployeeId: cycle.targetEmployeeId,
+            targetDepartmentId: cycle.targetDepartmentId,
+            individualReason: cycle.individualReason,
+            individualNotes: cycle.individualNotes,
+            createdAt: cycle.createdAt,
+            updatedAt: cycle.updatedAt,
+            // Nested target employee
+            targetEmployee: cycle.targetEmployeeFirstName ? {
+              firstName: cycle.targetEmployeeFirstName,
+              lastName: cycle.targetEmployeeLastName,
+              employeeNumber: cycle.targetEmployeeNumber,
+            } : null,
+            // Nested target department
+            targetDepartment: cycle.targetDepartmentName ? {
+              name: cycle.targetDepartmentName,
+            } : null,
             evaluationsTotal: evalStats[cycle.id]?.total ?? 0,
             evaluationsCompleted: evalStats[cycle.id]?.completed ?? 0,
           })),
@@ -313,24 +401,102 @@ export const performanceRouter = createTRPCRouter({
           helpText: z.string().optional(),
           appliesTo: z.enum(['self', 'manager', 'both']),
         })).optional(),
+        // Cycle scope - unified approach for all evaluation types
+        // 'company' = all employees, 'departments' = multi-select departments, 'positions' = multi-select positions
+        // Legacy: 'department' = single department, 'individual' = single employee
+        cycleScope: z.enum(['company', 'departments', 'positions', 'department', 'individual']).default('company'),
+        // Multi-select fields (new approach)
+        targetDepartmentIds: z.array(z.string().uuid()).optional(),
+        targetPositionIds: z.array(z.string().uuid()).optional(),
+        // Legacy single-select fields (kept for compatibility)
+        targetEmployeeId: z.string().uuid().optional(),
+        targetDepartmentId: z.string().uuid().optional(),
+        individualReason: z.enum(['probation', 'cdd_renewal', 'cddti_check', 'performance_improvement', 'promotion', 'other']).optional(),
+        individualNotes: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const tenantId = ctx.user.tenantId;
 
-        // Verify template exists if provided
+        // Validate cycle scope requirements
+        if (input.cycleScope === 'departments' && (!input.targetDepartmentIds || input.targetDepartmentIds.length === 0)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Au moins un département doit être sélectionné',
+          });
+        }
+        if (input.cycleScope === 'positions' && (!input.targetPositionIds || input.targetPositionIds.length === 0)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Au moins un poste doit être sélectionné',
+          });
+        }
+        // Legacy validations
+        if (input.cycleScope === 'individual' && !input.targetEmployeeId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Un employé doit être sélectionné pour une évaluation individuelle',
+          });
+        }
+        if (input.cycleScope === 'department' && !input.targetDepartmentId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Un département doit être sélectionné pour un cycle de département',
+          });
+        }
+
+        // Verify template exists if provided (allow both tenant templates and system templates)
         if (input.evaluationTemplateId) {
           const [template] = await ctx.db
             .select()
             .from(hrFormTemplates)
             .where(and(
               eq(hrFormTemplates.id, input.evaluationTemplateId),
-              eq(hrFormTemplates.tenantId, tenantId)
+              or(
+                eq(hrFormTemplates.tenantId, tenantId),
+                eq(hrFormTemplates.isSystem, true)
+              )
             ));
 
           if (!template) {
             throw new TRPCError({
               code: 'NOT_FOUND',
               message: 'Modèle d\'évaluation non trouvé',
+            });
+          }
+        }
+
+        // Verify target employee exists and belongs to tenant (for individual cycles)
+        if (input.targetEmployeeId) {
+          const [employee] = await ctx.db
+            .select()
+            .from(employees)
+            .where(and(
+              eq(employees.id, input.targetEmployeeId),
+              eq(employees.tenantId, tenantId)
+            ));
+
+          if (!employee) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'Employé non trouvé',
+            });
+          }
+        }
+
+        // Verify target department exists and belongs to tenant (for department cycles)
+        if (input.targetDepartmentId) {
+          const [department] = await ctx.db
+            .select()
+            .from(departments)
+            .where(and(
+              eq(departments.id, input.targetDepartmentId),
+              eq(departments.tenantId, tenantId)
+            ));
+
+          if (!department) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'Département non trouvé',
             });
           }
         }
@@ -360,6 +526,16 @@ export const performanceRouter = createTRPCRouter({
             includeCalibration: input.includeCalibration,
             companySizeProfile: input.companySizeProfile,
             customQuestions: input.customQuestions,
+            // Scope fields
+            cycleScope: input.cycleScope,
+            // Multi-select (new approach)
+            targetDepartmentIds: input.targetDepartmentIds,
+            targetPositionIds: input.targetPositionIds,
+            // Legacy single-select
+            targetEmployeeId: input.targetEmployeeId,
+            targetDepartmentId: input.targetDepartmentId,
+            individualReason: input.individualReason,
+            individualNotes: input.individualNotes,
             status: 'planning',
             createdBy: ctx.user.id,
           })
@@ -533,9 +709,77 @@ export const performanceRouter = createTRPCRouter({
           positionId: string | null;
         }[];
 
-        if (input.employeeIds && input.employeeIds.length > 0) {
-          // Fetch specific employees with their current position via assignments
-          // Department is on positions table, not employees
+        // Determine which employees to include based on cycle scope
+        const cycleScope = cycle.cycleScope || 'company';
+
+        if (cycleScope === 'individual') {
+          // Individual cycle: only the target employee
+          if (!cycle.targetEmployeeId) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Un employé cible doit être défini pour un cycle individuel',
+            });
+          }
+          const employeesWithPositions = await ctx.db
+            .select({
+              id: employees.id,
+              reportingManagerId: employees.reportingManagerId,
+              positionId: assignments.positionId,
+              departmentId: positions.departmentId,
+            })
+            .from(employees)
+            .leftJoin(assignments, and(
+              eq(assignments.employeeId, employees.id),
+              eq(assignments.assignmentType, 'primary'),
+              lte(assignments.effectiveFrom, sql`CURRENT_DATE`),
+              or(
+                isNull(assignments.effectiveTo),
+                gte(assignments.effectiveTo, sql`CURRENT_DATE`)
+              )
+            ))
+            .leftJoin(positions, eq(positions.id, assignments.positionId))
+            .where(and(
+              eq(employees.tenantId, tenantId),
+              eq(employees.id, cycle.targetEmployeeId)
+            ));
+          targetEmployees = employeesWithPositions;
+
+        } else if (cycleScope === 'department') {
+          // Department cycle: only employees in the target department
+          if (!cycle.targetDepartmentId) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Un département cible doit être défini pour un cycle de département',
+            });
+          }
+          // Fetch employees whose current position is in the target department
+          const employeesWithPositions = await ctx.db
+            .select({
+              id: employees.id,
+              reportingManagerId: employees.reportingManagerId,
+              positionId: assignments.positionId,
+              departmentId: positions.departmentId,
+            })
+            .from(employees)
+            .leftJoin(assignments, and(
+              eq(assignments.employeeId, employees.id),
+              eq(assignments.assignmentType, 'primary'),
+              lte(assignments.effectiveFrom, sql`CURRENT_DATE`),
+              or(
+                isNull(assignments.effectiveTo),
+                gte(assignments.effectiveTo, sql`CURRENT_DATE`)
+              )
+            ))
+            .leftJoin(positions, eq(positions.id, assignments.positionId))
+            .where(and(
+              eq(employees.tenantId, tenantId),
+              eq(employees.status, 'active'),
+              eq(positions.departmentId, cycle.targetDepartmentId)
+            ));
+          targetEmployees = employeesWithPositions;
+
+        } else if (input.employeeIds && input.employeeIds.length > 0) {
+          // Company cycle with specific employees
           const employeesWithPositions = await ctx.db
             .select({
               id: employees.id,
@@ -559,9 +803,9 @@ export const performanceRouter = createTRPCRouter({
               inArray(employees.id, input.employeeIds)
             ));
           targetEmployees = employeesWithPositions;
+
         } else {
-          // Fetch all active employees with their current position
-          // Department is on positions table, not employees
+          // Company cycle: all active employees (default)
           const employeesWithPositions = await ctx.db
             .select({
               id: employees.id,
@@ -742,6 +986,9 @@ export const performanceRouter = createTRPCRouter({
         evaluatorId: z.string().uuid().optional(),
         evaluationType: z.enum(['self', 'manager', 'peer', '360_report']).optional(),
         status: z.enum(['pending', 'in_progress', 'submitted', 'validated', 'shared']).optional(),
+        contractType: z.enum(['CDI', 'CDD', 'CDDTI', 'INTERIM', 'STAGE']).optional(), // Filter by employee contract type
+        isAdHoc: z.boolean().optional(), // Filter for ad-hoc evaluations (cycleId is null)
+        adHocType: z.enum(['probation', 'cdd_renewal', 'cddti_check', 'other']).optional(), // Filter by ad-hoc type
         myEvaluations: z.boolean().default(false), // Evaluations I need to complete
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
@@ -802,6 +1049,24 @@ export const performanceRouter = createTRPCRouter({
           }
         }
 
+        // Ad-hoc evaluations filter (not tied to a cycle)
+        if (input.isAdHoc === true) {
+          conditions.push(isNull(evaluations.cycleId));
+        } else if (input.isAdHoc === false) {
+          // Explicitly filter for cycle-based evaluations
+          conditions.push(sql`${evaluations.cycleId} IS NOT NULL`);
+        }
+
+        // Ad-hoc type filter (probation, cdd_renewal, etc.)
+        if (input.adHocType) {
+          conditions.push(eq(evaluations.adHocType, input.adHocType));
+        }
+
+        // Contract type filter - add employee condition if specified
+        if (input.contractType) {
+          conditions.push(eq(employees.contractType, input.contractType));
+        }
+
         const evalsList = await ctx.db
           .select({
             evaluation: evaluations,
@@ -810,6 +1075,7 @@ export const performanceRouter = createTRPCRouter({
               firstName: employees.firstName,
               lastName: employees.lastName,
               employeeNumber: employees.employeeNumber,
+              contractType: employees.contractType,
             },
             cycle: {
               id: performanceCycles.id,
@@ -826,10 +1092,24 @@ export const performanceRouter = createTRPCRouter({
           .limit(input.limit)
           .offset(input.offset);
 
-        const [{ count: total }] = await ctx.db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(evaluations)
-          .where(and(...conditions));
+        // For count query, need same joins if contractType filter is used
+        let total = 0;
+        if (input.contractType) {
+          // Need the join for contractType filter
+          const [countResult] = await ctx.db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(evaluations)
+            .leftJoin(employees, eq(evaluations.employeeId, employees.id))
+            .where(and(...conditions));
+          total = countResult.count;
+        } else {
+          // No join needed
+          const [countResult] = await ctx.db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(evaluations)
+            .where(and(...conditions));
+          total = countResult.count;
+        }
 
         return {
           data: evalsList.map(e => ({
@@ -856,6 +1136,7 @@ export const performanceRouter = createTRPCRouter({
               lastName: employees.lastName,
               employeeNumber: employees.employeeNumber,
               jobTitle: employees.jobTitle,
+              hireDate: employees.hireDate,
             },
             cycle: performanceCycles,
           })
@@ -1410,6 +1691,81 @@ export const performanceRouter = createTRPCRouter({
         // For now, just return success. Email notifications can be added later.
 
         return { success: true, count: input.ids.length };
+      }),
+
+    /**
+     * Create an ad-hoc evaluation (not tied to a performance cycle)
+     * Used for: probation end, CDD renewal decisions, CDDTI checks, etc.
+     */
+    createAdHoc: hrManagerProcedure
+      .input(z.object({
+        employeeId: z.string().uuid(),
+        adHocType: z.enum(['probation', 'cdd_renewal', 'cddti_check', 'other']),
+        evaluationType: z.enum(['self', 'manager']).default('manager'),
+        evaluatorId: z.string().uuid().optional(), // Manager ID, defaults to employee's manager
+        templateId: z.string().uuid().optional(), // Template to use, optional
+        notes: z.string().optional(), // Initial notes/context
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+        const userId = ctx.user.id;
+
+        // Get employee details to validate and get manager
+        const [employee] = await ctx.db
+          .select({
+            id: employees.id,
+            firstName: employees.firstName,
+            lastName: employees.lastName,
+            managerId: employees.reportingManagerId,
+            contractType: employees.contractType,
+            departmentId: employees.division,
+          })
+          .from(employees)
+          .where(and(
+            eq(employees.id, input.employeeId),
+            eq(employees.tenantId, tenantId)
+          ));
+
+        if (!employee) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Employé non trouvé',
+          });
+        }
+
+        // Determine evaluator based on evaluation type
+        // Priority: 1) Explicit evaluatorId, 2) Employee's manager, 3) Current user (HR/Admin creating the evaluation)
+        let evaluatorId: string | null = null;
+        if (input.evaluationType === 'manager') {
+          evaluatorId = input.evaluatorId ?? employee.managerId ?? ctx.user.employeeId ?? null;
+          // Note: If current user has no employeeId (super admin), evaluatorId remains null
+          // The evaluation can still be completed by any HR manager
+        }
+
+        // Create the ad-hoc evaluation
+        const [newEvaluation] = await ctx.db
+          .insert(evaluations)
+          .values({
+            tenantId,
+            cycleId: null, // No cycle for ad-hoc evaluations
+            employeeId: input.employeeId,
+            evaluatorId,
+            evaluationType: input.evaluationType,
+            adHocType: input.adHocType,
+            templateId: input.templateId ?? null,
+            status: 'pending',
+            responses: {},
+            generalComment: input.notes ?? null,
+            createdBy: userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .returning();
+
+        return {
+          success: true,
+          evaluation: newEvaluation,
+        };
       }),
   }),
 
@@ -2183,6 +2539,11 @@ export const performanceRouter = createTRPCRouter({
         isPrivate: z.boolean().default(false),
         isAnonymous: z.boolean().default(false),
         cycleId: z.string().uuid().optional(),
+        // Reward recommendation fields (for recognition type)
+        recommendsBonusAmount: z.number().positive().optional(),
+        recommendsBonusReason: z.string().optional(),
+        recommendsPromotion: z.boolean().optional(),
+        recommendsPromotionTo: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const tenantId = ctx.user.tenantId;
@@ -2203,6 +2564,12 @@ export const performanceRouter = createTRPCRouter({
           });
         }
 
+        // Determine reward status if reward recommendation is provided
+        const hasRewardRecommendation = input.recommendsBonusAmount || input.recommendsPromotion;
+        const rewardStatus = hasRewardRecommendation && input.feedbackType === 'recognition'
+          ? 'pending_approval'
+          : null;
+
         const [created] = await ctx.db
           .insert(continuousFeedback)
           .values({
@@ -2216,10 +2583,173 @@ export const performanceRouter = createTRPCRouter({
             isPrivate: input.isPrivate,
             isAnonymous: input.isAnonymous,
             cycleId: input.cycleId,
+            recommendsBonusAmount: input.recommendsBonusAmount?.toString(),
+            recommendsBonusReason: input.recommendsBonusReason,
+            recommendsPromotion: input.recommendsPromotion,
+            recommendsPromotionTo: input.recommendsPromotionTo,
+            rewardStatus,
           })
           .returning();
 
         return created;
+      }),
+
+    /**
+     * List pending reward recommendations (HR only)
+     */
+    listPendingRewards: hrManagerProcedure
+      .input(z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+      }))
+      .query(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        const feedbackList = await ctx.db
+          .select({
+            feedback: continuousFeedback,
+            employee: {
+              id: employees.id,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+              employeeNumber: employees.employeeNumber,
+              division: employees.division,
+              jobTitle: employees.jobTitle,
+            },
+          })
+          .from(continuousFeedback)
+          .leftJoin(employees, eq(continuousFeedback.employeeId, employees.id))
+          .where(and(
+            eq(continuousFeedback.tenantId, tenantId),
+            eq(continuousFeedback.rewardStatus, 'pending_approval')
+          ))
+          .orderBy(desc(continuousFeedback.createdAt))
+          .limit(input.limit)
+          .offset(input.offset);
+
+        const [{ count: total }] = await ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(continuousFeedback)
+          .where(and(
+            eq(continuousFeedback.tenantId, tenantId),
+            eq(continuousFeedback.rewardStatus, 'pending_approval')
+          ));
+
+        return {
+          data: feedbackList.map(f => ({
+            ...f.feedback,
+            employee: f.employee,
+          })),
+          total,
+          hasMore: input.offset + input.limit < total,
+        };
+      }),
+
+    /**
+     * Approve reward recommendation (HR only)
+     */
+    approveReward: hrManagerProcedure
+      .input(z.object({
+        feedbackId: z.string().uuid(),
+        createBonus: z.boolean().default(false),
+        bonusAmount: z.number().positive().optional(),
+        bonusReason: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Get the feedback
+        const [feedback] = await ctx.db
+          .select()
+          .from(continuousFeedback)
+          .where(and(
+            eq(continuousFeedback.id, input.feedbackId),
+            eq(continuousFeedback.tenantId, tenantId)
+          ));
+
+        if (!feedback) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Feedback non trouvé',
+          });
+        }
+
+        if (feedback.rewardStatus !== 'pending_approval') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cette recommandation n\'est pas en attente d\'approbation',
+          });
+        }
+
+        // Update the feedback to approved
+        const [updated] = await ctx.db
+          .update(continuousFeedback)
+          .set({
+            rewardStatus: 'approved',
+            rewardApprovedBy: ctx.user.id,
+            rewardApprovedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(continuousFeedback.id, input.feedbackId))
+          .returning();
+
+        return {
+          feedback: updated,
+          message: 'Récompense approuvée avec succès',
+        };
+      }),
+
+    /**
+     * Reject reward recommendation (HR only)
+     */
+    rejectReward: hrManagerProcedure
+      .input(z.object({
+        feedbackId: z.string().uuid(),
+        reason: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Get the feedback
+        const [feedback] = await ctx.db
+          .select()
+          .from(continuousFeedback)
+          .where(and(
+            eq(continuousFeedback.id, input.feedbackId),
+            eq(continuousFeedback.tenantId, tenantId)
+          ));
+
+        if (!feedback) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Feedback non trouvé',
+          });
+        }
+
+        if (feedback.rewardStatus !== 'pending_approval') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cette recommandation n\'est pas en attente d\'approbation',
+          });
+        }
+
+        // Update the feedback to rejected
+        const [updated] = await ctx.db
+          .update(continuousFeedback)
+          .set({
+            rewardStatus: 'rejected',
+            rewardApprovedBy: ctx.user.id,
+            rewardApprovedAt: new Date(),
+            rewardRejectionReason: input.reason,
+            updatedAt: new Date(),
+          })
+          .where(eq(continuousFeedback.id, input.feedbackId))
+          .returning();
+
+        return {
+          feedback: updated,
+          message: 'Récompense refusée',
+        };
       }),
   }),
 
@@ -2684,11 +3214,15 @@ export const performanceRouter = createTRPCRouter({
   /**
    * Get status data for the evaluation guide component
    * Returns progress through the 4-step evaluation flow
+   *
+   * Multi-cycle support:
+   * - activeCycle: Primary company/department cycle (shows full workflow)
+   * - individualCycles: Individual evaluations (probation, PIP, etc.) shown separately
    */
   getGuideStatus: protectedProcedure.query(async ({ ctx }) => {
     const tenantId = ctx.user.tenantId;
 
-    // Get most recent active cycle (or most recent cycle if none active)
+    // Get most recent active COMPANY or DEPARTMENT cycle (full workflow)
     const [activeCycle] = await ctx.db
       .select({
         id: performanceCycles.id,
@@ -2702,6 +3236,7 @@ export const performanceRouter = createTRPCRouter({
         includeObjectives: performanceCycles.includeObjectives,
         includeCompetencies: performanceCycles.includeCompetencies,
         includeCalibration: performanceCycles.includeCalibration,
+        cycleScope: performanceCycles.cycleScope,
       })
       .from(performanceCycles)
       .where(and(
@@ -2709,13 +3244,144 @@ export const performanceRouter = createTRPCRouter({
         or(
           eq(performanceCycles.status, 'active'),
           eq(performanceCycles.status, 'planning'),
-          eq(performanceCycles.status, 'objective_setting')
+          eq(performanceCycles.status, 'objective_setting'),
+          eq(performanceCycles.status, 'calibration')
+        ),
+        // Only company, department(s) or position(s) cycles for main workflow (not individual)
+        or(
+          eq(performanceCycles.cycleScope, 'company'),
+          eq(performanceCycles.cycleScope, 'departments'),
+          eq(performanceCycles.cycleScope, 'positions'),
+          eq(performanceCycles.cycleScope, 'department'), // Legacy
+          isNull(performanceCycles.cycleScope) // Legacy cycles without scope
         )
       ))
       .orderBy(desc(performanceCycles.createdAt))
       .limit(1);
 
-    // If no active cycle, return empty state
+    // Get INDIVIDUAL cycles (shown in separate section) - with full details like activeCycle
+    const individualCyclesRaw = await ctx.db
+      .select({
+        id: performanceCycles.id,
+        name: performanceCycles.name,
+        status: performanceCycles.status,
+        individualReason: performanceCycles.individualReason,
+        targetEmployeeId: performanceCycles.targetEmployeeId,
+        targetEmployeeFirstName: employees.firstName,
+        targetEmployeeLastName: employees.lastName,
+        targetEmployeeNumber: employees.employeeNumber,
+        periodStart: performanceCycles.periodStart,
+        periodEnd: performanceCycles.periodEnd,
+        resultsReleaseDate: performanceCycles.resultsReleaseDate,
+        includeSelfEvaluation: performanceCycles.includeSelfEvaluation,
+        includeManagerEvaluation: performanceCycles.includeManagerEvaluation,
+        includeObjectives: performanceCycles.includeObjectives,
+        includeCompetencies: performanceCycles.includeCompetencies,
+        includeCalibration: performanceCycles.includeCalibration,
+        cycleScope: performanceCycles.cycleScope,
+      })
+      .from(performanceCycles)
+      .leftJoin(employees, eq(performanceCycles.targetEmployeeId, employees.id))
+      .where(and(
+        eq(performanceCycles.tenantId, tenantId),
+        eq(performanceCycles.cycleScope, 'individual'),
+        or(
+          eq(performanceCycles.status, 'active'),
+          eq(performanceCycles.status, 'planning'),
+          eq(performanceCycles.status, 'objective_setting'),
+          eq(performanceCycles.status, 'calibration')
+        )
+      ))
+      .orderBy(desc(performanceCycles.createdAt))
+      .limit(10); // Max 10 individual cycles in sidebar
+
+    // For each individual cycle, get detailed progress (like activeCycle)
+    const individualCycles = await Promise.all(
+      individualCyclesRaw.map(async (cycle) => {
+        // Get self-evaluation progress
+        const [selfEvalStats] = await ctx.db
+          .select({
+            total: sql<number>`count(*)::int`,
+            completed: sql<number>`count(*) FILTER (WHERE ${evaluations.status} IN ('submitted', 'validated', 'shared'))::int`,
+          })
+          .from(evaluations)
+          .where(and(
+            eq(evaluations.cycleId, cycle.id),
+            eq(evaluations.tenantId, tenantId),
+            eq(evaluations.evaluationType, 'self')
+          ));
+
+        // Get manager evaluation progress
+        const [managerEvalStats] = await ctx.db
+          .select({
+            total: sql<number>`count(*)::int`,
+            completed: sql<number>`count(*) FILTER (WHERE ${evaluations.status} IN ('submitted', 'validated', 'shared'))::int`,
+          })
+          .from(evaluations)
+          .where(and(
+            eq(evaluations.cycleId, cycle.id),
+            eq(evaluations.tenantId, tenantId),
+            eq(evaluations.evaluationType, 'manager')
+          ));
+
+        // Get objectives progress
+        const [objectivesStats] = await ctx.db
+          .select({
+            total: sql<number>`count(*)::int`,
+            completed: sql<number>`count(*) FILTER (WHERE ${objectives.status} = 'approved')::int`,
+          })
+          .from(objectives)
+          .where(and(
+            eq(objectives.cycleId, cycle.id),
+            eq(objectives.tenantId, tenantId)
+          ));
+
+        // Check if results have been shared
+        const resultsShared = cycle.status === 'closed' ||
+          (cycle.resultsReleaseDate && new Date(cycle.resultsReleaseDate) <= new Date());
+
+        return {
+          id: cycle.id,
+          name: cycle.name,
+          status: cycle.status,
+          individualReason: cycle.individualReason,
+          periodStart: cycle.periodStart,
+          periodEnd: cycle.periodEnd,
+          includeSelfEvaluation: cycle.includeSelfEvaluation,
+          includeManagerEvaluation: cycle.includeManagerEvaluation,
+          includeObjectives: cycle.includeObjectives,
+          includeCompetencies: cycle.includeCompetencies,
+          includeCalibration: cycle.includeCalibration,
+          cycleScope: cycle.cycleScope,
+          targetEmployee: cycle.targetEmployeeId ? {
+            id: cycle.targetEmployeeId,
+            firstName: cycle.targetEmployeeFirstName,
+            lastName: cycle.targetEmployeeLastName,
+            employeeNumber: cycle.targetEmployeeNumber,
+          } : null,
+          selfEvalProgress: {
+            completed: selfEvalStats?.completed ?? 0,
+            total: selfEvalStats?.total ?? 0,
+          },
+          managerEvalProgress: {
+            completed: managerEvalStats?.completed ?? 0,
+            total: managerEvalStats?.total ?? 0,
+          },
+          objectivesProgress: {
+            completed: objectivesStats?.completed ?? 0,
+            total: objectivesStats?.total ?? 0,
+          },
+          resultsShared: !!resultsShared,
+          // Legacy progress field for backward compatibility
+          progress: {
+            completed: (selfEvalStats?.completed ?? 0) + (managerEvalStats?.completed ?? 0),
+            total: (selfEvalStats?.total ?? 0) + (managerEvalStats?.total ?? 0),
+          },
+        };
+      })
+    );
+
+    // If no active company/department cycle, return empty state (but still include individual cycles)
     if (!activeCycle) {
       return {
         activeCycle: null,
@@ -2723,6 +3389,8 @@ export const performanceRouter = createTRPCRouter({
         managerEvalProgress: { completed: 0, total: 0 },
         objectivesProgress: { completed: 0, total: 0 },
         resultsShared: false,
+        calibrationCompleted: false,
+        individualCycles,
       };
     }
 
@@ -2769,6 +3437,21 @@ export const performanceRouter = createTRPCRouter({
     const resultsShared = activeCycle.status === 'closed' ||
       (activeCycle.resultsReleaseDate && new Date(activeCycle.resultsReleaseDate) <= new Date());
 
+    // Check if calibration is completed (has at least one completed calibration session)
+    let calibrationCompleted = false;
+    if (activeCycle.includeCalibration) {
+      const [completedSession] = await ctx.db
+        .select({ id: calibrationSessions.id })
+        .from(calibrationSessions)
+        .where(and(
+          eq(calibrationSessions.cycleId, activeCycle.id),
+          eq(calibrationSessions.tenantId, tenantId),
+          eq(calibrationSessions.status, 'completed')
+        ))
+        .limit(1);
+      calibrationCompleted = !!completedSession;
+    }
+
     return {
       activeCycle: {
         id: activeCycle.id,
@@ -2781,6 +3464,7 @@ export const performanceRouter = createTRPCRouter({
         includeObjectives: activeCycle.includeObjectives,
         includeCompetencies: activeCycle.includeCompetencies,
         includeCalibration: activeCycle.includeCalibration,
+        cycleScope: activeCycle.cycleScope,
       },
       selfEvalProgress: {
         completed: selfEvalStats?.completed ?? 0,
@@ -2795,6 +3479,8 @@ export const performanceRouter = createTRPCRouter({
         total: objectivesStats?.total ?? 0,
       },
       resultsShared: !!resultsShared,
+      calibrationCompleted,
+      individualCycles,
     };
   }),
 
@@ -3161,6 +3847,242 @@ export const performanceRouter = createTRPCRouter({
           .orderBy(asc(departments.name));
 
         return departmentsList;
+      }),
+  }),
+
+  // ============================================================================
+  // EXPORTS
+  // ============================================================================
+
+  exports: createTRPCRouter({
+    /**
+     * Export evaluations to Excel or CSV
+     */
+    evaluations: hrManagerProcedure
+      .input(
+        z.object({
+          cycleId: z.string().uuid().optional(),
+          status: z.string().optional(),
+          format: z.enum(['xlsx', 'csv']).default('xlsx'),
+          includeStrengths: z.boolean().default(true),
+          includeAreas: z.boolean().default(true),
+          includeDevelopmentPlan: z.boolean().default(false),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const tenantId = ctx.user.tenantId;
+        const { cycleId, status, format, includeStrengths, includeAreas, includeDevelopmentPlan } = input;
+
+        // Build conditions
+        const conditions = [eq(evaluations.tenantId, tenantId)];
+
+        if (cycleId) {
+          conditions.push(eq(evaluations.cycleId, cycleId));
+        }
+
+        if (status) {
+          conditions.push(eq(evaluations.status, status));
+        }
+
+        // Fetch evaluations with employee and cycle info
+        const evaluationsList = await ctx.db
+          .select({
+            evaluation: evaluations,
+            employee: {
+              id: employees.id,
+              employeeNumber: employees.employeeNumber,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+              division: employees.division,
+              jobTitle: employees.jobTitle,
+            },
+            cycle: {
+              id: performanceCycles.id,
+              name: performanceCycles.name,
+              cycleType: performanceCycles.cycleType,
+            },
+          })
+          .from(evaluations)
+          .leftJoin(employees, eq(evaluations.employeeId, employees.id))
+          .leftJoin(performanceCycles, eq(evaluations.cycleId, performanceCycles.id))
+          .where(and(...conditions))
+          .orderBy(desc(evaluations.createdAt));
+
+        // Transform to export data
+        const exportData: EvaluationExportData[] = evaluationsList.map((row) => ({
+          employeeNumber: row.employee?.employeeNumber || '',
+          firstName: row.employee?.firstName || '',
+          lastName: row.employee?.lastName || '',
+          department: row.employee?.division || null,
+          jobTitle: row.employee?.jobTitle || null,
+          cycleName: row.cycle?.name || '',
+          cycleType: row.cycle?.cycleType || '',
+          status: row.evaluation.status,
+          evaluationType: row.evaluation.evaluationType,
+          objectivesScore: row.evaluation.objectivesScore ? parseFloat(row.evaluation.objectivesScore) : null,
+          competenciesScore: row.evaluation.competenciesScore ? parseFloat(row.evaluation.competenciesScore) : null,
+          overallScore: row.evaluation.overallScore ? parseFloat(row.evaluation.overallScore) : null,
+          overallRating: row.evaluation.overallRating,
+          strengths: row.evaluation.strengthsComment,
+          areasForImprovement: row.evaluation.improvementAreasComment,
+          developmentPlanComment: row.evaluation.developmentPlanComment,
+          submittedAt: row.evaluation.submittedAt,
+          validatedAt: null, // Would come from acknowledgment
+          createdAt: row.evaluation.createdAt,
+        }));
+
+        // Get cycle name for filename
+        let cycleName: string | undefined;
+        if (cycleId) {
+          const [cycle] = await ctx.db
+            .select({ name: performanceCycles.name })
+            .from(performanceCycles)
+            .where(eq(performanceCycles.id, cycleId));
+          cycleName = cycle?.name;
+        }
+
+        // Generate export
+        if (format === 'csv') {
+          const content = generateEvaluationCSV(exportData, {
+            cycleName,
+            includeStrengths,
+            includeAreas,
+            includeDevelopmentPlan,
+          });
+          return {
+            filename: getEvaluationExportFilename(cycleName, 'csv'),
+            mimeType: 'text/csv;charset=utf-8',
+            content: Buffer.from(content, 'utf-8').toString('base64'),
+          };
+        } else {
+          const buffer = generateEvaluationExcel(exportData, {
+            cycleName,
+            includeStrengths,
+            includeAreas,
+            includeDevelopmentPlan,
+          });
+          return {
+            filename: getEvaluationExportFilename(cycleName, 'xlsx'),
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            content: buffer.toString('base64'),
+          };
+        }
+      }),
+
+    /**
+     * Export objectives to Excel or CSV
+     */
+    objectives: hrManagerProcedure
+      .input(
+        z.object({
+          cycleId: z.string().uuid().optional(),
+          status: z.string().optional(),
+          level: z.enum(['company', 'team', 'individual']).optional(),
+          format: z.enum(['xlsx', 'csv']).default('xlsx'),
+          includeDescriptions: z.boolean().default(true),
+          includeAssessments: z.boolean().default(true),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const tenantId = ctx.user.tenantId;
+        const { cycleId, status, level, format, includeDescriptions, includeAssessments } = input;
+
+        // Build conditions
+        const conditions = [eq(objectives.tenantId, tenantId)];
+
+        if (cycleId) {
+          conditions.push(eq(objectives.cycleId, cycleId));
+        }
+
+        if (status) {
+          conditions.push(eq(objectives.status, status));
+        }
+
+        if (level) {
+          conditions.push(eq(objectives.objectiveLevel, level));
+        }
+
+        // Fetch objectives with employee and cycle info
+        const objectivesList = await ctx.db
+          .select({
+            objective: objectives,
+            employee: {
+              id: employees.id,
+              employeeNumber: employees.employeeNumber,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+              division: employees.division,
+              jobTitle: employees.jobTitle,
+            },
+            cycle: {
+              id: performanceCycles.id,
+              name: performanceCycles.name,
+            },
+          })
+          .from(objectives)
+          .leftJoin(employees, eq(objectives.employeeId, employees.id))
+          .leftJoin(performanceCycles, eq(objectives.cycleId, performanceCycles.id))
+          .where(and(...conditions))
+          .orderBy(asc(employees.lastName), asc(objectives.title));
+
+        // Transform to export data
+        const exportData: ObjectiveExportData[] = objectivesList.map((row) => ({
+          employeeNumber: row.employee?.employeeNumber || '',
+          firstName: row.employee?.firstName || '',
+          lastName: row.employee?.lastName || '',
+          department: row.employee?.division || null,
+          jobTitle: row.employee?.jobTitle || null,
+          objectiveTitle: row.objective.title,
+          objectiveDescription: row.objective.description,
+          objectiveType: row.objective.objectiveType || 'qualitative',
+          objectiveLevel: row.objective.objectiveLevel,
+          targetValue: row.objective.targetValue ? parseFloat(row.objective.targetValue) : null,
+          currentValue: row.objective.currentValue ? parseFloat(row.objective.currentValue) : null,
+          unit: row.objective.targetUnit,
+          weight: row.objective.weight ? parseFloat(row.objective.weight) : 1,
+          achievementScore: row.objective.achievementScore ? parseFloat(row.objective.achievementScore) * 100 : null,
+          status: row.objective.status,
+          dueDate: row.objective.dueDate,
+          selfAssessment: null, // Assessments come from evaluation responses, not objectives
+          managerAssessment: null,
+          finalNotes: row.objective.achievementNotes,
+          cycleName: row.cycle?.name || '',
+        }));
+
+        // Get cycle name for filename
+        let cycleName: string | undefined;
+        if (cycleId) {
+          const [cycle] = await ctx.db
+            .select({ name: performanceCycles.name })
+            .from(performanceCycles)
+            .where(eq(performanceCycles.id, cycleId));
+          cycleName = cycle?.name;
+        }
+
+        // Generate export
+        if (format === 'csv') {
+          const content = generateObjectivesCSV(exportData, {
+            cycleName,
+            includeDescriptions,
+            includeAssessments,
+          });
+          return {
+            filename: getObjectivesExportFilename(cycleName, 'csv'),
+            mimeType: 'text/csv;charset=utf-8',
+            content: Buffer.from(content, 'utf-8').toString('base64'),
+          };
+        } else {
+          const buffer = generateObjectivesExcel(exportData, {
+            cycleName,
+            includeDescriptions,
+            includeAssessments,
+          });
+          return {
+            filename: getObjectivesExportFilename(cycleName, 'xlsx'),
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            content: buffer.toString('base64'),
+          };
+        }
       }),
   }),
 });

@@ -44,6 +44,7 @@ import {
   ArrowRight,
   Plus,
   Users,
+  User,
   ClipboardCheck,
   Share2,
   ChevronDown,
@@ -55,8 +56,6 @@ import {
   Rocket,
   AlertCircle,
   ExternalLink,
-  Calendar,
-  Briefcase,
   GraduationCap,
   Scale,
 } from 'lucide-react';
@@ -90,6 +89,32 @@ interface ReadinessCheck {
   };
 }
 
+interface IndividualCycle {
+  id: string;
+  name: string;
+  status: string;
+  individualReason: string | null;
+  periodStart: string;
+  periodEnd: string;
+  includeSelfEvaluation: boolean;
+  includeManagerEvaluation: boolean;
+  includeObjectives: boolean;
+  includeCompetencies?: boolean;
+  includeCalibration?: boolean;
+  cycleScope?: string;
+  targetEmployee: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    employeeNumber: string | null;
+  } | null;
+  selfEvalProgress: { completed: number; total: number };
+  managerEvalProgress: { completed: number; total: number };
+  objectivesProgress: { completed: number; total: number };
+  resultsShared: boolean;
+  progress: { completed: number; total: number }; // Legacy
+}
+
 interface GuideData {
   activeCycle: {
     id: string;
@@ -100,11 +125,14 @@ interface GuideData {
     includeObjectives: boolean;
     includeCompetencies?: boolean;
     includeCalibration?: boolean;
+    cycleScope?: string;
   } | null;
   selfEvalProgress: { completed: number; total: number };
   managerEvalProgress: { completed: number; total: number };
   objectivesProgress: { completed: number; total: number };
   resultsShared: boolean;
+  calibrationCompleted?: boolean;
+  individualCycles?: IndividualCycle[];
 }
 
 // ============================================================================
@@ -233,10 +261,11 @@ function getStepStatuses(data: GuideData): StepStatuses {
       calibration = 'completed';
     } else if (!allEvalsComplete) {
       calibration = 'locked';
+    } else if (data.calibrationCompleted || data.activeCycle.status === 'closed') {
+      // Calibration is completed if there's a completed session OR cycle is closed
+      calibration = 'completed';
     } else if (cycleIsCalibration) {
       calibration = 'in_progress';
-    } else if (data.activeCycle.status === 'closed') {
-      calibration = 'completed';
     } else {
       calibration = 'ready';
     }
@@ -401,6 +430,289 @@ function WorkflowStep({
   );
 }
 
+// Individual reason labels (French)
+const individualReasonLabels: Record<string, string> = {
+  probation: 'Période d\'essai',
+  cdd_renewal: 'Renouvellement CDD',
+  cddti_check: 'Point CDDTI',
+  performance_improvement: 'Plan d\'amélioration',
+  promotion: 'Promotion',
+  other: 'Autre',
+};
+
+// ============================================================================
+// UNIFIED CYCLE DATA - Convert IndividualCycle to GuideData format
+// ============================================================================
+
+function convertIndividualCycleToGuideData(cycle: IndividualCycle): GuideData {
+  return {
+    activeCycle: {
+      id: cycle.id,
+      name: cycle.name,
+      status: cycle.status,
+      includeSelfEvaluation: cycle.includeSelfEvaluation,
+      includeManagerEvaluation: cycle.includeManagerEvaluation,
+      includeObjectives: cycle.includeObjectives,
+      includeCompetencies: cycle.includeCompetencies,
+      includeCalibration: cycle.includeCalibration,
+      cycleScope: cycle.cycleScope,
+    },
+    selfEvalProgress: cycle.selfEvalProgress,
+    managerEvalProgress: cycle.managerEvalProgress,
+    objectivesProgress: cycle.objectivesProgress,
+    resultsShared: cycle.resultsShared,
+    individualCycles: [],
+  };
+}
+
+// ============================================================================
+// UNIFIED STEP BUILDER - Single source of truth for building cycle steps
+// ============================================================================
+
+interface BuildStepsOptions {
+  guideData: GuideData;
+  readinessData?: {
+    cycleId: string;
+    cycleStatus: string;
+    checks: ReadinessCheck[];
+    canLaunch: boolean;
+  } | null;
+  isIndividual?: boolean;
+  targetEmployeeName?: string;
+}
+
+function buildCycleSteps(options: BuildStepsOptions): StepConfig[] {
+  const { guideData, readinessData, isIndividual, targetEmployeeName } = options;
+
+  if (!guideData.activeCycle) {
+    return [];
+  }
+
+  const statuses = getStepStatuses(guideData);
+  const cycle = guideData.activeCycle;
+
+  const cycleLaunched = cycle.status === 'active' || cycle.status === 'calibration' || cycle.status === 'closed';
+
+  const allSteps: (StepConfig | null)[] = [
+    // ===== PRE-LAUNCH PHASE =====
+    // Step 1: Create cycle (skip for individual cycles - already created)
+    !isIndividual
+      ? {
+          number: 1,
+          title: 'Créer le cycle',
+          description: 'Définissez la période',
+          icon: Plus,
+          status: statuses.cycleCreation,
+          action: guideData.activeCycle
+            ? { label: 'Voir', href: `/performance/cycles/${guideData.activeCycle.id}` }
+            : { label: 'Créer', href: '/performance/cycles/new' },
+          statusLabel: guideData.activeCycle ? `Cycle: ${guideData.activeCycle.name}` : 'Créez un cycle',
+        }
+      : null,
+    // Step 2: Competencies - configure BEFORE launch (if enabled)
+    cycle.includeCompetencies
+      ? {
+          number: 2,
+          title: 'Compétences des postes',
+          description: 'Définir pour chaque poste',
+          icon: GraduationCap,
+          status: cycleLaunched
+            ? 'completed' as StepStatus
+            : (readinessData?.checks.find(c => c.id === 'competencies')?.status === 'passed'
+                ? 'completed' as StepStatus
+                : 'ready' as StepStatus),
+          action: { label: 'Configurer', href: '/positions?filter=missing-competencies' },
+          statusLabel: cycleLaunched
+            ? 'Configuré'
+            : (readinessData?.checks.find(c => c.id === 'competencies')?.status === 'passed'
+                ? 'Tous les postes OK'
+                : readinessData?.checks.find(c => c.id === 'competencies')?.description ?? 'Vérification...'),
+        }
+      : null,
+    // Step 3: Objectives - define BEFORE launch (if enabled)
+    cycle.includeObjectives
+      ? {
+          number: 3,
+          title: 'Objectifs',
+          description: 'Définir et approuver',
+          icon: Target,
+          status: cycleLaunched ? 'completed' as StepStatus : statuses.objectives,
+          progress: guideData.objectivesProgress,
+          action: statuses.objectives !== 'locked'
+            ? { label: 'Gérer', href: `/performance/cycles/${cycle.id}?tab=objectives` }
+            : null,
+          statusLabel: cycleLaunched
+            ? 'Définis'
+            : getObjectivesLabel(statuses.objectives, guideData.objectivesProgress),
+        }
+      : null,
+    // Step 4: Launch cycle - THE GATE between config and evaluation phases
+    {
+      number: 4,
+      title: 'Lancer le cycle',
+      description: 'Démarrer les évaluations',
+      icon: Rocket,
+      status: cycleLaunched
+        ? 'completed' as StepStatus
+        : (readinessData?.canLaunch !== false ? 'ready' as StepStatus : 'locked' as StepStatus),
+      action: cycleLaunched
+        ? { label: 'Voir', href: `/performance/cycles/${cycle.id}` }
+        : (readinessData?.canLaunch !== false
+            ? { label: 'Lancer', href: `/performance/cycles/${cycle.id}?action=launch` }
+            : null),
+      statusLabel: cycleLaunched
+        ? 'Cycle actif'
+        : (readinessData?.canLaunch !== false
+            ? 'Prêt à lancer'
+            : readinessData
+              ? `${readinessData.checks.filter(c => c.status === 'failed').length} prérequis manquant(s)`
+              : 'Vérification...'),
+    },
+    // ===== POST-LAUNCH PHASE (Evaluation) =====
+    cycle.includeSelfEvaluation
+      ? {
+          number: 5,
+          title: isIndividual ? 'Auto-évaluation' : 'Auto-évaluations',
+          description: isIndividual && targetEmployeeName ? targetEmployeeName : 'Employés notent',
+          icon: isIndividual ? User : Users,
+          status: statuses.selfEvaluation,
+          progress: guideData.selfEvalProgress,
+          action: statuses.selfEvaluation !== 'locked'
+            ? { label: 'Voir', href: isIndividual
+                ? `/performance/evaluations?cycleId=${cycle.id}&type=self`
+                : '/performance/evaluations?type=self' }
+            : null,
+          statusLabel: getSelfEvalLabel(statuses.selfEvaluation, guideData.selfEvalProgress),
+        }
+      : null,
+    cycle.includeManagerEvaluation
+      ? {
+          number: 6,
+          title: isIndividual ? 'Évaluation RH' : 'Évaluations RH',
+          description: isIndividual ? 'Évaluer l\'employé' : 'Évaluez chaque employé',
+          icon: ClipboardCheck,
+          status: statuses.managerEvaluation,
+          progress: guideData.managerEvalProgress,
+          action: statuses.managerEvaluation !== 'locked'
+            ? { label: 'Évaluer', href: isIndividual
+                ? `/performance/evaluations?cycleId=${cycle.id}&type=manager`
+                : '/performance/evaluations?type=manager' }
+            : null,
+          statusLabel: getManagerEvalLabel(statuses.managerEvaluation, guideData.managerEvalProgress),
+        }
+      : null,
+    cycle.includeCalibration
+      ? {
+          number: 7,
+          title: 'Calibration',
+          description: 'Harmonisez les scores',
+          icon: Scale,
+          status: statuses.calibration,
+          action: statuses.calibration !== 'locked'
+            ? { label: 'Calibrer', href: '/performance/calibration' }
+            : null,
+          statusLabel: getCalibrationLabel(statuses.calibration),
+        }
+      : null,
+    {
+      number: 8,
+      title: 'Partager',
+      description: 'Communiquez les résultats',
+      icon: Share2,
+      status: statuses.share,
+      action: statuses.share !== 'locked'
+        ? { label: 'Partager', href: `/performance/cycles/${cycle.id}?action=release` }
+        : null,
+      statusLabel: getShareLabel(statuses.share, guideData.resultsShared),
+    },
+  ];
+
+  // Filter nulls and renumber
+  return allSteps
+    .filter((s): s is StepConfig => s !== null)
+    .map((s, i) => ({ ...s, number: i + 1 }));
+}
+
+// ============================================================================
+// COLLAPSIBLE CYCLE WORKFLOW - Used for both main and individual cycles
+// ============================================================================
+
+interface CycleWorkflowProps {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  steps: StepConfig[];
+  cycleId: string;
+  isCompact?: boolean;
+  isActive?: boolean;
+  defaultOpen?: boolean;
+  icon?: React.ElementType;
+}
+
+function CycleWorkflow({
+  title,
+  subtitle,
+  badge,
+  steps,
+  cycleId,
+  isCompact,
+  isActive,
+  defaultOpen,
+  icon: Icon = LayoutList,
+}: CycleWorkflowProps) {
+  const completedSteps = steps.filter((s) => s.status === 'completed').length;
+
+  return (
+    <Collapsible defaultOpen={defaultOpen}>
+      <div className={cn(
+        'rounded-lg border bg-card overflow-hidden',
+        isActive && 'ring-2 ring-primary border-primary'
+      )}>
+        <CollapsibleTrigger className="w-full">
+          <div className="p-3 flex items-center justify-between hover:bg-muted/50 transition-colors">
+            <div className="flex items-center gap-2 min-w-0">
+              <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="text-left min-w-0">
+                <span className="text-sm font-medium truncate block">{title}</span>
+                {subtitle && (
+                  <span className="text-xs text-muted-foreground truncate block">{subtitle}</span>
+                )}
+              </div>
+              {badge && (
+                <Badge variant="secondary" className="text-[10px] h-5 shrink-0">
+                  {badge}
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-[10px] h-5">
+                {completedSteps}/{steps.length}
+              </Badge>
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </div>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-3 pb-3 pt-1 space-y-1 border-t">
+            {steps.map((step, index) => (
+              <WorkflowStep key={step.number} step={step} isLast={index === steps.length - 1} isCompact={isCompact} />
+            ))}
+            {/* Quick action footer */}
+            <div className="pt-2 flex gap-2">
+              <Button asChild variant="outline" size="sm" className="flex-1 h-8 text-xs">
+                <Link href={`/performance/cycles/${cycleId}`}>
+                  Voir le cycle
+                  <ExternalLink className="ml-1 h-3 w-3" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
 function ReadinessCheckItem({
   check,
   isCompact,
@@ -452,6 +764,7 @@ function SidebarContent({
   readinessData,
   isCompact,
   onClose,
+  currentCycleId,
 }: {
   guideData: GuideData;
   readinessData?: {
@@ -462,158 +775,25 @@ function SidebarContent({
   } | null;
   isCompact?: boolean;
   onClose?: () => void;
+  currentCycleId?: string | null;
 }) {
   const router = useRouter();
 
-  const statuses = getStepStatuses(guideData);
+  // Check if viewing an individual cycle (for auto-expand)
+  const isViewingIndividualCycle = !!(currentCycleId &&
+    guideData.individualCycles?.some(c => c.id === currentCycleId));
 
-  // Build steps - organized as PRE-LAUNCH (config) then POST-LAUNCH (evaluation)
-  const cycleNotLaunched = guideData.activeCycle &&
-    (guideData.activeCycle.status === 'planning' || guideData.activeCycle.status === 'objective_setting');
-  const cycleLaunched = guideData.activeCycle &&
-    (guideData.activeCycle.status === 'active' || guideData.activeCycle.status === 'calibration' || guideData.activeCycle.status === 'closed');
+  // Check if viewing the main cycle
+  const isViewingMainCycle = !!(currentCycleId && guideData.activeCycle?.id === currentCycleId);
 
-  const allSteps: (StepConfig | null)[] = [
-    // ===== PRE-LAUNCH PHASE =====
-    // Step 1: Create cycle (always)
-    {
-      number: 1,
-      title: 'Créer le cycle',
-      description: 'Définissez la période',
-      icon: Plus,
-      status: statuses.cycleCreation,
-      action: guideData.activeCycle
-        ? { label: 'Voir', href: `/performance/cycles/${guideData.activeCycle.id}` }
-        : { label: 'Créer', href: '/performance/cycles/new' },
-      statusLabel: guideData.activeCycle ? `Cycle: ${guideData.activeCycle.name}` : 'Créez un cycle',
-    },
-    // Step 2: Competencies - configure BEFORE launch (if enabled)
-    guideData.activeCycle?.includeCompetencies
-      ? {
-          number: 2,
-          title: 'Compétences des postes',
-          description: 'Définir pour chaque poste',
-          icon: GraduationCap,
-          // Check if competencies check passed in readiness
-          status: cycleLaunched
-            ? 'completed' as StepStatus
-            : (readinessData?.checks.find(c => c.id === 'competencies')?.status === 'passed'
-                ? 'completed' as StepStatus
-                : 'ready' as StepStatus),
-          action: { label: 'Configurer', href: '/positions?filter=missing-competencies' },
-          statusLabel: cycleLaunched
-            ? 'Configuré'
-            : (readinessData?.checks.find(c => c.id === 'competencies')?.status === 'passed'
-                ? 'Tous les postes OK'
-                : readinessData?.checks.find(c => c.id === 'competencies')?.description ?? 'Vérification...'),
-        }
-      : null,
-    // Step 3: Objectives - define BEFORE launch (if enabled)
-    guideData.activeCycle?.includeObjectives
-      ? {
-          number: 3,
-          title: 'Objectifs',
-          description: 'Définir et approuver',
-          icon: Target,
-          status: cycleLaunched ? 'completed' as StepStatus : statuses.objectives,
-          progress: guideData.objectivesProgress,
-          action:
-            guideData.activeCycle && statuses.objectives !== 'locked'
-              ? { label: 'Gérer', href: `/performance/cycles/${guideData.activeCycle.id}?tab=objectives` }
-              : null,
-          statusLabel: cycleLaunched
-            ? 'Définis'
-            : getObjectivesLabel(statuses.objectives, guideData.objectivesProgress),
-        }
-      : null,
-    // Step 4: Launch cycle - THE GATE between config and evaluation phases
-    // Uses readinessData.canLaunch for accurate status based on ALL cycle options
-    // ALWAYS SHOW - shows as "completed" after launch, "ready/locked" before
-    guideData.activeCycle
-      ? {
-          number: 4,
-          title: 'Lancer le cycle',
-          description: 'Démarrer les évaluations',
-          icon: Rocket,
-          // Status: completed after launch, otherwise based on readinessData.canLaunch
-          status: cycleLaunched
-            ? 'completed' as StepStatus
-            : (readinessData?.canLaunch ? 'ready' as StepStatus : 'locked' as StepStatus),
-          action: cycleLaunched
-            ? { label: 'Voir', href: `/performance/cycles/${guideData.activeCycle.id}` }
-            : (readinessData?.canLaunch
-                ? { label: 'Lancer', href: `/performance/cycles/${guideData.activeCycle.id}?action=launch` }
-                : null),
-          statusLabel: cycleLaunched
-            ? 'Cycle actif'
-            : (readinessData?.canLaunch
-                ? 'Prêt à lancer'
-                : readinessData
-                  ? `${readinessData.checks.filter(c => c.status === 'failed').length} prérequis manquant(s)`
-                  : 'Vérification...'),
-        }
-      : null,
-    // ===== POST-LAUNCH PHASE (Evaluation) =====
-    guideData.activeCycle?.includeSelfEvaluation
-      ? {
-          number: 4,
-          title: 'Auto-évaluations',
-          description: 'Employés notent',
-          icon: Users,
-          status: statuses.selfEvaluation,
-          progress: guideData.selfEvalProgress,
-          action:
-            guideData.activeCycle && statuses.selfEvaluation !== 'locked'
-              ? { label: 'Voir', href: '/performance/evaluations?type=self' }
-              : null,
-          statusLabel: getSelfEvalLabel(statuses.selfEvaluation, guideData.selfEvalProgress),
-        }
-      : null,
-    guideData.activeCycle?.includeManagerEvaluation
-      ? {
-          number: 5,
-          title: 'Évaluations RH',
-          description: 'Évaluez chaque employé',
-          icon: ClipboardCheck,
-          status: statuses.managerEvaluation,
-          progress: guideData.managerEvalProgress,
-          action:
-            guideData.activeCycle && statuses.managerEvaluation !== 'locked'
-              ? { label: 'Évaluer', href: '/performance/evaluations?type=manager' }
-              : null,
-          statusLabel: getManagerEvalLabel(statuses.managerEvaluation, guideData.managerEvalProgress),
-        }
-      : null,
-    guideData.activeCycle?.includeCalibration
-      ? {
-          number: 6,
-          title: 'Calibration',
-          description: 'Harmonisez les scores',
-          icon: Scale,
-          status: statuses.calibration,
-          action:
-            guideData.activeCycle && statuses.calibration !== 'locked'
-              ? { label: 'Calibrer', href: '/performance/calibration' }
-              : null,
-          statusLabel: getCalibrationLabel(statuses.calibration),
-        }
-      : null,
-    {
-      number: 7,
-      title: 'Partager',
-      description: 'Communiquez les résultats',
-      icon: Share2,
-      status: statuses.share,
-      action:
-        guideData.activeCycle && statuses.share !== 'locked'
-          ? { label: 'Partager', href: `/performance/cycles/${guideData.activeCycle.id}?action=release` }
-          : null,
-      statusLabel: getShareLabel(statuses.share, guideData.resultsShared),
-    },
-  ];
-
-  const steps = allSteps.filter((s): s is StepConfig => s !== null).map((s, i) => ({ ...s, number: i + 1 }));
-  const completedSteps = steps.filter((s) => s.status === 'completed').length;
+  // Build steps for main cycle using unified function
+  const mainCycleSteps = guideData.activeCycle
+    ? buildCycleSteps({
+        guideData,
+        readinessData,
+        isIndividual: false,
+      })
+    : [];
 
   // Determine if we should show readiness checks
   const showReadinessChecks =
@@ -629,21 +809,13 @@ function SidebarContent({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <div>
-          <h3 className="font-semibold text-sm">Cycle d&apos;évaluation</h3>
-          {guideData.activeCycle && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {guideData.activeCycle.name} •{' '}
-              <span
-                className={cn(
-                  guideData.activeCycle.status === 'active' && 'text-green-600',
-                  guideData.activeCycle.status === 'planning' && 'text-amber-600',
-                  guideData.activeCycle.status === 'closed' && 'text-muted-foreground'
-                )}
-              >
-                {getStatusLabel(guideData.activeCycle.status)}
-              </span>
-            </p>
-          )}
+          <h3 className="font-semibold text-sm">Cycles d&apos;évaluation</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {guideData.activeCycle ? '1 cycle principal' : 'Aucun cycle principal'}
+            {guideData.individualCycles && guideData.individualCycles.length > 0
+              ? ` + ${guideData.individualCycles.length} individuel${guideData.individualCycles.length > 1 ? 's' : ''}`
+              : ''}
+          </p>
         </div>
         {onClose && (
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
@@ -653,13 +825,14 @@ function SidebarContent({
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Readiness Checks Section (only before launch) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Readiness Checks Section (only before launch for main cycle) */}
         {showReadinessChecks && (
           <Collapsible defaultOpen={failedChecks.length > 0}>
             <div className="space-y-2">
               <CollapsibleTrigger className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                   <span className="text-xs font-semibold uppercase text-muted-foreground">
                     Vérification avant lancement
                   </span>
@@ -680,20 +853,88 @@ function SidebarContent({
           </Collapsible>
         )}
 
-        {/* Workflow Steps */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase text-muted-foreground">Étapes du cycle</span>
-            <Badge variant="secondary" className="h-5 text-xs">
-              {completedSteps}/{steps.length}
-            </Badge>
+        {/* Main Cycle - using unified CycleWorkflow (collapsible) */}
+        {guideData.activeCycle && (
+          <CycleWorkflow
+            title={guideData.activeCycle.name}
+            subtitle={getStatusLabel(guideData.activeCycle.status)}
+            steps={mainCycleSteps}
+            cycleId={guideData.activeCycle.id}
+            isCompact={isCompact}
+            isActive={isViewingMainCycle}
+            defaultOpen={!isViewingIndividualCycle}
+            icon={Users}
+          />
+        )}
+
+        {/* Individual Cycles - using same unified CycleWorkflow */}
+        {guideData.individualCycles && guideData.individualCycles.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-1">
+              <User className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-semibold uppercase text-muted-foreground">
+                Évaluations individuelles
+              </span>
+              <Badge variant="outline" className="h-5 text-xs">
+                {guideData.individualCycles.length}
+              </Badge>
+            </div>
+            {guideData.individualCycles.map((cycle) => {
+              // Convert individual cycle to GuideData format and build steps
+              const cycleGuideData = convertIndividualCycleToGuideData(cycle);
+              const employeeName = cycle.targetEmployee
+                ? `${cycle.targetEmployee.firstName ?? ''} ${cycle.targetEmployee.lastName ?? ''}`.trim()
+                : 'Employé';
+              const reasonLabel = cycle.individualReason
+                ? individualReasonLabels[cycle.individualReason] || cycle.individualReason
+                : undefined;
+
+              const individualSteps = buildCycleSteps({
+                guideData: cycleGuideData,
+                readinessData: null, // Individual cycles don't have separate readiness checks
+                isIndividual: true,
+                targetEmployeeName: employeeName,
+              });
+
+              return (
+                <CycleWorkflow
+                  key={cycle.id}
+                  title={employeeName}
+                  subtitle={getStatusLabel(cycle.status)}
+                  badge={reasonLabel}
+                  steps={individualSteps}
+                  cycleId={cycle.id}
+                  isCompact={isCompact}
+                  isActive={currentCycleId === cycle.id}
+                  defaultOpen={currentCycleId === cycle.id}
+                  icon={User}
+                />
+              );
+            })}
+            {/* Quick create button */}
+            <Button asChild variant="ghost" size="sm" className="w-full h-8 text-xs">
+              <Link href="/performance/cycles/new?scope=individual">
+                <Plus className="mr-1 h-3 w-3" />
+                Nouvelle évaluation individuelle
+              </Link>
+            </Button>
           </div>
-          <div className="space-y-1">
-            {steps.map((step, index) => (
-              <WorkflowStep key={step.number} step={step} isLast={index === steps.length - 1} isCompact={isCompact} />
-            ))}
+        )}
+
+        {/* Empty state when no cycles exist */}
+        {!guideData.activeCycle && (!guideData.individualCycles || guideData.individualCycles.length === 0) && (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground mb-3">
+              Aucun cycle d'évaluation actif
+            </p>
+            <Button asChild size="sm">
+              <Link href="/performance/cycles/new">
+                <Plus className="mr-1 h-3 w-3" />
+                Créer un cycle
+              </Link>
+            </Button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Footer Action */}
@@ -751,6 +992,11 @@ export function CycleProgressSidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
+  // Extract current cycle ID from URL (for context-awareness)
+  // Matches /performance/cycles/{uuid}
+  const cycleIdMatch = pathname.match(/\/performance\/cycles\/([a-f0-9-]{36})/i);
+  const currentCycleId = cycleIdMatch ? cycleIdMatch[1] : null;
+
   // Load collapsed state from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('cycle-sidebar-collapsed');
@@ -794,8 +1040,11 @@ export function CycleProgressSidebar() {
     return null;
   }
 
+  // Check if we have any cycles (company/department or individual)
+  const hasAnyCycles = guideData?.activeCycle || (guideData?.individualCycles && guideData.individualCycles.length > 0);
+
   // Don't show if there's no cycle and not on a page where user would create one
-  if (!guideLoading && !guideData?.activeCycle && pathname !== '/performance' && pathname !== '/performance/cycles/new') {
+  if (!guideLoading && !hasAnyCycles && pathname !== '/performance' && pathname !== '/performance/cycles/new') {
     return null;
   }
 
@@ -829,6 +1078,7 @@ export function CycleProgressSidebar() {
   if (isMobile) {
     const failedChecks =
       shouldFetchReadiness && readinessData ? readinessData.checks.filter((c) => c.status === 'failed').length : 0;
+    const individualCount = guideData?.individualCycles?.length ?? 0;
 
     return (
       <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
@@ -838,11 +1088,15 @@ export function CycleProgressSidebar() {
             size="icon"
           >
             <LayoutList className="h-6 w-6" />
-            {failedChecks > 0 && (
+            {failedChecks > 0 ? (
               <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center">
                 {failedChecks}
               </span>
-            )}
+            ) : individualCount > 0 ? (
+              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
+                {individualCount}
+              </span>
+            ) : null}
           </Button>
         </SheetTrigger>
         <SheetContent side="bottom" className="h-[80vh] p-0">
@@ -854,6 +1108,7 @@ export function CycleProgressSidebar() {
             readinessData={shouldFetchReadiness ? readinessData : null}
             isCompact
             onClose={() => setIsMobileOpen(false)}
+            currentCycleId={currentCycleId}
           />
         </SheetContent>
       </Sheet>
@@ -886,7 +1141,11 @@ export function CycleProgressSidebar() {
               <ChevronUp className="h-4 w-4 rotate-90" />
             </Button>
           </div>
-          <SidebarContent guideData={guideData} readinessData={shouldFetchReadiness ? readinessData : null} />
+          <SidebarContent
+            guideData={guideData}
+            readinessData={shouldFetchReadiness ? readinessData : null}
+            currentCycleId={currentCycleId}
+          />
         </div>
       )}
     </div>
