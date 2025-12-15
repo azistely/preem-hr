@@ -22,13 +22,19 @@ import {
   employees,
   departments,
 } from '@/lib/db/schema';
-import { and, eq, desc, asc, sql, gte, lte, isNull, or, inArray } from 'drizzle-orm';
+import { and, eq, desc, asc, sql, gte, lte, isNull, or, inArray, type SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
   detectCompanySize,
   getTrainingConfig,
   applyTrainingPlanDefaults,
 } from '@/lib/hr-modules/services/smart-defaults.service';
+import {
+  generateTrainingHistoryExcel,
+  generateTrainingHistoryCSV,
+  getTrainingHistoryExportFilename,
+  type TrainingHistoryExportData,
+} from '@/features/training/services/training-history-export';
 
 // ============================================================================
 // TRAINING COURSES (Catalog)
@@ -1818,5 +1824,180 @@ export const trainingRouter = createTRPCRouter({
         expiringCertifications,
       };
     }),
+  }),
+
+  // ============================================================================
+  // EXPORTS
+  // ============================================================================
+
+  exports: createTRPCRouter({
+    /**
+     * Export training history to Excel or CSV
+     */
+    history: hrManagerProcedure
+      .input(
+        z.object({
+          dateFrom: z.string().optional(),
+          dateTo: z.string().optional(),
+          employeeId: z.string().uuid().optional(),
+          courseId: z.string().uuid().optional(),
+          category: z.string().optional(),
+          status: z.string().optional(),
+          format: z.enum(['xlsx', 'csv']).default('xlsx'),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const tenantId = ctx.user.tenantId;
+        const { dateFrom, dateTo, employeeId, courseId, category, status, format } = input;
+
+        // Build conditions for enrollments
+        const enrollmentConditions = [eq(trainingEnrollments.tenantId, tenantId)];
+
+        if (employeeId) {
+          enrollmentConditions.push(eq(trainingEnrollments.employeeId, employeeId));
+        }
+
+        if (status) {
+          enrollmentConditions.push(eq(trainingEnrollments.status, status));
+        }
+
+        // Build conditions for sessions (date range)
+        const sessionConditions: SQL<unknown>[] = [];
+        if (dateFrom) {
+          sessionConditions.push(gte(trainingSessions.startDate, dateFrom));
+        }
+        if (dateTo) {
+          sessionConditions.push(lte(trainingSessions.endDate, dateTo));
+        }
+
+        // Build conditions for courses
+        const courseConditions: SQL<unknown>[] = [];
+        if (courseId) {
+          courseConditions.push(eq(trainingCourses.id, courseId));
+        }
+        if (category) {
+          courseConditions.push(eq(trainingCourses.category, category));
+        }
+
+        // Fetch training history with joins
+        let query = ctx.db
+          .select({
+            enrollment: trainingEnrollments,
+            session: trainingSessions,
+            course: trainingCourses,
+            employee: {
+              id: employees.id,
+              employeeNumber: employees.employeeNumber,
+              firstName: employees.firstName,
+              lastName: employees.lastName,
+              division: employees.division,
+              jobTitle: employees.jobTitle,
+            },
+          })
+          .from(trainingEnrollments)
+          .innerJoin(trainingSessions, eq(trainingEnrollments.sessionId, trainingSessions.id))
+          .innerJoin(trainingCourses, eq(trainingSessions.courseId, trainingCourses.id))
+          .innerJoin(employees, eq(trainingEnrollments.employeeId, employees.id))
+          .where(and(
+            ...enrollmentConditions,
+            ...(sessionConditions.length > 0 ? sessionConditions : []),
+            ...(courseConditions.length > 0 ? courseConditions : [])
+          ))
+          .orderBy(desc(trainingSessions.startDate), asc(employees.lastName));
+
+        const historyList = await query;
+
+        // Get certifications for employees who completed training that grants certification
+        const employeeIds = [...new Set(historyList.map(h => h.employee?.id).filter(Boolean))];
+        let certificationMap: Record<string, { name: string; expiryDate: string | null }[]> = {};
+
+        if (employeeIds.length > 0) {
+          const certifications = await ctx.db
+            .select({
+              employeeId: employeeCertifications.employeeId,
+              certificationName: employeeCertifications.certificationName,
+              expiryDate: employeeCertifications.expiryDate,
+            })
+            .from(employeeCertifications)
+            .where(
+              and(
+                inArray(employeeCertifications.employeeId, employeeIds as string[]),
+                eq(employeeCertifications.status, 'active')
+              )
+            );
+
+          for (const cert of certifications) {
+            if (!certificationMap[cert.employeeId]) {
+              certificationMap[cert.employeeId] = [];
+            }
+            certificationMap[cert.employeeId].push({
+              name: cert.certificationName,
+              expiryDate: cert.expiryDate,
+            });
+          }
+        }
+
+        // Transform to export data
+        const exportData: TrainingHistoryExportData[] = historyList.map((row) => {
+          const course = row.course;
+          const session = row.session;
+          const enrollment = row.enrollment;
+          const employee = row.employee;
+
+          // Check if employee obtained certification from this course
+          const employeeCerts = employee?.id ? certificationMap[employee.id] ?? [] : [];
+          const matchingCert = course.grantsCertification
+            ? employeeCerts.find(c => c.name.toLowerCase().includes(course.name.toLowerCase()))
+            : null;
+
+          return {
+            employeeNumber: employee?.employeeNumber || '',
+            firstName: employee?.firstName || '',
+            lastName: employee?.lastName || '',
+            department: employee?.division || null,
+            jobTitle: employee?.jobTitle || null,
+            courseCode: course.code,
+            courseName: course.name,
+            category: course.category,
+            modality: course.modality,
+            durationHours: course.durationHours,
+            provider: course.provider,
+            isExternal: course.isExternal,
+            sessionCode: session.sessionCode,
+            sessionName: session.name,
+            startDate: session.startDate,
+            endDate: session.endDate,
+            location: session.location,
+            instructorName: session.instructorName,
+            enrollmentStatus: enrollment.status,
+            attendancePercentage: enrollment.attendancePercentage,
+            completionStatus: enrollment.completionStatus,
+            completionScore: enrollment.completionScore ? parseFloat(enrollment.completionScore) : null,
+            completedAt: enrollment.completedAt,
+            grantsCertification: course.grantsCertification,
+            certificationObtained: !!matchingCert,
+            certificationName: matchingCert?.name || null,
+            certificationExpiryDate: matchingCert?.expiryDate || null,
+            enrollmentNotes: enrollment.notes,
+          };
+        });
+
+        // Generate export
+        if (format === 'csv') {
+          const content = generateTrainingHistoryCSV(exportData);
+          return {
+            filename: getTrainingHistoryExportFilename(dateFrom, dateTo, 'csv'),
+            mimeType: 'text/csv;charset=utf-8',
+            content: Buffer.from(content, 'utf-8').toString('base64'),
+          };
+        } else {
+          const buffer = generateTrainingHistoryExcel(exportData, { dateFrom, dateTo });
+          return {
+            filename: getTrainingHistoryExportFilename(dateFrom, dateTo, 'xlsx'),
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            content: buffer.toString('base64'),
+          };
+        }
+      }),
   }),
 });

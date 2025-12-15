@@ -33,6 +33,9 @@ import {
   ClipboardCheck,
   ChevronRight,
   Activity,
+  Building2,
+  Target,
+  User,
 } from 'lucide-react';
 
 // Status badge colors (matching performance schema)
@@ -52,14 +55,33 @@ const statusLabels: Record<string, string> = {
   closed: 'Clôturé',
 };
 
+// Scope labels
+const scopeLabels: Record<string, string> = {
+  company: 'Entreprise',
+  department: 'Département',
+  individual: 'Individuel',
+};
+
+// Individual reason labels
+const individualReasonLabels: Record<string, string> = {
+  probation: 'Période d\'essai',
+  cdd_renewal: 'Renouvellement CDD',
+  cddti_check: 'Point CDDTI',
+  performance_improvement: 'Plan d\'amélioration',
+  promotion: 'Promotion',
+  other: 'Autre',
+};
+
 export default function PerformanceCyclesPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [scopeFilter, setScopeFilter] = useState<string>('all');
 
   // Fetch cycles (filter locally by search since API doesn't support search param)
   const { data: cyclesData, isLoading } = api.performance.cycles.list.useQuery({
     status: statusFilter !== 'all' ? statusFilter : undefined,
+    cycleScope: scopeFilter !== 'all' ? scopeFilter as 'company' | 'department' | 'individual' : undefined,
     limit: 50,
   });
 
@@ -104,6 +126,32 @@ export default function PerformanceCyclesPage() {
                 className="pl-10 min-h-[48px]"
               />
             </div>
+            <Select value={scopeFilter} onValueChange={setScopeFilter}>
+              <SelectTrigger className="w-full sm:w-[180px] min-h-[48px]">
+                <SelectValue placeholder="Tous les périmètres" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les périmètres</SelectItem>
+                <SelectItem value="company">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    Entreprise
+                  </div>
+                </SelectItem>
+                <SelectItem value="department">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Département
+                  </div>
+                </SelectItem>
+                <SelectItem value="individual">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Individuel
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-[200px] min-h-[48px]">
                 <SelectValue placeholder="Tous les statuts" />
@@ -156,65 +204,111 @@ export default function PerformanceCyclesPage() {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {cycles.map((cycle) => (
-            <Link key={cycle.id} href={`/performance/cycles/${cycle.id}`}>
-              <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold truncate">
-                          {cycle.name}
-                        </h3>
-                        <Badge className={statusColors[cycle.status]}>
-                          {statusLabels[cycle.status]}
-                        </Badge>
-                      </div>
+          {cycles.map((cycle) => {
+            // Determine scope icon
+            const ScopeIcon = cycle.cycleScope === 'individual'
+              ? Target
+              : cycle.cycleScope === 'department'
+                ? Users
+                : Building2;
 
-                      {cycle.description && (
-                        <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
-                          {cycle.description}
-                        </p>
-                      )}
-
-                      <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          <span>
-                            {format(new Date(cycle.periodStart), 'dd MMM yyyy', { locale: fr })}
-                            {' - '}
-                            {format(new Date(cycle.periodEnd), 'dd MMM yyyy', { locale: fr })}
-                          </span>
+            return (
+              <Link key={cycle.id} href={`/performance/cycles/${cycle.id}`}>
+                <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          {/* Scope indicator for non-company cycles */}
+                          {cycle.cycleScope !== 'company' && (
+                            <Badge variant="outline" className="flex items-center gap-1">
+                              <ScopeIcon className="h-3 w-3" />
+                              {scopeLabels[cycle.cycleScope] || 'Entreprise'}
+                            </Badge>
+                          )}
+                          <h3 className="text-lg font-semibold truncate">
+                            {cycle.name}
+                          </h3>
+                          <Badge className={statusColors[cycle.status]}>
+                            {statusLabels[cycle.status]}
+                          </Badge>
+                          {/* Individual reason badge */}
+                          {cycle.cycleScope === 'individual' && cycle.individualReason && (
+                            <Badge variant="secondary" className="text-xs">
+                              {individualReasonLabels[cycle.individualReason] || cycle.individualReason}
+                            </Badge>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-1">
-                          <Users className="h-4 w-4" />
-                          <span>
-                            {cycle.cycleType === 'annual' && 'Évaluation annuelle'}
-                            {cycle.cycleType === 'semi_annual' && 'Évaluation semestrielle'}
-                            {cycle.cycleType === 'quarterly' && 'Évaluation trimestrielle'}
-                            {cycle.cycleType === 'monthly' && 'Évaluation mensuelle'}
-                            {cycle.cycleType === 'probation' && 'Période d\'essai'}
-                            {cycle.cycleType === 'project' && 'Projet'}
-                            {cycle.cycleType === 'custom' && 'Personnalisé'}
-                          </span>
-                        </div>
-
-                        {cycle.includeSelfEvaluation && (
-                          <div className="flex items-center gap-1">
-                            <ClipboardCheck className="h-4 w-4" />
-                            <span>Auto-évaluation</span>
+                        {/* Target employee/department info */}
+                        {cycle.cycleScope === 'individual' && cycle.targetEmployee && (
+                          <div className="flex items-center gap-2 mb-2 text-sm">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">
+                              {cycle.targetEmployee.firstName} {cycle.targetEmployee.lastName}
+                            </span>
+                            {cycle.targetEmployee.employeeNumber && (
+                              <span className="text-muted-foreground">
+                                ({cycle.targetEmployee.employeeNumber})
+                              </span>
+                            )}
                           </div>
                         )}
-                      </div>
-                    </div>
 
-                    <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+                        {cycle.cycleScope === 'department' && cycle.targetDepartment && (
+                          <div className="flex items-center gap-2 mb-2 text-sm">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">
+                              {cycle.targetDepartment.name}
+                            </span>
+                          </div>
+                        )}
+
+                        {cycle.description && (
+                          <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
+                            {cycle.description}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-4 w-4" />
+                            <span>
+                              {format(new Date(cycle.periodStart), 'dd MMM yyyy', { locale: fr })}
+                              {' - '}
+                              {format(new Date(cycle.periodEnd), 'dd MMM yyyy', { locale: fr })}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <Activity className="h-4 w-4" />
+                            <span>
+                              {cycle.cycleType === 'annual' && 'Évaluation annuelle'}
+                              {cycle.cycleType === 'semi_annual' && 'Évaluation semestrielle'}
+                              {cycle.cycleType === 'quarterly' && 'Évaluation trimestrielle'}
+                              {cycle.cycleType === 'monthly' && 'Évaluation mensuelle'}
+                              {cycle.cycleType === 'probation' && 'Période d\'essai'}
+                              {cycle.cycleType === 'project' && 'Projet'}
+                              {cycle.cycleType === 'custom' && 'Personnalisé'}
+                            </span>
+                          </div>
+
+                          {cycle.includeSelfEvaluation && (
+                            <div className="flex items-center gap-1">
+                              <ClipboardCheck className="h-4 w-4" />
+                              <span>Auto-évaluation</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
         </div>
       )}
 

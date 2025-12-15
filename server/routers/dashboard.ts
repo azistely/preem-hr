@@ -327,6 +327,47 @@ export const dashboardRouter = router({
     nextPayrollDate.setDate(25); // Typical payroll date
     const needsPayroll = today >= nextPayrollDate && !latestPayrollRun;
 
+    // Get probation periods ending soon (within 30 days)
+    const in14Days = new Date();
+    in14Days.setDate(in14Days.getDate() + 14);
+    const in30Days = new Date();
+    in30Days.setDate(in30Days.getDate() + 30);
+
+    const probationEnding = await db
+      .select({
+        id: employees.id,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        employeeNumber: employees.employeeNumber,
+        probationEndDate: employees.probationEndDate,
+        probationStatus: employees.probationStatus,
+        departmentId: employees.departmentId,
+      })
+      .from(employees)
+      .where(
+        and(
+          eq(employees.tenantId, tenantId),
+          eq(employees.status, 'active'),
+          eq(employees.probationStatus, 'in_progress'),
+          sql`${employees.probationEndDate} IS NOT NULL`,
+          lte(employees.probationEndDate, in30Days.toISOString().split('T')[0])
+        )
+      )
+      .orderBy(employees.probationEndDate);
+
+    // Split into urgent (14 days) and upcoming (15-30 days)
+    const urgentProbations = probationEnding.filter(e => {
+      if (!e.probationEndDate) return false;
+      const endDate = new Date(e.probationEndDate);
+      return endDate <= in14Days;
+    });
+
+    const upcomingProbations = probationEnding.filter(e => {
+      if (!e.probationEndDate) return false;
+      const endDate = new Date(e.probationEndDate);
+      return endDate > in14Days && endDate <= in30Days;
+    });
+
     return {
       metrics: {
         employeeCount: employeeCount[0]?.count || 0,
@@ -337,6 +378,19 @@ export const dashboardRouter = router({
         payrollDue: needsPayroll,
         pendingLeave: pendingLeaveRequests[0]?.count || 0,
         total: (needsPayroll ? 1 : 0) + (pendingLeaveRequests[0]?.count || 0),
+      },
+      probation: {
+        urgent: urgentProbations.length,
+        upcoming: upcomingProbations.length,
+        total: probationEnding.length,
+        employees: probationEnding.map(e => ({
+          id: e.id,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          employeeNumber: e.employeeNumber,
+          probationEndDate: e.probationEndDate,
+          isUrgent: urgentProbations.some(u => u.id === e.id),
+        })),
       },
       latestPayrollRun,
     };

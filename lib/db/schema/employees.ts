@@ -49,6 +49,16 @@ export const employees = pgTable('employees', {
   employmentClassification: varchar('employment_classification', { length: 50 }), // Temps plein/partiel/occasionnel
   salaryRegime: varchar('salary_regime', { length: 50 }), // Mensuel/Journalier/Horaire
 
+  // Probation period tracking
+  probationStartDate: date('probation_start_date'), // Start of probation (often = hire date)
+  probationEndDate: date('probation_end_date'), // Calculated end date
+  probationDurationMonths: integer('probation_duration_months'), // 1-4 months for CDI (Ivory Coast)
+  probationStatus: varchar('probation_status', { length: 20 }), // 'in_progress', 'confirmed', 'extended', 'terminated', 'not_applicable'
+  probationConfirmedAt: timestamp('probation_confirmed_at'), // When confirmation was recorded
+  probationConfirmedBy: uuid('probation_confirmed_by'), // User who confirmed (references users.id)
+  probationExtensionMonths: integer('probation_extension_months'), // If extended, additional months (max 1 renewal in CI)
+  probationNotes: text('probation_notes'), // Notes about probation outcome
+
   // Organizational structure (denormalized for import)
   establishment: text('establishment'), // "Etablissement"
   division: text('division'), // "Direction"

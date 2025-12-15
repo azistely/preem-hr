@@ -17,3 +17,19 @@ export type {
   ComponentCustomization,
   RuleCheckResult,
 } from './types';
+
+// Probation Compliance
+export {
+  ProbationComplianceService,
+  probationComplianceService,
+  getDefaultProbationDuration,
+} from './probation-compliance.service';
+export type {
+  ProbationStatus,
+  ProbationAlertType,
+  ProbationAlertSeverity,
+  ProbationAlert,
+  ProbationComplianceStatus,
+  ProbationUpdateResult,
+  ProbationDashboardSummary,
+} from './probation-compliance.service';

@@ -27,6 +27,7 @@ import { db } from '@/lib/db';
 import { employeeBenefitEnrollments, employees, employeeDependents, uploadedDocuments } from '@/drizzle/schema';
 import { createClient } from '@/lib/supabase/server';
 import { initializeEmployeeBalances } from '@/features/time-off/services/time-off.service';
+import { probationComplianceService } from '@/lib/compliance/probation-compliance.service';
 
 // Zod Schemas
 const genderEnum = z.enum(['male', 'female']);
@@ -1054,4 +1055,324 @@ export const employeesRouter = createTRPCRouter({
       });
     }
   }),
+
+  // ========================================================================
+  // PROBATION PERIOD MANAGEMENT
+  // ========================================================================
+
+  /**
+   * Get probation status for an employee
+   *
+   * Returns detailed probation information including:
+   * - Current status (in_progress, confirmed, extended, terminated)
+   * - Days remaining
+   * - Alerts for upcoming deadlines
+   *
+   * Permissions: HR Manager
+   */
+  getProbationStatus: hrManagerProcedure
+    .input(z.object({ employeeId: z.string().uuid('ID employé invalide') }))
+    .query(async ({ input, ctx }) => {
+      try {
+        return await probationComplianceService.checkProbationStatus(
+          input.employeeId,
+          ctx.user.tenantId
+        );
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la vérification du statut de période d\'essai',
+        });
+      }
+    }),
+
+  /**
+   * Get all employees currently in probation
+   *
+   * Returns list of employees with active probation periods,
+   * optionally filtered by days until end.
+   *
+   * Permissions: HR Manager
+   */
+  getEmployeesInProbation: hrManagerProcedure
+    .input(
+      z.object({
+        includeExpired: z.boolean().default(false),
+        daysUntilEndMax: z.number().int().positive().optional(),
+      }).optional()
+    )
+    .query(async ({ input, ctx }) => {
+      try {
+        return await probationComplianceService.getEmployeesInProbation(
+          ctx.user.tenantId,
+          {
+            includeExpired: input?.includeExpired,
+            daysUntilEndMax: input?.daysUntilEndMax,
+          }
+        );
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la récupération des employés en période d\'essai',
+        });
+      }
+    }),
+
+  /**
+   * Get probation dashboard summary
+   *
+   * Returns aggregated statistics:
+   * - Total in probation
+   * - Ending this week
+   * - Ending this month
+   * - Expired (awaiting decision)
+   *
+   * Permissions: HR Manager
+   */
+  getProbationDashboard: hrManagerProcedure.query(async ({ ctx }) => {
+    try {
+      return await probationComplianceService.getDashboardSummary(ctx.user.tenantId);
+    } catch (error: any) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: error.message || 'Erreur lors de la récupération du tableau de bord des périodes d\'essai',
+      });
+    }
+  }),
+
+  /**
+   * Get all probation alerts
+   *
+   * Returns list of alerts for employees with upcoming
+   * or expired probation periods.
+   *
+   * Permissions: HR Manager
+   */
+  getProbationAlerts: hrManagerProcedure
+    .input(
+      z.object({
+        severityFilter: z.array(z.enum(['info', 'warning', 'critical'])).optional(),
+        limit: z.number().int().positive().max(100).default(50),
+      }).optional()
+    )
+    .query(async ({ input, ctx }) => {
+      try {
+        return await probationComplianceService.getAllProbationAlerts(
+          ctx.user.tenantId,
+          {
+            severityFilter: input?.severityFilter,
+            limit: input?.limit,
+          }
+        );
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de la récupération des alertes de période d\'essai',
+        });
+      }
+    }),
+
+  /**
+   * Initialize probation for an employee
+   *
+   * Sets up probation tracking with:
+   * - Start date (defaults to hire date)
+   * - Duration (defaults based on coefficient)
+   * - End date (calculated)
+   *
+   * Permissions: HR Manager
+   */
+  initializeProbation: hrManagerProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid('ID employé invalide'),
+        startDate: z.date().optional(),
+        durationMonths: z.number().int().min(1).max(4).optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const result = await probationComplianceService.initializeProbation(
+          input.employeeId,
+          ctx.user.tenantId,
+          {
+            startDate: input.startDate,
+            durationMonths: input.durationMonths,
+            notes: input.notes,
+          }
+        );
+
+        // Emit event
+        await eventBus.publish('employee.probation.initialized', {
+          employeeId: input.employeeId,
+          tenantId: ctx.user.tenantId,
+          initiatedBy: ctx.user.id,
+        });
+
+        return result;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de l\'initialisation de la période d\'essai',
+        });
+      }
+    }),
+
+  /**
+   * Confirm employee after probation
+   *
+   * Marks probation as confirmed and records who approved.
+   *
+   * Permissions: HR Manager
+   */
+  confirmProbation: hrManagerProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid('ID employé invalide'),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const result = await probationComplianceService.confirmEmployee(
+          input.employeeId,
+          ctx.user.tenantId,
+          ctx.user.id,
+          input.notes
+        );
+
+        // Emit event
+        await eventBus.publish('employee.probation.confirmed', {
+          employeeId: input.employeeId,
+          tenantId: ctx.user.tenantId,
+          confirmedBy: ctx.user.id,
+        });
+
+        return result;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la confirmation de la période d\'essai',
+        });
+      }
+    }),
+
+  /**
+   * Extend probation period
+   *
+   * Extends probation by additional months (max 1 renewal per CI labor law).
+   * Extension cannot exceed original duration.
+   *
+   * Permissions: HR Manager
+   */
+  extendProbation: hrManagerProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid('ID employé invalide'),
+        extensionMonths: z.number().int().min(1).max(4).optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const result = await probationComplianceService.extendProbation(
+          input.employeeId,
+          ctx.user.tenantId,
+          ctx.user.id,
+          input.extensionMonths,
+          input.notes
+        );
+
+        // Emit event
+        await eventBus.publish('employee.probation.extended', {
+          employeeId: input.employeeId,
+          tenantId: ctx.user.tenantId,
+          extendedBy: ctx.user.id,
+          extensionMonths: input.extensionMonths,
+        });
+
+        return result;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la prolongation de la période d\'essai',
+        });
+      }
+    }),
+
+  /**
+   * Terminate employee during probation
+   *
+   * Records termination during probation period with reason.
+   * Note: No notice period required during probation per CI labor law.
+   *
+   * Permissions: HR Manager
+   */
+  terminateDuringProbation: hrManagerProcedure
+    .input(
+      z.object({
+        employeeId: z.string().uuid('ID employé invalide'),
+        terminationDate: z.date(),
+        reason: z.string().min(10, 'Veuillez fournir un motif détaillé'),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        const result = await probationComplianceService.terminateDuringProbation(
+          input.employeeId,
+          ctx.user.tenantId,
+          ctx.user.id,
+          input.terminationDate,
+          input.reason
+        );
+
+        // Emit event
+        await eventBus.publish('employee.probation.terminated', {
+          employeeId: input.employeeId,
+          tenantId: ctx.user.tenantId,
+          terminatedBy: ctx.user.id,
+          terminationDate: input.terminationDate,
+        });
+
+        return result;
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error.message || 'Erreur lors de la fin de la période d\'essai',
+        });
+      }
+    }),
+
+  /**
+   * Bulk initialize probation for recent hires
+   *
+   * Initializes probation tracking for employees who don't have it yet.
+   * Useful for migrating to the new probation system.
+   *
+   * Permissions: HR Manager
+   */
+  bulkInitializeProbation: hrManagerProcedure
+    .input(
+      z.object({
+        onlyRecentHires: z.boolean().default(true),
+        recentHireMonths: z.number().int().min(1).max(12).default(4),
+      }).optional()
+    )
+    .mutation(async ({ input, ctx }) => {
+      try {
+        return await probationComplianceService.bulkInitializeProbation(
+          ctx.user.tenantId,
+          {
+            onlyRecentHires: input?.onlyRecentHires,
+            recentHireMonths: input?.recentHireMonths,
+          }
+        );
+      } catch (error: any) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error.message || 'Erreur lors de l\'initialisation en masse des périodes d\'essai',
+        });
+      }
+    }),
 });

@@ -6,10 +6,11 @@
  */
 
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '../api/trpc';
+import { createTRPCRouter, protectedProcedure, hrManagerProcedure } from '../api/trpc';
 import { db } from '@/lib/db';
 import { bonuses, BonusType, BonusStatus } from '@/lib/db/schema/bonuses';
 import { employees } from '@/lib/db/schema/employees';
+import { continuousFeedback } from '@/lib/db/schema';
 import { eq, and, gte, lte, inArray, desc, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
@@ -475,5 +476,124 @@ export const bonusesRouter = createTRPCRouter({
         .groupBy(bonuses.bonusType, bonuses.status);
 
       return stats;
+    }),
+
+  /**
+   * Create bonus from recognition feedback (Recognition → Rewards workflow)
+   *
+   * Used when HR approves a bonus recommendation from recognition feedback.
+   * Links the created bonus back to the original feedback.
+   */
+  createFromFeedback: hrManagerProcedure
+    .input(z.object({
+      feedbackId: z.string().uuid(),
+      amount: z.number().positive(),
+      period: z.string().regex(/^\d{4}-\d{2}-01$/).optional(), // Default to current month
+      description: z.string().optional(),
+      isTaxable: z.boolean().default(true),
+      isSubjectToSocialSecurity: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user.tenantId;
+
+      // Get the feedback and verify it's approved
+      const [feedback] = await db
+        .select({
+          id: continuousFeedback.id,
+          employeeId: continuousFeedback.employeeId,
+          rewardStatus: continuousFeedback.rewardStatus,
+          recommendsBonusAmount: continuousFeedback.recommendsBonusAmount,
+          recommendsBonusReason: continuousFeedback.recommendsBonusReason,
+          linkedBonusId: continuousFeedback.linkedBonusId,
+          title: continuousFeedback.title,
+        })
+        .from(continuousFeedback)
+        .where(and(
+          eq(continuousFeedback.id, input.feedbackId),
+          eq(continuousFeedback.tenantId, tenantId)
+        ))
+        .limit(1);
+
+      if (!feedback) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Feedback non trouvé',
+        });
+      }
+
+      if (feedback.rewardStatus !== 'approved') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Le feedback doit être approuvé avant de créer une prime',
+        });
+      }
+
+      if (feedback.linkedBonusId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Une prime a déjà été créée pour ce feedback',
+        });
+      }
+
+      // Verify employee belongs to tenant
+      const [employee] = await db
+        .select({ id: employees.id, firstName: employees.firstName, lastName: employees.lastName })
+        .from(employees)
+        .where(and(
+          eq(employees.id, feedback.employeeId),
+          eq(employees.tenantId, tenantId)
+        ))
+        .limit(1);
+
+      if (!employee) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Employé non trouvé',
+        });
+      }
+
+      // Default period to current month
+      const now = new Date();
+      const defaultPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+      // Build description from feedback
+      const bonusDescription = input.description
+        || feedback.recommendsBonusReason
+        || `Prime de reconnaissance: ${feedback.title || 'Reconnaissance'}`;
+
+      // Create the bonus (pre-approved since it came from HR approval)
+      const [newBonus] = await db
+        .insert(bonuses)
+        .values({
+          tenantId,
+          employeeId: feedback.employeeId,
+          bonusType: 'performance', // Recognition bonuses are performance-based
+          amount: input.amount.toString(),
+          period: input.period || defaultPeriod,
+          description: bonusDescription,
+          notes: `Créée depuis une reconnaissance (feedback ID: ${feedback.id})`,
+          isTaxable: input.isTaxable,
+          isSubjectToSocialSecurity: input.isSubjectToSocialSecurity,
+          status: 'approved', // Pre-approved since HR already approved the reward
+          approvedBy: ctx.user.id,
+          approvedAt: new Date(),
+          createdBy: ctx.user.id,
+        })
+        .returning();
+
+      // Link the bonus back to the feedback
+      await db
+        .update(continuousFeedback)
+        .set({
+          linkedBonusId: newBonus.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(continuousFeedback.id, feedback.id));
+
+      return {
+        success: true,
+        bonus: newBonus,
+        employeeName: `${employee.firstName} ${employee.lastName}`,
+      };
     }),
 });

@@ -8,6 +8,7 @@ import { QuickActionCard, QuickActionsGrid } from "@/components/dashboard/quick-
 import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { CriticalActions } from "@/components/dashboard/hr/critical-actions";
 import { KeyMetrics } from "@/components/dashboard/hr/key-metrics";
+import { ProbationWidget } from "@/components/dashboard/hr/probation-widget";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function HRDashboardPage() {
@@ -39,7 +40,7 @@ export default function HRDashboardPage() {
     );
   }
 
-  const { metrics, criticalActions } = dashboardData;
+  const { metrics, criticalActions, probation } = dashboardData;
 
   return (
     <div className="min-h-screen p-4 pb-20 md:p-6 lg:p-8">
@@ -57,6 +58,16 @@ export default function HRDashboardPage() {
           payrollDue={criticalActions.payrollDue}
           pendingLeave={criticalActions.pendingLeave}
         />
+
+        {/* Probation Widget */}
+        {probation && probation.total > 0 && (
+          <ProbationWidget
+            urgent={probation.urgent}
+            upcoming={probation.upcoming}
+            total={probation.total}
+            employees={probation.employees}
+          />
+        )}
 
         {/* Key Metrics */}
         <CollapsibleSection title="Métriques Clés" defaultOpen={true}>
@@ -116,6 +127,16 @@ export default function HRDashboardPage() {
             pendingLeave={criticalActions.pendingLeave}
           />
 
+          {/* Probation Widget - Full width */}
+          {probation && probation.total > 0 && (
+            <ProbationWidget
+              urgent={probation.urgent}
+              upcoming={probation.upcoming}
+              total={probation.total}
+              employees={probation.employees}
+            />
+          )}
+
           {/* Two columns */}
           <div className="grid grid-cols-2 gap-6">
             {/* Key Metrics */}
@@ -166,12 +187,20 @@ export default function HRDashboardPage() {
 
           {/* Main Content */}
           <div className="grid grid-cols-3 gap-6">
-            {/* Left: Critical Actions */}
-            <div className="col-span-2">
+            {/* Left: Critical Actions + Probation */}
+            <div className="col-span-2 space-y-6">
               <CriticalActions
                 payrollDue={criticalActions.payrollDue}
                 pendingLeave={criticalActions.pendingLeave}
               />
+              {probation && probation.total > 0 && (
+                <ProbationWidget
+                  urgent={probation.urgent}
+                  upcoming={probation.upcoming}
+                  total={probation.total}
+                  employees={probation.employees}
+                />
+              )}
             </div>
 
             {/* Right: Quick Actions */}

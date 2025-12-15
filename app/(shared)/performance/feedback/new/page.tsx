@@ -34,6 +34,8 @@ import {
   User,
   Lock,
   EyeOff,
+  Gift,
+  TrendingUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -75,6 +77,13 @@ export default function NewFeedbackPage() {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [tags, setTags] = useState('');
 
+  // Reward recommendation state (only for recognition type)
+  const [recommendsBonus, setRecommendsBonus] = useState(false);
+  const [bonusAmount, setBonusAmount] = useState('');
+  const [bonusReason, setBonusReason] = useState('');
+  const [recommendsPromotion, setRecommendsPromotion] = useState(false);
+  const [promotionTo, setPromotionTo] = useState('');
+
   // Fetch employees
   const { data: employeesData, isLoading: employeesLoading } = api.employees.list.useQuery({
     status: 'active',
@@ -108,6 +117,15 @@ export default function NewFeedbackPage() {
       return;
     }
 
+    // Validate bonus amount if recommending bonus
+    if (feedbackType === 'recognition' && recommendsBonus) {
+      const amount = parseFloat(bonusAmount);
+      if (isNaN(amount) || amount <= 0) {
+        toast.error('Veuillez entrer un montant de prime valide');
+        return;
+      }
+    }
+
     createFeedback.mutate({
       employeeId,
       feedbackType,
@@ -116,6 +134,15 @@ export default function NewFeedbackPage() {
       isPrivate,
       isAnonymous,
       tags: tags ? tags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
+      // Include reward recommendations only for recognition type
+      ...(feedbackType === 'recognition' && recommendsBonus && {
+        recommendsBonusAmount: parseFloat(bonusAmount),
+        recommendsBonusReason: bonusReason || undefined,
+      }),
+      ...(feedbackType === 'recognition' && recommendsPromotion && {
+        recommendsPromotion: true,
+        recommendsPromotionTo: promotionTo || undefined,
+      }),
     });
   };
 
@@ -308,6 +335,130 @@ export default function NewFeedbackPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Step 5: Reward Recommendation (Recognition only) */}
+        {feedbackType === 'recognition' && (
+          <Card className="border-green-200 dark:border-green-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Gift className="h-5 w-5 text-green-600" />
+                Recommander une récompense
+              </CardTitle>
+              <CardDescription>
+                Suggérer une prime ou promotion pour cette reconnaissance exceptionnelle
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Bonus recommendation toggle */}
+              <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-950/30 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Gift className="h-5 w-5 text-green-600" />
+                  <div>
+                    <p className="font-medium">Recommander une prime</p>
+                    <p className="text-sm text-muted-foreground">
+                      Soumettre cette reconnaissance aux RH pour une prime
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={recommendsBonus}
+                  onCheckedChange={(checked) => {
+                    setRecommendsBonus(checked);
+                    if (!checked) {
+                      setBonusAmount('');
+                      setBonusReason('');
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Bonus details (shown when toggle is on) */}
+              {recommendsBonus && (
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
+                  <div className="space-y-2">
+                    <Label htmlFor="bonusAmount">Montant suggéré (FCFA) *</Label>
+                    <Input
+                      id="bonusAmount"
+                      type="number"
+                      value={bonusAmount}
+                      onChange={(e) => setBonusAmount(e.target.value)}
+                      placeholder="Ex: 50000"
+                      className="min-h-[48px]"
+                      min="0"
+                      step="1000"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Ce montant sera soumis aux RH pour validation
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="bonusReason">Justification</Label>
+                    <Textarea
+                      id="bonusReason"
+                      value={bonusReason}
+                      onChange={(e) => setBonusReason(e.target.value)}
+                      placeholder="Expliquez pourquoi cette personne mérite une prime..."
+                      rows={3}
+                      className="min-h-[80px]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Promotion recommendation toggle */}
+              <div className="flex items-center justify-between p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <TrendingUp className="h-5 w-5 text-purple-600" />
+                  <div>
+                    <p className="font-medium">Recommander une promotion</p>
+                    <p className="text-sm text-muted-foreground">
+                      Suggérer cette personne pour une évolution de carrière
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={recommendsPromotion}
+                  onCheckedChange={(checked) => {
+                    setRecommendsPromotion(checked);
+                    if (!checked) {
+                      setPromotionTo('');
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Promotion details (shown when toggle is on) */}
+              {recommendsPromotion && (
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
+                  <div className="space-y-2">
+                    <Label htmlFor="promotionTo">Poste ou niveau suggéré</Label>
+                    <Input
+                      id="promotionTo"
+                      value={promotionTo}
+                      onChange={(e) => setPromotionTo(e.target.value)}
+                      placeholder="Ex: Chef d'équipe, Senior Developer..."
+                      className="min-h-[48px]"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Cette suggestion sera transmise aux RH
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Info note */}
+              {(recommendsBonus || recommendsPromotion) && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
+                    <strong>Note :</strong> Vos recommandations seront envoyées aux RH pour validation.
+                    Vous serez informé de la décision finale.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Actions */}
         <div className="flex gap-4 justify-end">

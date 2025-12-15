@@ -12,7 +12,7 @@
 
 'use client';
 
-import { forwardRef, useState, useMemo } from 'react';
+import { forwardRef, useState, useMemo, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -69,6 +69,8 @@ export interface EmployeePickerProps {
   excludeIds?: string[];
   /** Filter to specific department */
   departmentId?: string;
+  /** Filter to specific position */
+  positionId?: string;
   /** Additional className */
   className?: string;
 }
@@ -87,37 +89,39 @@ export const EmployeePicker = forwardRef<HTMLDivElement, EmployeePickerProps>(
       disabled = false,
       error,
       excludeIds = [],
+      departmentId,
+      positionId,
       className,
     },
     ref
   ) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
 
-    // Fetch employees
+    // Debounce search for server-side query
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        setDebouncedSearch(search);
+      }, 300);
+      return () => clearTimeout(timer);
+    }, [search]);
+
+    // Fetch employees with server-side search and filters
     const { data: employeesData, isLoading } = api.employees.list.useQuery({
       status: 'active',
+      search: debouncedSearch || undefined,
+      departmentId: departmentId || undefined,
+      positionId: positionId || undefined,
       limit: 100,
     });
 
     const employees = employeesData?.employees ?? [];
 
-    // Filter employees
+    // Filter out excluded IDs (client-side, since it's a small list)
     const filteredEmployees = useMemo(() => {
-      let result = employees.filter((e) => !excludeIds.includes(e.id));
-
-      if (search) {
-        const searchLower = search.toLowerCase();
-        result = result.filter(
-          (e) =>
-            e.firstName.toLowerCase().includes(searchLower) ||
-            e.lastName.toLowerCase().includes(searchLower) ||
-            e.matricule.toLowerCase().includes(searchLower)
-        );
-      }
-
-      return result;
-    }, [employees, excludeIds, search]);
+      return employees.filter((e) => !excludeIds.includes(e.id));
+    }, [employees, excludeIds]);
 
     // Get selected employees
     const selectedIds = multiple

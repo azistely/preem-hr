@@ -43,6 +43,30 @@ export type ObjectiveLevel = 'company' | 'team' | 'individual';
 export type EvaluationType = 'self' | 'manager' | 'peer' | '360_report';
 
 /**
+ * Ad-hoc evaluation type (when cycleId is null)
+ * Used for individual evaluations not tied to a formal cycle
+ * @deprecated Use cycle.individualReason instead with cycleScope='individual'
+ */
+export type AdHocEvaluationType = 'probation' | 'cdd_renewal' | 'cddti_check' | 'other';
+
+/**
+ * Cycle scope - who the cycle targets
+ * - company: All employees in the company
+ * - departments: Selected department(s) - uses targetDepartmentIds
+ * - positions: Selected position(s) - uses targetPositionIds
+ *
+ * Legacy values (for backward compatibility):
+ * - department: Single department (use targetDepartmentId)
+ * - individual: Single employee (use targetEmployeeId)
+ */
+export type CycleScope = 'company' | 'departments' | 'positions' | 'department' | 'individual';
+
+/**
+ * Individual evaluation reason (for cycleScope='individual') - legacy
+ */
+export type IndividualEvaluationReason = 'probation' | 'cdd_renewal' | 'cddti_check' | 'performance_improvement' | 'promotion' | 'other';
+
+/**
  * Performance cycle status
  */
 export type PerformanceCycleStatus = 'planning' | 'objective_setting' | 'active' | 'calibration' | 'closed';
@@ -120,6 +144,32 @@ export const performanceCycles = pgTable('performance_cycles', {
 
   // Company size optimization
   companySizeProfile: text('company_size_profile').default('medium'), // small, medium, large
+
+  // Cycle scope - unified approach for all evaluation types
+  // 'company' = all employees (default, traditional annual review)
+  // 'department' = specific department
+  // 'individual' = single employee (replaces ad-hoc evaluations)
+  cycleScope: text('cycle_scope').notNull().default('company').$type<CycleScope>(),
+
+  // Target employee for individual cycles (cycleScope='individual')
+  targetEmployeeId: uuid('target_employee_id').references(() => employees.id, { onDelete: 'cascade' }),
+
+  // Target department for department cycles (cycleScope='department')
+  targetDepartmentId: uuid('target_department_id').references(() => departments.id, { onDelete: 'cascade' }),
+
+  // Reason for individual evaluation (cycleScope='individual')
+  // Replaces evaluation.adHocType for unified UX
+  individualReason: text('individual_reason').$type<IndividualEvaluationReason>(),
+
+  // Notes/context for individual evaluations
+  individualNotes: text('individual_notes'),
+
+  // Multi-select scope fields (new approach)
+  // Target departments for 'departments' scope
+  targetDepartmentIds: jsonb('target_department_ids').$type<string[]>(),
+
+  // Target positions for 'positions' scope
+  targetPositionIds: jsonb('target_position_ids').$type<string[]>(),
 
   // Audit
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -293,7 +343,7 @@ export const objectives = pgTable('objectives', {
 export const evaluations = pgTable('evaluations', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  cycleId: uuid('cycle_id').notNull().references(() => performanceCycles.id, { onDelete: 'cascade' }),
+  cycleId: uuid('cycle_id').references(() => performanceCycles.id, { onDelete: 'cascade' }), // NULL for ad-hoc evaluations
 
   // Subject (who is being evaluated)
   employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
@@ -301,6 +351,10 @@ export const evaluations = pgTable('evaluations', {
   // Evaluator (who is evaluating)
   evaluatorId: uuid('evaluator_id').references(() => employees.id, { onDelete: 'set null' }), // NULL for self-evaluation
   evaluationType: text('evaluation_type').notNull().default('self'), // self, manager, peer, 360_report
+
+  // Ad-hoc evaluation type (when cycleId is null)
+  // Used for probation end, CDD renewal decisions, CDDTI checks, etc.
+  adHocType: text('ad_hoc_type'), // 'probation' | 'cdd_renewal' | 'cddti_check' | 'other'
 
   // Template used for this evaluation (resolved at launch time based on employee's dept/position)
   templateId: uuid('template_id').references(() => hrFormTemplates.id, { onDelete: 'set null' }),
@@ -447,8 +501,24 @@ export const continuousFeedback = pgTable('continuous_feedback', {
   // Acknowledgment
   acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
 
+  // Reward recommendation (for recognition type)
+  recommendsBonusAmount: numeric('recommends_bonus_amount'), // Suggested bonus amount
+  recommendsBonusReason: text('recommends_bonus_reason'), // Justification for the bonus
+  recommendsPromotion: boolean('recommends_promotion').default(false), // Suggest promotion
+  recommendsPromotionTo: text('recommends_promotion_to'), // Target position/level
+
+  // Reward approval workflow
+  rewardStatus: text('reward_status'), // null, 'pending_approval', 'approved', 'rejected'
+  rewardApprovedBy: uuid('reward_approved_by').references(() => users.id),
+  rewardApprovedAt: timestamp('reward_approved_at', { withTimezone: true }),
+  rewardRejectionReason: text('reward_rejection_reason'),
+
+  // Link to bonus if approved
+  linkedBonusId: uuid('linked_bonus_id'), // References bonuses table if created
+
   // Audit
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
 }, (table) => [
   pgPolicy('continuous_feedback_tenant_isolation', {
     as: 'permissive',
@@ -796,6 +866,11 @@ export const continuousFeedbackRelations = relations(continuousFeedback, ({ one 
     fields: [continuousFeedback.cycleId],
     references: [performanceCycles.id],
   }),
+  rewardApprovedByUser: one(users, {
+    fields: [continuousFeedback.rewardApprovedBy],
+    references: [users.id],
+    relationName: 'feedback_reward_approver',
+  }),
 }));
 
 export const oneOnOneMeetingsRelations = relations(oneOnOneMeetings, ({ one }) => ({
@@ -932,6 +1007,20 @@ export const FeedbackTypeLabels: Record<string, string> = {
   coaching: 'Coaching',
 };
 
+export const AdHocType = {
+  PROBATION: 'probation',
+  CDD_RENEWAL: 'cdd_renewal',
+  CDDTI_CHECK: 'cddti_check',
+  OTHER: 'other',
+} as const;
+
+export const AdHocTypeLabels: Record<string, string> = {
+  probation: 'Fin de période d\'essai',
+  cdd_renewal: 'Renouvellement CDD',
+  cddti_check: 'Évaluation CDDTI',
+  other: 'Autre',
+};
+
 export const CompetencyCategory = {
   TECHNIQUE: 'technique',
   COMPORTEMENTAL: 'comportemental',
@@ -944,4 +1033,433 @@ export const CompetencyCategoryLabels: Record<string, string> = {
   comportemental: 'Comportemental',
   leadership: 'Leadership',
   metier: 'Métier',
+};
+
+// ============================================================================
+// OBSERVATION KPI TEMPLATES TABLE
+// ============================================================================
+
+/**
+ * KPI field definition for factory observation templates
+ */
+export interface ObservationKpiFieldDefinition {
+  key: string;
+  label: string;
+  type: 'number' | 'rating' | 'boolean' | 'select';
+  unit?: string;
+  options?: string[];
+  required: boolean;
+  includeInOverall: boolean;
+  weight?: number;
+}
+
+/**
+ * Pre-defined KPI sets for different factory types
+ * e.g., "Usine textile", "Agroalimentaire", "BTP"
+ */
+export const observationKpiTemplates = pgTable('observation_kpi_templates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Template identification
+  name: text('name').notNull(), // "Usine textile", "Agroalimentaire", "BTP"
+  description: text('description'),
+
+  // KPI definitions
+  kpiFields: jsonb('kpi_fields').notNull().$type<ObservationKpiFieldDefinition[]>(),
+
+  // Default and status
+  isDefault: boolean('is_default').default(false).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+
+  // Audit
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid('created_by').references(() => users.id),
+}, (table) => [
+  pgPolicy('observation_kpi_templates_tenant_isolation', {
+    as: 'permissive',
+    for: 'all',
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);
+
+// ============================================================================
+// OBSERVATION LOGS TABLE
+// ============================================================================
+
+/**
+ * KPI data structure for factory observations
+ * Flexible JSON for different factory types
+ */
+export interface ObservationKpiData {
+  // Production KPIs
+  unitsProduced?: number;
+  targetUnits?: number;
+  defects?: number;
+  defectRate?: number;
+  machineDowntimeMinutes?: number;
+
+  // Attendance KPIs
+  hoursWorked?: number;
+  expectedHours?: number;
+  lateMinutes?: number;
+  absenceType?: 'present' | 'absent_justified' | 'absent_unjustified';
+
+  // Safety KPIs
+  safetyScore?: number; // 1-5
+  ppeCompliance?: boolean;
+  incidentReported?: boolean;
+
+  // Behavior KPIs
+  qualityScore?: number; // 1-5
+  teamworkScore?: number; // 1-5
+  initiativeScore?: number; // 1-5
+
+  // Custom fields per tenant (matches KPI template)
+  custom?: Record<string, unknown>;
+}
+
+/**
+ * Observation logs - Daily/weekly KPI observations by team leads
+ *
+ * Used for:
+ * - Factory floor performance tracking
+ * - Daily worker (journalier) monitoring
+ * - Reference data during formal evaluations
+ */
+export const observationLogs = pgTable('observation_logs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Who is being observed
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+
+  // Observer (team lead or HR)
+  observerId: uuid('observer_id').references(() => employees.id, { onDelete: 'set null' }),
+
+  // When
+  observationDate: date('observation_date').notNull(),
+  period: text('period').notNull().default('daily'), // daily, weekly, monthly
+
+  // KPI template used (optional)
+  kpiTemplateId: uuid('kpi_template_id').references(() => observationKpiTemplates.id, { onDelete: 'set null' }),
+
+  // KPI Data (flexible JSON)
+  kpiData: jsonb('kpi_data').notNull().default({}).$type<ObservationKpiData>(),
+
+  // Overall rating (computed or manual, 1-5)
+  overallRating: integer('overall_rating'),
+
+  // Comments
+  comment: text('comment'),
+
+  // Import tracking
+  importBatchId: uuid('import_batch_id'), // Links to import batch for bulk imports
+  importSource: text('import_source'), // 'excel', 'manual', 'api'
+
+  // Link to performance cycle (optional - observations are independent)
+  cycleId: uuid('cycle_id').references(() => performanceCycles.id, { onDelete: 'set null' }),
+
+  // Validation workflow
+  status: text('status').notNull().default('draft'), // draft, submitted, validated
+  validatedAt: timestamp('validated_at', { withTimezone: true }),
+  validatedBy: uuid('validated_by').references(() => users.id),
+
+  // Audit
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid('created_by').references(() => users.id),
+}, (table) => [
+  pgPolicy('observation_logs_tenant_isolation', {
+    as: 'permissive',
+    for: 'all',
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);
+
+// ============================================================================
+// OBSERVATION TYPE EXPORTS
+// ============================================================================
+
+export type ObservationKpiTemplate = typeof observationKpiTemplates.$inferSelect;
+export type NewObservationKpiTemplate = typeof observationKpiTemplates.$inferInsert;
+
+export type ObservationLog = typeof observationLogs.$inferSelect;
+export type NewObservationLog = typeof observationLogs.$inferInsert;
+
+// ============================================================================
+// OBSERVATION RELATIONS
+// ============================================================================
+
+export const observationKpiTemplatesRelations = relations(observationKpiTemplates, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [observationKpiTemplates.tenantId],
+    references: [tenants.id],
+  }),
+  createdByUser: one(users, {
+    fields: [observationKpiTemplates.createdBy],
+    references: [users.id],
+  }),
+  observations: many(observationLogs),
+}));
+
+export const observationLogsRelations = relations(observationLogs, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [observationLogs.tenantId],
+    references: [tenants.id],
+  }),
+  employee: one(employees, {
+    fields: [observationLogs.employeeId],
+    references: [employees.id],
+  }),
+  observer: one(employees, {
+    fields: [observationLogs.observerId],
+    references: [employees.id],
+    relationName: 'observation_observer',
+  }),
+  kpiTemplate: one(observationKpiTemplates, {
+    fields: [observationLogs.kpiTemplateId],
+    references: [observationKpiTemplates.id],
+  }),
+  cycle: one(performanceCycles, {
+    fields: [observationLogs.cycleId],
+    references: [performanceCycles.id],
+  }),
+  createdByUser: one(users, {
+    fields: [observationLogs.createdBy],
+    references: [users.id],
+  }),
+  validatedByUser: one(users, {
+    fields: [observationLogs.validatedBy],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// OBSERVATION ENUMS & CONSTANTS
+// ============================================================================
+
+export const ObservationPeriod = {
+  DAILY: 'daily',
+  WEEKLY: 'weekly',
+  MONTHLY: 'monthly',
+} as const;
+
+export const ObservationPeriodLabels: Record<string, string> = {
+  daily: 'Quotidien',
+  weekly: 'Hebdomadaire',
+  monthly: 'Mensuel',
+};
+
+export const ObservationStatus = {
+  DRAFT: 'draft',
+  SUBMITTED: 'submitted',
+  VALIDATED: 'validated',
+} as const;
+
+export const ObservationStatusLabels: Record<string, string> = {
+  draft: 'Brouillon',
+  submitted: 'Soumis',
+  validated: 'Validé',
+};
+
+export const AbsenceType = {
+  PRESENT: 'present',
+  ABSENT_JUSTIFIED: 'absent_justified',
+  ABSENT_UNJUSTIFIED: 'absent_unjustified',
+} as const;
+
+export const AbsenceTypeLabels: Record<string, string> = {
+  present: 'Présent',
+  absent_justified: 'Absent justifié',
+  absent_unjustified: 'Absent non justifié',
+};
+
+// ============================================================================
+// INDIVIDUAL DEVELOPMENT PLANS (IDP) TABLE
+// ============================================================================
+
+/**
+ * Development plan goal/action item
+ */
+export interface DevelopmentGoal {
+  id: string;
+  description: string;
+  competencyId?: string; // Link to competency gap
+  targetDate: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  progress: number; // 0-100
+  notes?: string;
+  completedAt?: string;
+}
+
+/**
+ * Recommended training linked to development plan
+ */
+export interface RecommendedTraining {
+  courseId: string;
+  courseName: string;
+  priority: 'high' | 'medium' | 'low';
+  enrolled: boolean;
+  enrollmentId?: string;
+  completedAt?: string;
+}
+
+/**
+ * Development plan status
+ */
+export type DevelopmentPlanStatus = 'draft' | 'active' | 'completed' | 'cancelled' | 'archived';
+
+export const developmentPlans = pgTable('development_plans', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+
+  // Source evaluation (optional - can be created independently)
+  evaluationId: uuid('evaluation_id').references(() => evaluations.id, { onDelete: 'set null' }),
+  cycleId: uuid('cycle_id').references(() => performanceCycles.id, { onDelete: 'set null' }),
+
+  // Plan details
+  title: text('title').notNull(), // "Plan de développement 2025"
+  description: text('description'),
+  status: text('status').notNull().default('draft'), // draft, active, completed, cancelled, archived
+
+  // Goals/actions from evaluation
+  goals: jsonb('goals').notNull().default([]).$type<DevelopmentGoal[]>(),
+
+  // Training recommendations (from Inngest integration)
+  recommendedTrainings: jsonb('recommended_trainings').notNull().default([]).$type<RecommendedTraining[]>(),
+
+  // Manager notes and feedback
+  managerNotes: text('manager_notes'),
+  employeeNotes: text('employee_notes'),
+
+  // Competency gaps (snapshot from evaluation)
+  competencyGaps: jsonb('competency_gaps').$type<Array<{
+    competencyId: string;
+    competencyName: string;
+    currentLevel: number;
+    requiredLevel: number;
+    gap: number;
+  }>>(),
+
+  // Key metrics
+  totalGoals: integer('total_goals').default(0),
+  completedGoals: integer('completed_goals').default(0),
+  progressPercentage: integer('progress_percentage').default(0), // 0-100
+
+  // Dates
+  startDate: date('start_date'),
+  targetEndDate: date('target_end_date'),
+  completedAt: timestamp('completed_at'),
+
+  // Approval workflow
+  approvedBy: uuid('approved_by').references(() => users.id, { onDelete: 'set null' }),
+  approvedAt: timestamp('approved_at'),
+
+  // Audit
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+}, (table) => [
+  // RLS Policy: Tenant Isolation
+  pgPolicy('tenant_isolation', {
+    as: 'permissive',
+    for: 'all',
+    to: tenantUser,
+    using: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid OR (auth.jwt() ->> 'role') = 'super_admin'`,
+    withCheck: sql`${table.tenantId} = (auth.jwt() ->> 'tenant_id')::uuid`,
+  }),
+]);
+
+// ============================================================================
+// DEVELOPMENT PLAN TYPES
+// ============================================================================
+
+export type DevelopmentPlan = typeof developmentPlans.$inferSelect;
+export type NewDevelopmentPlan = typeof developmentPlans.$inferInsert;
+
+// ============================================================================
+// DEVELOPMENT PLAN RELATIONS
+// ============================================================================
+
+export const developmentPlansRelations = relations(developmentPlans, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [developmentPlans.tenantId],
+    references: [tenants.id],
+  }),
+  employee: one(employees, {
+    fields: [developmentPlans.employeeId],
+    references: [employees.id],
+  }),
+  evaluation: one(evaluations, {
+    fields: [developmentPlans.evaluationId],
+    references: [evaluations.id],
+  }),
+  cycle: one(performanceCycles, {
+    fields: [developmentPlans.cycleId],
+    references: [performanceCycles.id],
+  }),
+  approvedByUser: one(users, {
+    fields: [developmentPlans.approvedBy],
+    references: [users.id],
+    relationName: 'development_plan_approver',
+  }),
+  createdByUser: one(users, {
+    fields: [developmentPlans.createdBy],
+    references: [users.id],
+    relationName: 'development_plan_creator',
+  }),
+}));
+
+// ============================================================================
+// DEVELOPMENT PLAN ENUMS & CONSTANTS
+// ============================================================================
+
+export const DevelopmentPlanStatusEnum = {
+  DRAFT: 'draft',
+  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+  ARCHIVED: 'archived',
+} as const;
+
+export const DevelopmentPlanStatusLabels: Record<string, string> = {
+  draft: 'Brouillon',
+  active: 'En cours',
+  completed: 'Terminé',
+  cancelled: 'Annulé',
+  archived: 'Archivé',
+};
+
+export const GoalStatus = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'in_progress',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+} as const;
+
+export const GoalStatusLabels: Record<string, string> = {
+  pending: 'En attente',
+  in_progress: 'En cours',
+  completed: 'Terminé',
+  cancelled: 'Annulé',
+};
+
+export const TrainingPriority = {
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low',
+} as const;
+
+export const TrainingPriorityLabels: Record<string, string> = {
+  high: 'Haute',
+  medium: 'Moyenne',
+  low: 'Basse',
 };

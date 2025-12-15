@@ -46,6 +46,15 @@ import {
   Users,
   TrendingUp,
   Award,
+  Printer,
+  ClipboardList,
+  Eye,
+  Timer,
+  CalendarOff,
+  GraduationCap,
+  AlertTriangle,
+  FileText,
+  ShieldAlert,
 } from 'lucide-react';
 import { CompetencyRatingInput, type CompetencyRatingValue } from '@/components/performance/competency-rating-input';
 import { isPercentageScale, type ProficiencyLevel } from '@/lib/constants/competency-scales';
@@ -183,6 +192,7 @@ export default function EvaluationDetailPage() {
   const [competencyRatings, setCompetencyRatings] = useState<Record<string, CompetencyRating>>({});
   const [objectivesExpanded, setObjectivesExpanded] = useState(true);
   const [competenciesExpanded, setCompetenciesExpanded] = useState(true);
+  const [contextExpanded, setContextExpanded] = useState(true);
 
   const utils = api.useUtils();
 
@@ -190,6 +200,81 @@ export default function EvaluationDetailPage() {
   const { data: evaluation, isLoading } = api.performance.evaluations.getById.useQuery(
     { id: evaluationId },
     { enabled: !!evaluationId }
+  );
+
+  // Get employee ID and evaluation period for context queries
+  const employeeId = evaluation?.employee?.id;
+  const periodStart = evaluation?.cycle?.periodStart;
+  const periodEnd = evaluation?.cycle?.periodEnd;
+
+  // Fetch full employee data to get hire date (for fallback when no period defined)
+  const { data: employeeData } = api.employees.getById.useQuery(
+    { id: employeeId! },
+    { enabled: !!employeeId }
+  );
+
+  // Fallback dates for time tracking: use hire date if no period, current date as end
+  const employeeHireDate = employeeData?.hireDate;
+  const timeTrackingStartDate = periodStart ?? employeeHireDate;
+  const timeTrackingEndDate = periodEnd ?? new Date().toISOString();
+
+  // Fetch observations for the employee during the evaluation period
+  const { data: observationsData } = api.observations.list.useQuery(
+    {
+      employeeId: employeeId!,
+      dateFrom: periodStart ?? undefined,
+      dateTo: periodEnd ?? undefined,
+      limit: 50,
+    },
+    { enabled: !!employeeId }
+  );
+
+  // Fetch time off taken during the evaluation period
+  const { data: timeOffData } = api.timeOff.getEmployeeRequests.useQuery(
+    {
+      employeeId: employeeId!,
+    },
+    { enabled: !!employeeId }
+  );
+
+  // Fetch training completed
+  const { data: trainingData } = api.training.enrollments.list.useQuery(
+    {
+      employeeId: employeeId!,
+      status: 'completed',
+      limit: 20,
+    },
+    { enabled: !!employeeId }
+  );
+
+  // Fetch work accidents for the employee
+  const { data: accidentsData } = api.complianceTrackers.list.useQuery(
+    {
+      employeeId: employeeId!,
+      typeSlug: 'accidents',
+      limit: 20,
+    },
+    { enabled: !!employeeId }
+  );
+
+  // Fetch time entries (uses hire date as fallback if no evaluation period)
+  const { data: timeEntriesData } = api.timeTracking.getEntries.useQuery(
+    {
+      employeeId: employeeId!,
+      startDate: timeTrackingStartDate ? new Date(timeTrackingStartDate) : new Date(),
+      endDate: timeTrackingEndDate ? new Date(timeTrackingEndDate) : new Date(),
+    },
+    { enabled: !!employeeId && !!timeTrackingStartDate }
+  );
+
+  // Fetch overtime summary (uses hire date as fallback if no evaluation period)
+  const { data: overtimeData } = api.timeTracking.getOvertimeSummary.useQuery(
+    {
+      employeeId: employeeId!,
+      periodStart: timeTrackingStartDate ? new Date(timeTrackingStartDate) : new Date(),
+      periodEnd: timeTrackingEndDate ? new Date(timeTrackingEndDate) : new Date(),
+    },
+    { enabled: !!employeeId && !!timeTrackingStartDate }
   );
 
   // Pre-fill form with existing data when evaluation loads
@@ -273,6 +358,17 @@ export default function EvaluationDetailPage() {
     },
     onError: (error) => {
       toast.error(error.message || 'Erreur lors de la soumission');
+    },
+  });
+
+  // Create IDP from evaluation
+  const createIdpMutation = api.developmentPlans.createFromEvaluation.useMutation({
+    onSuccess: (data) => {
+      toast.success('Plan de développement créé');
+      router.push(`/performance/development-plans/${data.id}`);
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erreur lors de la création du plan');
     },
   });
 
@@ -407,15 +503,38 @@ export default function EvaluationDetailPage() {
     <div className="container max-w-3xl mx-auto py-6 space-y-6">
       {/* Header */}
       <div className="space-y-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push('/performance/evaluations')}
-          className="-ml-2"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Retour aux évaluations
-        </Button>
+        <div className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push('/performance/evaluations')}
+            className="-ml-2"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Retour aux évaluations
+          </Button>
+          <div className="flex gap-2">
+            {evaluation.status === 'submitted' || evaluation.status === 'validated' ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => createIdpMutation.mutate({ evaluationId })}
+                disabled={createIdpMutation.isPending}
+              >
+                <ClipboardList className="mr-2 h-4 w-4" />
+                {createIdpMutation.isPending ? 'Création...' : 'Créer un plan'}
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/performance/evaluations/${evaluationId}/print`)}
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Imprimer
+            </Button>
+          </div>
+        </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -502,6 +621,359 @@ export default function EvaluationDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Employee Context Section - Observations, Time Off, Training */}
+      <Collapsible open={contextExpanded} onOpenChange={setContextExpanded}>
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Eye className="h-5 w-5" />
+                  Contexte de l'employé
+                </CardTitle>
+                {(observationsData?.total ?? 0) > 0 && (
+                  <Badge variant="secondary">
+                    {observationsData?.total} observation{(observationsData?.total ?? 0) > 1 ? 's' : ''}
+                  </Badge>
+                )}
+              </div>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  {contextExpanded ? (
+                    <>
+                      Réduire
+                      <ChevronUp className="ml-2 h-4 w-4" />
+                    </>
+                  ) : (
+                    <>
+                      Voir le contexte
+                      <ChevronDown className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CardDescription>
+              Données collectées pendant la période d'évaluation pour aider à l'évaluation
+            </CardDescription>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="space-y-6 pt-0">
+              {/* Observations Summary */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium text-sm">Observations KPI</span>
+                </div>
+                {(observationsData?.data?.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground pl-6">
+                    Aucune observation enregistrée pour cette période
+                  </p>
+                ) : (
+                  <div className="space-y-2 pl-6">
+                    {/* Show summary stats if available */}
+                    {observationsData?.data && observationsData.data.length > 0 && (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="p-3 bg-muted rounded-lg text-center">
+                            <p className="text-2xl font-bold">{observationsData.total}</p>
+                            <p className="text-xs text-muted-foreground">Observations</p>
+                          </div>
+                          {/* Calculate average scores from observations */}
+                          {(() => {
+                            const obs = observationsData.data;
+                            type ObsType = typeof obs[number];
+                            const avgQuality = obs.reduce((sum: number, o: ObsType) => sum + ((o.kpiData as Record<string, number | undefined>)?.qualityScore ?? 0), 0) / obs.length;
+                            const avgSafety = obs.reduce((sum: number, o: ObsType) => sum + ((o.kpiData as Record<string, number | undefined>)?.safetyScore ?? 0), 0) / obs.length;
+                            const avgTeamwork = obs.reduce((sum: number, o: ObsType) => sum + ((o.kpiData as Record<string, number | undefined>)?.teamworkScore ?? 0), 0) / obs.length;
+                            return (
+                              <>
+                                {avgQuality > 0 && (
+                                  <div className="p-3 bg-muted rounded-lg text-center">
+                                    <p className="text-2xl font-bold">{avgQuality.toFixed(1)}/5</p>
+                                    <p className="text-xs text-muted-foreground">Qualité moy.</p>
+                                  </div>
+                                )}
+                                {avgSafety > 0 && (
+                                  <div className="p-3 bg-muted rounded-lg text-center">
+                                    <p className="text-2xl font-bold">{avgSafety.toFixed(1)}/5</p>
+                                    <p className="text-xs text-muted-foreground">Sécurité moy.</p>
+                                  </div>
+                                )}
+                                {avgTeamwork > 0 && (
+                                  <div className="p-3 bg-muted rounded-lg text-center">
+                                    <p className="text-2xl font-bold">{avgTeamwork.toFixed(1)}/5</p>
+                                    <p className="text-xs text-muted-foreground">Travail équipe</p>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                        {/* Show recent observations */}
+                        <div className="space-y-2 mt-3">
+                          <p className="text-xs font-medium text-muted-foreground">Observations récentes:</p>
+                          {observationsData.data.slice(0, 5).map((obs) => {
+                            const kpiData = obs.kpiData as Record<string, number | boolean | undefined> | null;
+                            return (
+                              <div key={obs.id} className="flex items-center justify-between p-2 bg-muted/50 rounded text-sm">
+                                <span>{format(new Date(obs.observationDate), 'dd MMM yyyy', { locale: fr })}</span>
+                                <div className="flex items-center gap-2">
+                                  {kpiData?.qualityScore && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Qualité: {kpiData.qualityScore}/5
+                                    </Badge>
+                                  )}
+                                  {kpiData?.incidentReported && (
+                                    <Badge variant="destructive" className="text-xs">
+                                      <AlertTriangle className="h-3 w-3 mr-1" />
+                                      Incident
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Time Off Summary */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <CalendarOff className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium text-sm">Congés et absences</span>
+                </div>
+                {(timeOffData?.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground pl-6">
+                    Aucun congé pendant cette période
+                  </p>
+                ) : (
+                  <div className="space-y-2 pl-6">
+                    {timeOffData?.slice(0, 5).map((req) => (
+                      <div key={req.id} className="flex items-center justify-between p-2 bg-muted/50 rounded text-sm">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">{req.timeOffPolicy?.name ?? 'Congé'}</Badge>
+                          <span>
+                            {format(new Date(req.startDate), 'dd MMM', { locale: fr })} - {format(new Date(req.endDate), 'dd MMM yyyy', { locale: fr })}
+                          </span>
+                        </div>
+                        <Badge variant={req.status === 'approved' ? 'default' : 'secondary'} className="text-xs">
+                          {req.status === 'approved' ? 'Approuvé' : req.status === 'pending' ? 'En attente' : req.status}
+                        </Badge>
+                      </div>
+                    ))}
+                    {(timeOffData?.length ?? 0) > 5 && (
+                      <p className="text-xs text-muted-foreground">
+                        + {(timeOffData?.length ?? 0) - 5} autres congés
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Time Entries & Overtime Summary */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Timer className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium text-sm">Temps de travail</span>
+                  {!periodStart && timeTrackingStartDate && (
+                    <Badge variant="outline" className="text-xs">
+                      Depuis l'embauche
+                    </Badge>
+                  )}
+                </div>
+                {!timeTrackingStartDate ? (
+                  <p className="text-sm text-muted-foreground pl-6">
+                    Aucune date de référence disponible
+                  </p>
+                ) : (timeEntriesData?.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground pl-6">
+                    Aucune pointage enregistré pour cette période
+                  </p>
+                ) : (
+                  <div className="space-y-3 pl-6">
+                    {/* Summary stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="p-3 bg-muted rounded-lg text-center">
+                        <p className="text-2xl font-bold">{timeEntriesData?.length ?? 0}</p>
+                        <p className="text-xs text-muted-foreground">Pointages</p>
+                      </div>
+                      <div className="p-3 bg-muted rounded-lg text-center">
+                        <p className="text-2xl font-bold">
+                          {timeEntriesData?.reduce((sum, entry) => sum + (parseFloat(entry.totalHours ?? '0') || 0), 0).toFixed(1)}h
+                        </p>
+                        <p className="text-xs text-muted-foreground">Heures totales</p>
+                      </div>
+                      {overtimeData && (overtimeData.totalOvertimeHours ?? 0) > 0 && (
+                        <>
+                          <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-amber-600">
+                              {(overtimeData.totalOvertimeHours ?? 0).toFixed(1)}h
+                            </p>
+                            <p className="text-xs text-muted-foreground">Heures sup.</p>
+                          </div>
+                          {overtimeData.breakdown && (
+                            <div className="p-3 bg-muted rounded-lg text-center">
+                              <p className="text-lg font-bold">
+                                {Object.keys(overtimeData.breakdown).length}
+                              </p>
+                              <p className="text-xs text-muted-foreground">Types d'HS</p>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Overtime breakdown if exists */}
+                    {overtimeData && overtimeData.breakdown && Object.keys(overtimeData.breakdown).length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Détail heures supplémentaires:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(overtimeData.breakdown).map(([type, hours]) => (
+                            <Badge key={type} variant="outline" className="text-xs">
+                              {type}: {typeof hours === 'number' ? hours.toFixed(1) : hours}h
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recent entries */}
+                    {timeEntriesData && timeEntriesData.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Pointages récents:</p>
+                        {timeEntriesData.slice(0, 5).map((entry) => (
+                          <div key={entry.id} className="flex items-center justify-between p-2 bg-muted/50 rounded text-sm">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-muted-foreground" />
+                              <span>{format(new Date(entry.clockIn), 'dd MMM', { locale: fr })}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">
+                                {format(new Date(entry.clockIn), 'HH:mm')}
+                                {entry.clockOut && ` - ${format(new Date(entry.clockOut), 'HH:mm')}`}
+                              </span>
+                              <Badge
+                                variant={entry.status === 'approved' ? 'default' : entry.status === 'rejected' ? 'destructive' : 'secondary'}
+                                className="text-xs"
+                              >
+                                {entry.totalHours ? `${parseFloat(entry.totalHours).toFixed(1)}h` : 'En cours'}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                        {timeEntriesData.length > 5 && (
+                          <p className="text-xs text-muted-foreground">
+                            + {timeEntriesData.length - 5} autres pointages
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Training Summary */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium text-sm">Formations complétées</span>
+                </div>
+                {(trainingData?.data?.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground pl-6">
+                    Aucune formation complétée pendant cette période
+                  </p>
+                ) : (
+                  <div className="space-y-2 pl-6">
+                    {trainingData?.data?.slice(0, 5).map((enrollment) => (
+                      <div key={enrollment.id} className="flex items-center justify-between p-2 bg-muted/50 rounded text-sm">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          <span>{enrollment.course?.name ?? 'Formation'}</span>
+                        </div>
+                        {enrollment.completedAt && (
+                          <span className="text-muted-foreground text-xs">
+                            {format(new Date(enrollment.completedAt), 'dd MMM yyyy', { locale: fr })}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    {(trainingData?.data?.length ?? 0) > 5 && (
+                      <p className="text-xs text-muted-foreground">
+                        + {(trainingData?.data?.length ?? 0) - 5} autres formations
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Work Accidents Summary */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium text-sm">Accidents du travail</span>
+                  {(accidentsData?.total ?? 0) > 0 && (
+                    <Badge variant="destructive" className="text-xs">
+                      {accidentsData?.total}
+                    </Badge>
+                  )}
+                </div>
+                {(accidentsData?.data?.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground pl-6">
+                    Aucun accident du travail déclaré
+                  </p>
+                ) : (
+                  <div className="space-y-2 pl-6">
+                    {accidentsData?.data?.slice(0, 5).map((accident) => (
+                      <div key={accident.id} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-950/30 rounded text-sm">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-red-500" />
+                          <span className="truncate max-w-[200px]">{accident.title}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={accident.status === 'cloture' ? 'secondary' : 'destructive'}
+                            className="text-xs"
+                          >
+                            {accident.status === 'cloture' ? 'Clôturé' :
+                             accident.status === 'nouveau' ? 'Nouveau' :
+                             accident.status === 'analyse' ? 'Analyse' :
+                             accident.status === 'plan_action' ? 'Plan d\'action' :
+                             accident.status}
+                          </Badge>
+                          {accident.createdAt && (
+                            <span className="text-muted-foreground text-xs">
+                              {format(new Date(accident.createdAt), 'dd MMM yyyy', { locale: fr })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {(accidentsData?.data?.length ?? 0) > 5 && (
+                      <p className="text-xs text-muted-foreground">
+                        + {(accidentsData?.data?.length ?? 0) - 5} autres accidents
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Objectives Section */}
       {hasObjectives && (
