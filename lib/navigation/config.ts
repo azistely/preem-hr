@@ -188,6 +188,13 @@ export const managerNavigation: NavigationSection[] = [
         icon: Clock,
         description: 'Consulter les heures travaillées',
       },
+      {
+        id: 'attendance',
+        label: 'Feuille de Pointage',
+        href: '/manager/reports/attendance',
+        icon: CalendarCheck,
+        description: 'Rapport de présence équipe',
+      },
     ],
   },
   {
@@ -344,6 +351,13 @@ export const hrManagerNavigation: NavigationSection[] = [
         description: 'Approbations pointages',
       },
       {
+        id: 'attendance-report',
+        label: 'Feuille de Pointage',
+        href: '/admin/reports/attendance',
+        icon: CalendarCheck,
+        description: 'Rapport de présence global',
+      },
+      {
         id: 'work-schedules',
         label: 'Horaires de Travail',
         href: '/horaires',
@@ -354,7 +368,7 @@ export const hrManagerNavigation: NavigationSection[] = [
         id: 'leave-requests',
         label: 'Demandes de Congés',
         href: '/admin/time-off',
-        icon: CalendarCheck,
+        icon: Calendar,
         description: 'Gérer les demandes',
       },
       {

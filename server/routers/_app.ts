@@ -65,6 +65,7 @@ import { hrFormsRouter } from './hr-forms';
 import { hrWorkflowsRouter } from './hr-workflows';
 import { observationsRouter } from './observations';
 import { developmentPlansRouter } from './development-plans';
+import { attendanceReportRouter } from './attendance-report';
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -127,6 +128,7 @@ export const appRouter = createTRPCRouter({
   hrWorkflows: hrWorkflowsRouter,
   observations: observationsRouter,
   developmentPlans: developmentPlansRouter,
+  attendanceReport: attendanceReportRouter,
 });
 
 // Export type definition of API

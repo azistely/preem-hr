@@ -145,6 +145,7 @@ export const managerMobileSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste équipe", href: "/manager/team" },
       { icon: Clock, label: "Pointages", href: "/manager/time-tracking" },
+      { icon: Calendar, label: "Feuille de Pointage", href: "/manager/reports/attendance" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
       { icon: CalendarClock, label: "Planning des Quarts", href: "/manager/shift-planning" },
     ],
@@ -182,6 +183,7 @@ export const managerDesktopSections: NavSection[] = [
     items: [
       { icon: Users, label: "Liste équipe", href: "/manager/team" },
       { icon: Clock, label: "Pointages", href: "/manager/time-tracking" },
+      { icon: Calendar, label: "Feuille de Pointage", href: "/manager/reports/attendance" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
       { icon: CalendarClock, label: "Planning des Quarts", href: "/manager/shift-planning" },
     ],
@@ -242,6 +244,7 @@ export const hrManagerMobileSections: NavSection[] = [
     title: "Temps & Congés",
     items: [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
+      { icon: Calendar, label: "Feuille de Pointage", href: "/admin/reports/attendance" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
       { icon: Upload, label: "Importer depuis appareil", href: "/admin/time-tracking/import" },
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
@@ -382,6 +385,7 @@ export const hrManagerDesktopSections: NavSection[] = [
     title: "Temps & Congés",
     items: [
       { icon: Clock, label: "Approbations pointages", href: "/admin/time-tracking" },
+      { icon: Calendar, label: "Feuille de Pointage", href: "/admin/reports/attendance" },
       { icon: Edit3, label: "Saisie manuelle heures", href: "/manager/time-tracking/manual-entry" },
       { icon: Upload, label: "Importer depuis appareil", href: "/admin/time-tracking/import" },
       { icon: CalendarClock, label: "Horaires de travail", href: "/horaires" },
