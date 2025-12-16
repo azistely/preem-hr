@@ -50,8 +50,15 @@ import {
   XCircle,
   AlertCircle,
   BookOpen,
+  ClipboardCheck,
+  Smile,
+  Briefcase,
+  BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EvaluationDialog } from '@/components/training';
+import { KIRKPATRICK_LEVELS, type KirkpatrickLevel } from '@/features/training/types/evaluation.types';
 
 // Status styling
 const statusColors: Record<string, string> = {
@@ -98,11 +105,24 @@ export default function SessionDetailPage() {
   const sessionId = params.id as string;
 
   const utils = api.useUtils();
+  const [selectedEvaluation, setSelectedEvaluation] = useState<{
+    id: string;
+    enrollmentId: string;
+    level: number;
+    courseName: string;
+    sessionCode: string;
+  } | null>(null);
 
   // Fetch session details
   const { data: session, isLoading, error } = api.training.sessions.getById.useQuery({
     id: sessionId,
   });
+
+  // Fetch session evaluations
+  const { data: evaluations } = api.training.evaluations.getByEnrollment.useQuery(
+    { sessionId },
+    { enabled: !!sessionId }
+  );
 
   if (isLoading) {
     return (
@@ -403,6 +423,161 @@ export default function SessionDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Evaluations Section */}
+      {evaluations && evaluations.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardCheck className="h-5 w-5" />
+              Évaluations ({evaluations.length})
+            </CardTitle>
+            <CardDescription>
+              Évaluations de formation (Modèle Kirkpatrick)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[1, 2, 3, 4].map((level) => {
+                const levelKey = level as KirkpatrickLevel;
+                const levelInfo = KIRKPATRICK_LEVELS[levelKey];
+                const levelEvaluations = evaluations.filter(e => e.level === level);
+                const completedCount = levelEvaluations.filter(e => e.status === 'completed').length;
+                const pendingCount = levelEvaluations.filter(e => e.status === 'pending').length;
+
+                // Get icon for level
+                const LevelIcon = level === 1 ? Smile : level === 2 ? BookOpen : level === 3 ? Briefcase : BarChart3;
+
+                return (
+                  <div
+                    key={level}
+                    className="p-4 rounded-lg border bg-card"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <LevelIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">Niveau {level}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      {levelInfo.name}
+                    </p>
+                    <div className="flex items-center gap-3 text-sm">
+                      {completedCount > 0 && (
+                        <span className="text-green-600">
+                          {completedCount} complété{completedCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {pendingCount > 0 && (
+                        <span className="text-yellow-600">
+                          {pendingCount} en attente
+                        </span>
+                      )}
+                      {levelEvaluations.length === 0 && (
+                        <span className="text-muted-foreground">
+                          Non créé
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Detailed evaluations table */}
+            {evaluations.length > 0 && (
+              <div className="mt-6 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Employé</TableHead>
+                      <TableHead>Niveau</TableHead>
+                      <TableHead>Statut</TableHead>
+                      <TableHead>Échéance</TableHead>
+                      <TableHead>Score</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {evaluations.map((evaluation) => {
+                      const levelKey = evaluation.level as KirkpatrickLevel;
+                      const levelInfo = KIRKPATRICK_LEVELS[levelKey];
+
+                      return (
+                        <TableRow key={evaluation.id}>
+                          <TableCell className="font-medium">
+                            {evaluation.employeeName || 'N/A'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              Niv. {evaluation.level}: {levelInfo.name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={
+                                evaluation.status === 'completed'
+                                  ? 'bg-green-100 text-green-800'
+                                  : evaluation.status === 'pending'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-gray-100 text-gray-800'
+                              }
+                            >
+                              {evaluation.status === 'completed' ? 'Complété' :
+                               evaluation.status === 'pending' ? 'En attente' :
+                               evaluation.status === 'expired' ? 'Expiré' : evaluation.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {evaluation.dueDate
+                              ? format(new Date(evaluation.dueDate), 'dd/MM/yyyy', { locale: fr })
+                              : '-'}
+                          </TableCell>
+                          <TableCell>
+                            {evaluation.score !== null && evaluation.score !== undefined ? (
+                              <span className="font-medium">{evaluation.score.toFixed(1)}</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {evaluation.status === 'pending' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelectedEvaluation({
+                                  id: evaluation.id,
+                                  enrollmentId: evaluation.enrollmentId,
+                                  level: evaluation.level,
+                                  courseName: session?.course?.name || 'Formation',
+                                  sessionCode: session?.sessionCode || '',
+                                })}
+                              >
+                                Évaluer
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Evaluation Dialog */}
+      {selectedEvaluation && (
+        <EvaluationDialog
+          open={!!selectedEvaluation}
+          onOpenChange={(open) => !open && setSelectedEvaluation(null)}
+          evaluation={selectedEvaluation}
+          onSuccess={() => {
+            setSelectedEvaluation(null);
+            utils.training.evaluations.getByEnrollment.invalidate({ sessionId });
+          }}
+        />
+      )}
     </div>
   );
 }

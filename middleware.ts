@@ -177,6 +177,7 @@ const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/training/plans/[id]': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/training/certifications': ['hr_manager', 'tenant_admin', 'super_admin'],
   '/training/history': ['hr_manager', 'tenant_admin', 'super_admin'],
+  '/training/effectiveness': ['hr_manager', 'tenant_admin', 'super_admin'],
 
   // Competencies Management (HR Manager+)
   '/competencies': ['hr_manager', 'tenant_admin', 'super_admin'],

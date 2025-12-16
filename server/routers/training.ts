@@ -2000,4 +2000,514 @@ export const trainingRouter = createTRPCRouter({
         }
       }),
   }),
+
+  // ============================================================================
+  // EVALUATIONS (Kirkpatrick Model)
+  // ============================================================================
+
+  evaluations: createTRPCRouter({
+    /**
+     * Get evaluations for a specific enrollment
+     */
+    getByEnrollment: protectedProcedure
+      .input(z.object({
+        enrollmentId: z.string().uuid().optional(),
+        sessionId: z.string().uuid().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // If sessionId is provided, get all evaluations for that session
+        if (input.sessionId) {
+          const evaluations = await ctx.db
+            .select({
+              id: trainingEvaluations.id,
+              enrollmentId: trainingEvaluations.enrollmentId,
+              evaluationLevel: trainingEvaluations.evaluationLevel,
+              status: trainingEvaluations.status,
+              dueDate: trainingEvaluations.dueDate,
+              overallScore: trainingEvaluations.overallScore,
+              completedAt: trainingEvaluations.completedAt,
+              employeeFirstName: employees.firstName,
+              employeeLastName: employees.lastName,
+            })
+            .from(trainingEvaluations)
+            .innerJoin(trainingEnrollments, eq(trainingEvaluations.enrollmentId, trainingEnrollments.id))
+            .innerJoin(employees, eq(trainingEnrollments.employeeId, employees.id))
+            .where(and(
+              eq(trainingEvaluations.tenantId, tenantId),
+              eq(trainingEnrollments.sessionId, input.sessionId)
+            ))
+            .orderBy(asc(trainingEvaluations.evaluationLevel), asc(employees.lastName));
+
+          return evaluations.map(e => ({
+            id: e.id,
+            enrollmentId: e.enrollmentId,
+            level: e.evaluationLevel,
+            status: e.status,
+            dueDate: e.dueDate,
+            score: e.overallScore ? parseFloat(e.overallScore) : null,
+            completedAt: e.completedAt,
+            employeeName: `${e.employeeFirstName} ${e.employeeLastName}`,
+          }));
+        }
+
+        // Otherwise get evaluations for specific enrollment
+        if (!input.enrollmentId) {
+          return [];
+        }
+
+        const evaluations = await ctx.db
+          .select()
+          .from(trainingEvaluations)
+          .where(and(
+            eq(trainingEvaluations.tenantId, tenantId),
+            eq(trainingEvaluations.enrollmentId, input.enrollmentId)
+          ))
+          .orderBy(asc(trainingEvaluations.evaluationLevel));
+
+        return evaluations.map(e => ({
+          id: e.id,
+          enrollmentId: e.enrollmentId,
+          level: e.evaluationLevel,
+          status: e.status,
+          dueDate: e.dueDate,
+          score: e.overallScore ? parseFloat(e.overallScore) : null,
+          completedAt: e.completedAt,
+          employeeName: null,
+        }));
+      }),
+
+    /**
+     * Get pending evaluations for current user
+     */
+    getPending: protectedProcedure
+      .query(async ({ ctx }) => {
+        const tenantId = ctx.user.tenantId;
+        const employeeId = ctx.user.employeeId;
+
+        if (!employeeId) {
+          return [];
+        }
+
+        // Get pending evaluations with enrollment and session details
+        const pending = await ctx.db
+          .select({
+            evaluation: trainingEvaluations,
+            enrollment: trainingEnrollments,
+            session: trainingSessions,
+            course: trainingCourses,
+          })
+          .from(trainingEvaluations)
+          .innerJoin(trainingEnrollments, eq(trainingEvaluations.enrollmentId, trainingEnrollments.id))
+          .innerJoin(trainingSessions, eq(trainingEnrollments.sessionId, trainingSessions.id))
+          .innerJoin(trainingCourses, eq(trainingSessions.courseId, trainingCourses.id))
+          .where(and(
+            eq(trainingEvaluations.tenantId, tenantId),
+            eq(trainingEnrollments.employeeId, employeeId),
+            eq(trainingEvaluations.status, 'pending')
+          ))
+          .orderBy(asc(trainingEvaluations.dueDate));
+
+        return pending.map(row => ({
+          id: row.evaluation.id,
+          level: row.evaluation.evaluationLevel,
+          dueDate: row.evaluation.dueDate,
+          enrollmentId: row.enrollment.id,
+          sessionId: row.session.id,
+          sessionCode: row.session.sessionCode,
+          courseName: row.course.name,
+          courseCategory: row.course.category,
+          completedAt: row.enrollment.completedAt,
+        }));
+      }),
+
+    /**
+     * Submit an evaluation
+     */
+    submit: protectedProcedure
+      .input(z.object({
+        evaluationId: z.string().uuid(),
+        responses: z.record(z.string(), z.union([
+          z.string(),
+          z.number(),
+          z.boolean(),
+          z.array(z.string()),
+        ])),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Get the evaluation
+        const [evaluation] = await ctx.db
+          .select()
+          .from(trainingEvaluations)
+          .where(and(
+            eq(trainingEvaluations.id, input.evaluationId),
+            eq(trainingEvaluations.tenantId, tenantId)
+          ))
+          .limit(1);
+
+        if (!evaluation) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Évaluation non trouvée',
+          });
+        }
+
+        if (evaluation.status === 'completed') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cette évaluation a déjà été complétée',
+          });
+        }
+
+        // Calculate overall score from rating questions
+        const ratingValues = Object.values(input.responses)
+          .filter((v): v is number => typeof v === 'number' && v >= 1 && v <= 5);
+
+        const overallScore = ratingValues.length > 0
+          ? ratingValues.reduce((sum, v) => sum + v, 0) / ratingValues.length
+          : null;
+
+        // Update evaluation
+        const [updated] = await ctx.db
+          .update(trainingEvaluations)
+          .set({
+            responses: input.responses,
+            overallScore: overallScore?.toFixed(2) || null,
+            status: 'completed',
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(trainingEvaluations.id, input.evaluationId))
+          .returning();
+
+        return updated;
+      }),
+
+    /**
+     * Create evaluation entries for a completed enrollment
+     * Called when a training session is marked as completed
+     */
+    createForEnrollment: hrManagerProcedure
+      .input(z.object({
+        enrollmentId: z.string().uuid(),
+        levels: z.array(z.number().min(1).max(4)).default([1, 2]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Verify enrollment exists
+        const [enrollment] = await ctx.db
+          .select()
+          .from(trainingEnrollments)
+          .where(and(
+            eq(trainingEnrollments.id, input.enrollmentId),
+            eq(trainingEnrollments.tenantId, tenantId)
+          ))
+          .limit(1);
+
+        if (!enrollment) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Inscription non trouvée',
+          });
+        }
+
+        // Create evaluation entries for each level
+        const now = new Date();
+        const evaluationsToCreate = input.levels.map(level => {
+          // Set due dates based on level
+          const dueDate = new Date(now);
+          switch (level) {
+            case 1: // Immediately after
+              dueDate.setDate(dueDate.getDate() + 3);
+              break;
+            case 2: // End of training
+              dueDate.setDate(dueDate.getDate() + 7);
+              break;
+            case 3: // 30-90 days after
+              dueDate.setDate(dueDate.getDate() + 60);
+              break;
+            case 4: // 3-6 months after
+              dueDate.setDate(dueDate.getDate() + 120);
+              break;
+          }
+
+          return {
+            tenantId,
+            enrollmentId: input.enrollmentId,
+            evaluationLevel: level,
+            responses: {},
+            status: 'pending' as const,
+            dueDate: dueDate.toISOString().split('T')[0],
+          };
+        });
+
+        const created = await ctx.db
+          .insert(trainingEvaluations)
+          .values(evaluationsToCreate)
+          .returning();
+
+        return created;
+      }),
+
+    /**
+     * Get effectiveness dashboard data
+     */
+    getEffectivenessDashboard: hrManagerProcedure
+      .input(z.object({
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Default to last 12 months
+        const endDate = input.endDate || new Date().toISOString().split('T')[0];
+        const startDate = input.startDate || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        // Get completed evaluations with scores
+        const evaluations = await ctx.db
+          .select({
+            level: trainingEvaluations.evaluationLevel,
+            score: trainingEvaluations.overallScore,
+            responses: trainingEvaluations.responses,
+            courseId: trainingCourses.id,
+            courseName: trainingCourses.name,
+            category: trainingCourses.category,
+          })
+          .from(trainingEvaluations)
+          .innerJoin(trainingEnrollments, eq(trainingEvaluations.enrollmentId, trainingEnrollments.id))
+          .innerJoin(trainingSessions, eq(trainingEnrollments.sessionId, trainingSessions.id))
+          .innerJoin(trainingCourses, eq(trainingSessions.courseId, trainingCourses.id))
+          .where(and(
+            eq(trainingEvaluations.tenantId, tenantId),
+            eq(trainingEvaluations.status, 'completed'),
+            gte(trainingSessions.startDate, startDate),
+            lte(trainingSessions.startDate, endDate)
+          ));
+
+        // Get session and participant counts
+        const [sessionStats] = await ctx.db
+          .select({
+            totalSessions: sql<number>`count(distinct ${trainingSessions.id})::int`,
+            totalParticipants: sql<number>`count(distinct ${trainingEnrollments.employeeId})::int`,
+          })
+          .from(trainingSessions)
+          .innerJoin(trainingEnrollments, eq(trainingSessions.id, trainingEnrollments.sessionId))
+          .where(and(
+            eq(trainingSessions.tenantId, tenantId),
+            gte(trainingSessions.startDate, startDate),
+            lte(trainingSessions.startDate, endDate),
+            eq(trainingSessions.status, 'completed')
+          ));
+
+        // Calculate level averages
+        const levelScores: Record<number, number[]> = { 1: [], 2: [], 3: [], 4: [] };
+        let recommendCount = 0;
+        let totalRecommendResponses = 0;
+
+        evaluations.forEach(e => {
+          if (e.score) {
+            levelScores[e.level].push(parseFloat(e.score));
+          }
+          // Check for recommendation (level 1, would_recommend question)
+          if (e.level === 1 && e.responses) {
+            const responses = e.responses as Record<string, unknown>;
+            if ('would_recommend' in responses) {
+              totalRecommendResponses++;
+              if (responses.would_recommend === true || responses.would_recommend === 'yes') {
+                recommendCount++;
+              }
+            }
+          }
+        });
+
+        const avgByLevel = (level: number) => {
+          const scores = levelScores[level];
+          return scores.length > 0
+            ? scores.reduce((a, b) => a + b, 0) / scores.length
+            : 0;
+        };
+
+        // Get pending evaluations count by level
+        const pendingCounts = await ctx.db
+          .select({
+            level: trainingEvaluations.evaluationLevel,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(trainingEvaluations)
+          .where(and(
+            eq(trainingEvaluations.tenantId, tenantId),
+            eq(trainingEvaluations.status, 'pending')
+          ))
+          .groupBy(trainingEvaluations.evaluationLevel);
+
+        const pendingByLevel: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        pendingCounts.forEach(p => {
+          pendingByLevel[p.level] = p.count;
+        });
+
+        // Get stats by category
+        const byCategory = await ctx.db
+          .select({
+            category: trainingCourses.category,
+            sessionCount: sql<number>`count(distinct ${trainingSessions.id})::int`,
+            participantCount: sql<number>`count(distinct ${trainingEnrollments.employeeId})::int`,
+          })
+          .from(trainingCourses)
+          .innerJoin(trainingSessions, eq(trainingCourses.id, trainingSessions.courseId))
+          .innerJoin(trainingEnrollments, eq(trainingSessions.id, trainingEnrollments.sessionId))
+          .where(and(
+            eq(trainingCourses.tenantId, tenantId),
+            gte(trainingSessions.startDate, startDate),
+            lte(trainingSessions.startDate, endDate),
+            eq(trainingSessions.status, 'completed')
+          ))
+          .groupBy(trainingCourses.category);
+
+        // Calculate category averages
+        const categoryScores: Record<string, number[]> = {};
+        evaluations.forEach(e => {
+          if (e.score && e.category) {
+            if (!categoryScores[e.category]) {
+              categoryScores[e.category] = [];
+            }
+            categoryScores[e.category].push(parseFloat(e.score));
+          }
+        });
+
+        const categoryLabels: Record<string, string> = {
+          securite: 'Sécurité',
+          technique: 'Technique',
+          soft_skills: 'Compétences comportementales',
+          management: 'Management',
+          reglementaire: 'Réglementaire',
+          onboarding: 'Intégration',
+        };
+
+        const overallScores = evaluations
+          .filter(e => e.score)
+          .map(e => parseFloat(e.score!));
+        const overallAvg = overallScores.length > 0
+          ? overallScores.reduce((a, b) => a + b, 0) / overallScores.length
+          : 0;
+
+        return {
+          period: { startDate, endDate },
+          summary: {
+            totalSessions: sessionStats?.totalSessions || 0,
+            totalParticipants: sessionStats?.totalParticipants || 0,
+            averageSatisfaction: avgByLevel(1),
+            averageLearning: avgByLevel(2),
+            averageApplication: avgByLevel(3),
+            averageImpact: avgByLevel(4),
+            overallEffectiveness: overallAvg,
+            recommendationRate: totalRecommendResponses > 0
+              ? (recommendCount / totalRecommendResponses) * 100
+              : 0,
+          },
+          byCategory: byCategory.map(c => ({
+            category: c.category,
+            categoryLabel: categoryLabels[c.category] || c.category,
+            sessionCount: c.sessionCount,
+            participantCount: c.participantCount,
+            averageScore: categoryScores[c.category]
+              ? categoryScores[c.category].reduce((a, b) => a + b, 0) / categoryScores[c.category].length
+              : 0,
+          })),
+          pendingEvaluations: {
+            level1: pendingByLevel[1],
+            level2: pendingByLevel[2],
+            level3: pendingByLevel[3],
+            level4: pendingByLevel[4],
+          },
+        };
+      }),
+
+    /**
+     * Link training completion to skill/competency acquisition
+     */
+    linkToCompetency: hrManagerProcedure
+      .input(z.object({
+        enrollmentId: z.string().uuid(),
+        competencyId: z.string().uuid(),
+        newProficiencyLevel: z.number().min(1).max(5),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenantId = ctx.user.tenantId;
+
+        // Get enrollment with employee
+        const [enrollment] = await ctx.db
+          .select({
+            id: trainingEnrollments.id,
+            employeeId: trainingEnrollments.employeeId,
+            sessionId: trainingEnrollments.sessionId,
+          })
+          .from(trainingEnrollments)
+          .where(and(
+            eq(trainingEnrollments.id, input.enrollmentId),
+            eq(trainingEnrollments.tenantId, tenantId)
+          ))
+          .limit(1);
+
+        if (!enrollment) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Inscription non trouvée',
+          });
+        }
+
+        // Check if skill already exists for this employee/competency
+        const [existingSkill] = await ctx.db
+          .select()
+          .from(employeeSkills)
+          .where(and(
+            eq(employeeSkills.tenantId, tenantId),
+            eq(employeeSkills.employeeId, enrollment.employeeId),
+            eq(employeeSkills.linkedCompetencyId, input.competencyId)
+          ))
+          .limit(1);
+
+        if (existingSkill) {
+          // Update existing skill
+          const [updated] = await ctx.db
+            .update(employeeSkills)
+            .set({
+              proficiencyLevel: input.newProficiencyLevel,
+              source: 'training',
+              linkedTrainingEnrollmentId: input.enrollmentId,
+              isValidated: true,
+              validatedBy: ctx.user.id,
+              validatedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(employeeSkills.id, existingSkill.id))
+            .returning();
+
+          return { action: 'updated', skill: updated };
+        } else {
+          // Create new skill entry
+          const [created] = await ctx.db
+            .insert(employeeSkills)
+            .values({
+              tenantId,
+              employeeId: enrollment.employeeId,
+              skillName: '', // Will be filled from competency name
+              linkedCompetencyId: input.competencyId,
+              proficiencyLevel: input.newProficiencyLevel,
+              source: 'training',
+              linkedTrainingEnrollmentId: input.enrollmentId,
+              isValidated: true,
+              validatedBy: ctx.user.id,
+              validatedAt: new Date(),
+            })
+            .returning();
+
+          return { action: 'created', skill: created };
+        }
+      }),
+  }),
 });
