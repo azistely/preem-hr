@@ -1228,9 +1228,9 @@ export const PayslipDocument: React.FC<{ data: PayslipData }> = ({ data }) => {
           </View>
           <View style={styles.footerBranding}>
             <Text style={styles.footerBrandText}>
-              Généré par <Text style={styles.footerBrandName}>Preem</Text> - Logiciel RH pour l'Afrique
+              Généré par <Text style={styles.footerBrandName}>Jamana</Text> - Logiciel RH pour l'Afrique
             </Text>
-            <Text style={styles.footerWebsite}>preemhr.com</Text>
+            <Text style={styles.footerWebsite}>jamana.app</Text>
           </View>
         </View>
       </Page>

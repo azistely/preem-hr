@@ -11,7 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = {
-  title: 'Modifier contrat | Preem HR',
+  title: 'Modifier contrat | Jamana',
   description: 'Modifier un contrat de travail existant',
 };
 

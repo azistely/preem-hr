@@ -40,7 +40,7 @@ export function WhatsAppAssistance({ dataSource, onComplete, onBack, onSkip }: W
   const handleSubmit = () => {
     // Open WhatsApp directly with all form data
     const message = encodeURIComponent(
-      `Bonjour! J'ai besoin d'aide pour importer mes employés dans Preem HR.\n\nMon système actuel: ${getSystemLabel(formData.system)}\nNombre d'employés: ${formData.employeeCount}\nMon numéro WhatsApp: ${formData.whatsappNumber}`
+      `Bonjour! J'ai besoin d'aide pour importer mes employés dans Jamana.\n\nMon système actuel: ${getSystemLabel(formData.system)}\nNombre d'employés: ${formData.employeeCount}\nMon numéro WhatsApp: ${formData.whatsappNumber}`
     );
     const whatsappUrl = `https://wa.me/2250708786828?text=${message}`;
     window.open(whatsappUrl, '_blank');
@@ -202,7 +202,7 @@ export function WhatsAppAssistance({ dataSource, onComplete, onBack, onSkip }: W
           {[
             'Vous guider par WhatsApp en français',
             'Récupérer vos données de manière sécurisée',
-            'Les importer pour vous dans Preem HR',
+            'Les importer pour vous dans Jamana',
             'Vérifier que tout est correct',
           ].map((benefit, index) => (
             <div key={index} className="flex items-start gap-2">

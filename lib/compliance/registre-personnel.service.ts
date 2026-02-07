@@ -359,7 +359,7 @@ ${entries
   )
   .join('\n')}
 
-Document généré par Preem HR - Conforme au Code du Travail
+Document généré par Jamana - Conforme au Code du Travail
 `;
 
   return Buffer.from(placeholder, 'utf-8');

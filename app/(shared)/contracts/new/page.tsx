@@ -4,7 +4,7 @@ import { ChevronRight, FileText } from 'lucide-react';
 import { ContractForm } from '../components/contract-form';
 
 export const metadata: Metadata = {
-  title: 'Nouveau contrat | Preem HR',
+  title: 'Nouveau contrat | Jamana',
   description: 'Créer un nouveau contrat de travail',
 };
 

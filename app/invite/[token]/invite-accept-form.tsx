@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import { api } from '@/trpc/react';
 import { createAuthClient } from '@/lib/supabase/auth-client';
 
@@ -159,7 +159,7 @@ function ValidInvitation({
     <>
       {/* Header */}
       <div className="mb-6 flex items-center justify-center">
-        <PreemLogo size="default" />
+        <JamanaLogo size="default" />
       </div>
 
       <Card className="border-2 border-preem-teal/20 shadow-preem-teal">
@@ -408,7 +408,7 @@ function PhoneSignupForm({
           <ArrowLeft className="mr-2 h-4 w-4" />
           Retour
         </Button>
-        <PreemLogo size="default" />
+        <JamanaLogo size="default" />
       </div>
 
       <Card className="border-2 border-preem-teal/20 shadow-preem-teal">
@@ -669,7 +669,7 @@ function EmailSignupForm({
           <ArrowLeft className="mr-2 h-4 w-4" />
           Retour
         </Button>
-        <PreemLogo size="default" />
+        <JamanaLogo size="default" />
       </div>
 
       <Card className="border-2 border-preem-teal/20 shadow-preem-teal">

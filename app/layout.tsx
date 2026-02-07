@@ -13,7 +13,7 @@ import { Analytics } from '@vercel/analytics/next';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'PREEM HR - Gestion RH & Paie Côte d\'Ivoire',
+  title: 'Jamana - Gestion RH & Paie Côte d\'Ivoire',
   description: 'Système complet de gestion RH: pointage, congés, paie, déclarations CNPS/CMU/ITS pour la Côte d\'Ivoire, Sénégal, Burkina Faso',
 };
 

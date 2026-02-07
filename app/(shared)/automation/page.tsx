@@ -453,7 +453,7 @@ export default function AutomationHubPage() {
               <div>
                 <h4 className="font-medium mb-1">Le système surveille</h4>
                 <p className="text-sm text-muted-foreground">
-                  Preem HR surveille automatiquement vos données et déclenche les actions au bon moment
+                  Jamana surveille automatiquement vos données et déclenche les actions au bon moment
                 </p>
               </div>
             </div>

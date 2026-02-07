@@ -25,7 +25,7 @@ import { Shield, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import { OtpInput } from '@/components/auth/otp-input';
 import { createAuthClient } from '@/lib/supabase/auth-client';
 
@@ -229,7 +229,7 @@ function MfaChallengeContent() {
       <div className="min-h-screen bg-gradient-to-br from-preem-teal-50 via-white to-preem-navy-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="mb-6 flex items-center justify-center">
-            <PreemLogo size="default" />
+            <JamanaLogo size="default" />
           </div>
 
           <Card className="border-2 border-red-200">
@@ -303,7 +303,7 @@ function MfaChallengeContent() {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-6 flex items-center justify-center">
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         <Card className="border-2 border-preem-teal/20 shadow-preem-teal">
@@ -344,7 +344,7 @@ function MfaChallengeContent() {
         {/* Help text */}
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
-            Besoin d&apos;aide ? support@preemhq.com
+            Besoin d&apos;aide ? support@jamana.app
           </p>
         </div>
       </div>

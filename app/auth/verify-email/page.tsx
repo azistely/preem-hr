@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { Mail, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +23,7 @@ export default function VerifyEmailPage() {
               Retour à la connexion
             </Button>
           </Link>
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         <Card className="border-2 border-preem-teal/20 shadow-preem-teal">

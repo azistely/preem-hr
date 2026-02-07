@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import { requestPasswordReset } from './actions';
 
 const forgotPasswordSchema = z.object({
@@ -68,7 +68,7 @@ export default function ForgotPasswordPage() {
                 Retour
               </Button>
             </Link>
-            <PreemLogo size="default" />
+            <JamanaLogo size="default" />
           </div>
 
           <Card className="border-2 border-preem-teal/20">
@@ -106,7 +106,7 @@ export default function ForgotPasswordPage() {
               Retour
             </Button>
           </Link>
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         <Card className="border-2 border-preem-teal/20">

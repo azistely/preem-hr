@@ -160,7 +160,7 @@ export function PhoneSignupForm({ onBack }: PhoneSignupFormProps) {
           if (result.isNewUser) {
             console.log('[PhoneSignup] New user created, redirecting to onboarding');
             toast.success('Compte créé!', {
-              description: 'Bienvenue sur Preem HR',
+              description: 'Bienvenue sur Jamana',
             });
             setStep(3);
             // Redirect to onboarding after short delay

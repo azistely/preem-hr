@@ -282,7 +282,7 @@ const sageGuideSteps = [
     instructions: [
       'Ouvrez le fichier avec Excel pour vérifier qu\'il contient vos données',
       'Vérifiez que les colonnes sont bien remplies',
-      'Vous êtes prêt à importer dans Preem HR !',
+      'Vous êtes prêt à importer dans Jamana !',
     ],
   },
 ];
@@ -291,9 +291,9 @@ const sageGuideSteps = [
 const excelGuideSteps = [
   {
     title: 'Téléchargez notre modèle',
-    screenshotAlt: 'Modèle Excel Preem HR',
+    screenshotAlt: 'Modèle Excel Jamana',
     instructions: [
-      'Téléchargez le modèle Excel Preem HR (bouton ci-dessous)',
+      'Téléchargez le modèle Excel Jamana (bouton ci-dessous)',
       'Ouvrez le fichier téléchargé avec Excel ou Google Sheets',
       'Lisez les instructions dans la première ligne',
     ],
@@ -312,7 +312,7 @@ const excelGuideSteps = [
     instructions: [
       'Sélectionnez les données dans votre fichier (prénom, nom, salaire, etc.)',
       'Copiez les données (Ctrl+C ou Cmd+C)',
-      'Collez dans le modèle Preem HR en respectant les colonnes',
+      'Collez dans le modèle Jamana en respectant les colonnes',
     ],
   },
   {

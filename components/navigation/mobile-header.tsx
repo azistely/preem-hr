@@ -6,7 +6,7 @@ import { Menu, Bell, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { PreemLogo } from "@/components/brand/preem-logo";
+import { JamanaLogo } from "@/components/brand/jamana-logo";
 import { TenantSwitcher } from "@/components/layout/tenant-switcher";
 
 export interface MobileHeaderProps {

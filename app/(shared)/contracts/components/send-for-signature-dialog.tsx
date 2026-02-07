@@ -287,7 +287,7 @@ export function SendForSignatureDialog({
                       <Input
                         {...field}
                         type="email"
-                        placeholder="Ex: jean.kouassi@preem.ci"
+                        placeholder="Ex: jean.kouassi@jamana.app"
                         className="min-h-[48px]"
                       />
                     </FormControl>

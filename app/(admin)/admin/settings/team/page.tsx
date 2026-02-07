@@ -480,7 +480,7 @@ export default function TeamManagementPage() {
           <div>
             <h1 className="text-2xl font-bold">Gestion de l'equipe</h1>
             <p className="text-muted-foreground">
-              Gerez les utilisateurs qui ont acces a votre espace Preem HR
+              Gerez les utilisateurs qui ont acces a votre espace Jamana
             </p>
           </div>
           <Dialog
@@ -571,7 +571,7 @@ export default function TeamManagementPage() {
             <CardHeader>
               <CardTitle>Utilisateurs avec acces</CardTitle>
               <CardDescription>
-                Personnes qui peuvent se connecter a votre espace Preem HR
+                Personnes qui peuvent se connecter a votre espace Jamana
               </CardDescription>
             </CardHeader>
             <CardContent>

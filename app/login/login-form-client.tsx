@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import { login } from './actions';
 import { AuthMethodSelector, type AuthMethod } from '@/components/auth/auth-method-selector';
 import { PhoneLoginForm } from './phone-login-form';
@@ -123,7 +123,7 @@ export function LoginFormClient() {
               Retour
             </Button>
           </Link>
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         {/* Login Card */}
@@ -131,7 +131,7 @@ export function LoginFormClient() {
           <CardHeader className="text-center">
             <CardTitle className="text-3xl">Connexion</CardTitle>
             <CardDescription className="text-base">
-              Accédez à votre compte Preem
+              Accédez à votre compte Jamana
             </CardDescription>
           </CardHeader>
 

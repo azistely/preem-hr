@@ -207,7 +207,7 @@ export function TimeOffPDF({ data }: TimeOffPDFProps) {
         {/* Footer */}
         <View style={styles.footer}>
           <Text>
-            Preem HR - Système de Gestion des Ressources Humaines
+            Jamana - Système de Gestion des Ressources Humaines
           </Text>
           <Text>
             Document confidentiel - Page {' '}

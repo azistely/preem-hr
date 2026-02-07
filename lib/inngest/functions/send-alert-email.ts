@@ -77,7 +77,7 @@ export const sendAlertEmail = inngest.createFunction(
 
       // Build action URL (absolute URL for emails)
       const actionUrl = alert.actionUrl
-        ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.preem.com'}${alert.actionUrl}`
+        ? `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.jamana.app'}${alert.actionUrl}`
         : undefined;
 
       return sendAlertNotification({

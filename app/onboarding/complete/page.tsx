@@ -87,7 +87,7 @@ export default function CompletePage() {
             Félicitations ! 🎉
           </h1>
           <p className="text-lg text-muted-foreground">
-            Votre espace Preem est configuré et prêt à l'emploi
+            Votre espace Jamana est configuré et prêt à l'emploi
           </p>
         </CardHeader>
 

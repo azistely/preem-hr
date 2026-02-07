@@ -24,7 +24,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import { PhoneSignupForm } from './phone-signup-form';
 
 export default function SignupPage() {
@@ -39,7 +39,7 @@ export default function SignupPage() {
               Retour
             </Button>
           </Link>
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         {/* Signup Card */}

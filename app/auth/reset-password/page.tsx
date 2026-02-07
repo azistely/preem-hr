@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import { updatePassword } from './actions';
 
 const resetPasswordSchema = z.object({
@@ -93,7 +93,7 @@ export default function ResetPasswordPage() {
               Retour
             </Button>
           </Link>
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         <Card className="border-2 border-preem-teal/20">

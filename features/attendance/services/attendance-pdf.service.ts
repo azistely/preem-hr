@@ -411,7 +411,7 @@ function AttendancePDFDocument({ data, companyName }: AttendancePDFProps) {
         React.createElement(
           Text,
           null,
-          `Page 1 | ${data.employees.length} employés | Preem HR`
+          `Page 1 | ${data.employees.length} employés | Jamana`
         )
       )
     )

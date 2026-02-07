@@ -321,7 +321,7 @@ export function Sidebar({
       <div className="border-b">
         <div className="flex h-14 items-center justify-between px-4">
           {!showCollapsed && (
-            <h2 className="text-lg font-semibold">Preem HR</h2>
+            <h2 className="text-lg font-semibold">Jamana</h2>
           )}
           {collapsible && (
             <Button

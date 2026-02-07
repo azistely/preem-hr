@@ -248,7 +248,7 @@ export default function OnboardingQ1Page() {
       content: (
         <div className="space-y-6">
           <p className="text-sm text-muted-foreground">
-            Preem s'adapte à toutes les structures : entreprise unique, groupe avec filiales, société mère + laboratoires, ou plusieurs sociétés distinctes.
+            Jamana s'adapte à toutes les structures : entreprise unique, groupe avec filiales, société mère + laboratoires, ou plusieurs sociétés distinctes.
           </p>
 
           {/* Two option cards */}
@@ -502,7 +502,7 @@ export default function OnboardingQ1Page() {
             type="email"
             {...register('email')}
             error={errors.email?.message}
-            placeholder="Ex: contact@preem.com"
+            placeholder="Ex: contact@jamana.app"
           />
         </div>
       ),

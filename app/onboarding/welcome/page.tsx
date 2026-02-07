@@ -18,7 +18,7 @@ export default function WelcomePage() {
 
           <div>
             <h1 className="text-3xl md:text-4xl font-bold mb-2">
-              Bienvenue sur Preem !
+              Bienvenue sur Jamana !
             </h1>
             <p className="text-lg text-muted-foreground">
               Configurons votre espace en quelques minutes
@@ -90,7 +90,7 @@ export default function WelcomePage() {
           {/* Features */}
           <div>
             <h2 className="font-semibold text-lg mb-4">
-              Pourquoi Preem ?
+              Pourquoi Jamana ?
             </h2>
 
             <div className="grid gap-3">

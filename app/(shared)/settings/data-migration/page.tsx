@@ -584,7 +584,7 @@ export default function DataMigrationPage() {
               Correspondance des champs
             </CardTitle>
             <CardDescription>
-              Indiquez à quel champ Preem HR correspond chaque colonne SAGE
+              Indiquez à quel champ Jamana correspond chaque colonne SAGE
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -594,7 +594,7 @@ export default function DataMigrationPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[40%]">Champ SAGE</TableHead>
-                    <TableHead className="w-[50%]">Champ Preem HR</TableHead>
+                    <TableHead className="w-[50%]">Champ Jamana</TableHead>
                     <TableHead className="w-[10%]">Requis</TableHead>
                   </TableRow>
                 </TableHeader>

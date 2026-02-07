@@ -1,5 +1,5 @@
 /**
- * Preem Logo Component
+ * Jamana Logo Component
  *
  * Reusable logo component with different sizes
  * Uses Next.js Image for optimal loading
@@ -8,7 +8,7 @@
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
-interface PreemLogoProps {
+interface JamanaLogoProps {
   className?: string;
   size?: 'sm' | 'default' | 'lg' | 'xl';
 }
@@ -20,13 +20,13 @@ const SIZES = {
   xl: { width: 200, height: 100 },
 } as const;
 
-export function PreemLogo({ className, size = 'default' }: PreemLogoProps) {
+export function JamanaLogo({ className, size = 'default' }: JamanaLogoProps) {
   const dimensions = SIZES[size];
 
   return (
     <Image
-      src="/preem-logo.png"
-      alt="Preem"
+      src="/jamana-logo.png"
+      alt="Jamana"
       width={dimensions.width}
       height={dimensions.height}
       className={cn('object-contain', className)}
@@ -36,13 +36,13 @@ export function PreemLogo({ className, size = 'default' }: PreemLogoProps) {
 }
 
 /**
- * Preem Logo Text Only
+ * Jamana Logo Text Only
  * For use in headers where we want just the wordmark
  */
-export function PreemLogoText({ className }: { className?: string }) {
+export function JamanaLogoText({ className }: { className?: string }) {
   return (
     <span className={cn('text-2xl font-bold text-preem-teal', className)}>
-      preem
+      jamana
     </span>
   );
 }

@@ -25,7 +25,7 @@ import { Shield, ArrowRight, Loader2, CheckCircle2, XCircle, Smartphone } from '
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import { PhoneInput } from '@/components/auth/phone-input';
 import { OtpInput } from '@/components/auth/otp-input';
 import { api } from '@/trpc/react';
@@ -176,7 +176,7 @@ export default function VerifyPhonePage() {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="mb-6 flex items-center justify-center">
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         {/* Progress indicator */}
@@ -368,7 +368,7 @@ export default function VerifyPhonePage() {
         {/* Help text */}
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
-            Besoin d&apos;aide ? support@preemhq.com
+            Besoin d&apos;aide ? support@jamana.app
           </p>
         </div>
       </div>

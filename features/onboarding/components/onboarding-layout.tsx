@@ -3,7 +3,7 @@
 import { ReactNode } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 
 interface OnboardingLayoutProps {
   title: string;
@@ -29,7 +29,7 @@ export function OnboardingLayout({
       <div className="w-full max-w-2xl">
         {/* Logo */}
         <div className="flex justify-center mb-6">
-          <PreemLogo size="default" />
+          <JamanaLogo size="default" />
         </div>
 
         {/* Progress indicator */}
@@ -74,8 +74,8 @@ export function OnboardingLayout({
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
             Besoin d&apos;aide ? Contactez-nous sur{' '}
-            <a href="mailto:support@preem.hr" className="text-preem-teal hover:underline">
-              support@preem.hr
+            <a href="mailto:support@jamana.app" className="text-preem-teal hover:underline">
+              support@jamana.app
             </a>
           </p>
         </div>

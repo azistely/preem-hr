@@ -24,13 +24,13 @@ const SUPPORT_NAME = 'Tidiane';
 function buildContextualMessage(pathname: string): string {
   // Homepage / Landing
   if (pathname === '/' || pathname === '/home') {
-    return `Bonjour ${SUPPORT_NAME}! Je visite PreemHR et j'aimerais en savoir plus sur votre solution de paie.`;
+    return `Bonjour ${SUPPORT_NAME}! Je visite Jamana et j'aimerais en savoir plus sur votre solution de paie.`;
   }
 
   // Onboarding flow
   if (pathname.startsWith('/onboarding')) {
     if (pathname.includes('/q1')) {
-      return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide pour configurer mon entreprise dans PreemHR.`;
+      return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide pour configurer mon entreprise dans Jamana.`;
     }
     if (pathname.includes('/q2')) {
       return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide pour ajouter mon premier employé.`;
@@ -38,7 +38,7 @@ function buildContextualMessage(pathname: string): string {
     if (pathname.includes('/q3')) {
       return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide pour configurer ma première paie.`;
     }
-    return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide avec l'installation de PreemHR.`;
+    return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide avec l'installation de Jamana.`;
   }
 
   // Employee management
@@ -47,7 +47,7 @@ function buildContextualMessage(pathname: string): string {
       return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide pour embaucher un nouvel employé.`;
     }
     if (pathname.match(/\/employees\/[a-f0-9-]{36}/)) {
-      return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide concernant un employé dans PreemHR.`;
+      return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide concernant un employé dans Jamana.`;
     }
     return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide pour gérer mes employés.`;
   }
@@ -85,11 +85,11 @@ function buildContextualMessage(pathname: string): string {
 
   // Main dashboard / default
   if (pathname.startsWith('/dashboard') || pathname.startsWith('/manager') || pathname.startsWith('/admin')) {
-    return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide avec PreemHR.`;
+    return `Bonjour ${SUPPORT_NAME}! J'ai besoin d'aide avec Jamana.`;
   }
 
   // Generic fallback
-  return `Bonjour ${SUPPORT_NAME}! J'ai une question sur PreemHR.`;
+  return `Bonjour ${SUPPORT_NAME}! J'ai une question sur Jamana.`;
 }
 
 export function WhatsAppSupportButton() {

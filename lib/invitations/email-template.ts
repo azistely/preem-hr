@@ -31,7 +31,7 @@ const roleDescriptions: Record<string, string> = {
   employee: 'consulter vos informations personnelles, bulletins de paie et demander des conges',
   manager: 'gerer votre equipe, approuver les conges et suivre les presences',
   hr_manager: 'gerer les employes, la paie et les ressources humaines',
-  tenant_admin: 'administrer completement votre espace Preem HR',
+  tenant_admin: 'administrer completement votre espace Jamana',
 };
 
 /**
@@ -63,7 +63,7 @@ export function generateInvitationEmailHtml(data: InvitationEmailData): string {
           <tr>
             <td style="padding: 40px 32px 24px; background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); border-radius: 12px 12px 0 0;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; text-align: center;">
-                Bienvenue sur Preem HR
+                Bienvenue sur Jamana
               </h1>
             </td>
           </tr>
@@ -76,7 +76,7 @@ export function generateInvitationEmailHtml(data: InvitationEmailData): string {
               </p>
 
               <p style="margin: 0 0 20px; color: #111827; font-size: 16px; line-height: 24px;">
-                <strong>${data.inviterName}</strong> vous invite a rejoindre <strong>${data.companyName}</strong> sur Preem HR en tant que <strong>${roleLabel}</strong>.
+                <strong>${data.inviterName}</strong> vous invite a rejoindre <strong>${data.companyName}</strong> sur Jamana en tant que <strong>${roleLabel}</strong>.
               </p>
 
               ${data.personalMessage ? `
@@ -128,10 +128,10 @@ export function generateInvitationEmailHtml(data: InvitationEmailData): string {
           <tr>
             <td style="padding: 24px 32px; background-color: #f9fafb; border-radius: 0 0 12px 12px; border-top: 1px solid #e5e7eb;">
               <p style="margin: 0 0 8px; color: #6b7280; font-size: 14px; line-height: 20px; text-align: center;">
-                Vous recevez cet email car quelqu'un vous a invite a rejoindre Preem HR.
+                Vous recevez cet email car quelqu'un vous a invite a rejoindre Jamana.
               </p>
               <p style="margin: 0; color: #9ca3af; font-size: 12px; text-align: center;">
-                &copy; ${new Date().getFullYear()} Preem HR. Tous droits reserves.
+                &copy; ${new Date().getFullYear()} Jamana. Tous droits reserves.
               </p>
             </td>
           </tr>
@@ -157,11 +157,11 @@ export function generateInvitationEmailText(data: InvitationEmailData): string {
   });
 
   return `
-Bienvenue sur Preem HR
+Bienvenue sur Jamana
 
 Bonjour,
 
-${data.inviterName} vous invite a rejoindre ${data.companyName} sur Preem HR en tant que ${roleLabel}.
+${data.inviterName} vous invite a rejoindre ${data.companyName} sur Jamana en tant que ${roleLabel}.
 
 ${data.personalMessage ? `Message: "${data.personalMessage}"\n` : ''}
 En tant que ${roleLabel}, vous pourrez: ${roleDescription}
@@ -172,8 +172,8 @@ ${data.inviteUrl}
 IMPORTANT: Cette invitation expire le ${expiryDate}.
 
 ---
-Vous recevez cet email car quelqu'un vous a invite a rejoindre Preem HR.
-(c) ${new Date().getFullYear()} Preem HR. Tous droits reserves.
+Vous recevez cet email car quelqu'un vous a invite a rejoindre Jamana.
+(c) ${new Date().getFullYear()} Jamana. Tous droits reserves.
   `.trim();
 }
 
@@ -181,5 +181,5 @@ Vous recevez cet email car quelqu'un vous a invite a rejoindre Preem HR.
  * Generate email subject
  */
 export function generateInvitationEmailSubject(companyName: string): string {
-  return `[Preem HR] Invitation a rejoindre ${companyName}`;
+  return `[Jamana] Invitation a rejoindre ${companyName}`;
 }

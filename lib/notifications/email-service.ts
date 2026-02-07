@@ -6,7 +6,7 @@
 
 import { Resend } from 'resend';
 
-const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@preem.app';
+const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@jamana.app';
 
 /**
  * Lazy initialization of Resend client
@@ -88,7 +88,7 @@ export async function sendAlertNotification(params: {
     urgent: 'Urgent',
   };
 
-  const subject = `[Preem HR] ${severityLabels[severity]}: ${message}`;
+  const subject = `[Jamana] ${severityLabels[severity]}: ${message}`;
 
   const html = `
     <!DOCTYPE html>
@@ -143,10 +143,10 @@ export async function sendAlertNotification(params: {
               <tr>
                 <td style="padding: 24px 32px; background-color: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
                   <p style="margin: 0; color: #6b7280; font-size: 14px; line-height: 20px;">
-                    Cette notification a été générée automatiquement par Preem HR. Ne répondez pas à cet email.
+                    Cette notification a été générée automatiquement par Jamana. Ne répondez pas à cet email.
                   </p>
                   <p style="margin: 12px 0 0; color: #9ca3af; font-size: 12px;">
-                    © ${new Date().getFullYear()} Preem HR. Tous droits réservés.
+                    © ${new Date().getFullYear()} Jamana. Tous droits réservés.
                   </p>
                 </td>
               </tr>
@@ -165,8 +165,8 @@ ${employeeName ? `Employé concerné: ${employeeName}\n` : ''}
 ${actionUrl && actionLabel ? `\n${actionLabel}: ${actionUrl}` : ''}
 
 ---
-Cette notification a été générée automatiquement par Preem HR. Ne répondez pas à cet email.
-© ${new Date().getFullYear()} Preem HR. Tous droits réservés.
+Cette notification a été générée automatiquement par Jamana. Ne répondez pas à cet email.
+© ${new Date().getFullYear()} Jamana. Tous droits réservés.
   `;
 
   return sendEmail({ to, subject, html, text });
@@ -185,7 +185,7 @@ export async function sendPayrollCompletionEmail(params: {
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const { to, payrollPeriod, totalEmployees, totalAmount, currency, downloadUrl } = params;
 
-  const subject = `[Preem HR] Paie ${payrollPeriod} terminée`;
+  const subject = `[Jamana] Paie ${payrollPeriod} terminée`;
 
   const html = `
     <!DOCTYPE html>
@@ -251,7 +251,7 @@ export async function sendPayrollCompletionEmail(params: {
               <tr>
                 <td style="padding: 24px 32px; background-color: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
                   <p style="margin: 0; color: #6b7280; font-size: 14px; line-height: 20px;">
-                    Cette notification a été générée automatiquement par Preem HR.
+                    Cette notification a été générée automatiquement par Jamana.
                   </p>
                 </td>
               </tr>
@@ -274,7 +274,7 @@ Montant total: ${totalAmount.toLocaleString('fr-FR')} ${currency}
 Télécharger le rapport: ${downloadUrl}
 
 ---
-Cette notification a été générée automatiquement par Preem HR.
+Cette notification a été générée automatiquement par Jamana.
   `;
 
   return sendEmail({ to, subject, html, text });

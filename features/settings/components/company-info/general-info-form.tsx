@@ -90,7 +90,7 @@ export function GeneralInfoForm() {
                     <Input
                       {...field}
                       value={field.value || ""}
-                      placeholder="Ex: Preem Technologies SARL"
+                      placeholder="Ex: Jamana Technologies SARL"
                       disabled={!isEditing}
                       className="min-h-[48px]"
                     />
@@ -114,7 +114,7 @@ export function GeneralInfoForm() {
                     <Input
                       {...field}
                       value={field.value || ""}
-                      placeholder="Ex: Preem"
+                      placeholder="Ex: Jamana"
                       disabled={!isEditing}
                       className="min-h-[48px]"
                     />
@@ -236,7 +236,7 @@ export function GeneralInfoForm() {
                       {...field}
                       value={field.value || ""}
                       type="email"
-                      placeholder="Ex: contact@preem.com"
+                      placeholder="Ex: contact@jamana.app"
                       disabled={!isEditing}
                       className="min-h-[48px]"
                     />

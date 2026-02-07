@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PreemLogo } from '@/components/brand/preem-logo';
+import { JamanaLogo } from '@/components/brand/jamana-logo';
 import {
   Select,
   SelectContent,
@@ -148,7 +148,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
         <div className="container mx-auto px-4 py-4">
           <nav className="flex items-center justify-between">
             <Link href="/" className="transition-opacity hover:opacity-80">
-              <PreemLogo size="default" />
+              <JamanaLogo size="default" />
             </Link>
             <div className="flex items-center gap-2 sm:gap-4">
               {/* Country Selector - Only render on client to avoid hydration mismatch */}
@@ -219,7 +219,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                 </span>
               </h1>
               <p className="text-xl md:text-2xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
-                Preem gère de façon <strong className="text-white">proactive</strong> les activités RH: pointage, variables de paie, heures sup, absences, congés, déclarations {country.socialSecurity}, CMU, {country.taxSystem}, bulletins de paie, solde de tout compte.
+                Jamana gère de façon <strong className="text-white">proactive</strong> les activités RH: pointage, variables de paie, heures sup, absences, congés, déclarations {country.socialSecurity}, CMU, {country.taxSystem}, bulletins de paie, solde de tout compte.
               </p>
               <p className="text-lg text-gray-400 mb-8">
                 Tout dans <strong className="text-preem-teal">un seul système</strong> conforme pour {country.flag} {country.name}
@@ -234,7 +234,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                     <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                   </Button>
                 </Link>
-                <a href="https://wa.me/2250708786828?text=Bonjour%21%20Je%20souhaite%20voir%20une%20d%C3%A9mo%20de%20Preem%20HR" target="_blank" rel="noopener noreferrer">
+                <a href="https://wa.me/2250708786828?text=Bonjour%21%20Je%20souhaite%20voir%20une%20d%C3%A9mo%20de%20Jamana" target="_blank" rel="noopener noreferrer">
                   <Button
                     size="lg"
                     variant="outline"
@@ -513,7 +513,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-16">
               <Badge className="mb-4 bg-preem-teal/10 text-preem-teal border-preem-teal/20 hover:bg-preem-teal/20 text-sm px-4 py-2">
-                ILS ONT CHOISI PREEM HR
+                ILS ONT CHOISI JAMANA
               </Badge>
               <h2 className="text-4xl md:text-5xl font-bold mb-6 text-gray-900">
                 Ce qu&apos;ils disent après 3 mois
@@ -542,11 +542,11 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                       ))}
                     </div>
                     <p className="text-gray-700 italic leading-relaxed">
-                      &quot;Avant Preem HR, je passais <strong className="text-gray-900">8 heures par mois</strong> sur Excel. Maintenant, <strong className="text-preem-teal">10 minutes</strong>. Je ne stress e plus avant les contrôles CNPS.&quot;
+                      &quot;Avant Jamana, je passais <strong className="text-gray-900">8 heures par mois</strong> sur Excel. Maintenant, <strong className="text-preem-teal">10 minutes</strong>. Je ne stress e plus avant les contrôles CNPS.&quot;
                     </p>
                   </div>
                   <div className="pt-4 border-t border-gray-100">
-                    <p className="text-sm text-gray-600">12 employés • 3 mois avec Preem HR</p>
+                    <p className="text-sm text-gray-600">12 employés • 3 mois avec Jamana</p>
                   </div>
                 </CardContent>
               </Card>
@@ -572,11 +572,11 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                       ))}
                     </div>
                     <p className="text-gray-700 italic leading-relaxed">
-                      &quot;Le système ITS m&apos;a toujours stressé. Avec Preem HR, <strong className="text-preem-purple">tout est déjà configuré</strong>. Mon patron me demande &apos;comment tu fais si vite maintenant?&apos;&quot;
+                      &quot;Le système ITS m&apos;a toujours stressé. Avec Jamana, <strong className="text-preem-purple">tout est déjà configuré</strong>. Mon patron me demande &apos;comment tu fais si vite maintenant?&apos;&quot;
                     </p>
                   </div>
                   <div className="pt-4 border-t border-gray-100">
-                    <p className="text-sm text-gray-600">45 employés • 6 mois avec Preem HR</p>
+                    <p className="text-sm text-gray-600">45 employés • 6 mois avec Jamana</p>
                   </div>
                 </CardContent>
               </Card>
@@ -602,11 +602,11 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                       ))}
                     </div>
                     <p className="text-gray-700 italic leading-relaxed">
-                      &quot;3 bureaux en Afrique de l&apos;Ouest. Avant, 3 systèmes différents. Avec Preem HR, <strong className="text-preem-gold-600">un seul système</strong> qui connaît CNPS, IPRES, CNSS. Enfin!&quot;
+                      &quot;3 bureaux en Afrique de l&apos;Ouest. Avant, 3 systèmes différents. Avec Jamana, <strong className="text-preem-gold-600">un seul système</strong> qui connaît CNPS, IPRES, CNSS. Enfin!&quot;
                     </p>
                   </div>
                   <div className="pt-4 border-t border-gray-100">
-                    <p className="text-sm text-gray-600">120 employés • 1 an avec Preem HR</p>
+                    <p className="text-sm text-gray-600">120 employés • 1 an avec Jamana</p>
                   </div>
                 </CardContent>
               </Card>
@@ -636,7 +636,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
               </p>
               <p className="text-sm text-preem-teal-200">
                 <em>Ce dont nous avons besoin:</em> votre email, nom de l&apos;entreprise. C&apos;est tout.<br />
-                <em>Ce que Preem HR fait:</em> {country.howItWorks.step1.details}
+                <em>Ce que Jamana fait:</em> {country.howItWorks.step1.details}
               </p>
             </div>
 
@@ -649,7 +649,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                 Fini de rentrer les mêmes infos chaque mois
               </p>
               <p className="text-sm text-preem-teal-200">
-                <em>Ce que vous faites:</em> Nom, poste, salaire de base. Preem HR enregistre tout.<br />
+                <em>Ce que vous faites:</em> Nom, poste, salaire de base. Jamana enregistre tout.<br />
                 <em>Les déductions familiales?</em> On vous demande &quot;marié + enfants&quot; (pas des calculs).
               </p>
             </div>
@@ -663,7 +663,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                 10 minutes plus tard, bulletins prêts à télécharger
               </p>
               <p className="text-sm text-preem-teal-200">
-                <em>Ce que Preem HR fait:</em> calcule automatiquement brut imposable, {country.socialSecurity}, {country.taxSystem}, net à payer.<br />
+                <em>Ce que Jamana fait:</em> calcule automatiquement brut imposable, {country.socialSecurity}, {country.taxSystem}, net à payer.<br />
                 <em>Ce que vous faites:</em> vous vérifiez, vous téléchargez, vous payez. Terminé.
               </p>
             </div>
@@ -703,7 +703,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
                   <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
-              <a href="https://wa.me/2250708786828?text=Bonjour%21%20Je%20souhaite%20voir%20une%20d%C3%A9mo%20de%20Preem%20HR" target="_blank" rel="noopener noreferrer">
+              <a href="https://wa.me/2250708786828?text=Bonjour%21%20Je%20souhaite%20voir%20une%20d%C3%A9mo%20de%20Jamana" target="_blank" rel="noopener noreferrer">
                 <Button
                   size="lg"
                   variant="outline"
@@ -730,7 +730,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
               <div className="flex flex-col items-center gap-3 p-6 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10">
                 <CheckCircle className="h-8 w-8 text-preem-teal" />
                 <p className="font-semibold text-white">Garantie zéro erreur</p>
-                <p className="text-sm text-gray-400 text-center">Si Preem se trompe, on corrige et rembourse</p>
+                <p className="text-sm text-gray-400 text-center">Si Jamana se trompe, on corrige et rembourse</p>
               </div>
             </div>
           </div>
@@ -743,7 +743,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex flex-col items-center md:items-start gap-2">
               <Link href="/">
-                <PreemLogo size="sm" />
+                <JamanaLogo size="sm" />
               </Link>
               <p className="text-sm text-muted-foreground text-center md:text-left">
                 Système complet de gestion RH & Paie pour {country.name}
@@ -754,7 +754,7 @@ export function CountryHomepage({ country, availableCountries }: CountryHomepage
               </p>
             </div>
             <p className="text-sm text-muted-foreground">
-              © 2025 Preem. Tous droits réservés.
+              © 2025 Jamana. Tous droits réservés.
             </p>
           </div>
         </div>

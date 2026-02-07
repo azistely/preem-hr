@@ -1,7 +1,7 @@
 /**
- * Preem Brand Components
+ * Jamana Brand Components
  *
  * Reusable brand components for consistent design
  */
 
-export { PreemLogo, PreemLogoText } from './preem-logo';
+export { JamanaLogo, JamanaLogoText } from './jamana-logo';

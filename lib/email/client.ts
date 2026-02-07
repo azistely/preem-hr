@@ -26,7 +26,7 @@ export async function sendEmail(options: EmailOptions) {
     };
   }
 
-  const from = options.from || process.env.EMAIL_FROM || 'noreply@preem-hr.com';
+  const from = options.from || process.env.EMAIL_FROM || 'noreply@jamana.app';
 
   try {
     const response = await fetch('https://api.resend.com/emails', {

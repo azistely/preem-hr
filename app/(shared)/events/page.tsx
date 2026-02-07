@@ -19,7 +19,7 @@ import { Activity, Calendar, Users, DollarSign, FileText, AlertCircle } from 'lu
 import { getEventDocumentation, type EventName } from '@/lib/inngest/event-registry';
 
 export const metadata: Metadata = {
-  title: 'Événements Système | Preem HR',
+  title: 'Événements Système | Jamana',
   description: 'Surveillance des événements et automatisations',
 };
 

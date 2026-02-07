@@ -1143,7 +1143,7 @@ export default function EmployeeDetailPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogTitle>Donner accès au portail</DialogTitle>
           <p className="text-sm text-muted-foreground mb-4">
-            Invitez {(employee as any)?.firstName} {(employee as any)?.lastName} à créer un compte utilisateur pour accéder au portail Preem HR.
+            Invitez {(employee as any)?.firstName} {(employee as any)?.lastName} à créer un compte utilisateur pour accéder au portail Jamana.
           </p>
           <InviteWizard
             onSuccess={() => {

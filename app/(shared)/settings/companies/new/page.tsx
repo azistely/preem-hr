@@ -120,7 +120,7 @@ export default function CreateNewCompanyPage() {
         </Link>
         <h1 className="text-3xl font-bold">Créer une nouvelle entreprise</h1>
         <p className="text-muted-foreground mt-2">
-          Ajoutez une nouvelle entreprise à gérer dans Preem HR
+          Ajoutez une nouvelle entreprise à gérer dans Jamana
         </p>
       </div>
 

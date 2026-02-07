@@ -16,7 +16,7 @@ import { Inngest } from 'inngest';
  */
 export const inngest = new Inngest({
   id: 'preem-hr',
-  name: 'Preem HR',
+  name: 'Jamana',
   eventKey: process.env.INNGEST_EVENT_KEY,
 
   // Environment-specific configuration

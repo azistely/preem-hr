@@ -40,7 +40,7 @@ export const COUNTRIES: Record<string, CountryConfig> = {
     },
     howItWorks: {
       step1: {
-        outcome: 'Preem HR configure automatiquement les règles de Côte d\'Ivoire',
+        outcome: 'Jamana configure automatiquement les règles de Côte d\'Ivoire',
         details: 'configure ITS, CNPS, CMU, FDFP pour vous.',
       },
     },
@@ -78,7 +78,7 @@ export const COUNTRIES: Record<string, CountryConfig> = {
     },
     howItWorks: {
       step1: {
-        outcome: 'Preem HR configure automatiquement les règles du Sénégal',
+        outcome: 'Jamana configure automatiquement les règles du Sénégal',
         details: 'configure IRPP, IPRES, CSS, CFCE pour vous.',
       },
     },
@@ -116,7 +116,7 @@ export const COUNTRIES: Record<string, CountryConfig> = {
     },
     howItWorks: {
       step1: {
-        outcome: 'Preem HR configure automatiquement les règles du Burkina Faso',
+        outcome: 'Jamana configure automatiquement les règles du Burkina Faso',
         details: 'configure IUTS, CNSS, et toutes les cotisations pour vous.',
       },
     },
