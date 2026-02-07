@@ -21,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatsGridSkeleton, CardListSkeleton } from '@/components/skeletons';
 import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
 import {
@@ -214,11 +215,7 @@ export default function PerformanceDashboard() {
           </CardHeader>
           <CardContent>
             {cyclesLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-20 w-full" />
-                ))}
-              </div>
+              <CardListSkeleton count={3} />
             ) : cycles && cycles.length > 0 ? (
               <div className="space-y-4">
                 {cycles.map((cycle) => (
@@ -283,11 +280,7 @@ export default function PerformanceDashboard() {
           </CardHeader>
           <CardContent>
             {evalLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
+              <CardListSkeleton count={3} />
             ) : pendingEvaluations && pendingEvaluations.length > 0 ? (
               <div className="space-y-3">
                 {pendingEvaluations.map((evaluation) => (
@@ -349,11 +342,7 @@ export default function PerformanceDashboard() {
           </CardHeader>
           <CardContent>
             {objLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
+              <CardListSkeleton count={3} />
             ) : objectives && objectives.length > 0 ? (
               <div className="space-y-3">
                 {objectives.map((objective) => (
@@ -417,11 +406,7 @@ export default function PerformanceDashboard() {
           </CardHeader>
           <CardContent>
             {feedbackLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
+              <CardListSkeleton count={3} />
             ) : feedback && feedback.length > 0 ? (
               <div className="space-y-3">
                 {feedback.map((item) => (

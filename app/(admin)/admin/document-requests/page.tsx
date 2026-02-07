@@ -51,11 +51,7 @@ function DocumentRequestsHistory() {
 
   if (isLoading) {
     return (
-      <div className="space-y-3">
-        {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-24 w-full" />
-        ))}
-      </div>
+      <CardListSkeleton count={3} />
     );
   }
 
@@ -143,6 +139,7 @@ import { trpc as api } from '@/lib/trpc/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CardListSkeleton } from '@/components/skeletons';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { DocumentTypeLabels } from '@/lib/db/schema/document-requests';

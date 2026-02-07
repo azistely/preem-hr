@@ -14,7 +14,7 @@
  * - Task-oriented: Guides user through the process
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -64,6 +64,7 @@ export default function NewPayrollRunPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPeriodEdit, setShowPeriodEdit] = useState(false);
+  const [employeePreviewLoading, setEmployeePreviewLoading] = useState(true);
 
   // User authentication is handled by backend context
   // No need to explicitly pass tenantId or userId to mutations
@@ -471,6 +472,7 @@ export default function NewPayrollRunPage() {
             periodEnd={periodEnd}
             paymentFrequency={formValues.paymentFrequency}
             closureSequence={formValues.closureSequence ?? null}
+            onLoadingChange={setEmployeePreviewLoading}
           />
         </div>
       ),
@@ -584,7 +586,7 @@ export default function NewPayrollRunPage() {
             isSubmitting={isSubmitting}
             currentStep={currentStep}
             onStepChange={setCurrentStep}
-            disableNext={currentStep === wizardSteps.length - 1 && !!existingRun}
+            disableNext={(currentStep === 1 && employeePreviewLoading) || (currentStep === wizardSteps.length - 1 && !!existingRun)}
           />
         </CardContent>
       </Card>

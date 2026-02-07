@@ -4,10 +4,13 @@
  * Client-side hooks for use in Client Components
  *
  * Performance Optimizations (based on TanStack Query best practices):
- * 1. Aggressive caching (staleTime: 5min) - auth/tenant data rarely changes
- * 2. placeholderData pattern - show old data while refetching
- * 3. refetchOnWindowFocus: false - avoid aggressive refetching on slow networks
+ * 1. Short staleTime (1min) - show cached data instantly, refetch in background on mount
+ * 2. refetchOnMount: true - ensures stale data refetches when navigating between pages
+ * 3. refetchOnWindowFocus: false - avoid aggressive refetching on slow 3G networks
  * 4. Exported queryClient for prefetching in navigation components
+ *
+ * Per-query overrides: Auth/tenant queries use staleTime: 5min inline.
+ * Country config queries use staleTime: 30min inline.
  *
  * @see https://tanstack.com/query/latest/docs/framework/react/guides/prefetching
  */
@@ -51,17 +54,15 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // ✅ OPTIMIZATION: Aggressive caching to avoid redundant auth.me calls
-            // BEFORE: staleTime 60s meant auth.me called every minute
-            // AFTER: staleTime 5min for most queries, auth data changes rarely
-            staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes (auth data changes infrequently)
+            // ✅ OPTIMIZATION: Short staleTime so navigating between pages triggers background refetch
+            // Cached data shows instantly (no spinner), fresh data replaces it seconds later
+            staleTime: 60 * 1000, // Consider fresh for 1 minute (balances navigation freshness vs network cost)
             gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes (formerly cacheTime)
             retry: 1, // Only retry failed requests once (avoid cascading failures)
             refetchOnWindowFocus: false, // Don't refetch on every tab focus (too aggressive for slow 3G)
-            // ✅ Add query timeout to prevent infinite loading states
+            refetchOnMount: true, // Refetch stale data when component mounts (critical for page navigation)
             networkMode: 'online', // Only run queries when online
-            // ✅ NEW: Enable structural sharing for better performance
-            structuralSharing: true,
+            structuralSharing: true, // Enable structural sharing for better performance
           },
         },
       })

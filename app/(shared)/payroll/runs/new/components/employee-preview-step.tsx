@@ -11,7 +11,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 
@@ -20,6 +20,7 @@ interface EmployeePreviewStepProps {
   periodEnd: Date;
   paymentFrequency: 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY';
   closureSequence: number | null;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 export function EmployeePreviewStep({
@@ -27,6 +28,7 @@ export function EmployeePreviewStep({
   periodEnd,
   paymentFrequency,
   closureSequence,
+  onLoadingChange,
 }: EmployeePreviewStepProps) {
   const router = useRouter();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
@@ -39,10 +41,14 @@ export function EmployeePreviewStep({
   }, {
     retry: 2,
     retryDelay: 1000,
-    // Add a 30 second timeout for this specific query
     staleTime: 0, // Always fetch fresh data
     refetchOnMount: true,
   });
+
+  // Report loading state to parent so wizard can disable "Next" while loading
+  useEffect(() => {
+    onLoadingChange?.(isLoading);
+  }, [isLoading, onLoadingChange]);
 
   if (isLoading) {
     return (

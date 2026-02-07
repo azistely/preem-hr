@@ -25,6 +25,8 @@ import {
 } from '@/components/ui/dialog';
 import { useCurrentEmployee } from '@/hooks/use-current-employee';
 import { Loader2 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { CardListSkeleton } from '@/components/skeletons';
 import type { TimeOffPolicy, TimeOffBalance, TimeOffRequest } from '@/features/time-off/types/time-off';
 
 export default function TimeOffPage() {
@@ -120,11 +122,19 @@ export default function TimeOffPage() {
       {/* Balances */}
       <div className="grid gap-4 md:grid-cols-3 mb-6">
         {loadingBalances ? (
-          <Card>
-            <CardContent className="p-6">
-              <p className="text-sm text-muted-foreground">Chargement...</p>
-            </CardContent>
-          </Card>
+          <>
+            {Array.from({ length: 3 }, (_, i) => (
+              <Card key={i}>
+                <CardHeader className="pb-3">
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-16 mb-1" />
+                  <Skeleton className="h-3 w-28" />
+                </CardContent>
+              </Card>
+            ))}
+          </>
         ) : balances && balances.length > 0 ? (
           balances.map((balance) => {
             const policy = balance.timeOffPolicy as unknown as TimeOffPolicy;
@@ -187,7 +197,7 @@ export default function TimeOffPage() {
 
             <TabsContent value="pending" className="mt-4">
               {loadingRequests ? (
-                <p className="text-sm text-muted-foreground">Chargement...</p>
+                <CardListSkeleton count={2} />
               ) : requests && requests.filter((r) => r.status === 'pending').length > 0 ? (
                 <div className="space-y-3">
                   {requests

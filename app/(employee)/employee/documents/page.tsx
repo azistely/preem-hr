@@ -26,6 +26,7 @@ import {
   Loader2,
   Upload,
 } from 'lucide-react';
+import { CardListSkeleton } from '@/components/skeletons';
 import { trpc } from '@/lib/trpc/client';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -99,14 +100,7 @@ export default function EmployeeDocumentsPage() {
 
         {/* Generated Documents Sections */}
         {isLoading ? (
-          <Card>
-            <CardContent className="py-12">
-              <div className="flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                <span className="ml-3 text-muted-foreground">Chargement des documents générés...</span>
-              </div>
-            </CardContent>
-          </Card>
+          <CardListSkeleton count={3} />
         ) : (
           <>
             {/* Bulletins de Paie Section */}

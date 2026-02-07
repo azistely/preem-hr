@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DetailPageSkeleton } from '@/components/skeletons';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -471,10 +472,8 @@ export default function EvaluationDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="container max-w-3xl mx-auto py-6 space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-96 w-full" />
+      <div className="container max-w-3xl mx-auto py-6">
+        <DetailPageSkeleton />
       </div>
     );
   }

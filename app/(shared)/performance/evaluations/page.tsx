@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CardListSkeleton } from '@/components/skeletons';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -356,11 +357,7 @@ export default function EvaluationsPage() {
         {/* My Evaluations Tab */}
         <TabsContent value="my" className="space-y-4 mt-4">
           {myEvaluationsLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
+            <CardListSkeleton count={3} />
           ) : myEvaluations.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -437,11 +434,7 @@ export default function EvaluationsPage() {
           )}
 
           {selfEvaluationsLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
+            <CardListSkeleton count={3} />
           ) : selfEvaluations.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -521,11 +514,7 @@ export default function EvaluationsPage() {
           )}
 
           {managerEvaluationsLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
+            <CardListSkeleton count={3} />
           ) : managerEvaluations.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
@@ -692,11 +681,7 @@ export default function EvaluationsPage() {
 
           {/* Evaluations List */}
           {allEvaluationsLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
+            <CardListSkeleton count={3} />
           ) : allEvaluations.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">

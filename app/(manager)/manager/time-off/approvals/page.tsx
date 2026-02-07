@@ -37,6 +37,8 @@ import {
   FileText,
   AlertCircle,
 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { CardListSkeleton } from '@/components/skeletons';
 import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -53,8 +55,16 @@ export default function ManagerTimeOffApprovalsPage() {
   // Fetch pending requests for team
   const { data: pendingRequests, isLoading } = trpc.timeOff.getPendingRequestsForTeam.useQuery();
 
-  // Approve mutation
+  // Approve mutation with optimistic update — request disappears instantly
   const approveMutation = trpc.timeOff.approve.useMutation({
+    onMutate: async ({ requestId }) => {
+      await utils.timeOff.getPendingRequestsForTeam.cancel();
+      const previous = utils.timeOff.getPendingRequestsForTeam.getData();
+      utils.timeOff.getPendingRequestsForTeam.setData(undefined, (old) =>
+        old?.filter((r: any) => r.id !== requestId)
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast({
         title: 'Demande approuvée',
@@ -64,7 +74,10 @@ export default function ManagerTimeOffApprovalsPage() {
       setSelectedRequest(null);
       utils.timeOff.getPendingRequestsForTeam.invalidate();
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.previous) {
+        utils.timeOff.getPendingRequestsForTeam.setData(undefined, context.previous);
+      }
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible d\'approuver la demande.',
@@ -74,8 +87,16 @@ export default function ManagerTimeOffApprovalsPage() {
     },
   });
 
-  // Reject mutation
+  // Reject mutation with optimistic update — request disappears instantly
   const rejectMutation = trpc.timeOff.reject.useMutation({
+    onMutate: async ({ requestId }) => {
+      await utils.timeOff.getPendingRequestsForTeam.cancel();
+      const previous = utils.timeOff.getPendingRequestsForTeam.getData();
+      utils.timeOff.getPendingRequestsForTeam.setData(undefined, (old) =>
+        old?.filter((r: any) => r.id !== requestId)
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast({
         title: 'Demande rejetée',
@@ -87,7 +108,10 @@ export default function ManagerTimeOffApprovalsPage() {
       setRejectReason('');
       utils.timeOff.getPendingRequestsForTeam.invalidate();
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.previous) {
+        utils.timeOff.getPendingRequestsForTeam.setData(undefined, context.previous);
+      }
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible de rejeter la demande.',
@@ -156,14 +180,22 @@ export default function ManagerTimeOffApprovalsPage() {
   if (isLoading) {
     return (
       <div className="container mx-auto max-w-5xl py-8 px-4">
-        <Card>
-          <CardContent className="py-12">
-            <div className="flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              <span className="ml-3 text-muted-foreground">Chargement des demandes...</span>
+        <div className="mb-8">
+          <Skeleton className="h-8 w-80 mb-2" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <Card className="mb-6">
+          <CardContent className="py-6">
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-12 w-12 rounded-full" />
+              <div>
+                <Skeleton className="h-8 w-12 mb-1" />
+                <Skeleton className="h-3 w-32" />
+              </div>
             </div>
           </CardContent>
         </Card>
+        <CardListSkeleton count={3} />
       </div>
     );
   }
