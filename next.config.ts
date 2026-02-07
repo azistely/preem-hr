@@ -1,8 +1,11 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  // Removed experimental.typedRoutes for Turbopack compatibility
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
 
+const nextConfig: NextConfig = {
   // Enable sourcemaps for error tracking (Sonarly)
   productionBrowserSourceMaps: true,
 
@@ -24,4 +27,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

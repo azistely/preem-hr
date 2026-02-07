@@ -208,15 +208,8 @@ export default function EvaluationDetailPage() {
   const periodStart = evaluation?.cycle?.periodStart;
   const periodEnd = evaluation?.cycle?.periodEnd;
 
-  // Fetch full employee data to get hire date (for fallback when no period defined)
-  const { data: employeeData } = api.employees.getById.useQuery(
-    { id: employeeId! },
-    { enabled: !!employeeId }
-  );
-
-  // Fallback dates for time tracking: use hire date if no period, current date as end
-  const employeeHireDate = employeeData?.hireDate;
-  const timeTrackingStartDate = periodStart ?? employeeHireDate;
+  // Fallback dates for time tracking: use hire date from evaluation join if no period, current date as end
+  const timeTrackingStartDate = periodStart ?? evaluation?.employee?.hireDate;
   const timeTrackingEndDate = periodEnd ?? new Date().toISOString();
 
   // Fetch observations for the employee during the evaluation period

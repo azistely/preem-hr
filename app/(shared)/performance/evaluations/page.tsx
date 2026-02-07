@@ -8,7 +8,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/trpc/react';
@@ -197,6 +197,15 @@ export default function EvaluationsPage() {
     });
   };
 
+  // Prefetch evaluation detail on hover for instant navigation
+  const utils = api.useUtils();
+  const prefetchEvaluation = useCallback(
+    (id: string) => {
+      void utils.performance.evaluations.getById.prefetch({ id });
+    },
+    [utils]
+  );
+
   const myEvaluations = myEvaluationsData?.data ?? [];
   const selfEvaluations = selfEvaluationsData?.data ?? [];
   const managerEvaluations = managerEvaluationsData?.data ?? [];
@@ -376,6 +385,7 @@ export default function EvaluationsPage() {
                   <Link
                     key={evaluation.id}
                     href={`/performance/evaluations/${evaluation.id}`}
+                    onMouseEnter={() => prefetchEvaluation(evaluation.id)}
                   >
                     <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                       <CardContent className="p-4">
@@ -451,6 +461,7 @@ export default function EvaluationsPage() {
                 <Link
                   key={evaluation.id}
                   href={`/performance/evaluations/${evaluation.id}`}
+                  onMouseEnter={() => prefetchEvaluation(evaluation.id)}
                 >
                   <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                     <CardContent className="p-4">
@@ -531,6 +542,7 @@ export default function EvaluationsPage() {
                 <Link
                   key={evaluation.id}
                   href={`/performance/evaluations/${evaluation.id}`}
+                  onMouseEnter={() => prefetchEvaluation(evaluation.id)}
                 >
                   <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                     <CardContent className="p-4">
@@ -702,6 +714,7 @@ export default function EvaluationsPage() {
                   <Link
                     key={evaluation.id}
                     href={`/performance/evaluations/${evaluation.id}`}
+                    onMouseEnter={() => prefetchEvaluation(evaluation.id)}
                   >
                     <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                       <CardContent className="p-4">

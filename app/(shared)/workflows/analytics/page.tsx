@@ -1,7 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/trpc/react";
 import {
   Activity,
@@ -10,30 +9,14 @@ import {
   Clock,
   TrendingUp,
   BarChart3,
-  PieChart as PieChartIcon
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 
-const COLORS = {
-  success: "#22c55e",
-  failed: "#ef4444",
-  skipped: "#f59e0b",
-  running: "#3b82f6",
-};
+const WorkflowCharts = dynamic(
+  () => import("./workflow-charts").then((mod) => mod.WorkflowCharts),
+  { loading: () => <Skeleton className="h-[400px] w-full rounded-lg" />, ssr: false }
+);
 
 export default function WorkflowAnalyticsPage() {
   const { data: workflowsData } = api.workflows.list.useQuery({
@@ -58,15 +41,15 @@ export default function WorkflowAnalyticsPage() {
 
   // Status distribution for pie chart
   const statusData = [
-    { name: "Actifs", value: stats.active, color: COLORS.success },
+    { name: "Actifs", value: stats.active, color: "#22c55e" },
     { name: "Brouillons", value: stats.draft, color: "#94a3b8" },
-    { name: "En pause", value: stats.paused, color: COLORS.skipped },
+    { name: "En pause", value: stats.paused, color: "#f59e0b" },
   ].filter(item => item.value > 0);
 
   // Execution results for pie chart
   const executionData = [
-    { name: "Succès", value: stats.totalSuccess, color: COLORS.success },
-    { name: "Échecs", value: stats.totalErrors, color: COLORS.failed },
+    { name: "Succès", value: stats.totalSuccess, color: "#22c55e" },
+    { name: "Échecs", value: stats.totalErrors, color: "#ef4444" },
   ].filter(item => item.value > 0);
 
   // Top workflows by execution count
@@ -155,161 +138,19 @@ export default function WorkflowAnalyticsPage() {
           <CardContent>
             <div className="text-3xl font-bold text-red-600">{stats.totalErrors}</div>
             <p className="text-xs text-muted-foreground">
-              {stats.totalExecutions > 0 ? ((stats.totalErrors / stats.totalExecutions) * 100).toFixed(1) : 0}% d'échecs
+              {stats.totalExecutions > 0 ? ((stats.totalErrors / stats.totalExecutions) * 100).toFixed(1) : 0}% d&apos;échecs
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts */}
-      <Tabs defaultValue="status" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="status">Statuts</TabsTrigger>
-          <TabsTrigger value="executions">Exécutions</TabsTrigger>
-          <TabsTrigger value="categories">Catégories</TabsTrigger>
-          <TabsTrigger value="top">Top 10</TabsTrigger>
-        </TabsList>
-
-        {/* Status Distribution */}
-        <TabsContent value="status" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Distribution des statuts</CardTitle>
-              <CardDescription>
-                Répartition des workflows par statut
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {statusData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={statusData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: ${value}`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {statusData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  Aucune donnée disponible
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Execution Results */}
-        <TabsContent value="executions" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Résultats d'exécution</CardTitle>
-              <CardDescription>
-                Répartition succès vs échecs
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {executionData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={executionData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: ${value}`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {executionData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  Aucune exécution enregistrée
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Category Distribution */}
-        <TabsContent value="categories" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Workflows par catégorie</CardTitle>
-              <CardDescription>
-                Distribution des workflows selon leur catégorie
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {categoryChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={categoryChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  Aucune donnée disponible
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Top Workflows */}
-        <TabsContent value="top" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Top 10 workflows</CardTitle>
-              <CardDescription>
-                Workflows les plus exécutés
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {topWorkflows.length > 0 ? (
-                <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={topWorkflows} layout="horizontal">
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" />
-                    <YAxis dataKey="name" type="category" width={150} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="success" name="Succès" fill={COLORS.success} />
-                    <Bar dataKey="errors" name="Échecs" fill={COLORS.failed} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-[400px] text-muted-foreground">
-                  Aucun workflow avec des exécutions
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* Charts — dynamically loaded (recharts ~180KB) */}
+      <WorkflowCharts
+        statusData={statusData}
+        executionData={executionData}
+        categoryChartData={categoryChartData}
+        topWorkflows={topWorkflows}
+      />
 
       {/* Insights */}
       {stats.total > 0 && (
@@ -340,10 +181,10 @@ export default function WorkflowAnalyticsPage() {
                 <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
                 <div>
                   <p className="font-medium text-red-900 dark:text-red-100">
-                    Taux d'échec élevé ({((stats.totalErrors / stats.totalExecutions) * 100).toFixed(1)}%)
+                    Taux d&apos;échec élevé ({((stats.totalErrors / stats.totalExecutions) * 100).toFixed(1)}%)
                   </p>
                   <p className="text-sm text-red-700 dark:text-red-300">
-                    Vérifiez les logs d'exécution pour identifier et corriger les problèmes
+                    Vérifiez les logs d&apos;exécution pour identifier et corriger les problèmes
                   </p>
                 </div>
               </div>
@@ -357,7 +198,7 @@ export default function WorkflowAnalyticsPage() {
                     Excellent taux de réussite !
                   </p>
                   <p className="text-sm text-green-700 dark:text-green-300">
-                    Vos workflows fonctionnent bien. Envisagez d'en créer d'autres pour automatiser plus de tâches.
+                    Vos workflows fonctionnent bien. Envisagez d&apos;en créer d&apos;autres pour automatiser plus de tâches.
                   </p>
                 </div>
               </div>

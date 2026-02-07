@@ -354,40 +354,56 @@ export async function middleware(request: NextRequest) {
   // TENANT SELECTION VALIDATION
   // ============================================================================
   // Check if user has selected a tenant (unless super_admin or route doesn't require it)
+  // Uses a short-lived cookie to avoid a DB query on every request.
+  // Security note: This cookie only controls the redirect to /select-tenant.
+  // Actual tenant data access is secured by ctx.user.tenantId in the tRPC layer.
   if (userRole !== 'super_admin' && requiresTenantSelection(pathname)) {
-    try {
-      // Create Supabase client to query user's active_tenant_id
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-          },
+    // Check cached tenant cookie first (set for 5 minutes after DB check)
+    const tenantCookie = request.cookies.get('x-has-tenant');
+    if (!tenantCookie?.value) {
+      try {
+        // Create Supabase client to query user's active_tenant_id
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
+          {
+            auth: {
+              autoRefreshToken: false,
+              persistSession: false,
+            },
+          }
+        );
+
+        // Query user's active_tenant_id from database
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('active_tenant_id')
+          .eq('id', user.id)
+          .single();
+
+        if (userError) {
+          console.error('[Middleware] Error checking tenant:', userError);
+          // Allow request to proceed - error will be handled by tRPC layer
+        } else if (!userData?.active_tenant_id) {
+          // User has not selected a tenant - redirect to tenant selector
+          console.log('[Middleware] No active tenant, redirecting to selector');
+          const selectTenantUrl = new URL('/select-tenant', request.url);
+          selectTenantUrl.searchParams.set('redirect', pathname);
+          return NextResponse.redirect(selectTenantUrl);
+        } else {
+          // Cache the result for 5 minutes to avoid DB query on every request
+          supabaseResponse.cookies.set('x-has-tenant', '1', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 300, // 5 minutes
+            path: '/',
+          });
         }
-      );
-
-      // Query user's active_tenant_id from database
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('active_tenant_id')
-        .eq('id', user.id)
-        .single();
-
-      if (userError) {
-        console.error('[Middleware] Error checking tenant:', userError);
+      } catch (error) {
+        console.error('[Middleware] Exception checking tenant:', error);
         // Allow request to proceed - error will be handled by tRPC layer
-      } else if (!userData?.active_tenant_id) {
-        // User has not selected a tenant - redirect to tenant selector
-        console.log('[Middleware] No active tenant, redirecting to selector');
-        const selectTenantUrl = new URL('/select-tenant', request.url);
-        selectTenantUrl.searchParams.set('redirect', pathname);
-        return NextResponse.redirect(selectTenantUrl);
       }
-    } catch (error) {
-      console.error('[Middleware] Exception checking tenant:', error);
-      // Allow request to proceed - error will be handled by tRPC layer
     }
   }
 

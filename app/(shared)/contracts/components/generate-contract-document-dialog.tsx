@@ -57,7 +57,13 @@ import {
 } from 'lucide-react';
 import { api } from '@/trpc/react';
 import { toast } from 'sonner';
-import { ContractEditor } from '@/components/contracts/contract-editor';
+import dynamic from 'next/dynamic';
+import { Skeleton } from '@/components/ui/skeleton';
+
+const ContractEditor = dynamic(
+  () => import('@/components/contracts/contract-editor').then(mod => mod.ContractEditor),
+  { loading: () => <Skeleton className="h-64 w-full" />, ssr: false }
+);
 
 // ============================================================================
 // Schema

@@ -76,7 +76,13 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { ContractEditor } from '@/components/contracts/contract-editor';
+import dynamic from 'next/dynamic';
+import { Skeleton } from '@/components/ui/skeleton';
+
+const ContractEditor = dynamic(
+  () => import('@/components/contracts/contract-editor').then(mod => mod.ContractEditor),
+  { loading: () => <Skeleton className="h-64 w-full" />, ssr: false }
+);
 
 // Form validation schema
 const contractFormSchema = z.object({
