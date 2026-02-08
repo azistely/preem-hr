@@ -10,7 +10,7 @@
 
 import { db } from '@/lib/db/index';
 import { salaryComponentTemplates, complianceRules } from '@/drizzle/schema';
-import { eq, and, lte, or, isNull } from 'drizzle-orm';
+import { eq, and, lte, gte, or, isNull } from 'drizzle-orm';
 import type {
   ValidationResult,
   ValidationViolation,
@@ -248,7 +248,7 @@ export class ComplianceValidator {
         lte(complianceRules.effectiveFrom, today),
         or(
           isNull(complianceRules.effectiveTo),
-          lte(complianceRules.effectiveTo, today)
+          gte(complianceRules.effectiveTo, today)
         )
       ),
     });
@@ -419,7 +419,7 @@ export class ComplianceValidator {
         lte(complianceRules.effectiveFrom, today),
         or(
           isNull(complianceRules.effectiveTo),
-          lte(complianceRules.effectiveTo, today)
+          gte(complianceRules.effectiveTo, today)
         )
       ),
     });
@@ -556,7 +556,7 @@ export class ComplianceValidator {
         lte(complianceRules.effectiveFrom, today),
         or(
           isNull(complianceRules.effectiveTo),
-          lte(complianceRules.effectiveTo, today)
+          gte(complianceRules.effectiveTo, today)
         )
       ),
     });

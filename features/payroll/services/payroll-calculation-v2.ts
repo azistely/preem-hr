@@ -1549,49 +1549,54 @@ export async function calculatePayrollV2(
 
   // Only validate for CI (Côte d'Ivoire) - can be extended to other countries later
   if (input.countryCode === 'CI') {
-    const { complianceValidator } = await import('@/lib/compliance/compliance-validator');
+    try {
+      const { complianceValidator } = await import('@/lib/compliance/compliance-validator');
 
-    // Build component list with taxability info
-    // Note: ProcessedComponent doesn't track isReimbursement, so we infer from component definitions
-    const componentsForValidation = processedComponents.map(c => ({
-      code: c.code,
-      name: c.name,
-      amount: c.originalAmount,
-      // A component is taxable if it's included in brut imposable
-      isTaxable: c.includeInBrutImposable,
-      // We can't determine if it's a reimbursement from ProcessedComponent alone,
-      // but reimbursements would typically have exemptPortion = originalAmount
-      isReimbursement: c.exemptPortion === c.originalAmount && c.exemptPortion > 0,
-    }));
+      // Build component list with taxability info
+      // Note: ProcessedComponent doesn't track isReimbursement, so we infer from component definitions
+      const componentsForValidation = processedComponents.map(c => ({
+        code: c.code,
+        name: c.name,
+        amount: c.originalAmount,
+        // A component is taxable if it's included in brut imposable
+        isTaxable: c.includeInBrutImposable,
+        // We can't determine if it's a reimbursement from ProcessedComponent alone,
+        // but reimbursements would typically have exemptPortion = originalAmount
+        isReimbursement: c.exemptPortion === c.originalAmount && c.exemptPortion > 0,
+      }));
 
-    const validationResult = await complianceValidator.validateGlobalNonTaxableCap(
-      {
-        totalRemuneration: grossSalary,
-        components: componentsForValidation,
-      },
-      input.countryCode
-    );
+      const validationResult = await complianceValidator.validateGlobalNonTaxableCap(
+        {
+          totalRemuneration: grossSalary,
+          components: componentsForValidation,
+        },
+        input.countryCode
+      );
 
-    // Combine violations and warnings
-    const allWarnings = [
-      ...validationResult.violations.map(v => ({
-        field: v.field,
-        message: v.error,
-        severity: v.severity as 'warning' | 'error',
-        legalReference: v.legalReference,
-      })),
-      ...validationResult.warnings.map(w => ({
-        field: w.field,
-        message: w.message,
-        severity: w.severity as 'warning' | 'error',
-        legalReference: w.legalReference,
-      })),
-    ];
+      // Combine violations and warnings
+      const allWarnings = [
+        ...validationResult.violations.map(v => ({
+          field: v.field,
+          message: v.error,
+          severity: v.severity as 'warning' | 'error',
+          legalReference: v.legalReference,
+        })),
+        ...validationResult.warnings.map(w => ({
+          field: w.field,
+          message: w.message,
+          severity: w.severity as 'warning' | 'error',
+          legalReference: w.legalReference,
+        })),
+      ];
 
-    if (allWarnings.length > 0) {
-      complianceWarnings = allWarnings;
-      console.log(`[COMPLIANCE] Found ${allWarnings.length} warnings/violations for ${input.countryCode}`);
-      console.log(`[COMPLIANCE] Non-taxable: ${validationResult.totalNonTaxable.toLocaleString('fr-FR')} FCFA (${(validationResult.currentPercentage * 100).toFixed(1)}% of gross)`);
+      if (allWarnings.length > 0) {
+        complianceWarnings = allWarnings;
+        console.log(`[COMPLIANCE] Found ${allWarnings.length} warnings/violations for ${input.countryCode}`);
+        console.log(`[COMPLIANCE] Non-taxable: ${validationResult.totalNonTaxable.toLocaleString('fr-FR')} FCFA (${(validationResult.currentPercentage * 100).toFixed(1)}% of gross)`);
+      }
+    } catch (error) {
+      // Compliance validation is non-critical — log and continue with payroll calculation
+      console.warn(`[COMPLIANCE] Validation skipped due to error:`, error instanceof Error ? error.message : error);
     }
   }
 

@@ -1044,6 +1044,19 @@ export async function calculatePayrollRunOptimized(
       } as any)
       .where(eq(payrollRuns.id, input.runId));
 
+    // Mark progress as completed (critical for direct calculation without Inngest)
+    await db
+      .update(payrollRunProgress)
+      .set({
+        status: 'completed',
+        processedCount: allLineItemsData.length + errors.length,
+        successCount: allLineItemsData.length,
+        errorCount: errors.length,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(payrollRunProgress.payrollRunId, input.runId));
+
     console.log('[PAYROLL OPTIMIZED] Run complete:', {
       runId: run.id,
       employeeCount: allLineItemsData.length,
@@ -1056,11 +1069,22 @@ export async function calculatePayrollRunOptimized(
       ...totals,
     };
   } catch (error) {
-    // Rollback to draft on error
+    // Rollback to failed on error
     await db
       .update(payrollRuns)
       .set({ status: 'failed' })
       .where(eq(payrollRuns.id, input.runId));
+
+    // Mark progress as failed (critical for direct calculation without Inngest)
+    await db
+      .update(payrollRunProgress)
+      .set({
+        status: 'failed',
+        lastError: error instanceof Error ? error.message : 'Unknown error',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(payrollRunProgress.payrollRunId, input.runId));
 
     throw error;
   }

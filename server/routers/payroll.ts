@@ -1688,20 +1688,39 @@ export const payrollRouter = createTRPCRouter({
           updated_at = NOW()
       `);
 
-      // Trigger background calculation via Inngest
-      // This runs server-side so client disconnection won't affect it
-      await sendEvent({
-        name: 'payroll.run.calculate',
-        data: {
-          payrollRunId: input.runId,
-          periodStart: run.periodStart,
-          periodEnd: run.periodEnd,
-          employeeCount,
-          tenantId: ctx.user.tenantId,
-        },
-      });
+      // In production: use Inngest for reliable background processing
+      // In development: use direct calculation (Inngest dev server may not be running)
+      const useInngest = process.env.NODE_ENV === 'production' || process.env.USE_INNGEST === 'true';
 
-      // Return immediately - client polls getProgress for updates
+      if (useInngest) {
+        await sendEvent({
+          name: 'payroll.run.calculate',
+          data: {
+            payrollRunId: input.runId,
+            periodStart: run.periodStart,
+            periodEnd: run.periodEnd,
+            employeeCount,
+            tenantId: ctx.user.tenantId,
+          },
+        });
+        console.log('[PAYROLL] Background calculation triggered via Inngest');
+      } else {
+        console.log('[PAYROLL] Development mode: running direct calculation');
+        // Await calculation directly — fast for small dev datasets
+        const result = await calculatePayrollRunOptimized({ runId: input.runId });
+        console.log('[PAYROLL] Direct calculation completed:', result.employeeCount, 'employees');
+
+        // Return synchronous result — frontend refetches run data immediately
+        return {
+          success: true,
+          background: false,
+          runId: input.runId,
+          message: `Calcul terminé: ${result.employeeCount} employés traités.`,
+          employeeCount: result.employeeCount,
+        };
+      }
+
+      // Return immediately - client polls getProgress for updates (Inngest path)
       return {
         success: true,
         background: true,
