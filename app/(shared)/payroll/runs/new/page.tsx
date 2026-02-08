@@ -201,6 +201,17 @@ export default function NewPayrollRunPage() {
     paymentFrequency: formValues.paymentFrequency,
   });
 
+  // Prefetch employee preview so data is ready before user reaches Step 1
+  // Without this, the query only fires when Step 1 mounts (after clicking "Continuer")
+  api.payroll.getEmployeePayrollPreview.useQuery({
+    periodStart,
+    periodEnd,
+    paymentFrequency: formValues.paymentFrequency,
+    closureSequence: formValues.closureSequence ?? null,
+  }, {
+    staleTime: 30_000, // Cache for 30s — no refetch when switching wizard steps
+  });
+
   // Memoized callbacks to prevent infinite loops in PaymentFrequencyStep
   const handlePaymentFrequencyChange = useCallback((freq: 'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'DAILY') => {
     form.setValue('paymentFrequency', freq);

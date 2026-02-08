@@ -41,8 +41,7 @@ export function EmployeePreviewStep({
   }, {
     retry: 2,
     retryDelay: 1000,
-    staleTime: 0, // Always fetch fresh data
-    refetchOnMount: true,
+    staleTime: 30_000, // Use cached data from parent prefetch — no refetch on step switch
   });
 
   // Report loading state to parent so wizard can disable "Next" while loading

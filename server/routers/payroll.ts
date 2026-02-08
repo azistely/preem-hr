@@ -1404,12 +1404,6 @@ export const payrollRouter = createTRPCRouter({
       })
     )
     .query(async ({ input, ctx }) => {
-      console.log('🔍 [getEmployeePayrollPreview] START:', {
-        tenantId: ctx.user.tenantId,
-        periodStart: input.periodStart,
-        periodEnd: input.periodEnd,
-        paymentFrequency: input.paymentFrequency,
-      });
       // FILTER: Apply payment frequency filter using the same logic as run-calculation.ts
       // For MONTHLY runs: include employees with MONTHLY frequency OR NULL (default to MONTHLY)
       // For other frequencies: exact match only
@@ -1528,13 +1522,6 @@ export const payrollRouter = createTRPCRouter({
         },
         totalEmployees: allEmployees.length,
       };
-
-      console.log('✅ [getEmployeePayrollPreview] COMPLETE:', {
-        totalEmployees: response.totalEmployees,
-        monthlyCount: response.monthlyWorkers.count,
-        nonMonthlyCount: response.nonMonthlyWorkers.count,
-        missingTimeEntries: response.nonMonthlyWorkers.missingTimeEntries.length,
-      });
 
       return response;
     }),
