@@ -55,13 +55,14 @@ const dateTypeConfig = {
 // ✅ SERVERLESS FIX: Configuration optimized for Vercel serverless functions
 // Key settings:
 // - prepare: false (required for Transaction pooler mode on port 6543)
-// - max: 1 for production, 10 for development (to handle concurrent requests)
+// - max: 5 for production (allows parallel queries within a single request;
+//   the Transaction pooler manages actual PG connections, so this is safe)
 // - idle_timeout: 20 (close idle connections after 20 seconds)
 // - connect_timeout: 10 (fail fast if connection takes too long)
 const postgresConfig = {
   ...dateTypeConfig,
   prepare: false, // Required for Transaction mode pooler
-  max: process.env.NODE_ENV === 'production' ? 1 : 10, // Multiple connections for dev, single for serverless
+  max: process.env.NODE_ENV === 'production' ? 5 : 10, // Parallel queries OK — Transaction pooler manages PG connections
   idle_timeout: 20, // Close idle connections after 20s
   connect_timeout: 10, // Timeout after 10s
   onnotice: () => {}, // Suppress notices
@@ -71,7 +72,7 @@ const postgresConfig = {
 const client = postgres(connectionString, postgresConfig);
 
 console.log('[DB] Date parsers configured for Drizzle compatibility');
-console.log('[DB] Serverless mode: max=1, idle_timeout=20s');
+console.log('[DB] Serverless mode: max=5, idle_timeout=20s');
 
 /**
  * Standard database client
