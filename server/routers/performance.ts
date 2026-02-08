@@ -3295,91 +3295,91 @@ export const performanceRouter = createTRPCRouter({
       .orderBy(desc(performanceCycles.createdAt))
       .limit(10); // Max 10 individual cycles in sidebar
 
-    // For each individual cycle, get detailed progress (like activeCycle)
-    const individualCycles = await Promise.all(
-      individualCyclesRaw.map(async (cycle) => {
-        // Get self-evaluation progress
-        const [selfEvalStats] = await ctx.db
-          .select({
-            total: sql<number>`count(*)::int`,
-            completed: sql<number>`count(*) FILTER (WHERE ${evaluations.status} IN ('submitted', 'validated', 'shared'))::int`,
-          })
-          .from(evaluations)
-          .where(and(
-            eq(evaluations.cycleId, cycle.id),
-            eq(evaluations.tenantId, tenantId),
-            eq(evaluations.evaluationType, 'self')
-          ));
+    // Batch-fetch all stats for individual cycles in 3 queries instead of 3×N (avoids N+1)
+    const cycleIds = individualCyclesRaw.map(c => c.id);
 
-        // Get manager evaluation progress
-        const [managerEvalStats] = await ctx.db
-          .select({
-            total: sql<number>`count(*)::int`,
-            completed: sql<number>`count(*) FILTER (WHERE ${evaluations.status} IN ('submitted', 'validated', 'shared'))::int`,
-          })
-          .from(evaluations)
-          .where(and(
-            eq(evaluations.cycleId, cycle.id),
-            eq(evaluations.tenantId, tenantId),
-            eq(evaluations.evaluationType, 'manager')
-          ));
+    const [evalStatsBatch, objStatsBatch] = cycleIds.length > 0
+      ? await Promise.all([
+          // Single query for ALL evaluation stats (self + manager) grouped by cycle
+          ctx.db
+            .select({
+              cycleId: evaluations.cycleId,
+              evaluationType: evaluations.evaluationType,
+              total: sql<number>`count(*)::int`,
+              completed: sql<number>`count(*) FILTER (WHERE ${evaluations.status} IN ('submitted', 'validated', 'shared'))::int`,
+            })
+            .from(evaluations)
+            .where(and(
+              inArray(evaluations.cycleId, cycleIds),
+              eq(evaluations.tenantId, tenantId),
+            ))
+            .groupBy(evaluations.cycleId, evaluations.evaluationType),
+          // Single query for ALL objectives stats grouped by cycle
+          ctx.db
+            .select({
+              cycleId: objectives.cycleId,
+              total: sql<number>`count(*)::int`,
+              completed: sql<number>`count(*) FILTER (WHERE ${objectives.status} = 'approved')::int`,
+            })
+            .from(objectives)
+            .where(and(
+              inArray(objectives.cycleId, cycleIds),
+              eq(objectives.tenantId, tenantId),
+            ))
+            .groupBy(objectives.cycleId),
+        ])
+      : [[], []];
 
-        // Get objectives progress
-        const [objectivesStats] = await ctx.db
-          .select({
-            total: sql<number>`count(*)::int`,
-            completed: sql<number>`count(*) FILTER (WHERE ${objectives.status} = 'approved')::int`,
-          })
-          .from(objectives)
-          .where(and(
-            eq(objectives.cycleId, cycle.id),
-            eq(objectives.tenantId, tenantId)
-          ));
+    // Index batch results by cycleId for O(1) lookup
+    const evalStatsMap = new Map<string, { self: { total: number; completed: number }; manager: { total: number; completed: number } }>();
+    for (const row of evalStatsBatch) {
+      if (!row.cycleId) continue;
+      const entry = evalStatsMap.get(row.cycleId) ?? { self: { total: 0, completed: 0 }, manager: { total: 0, completed: 0 } };
+      if (row.evaluationType === 'self') {
+        entry.self = { total: row.total, completed: row.completed };
+      } else if (row.evaluationType === 'manager') {
+        entry.manager = { total: row.total, completed: row.completed };
+      }
+      evalStatsMap.set(row.cycleId, entry);
+    }
+    const objStatsMap = new Map(objStatsBatch.map(r => [r.cycleId, { total: r.total, completed: r.completed }]));
 
-        // Check if results have been shared
-        const resultsShared = cycle.status === 'closed' ||
-          (cycle.resultsReleaseDate && new Date(cycle.resultsReleaseDate) <= new Date());
+    const individualCycles = individualCyclesRaw.map(cycle => {
+      const evalStats = evalStatsMap.get(cycle.id) ?? { self: { total: 0, completed: 0 }, manager: { total: 0, completed: 0 } };
+      const objStats = objStatsMap.get(cycle.id) ?? { total: 0, completed: 0 };
+      const resultsShared = cycle.status === 'closed' ||
+        (cycle.resultsReleaseDate && new Date(cycle.resultsReleaseDate) <= new Date());
 
-        return {
-          id: cycle.id,
-          name: cycle.name,
-          status: cycle.status,
-          individualReason: cycle.individualReason,
-          periodStart: cycle.periodStart,
-          periodEnd: cycle.periodEnd,
-          includeSelfEvaluation: cycle.includeSelfEvaluation,
-          includeManagerEvaluation: cycle.includeManagerEvaluation,
-          includeObjectives: cycle.includeObjectives,
-          includeCompetencies: cycle.includeCompetencies,
-          includeCalibration: cycle.includeCalibration,
-          cycleScope: cycle.cycleScope,
-          targetEmployee: cycle.targetEmployeeId ? {
-            id: cycle.targetEmployeeId,
-            firstName: cycle.targetEmployeeFirstName,
-            lastName: cycle.targetEmployeeLastName,
-            employeeNumber: cycle.targetEmployeeNumber,
-          } : null,
-          selfEvalProgress: {
-            completed: selfEvalStats?.completed ?? 0,
-            total: selfEvalStats?.total ?? 0,
-          },
-          managerEvalProgress: {
-            completed: managerEvalStats?.completed ?? 0,
-            total: managerEvalStats?.total ?? 0,
-          },
-          objectivesProgress: {
-            completed: objectivesStats?.completed ?? 0,
-            total: objectivesStats?.total ?? 0,
-          },
-          resultsShared: !!resultsShared,
-          // Legacy progress field for backward compatibility
-          progress: {
-            completed: (selfEvalStats?.completed ?? 0) + (managerEvalStats?.completed ?? 0),
-            total: (selfEvalStats?.total ?? 0) + (managerEvalStats?.total ?? 0),
-          },
-        };
-      })
-    );
+      return {
+        id: cycle.id,
+        name: cycle.name,
+        status: cycle.status,
+        individualReason: cycle.individualReason,
+        periodStart: cycle.periodStart,
+        periodEnd: cycle.periodEnd,
+        includeSelfEvaluation: cycle.includeSelfEvaluation,
+        includeManagerEvaluation: cycle.includeManagerEvaluation,
+        includeObjectives: cycle.includeObjectives,
+        includeCompetencies: cycle.includeCompetencies,
+        includeCalibration: cycle.includeCalibration,
+        cycleScope: cycle.cycleScope,
+        targetEmployee: cycle.targetEmployeeId ? {
+          id: cycle.targetEmployeeId,
+          firstName: cycle.targetEmployeeFirstName,
+          lastName: cycle.targetEmployeeLastName,
+          employeeNumber: cycle.targetEmployeeNumber,
+        } : null,
+        selfEvalProgress: evalStats.self,
+        managerEvalProgress: evalStats.manager,
+        objectivesProgress: objStats,
+        resultsShared: !!resultsShared,
+        // Legacy progress field for backward compatibility
+        progress: {
+          completed: evalStats.self.completed + evalStats.manager.completed,
+          total: evalStats.self.total + evalStats.manager.total,
+        },
+      };
+    });
 
     // If no active company/department cycle, return empty state (but still include individual cycles)
     if (!activeCycle) {

@@ -1903,22 +1903,25 @@ export const payrollRouter = createTRPCRouter({
         offset: input.offset,
       });
 
-      // Add employee count for each run
-      const runsWithCount = await Promise.all(
-        runs.map(async (run) => {
-          const lineItems = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(payrollLineItems)
-            .where(eq(payrollLineItems.payrollRunId, run.id));
+      if (runs.length === 0) return [];
 
-          return {
-            ...run,
-            employeeCount: Number(lineItems[0]?.count || 0),
-          };
+      // Single query to get employee counts for all runs at once (avoids N+1)
+      const runIds = runs.map(r => r.id);
+      const counts = await db
+        .select({
+          payrollRunId: payrollLineItems.payrollRunId,
+          count: sql<number>`count(*)::int`,
         })
-      );
+        .from(payrollLineItems)
+        .where(inArray(payrollLineItems.payrollRunId, runIds))
+        .groupBy(payrollLineItems.payrollRunId);
 
-      return runsWithCount;
+      const countMap = new Map(counts.map(c => [c.payrollRunId, c.count]));
+
+      return runs.map(run => ({
+        ...run,
+        employeeCount: countMap.get(run.id) ?? 0,
+      }));
     }),
 
   /**
@@ -2938,14 +2941,17 @@ export const payrollRouter = createTRPCRouter({
         ],
       });
 
-      // 5. Build beneficiary rows
+      // 5. Build beneficiary rows — pre-index dependents by employeeId (avoids O(N²) filter)
       const beneficiaryRows: CMUBeneficiaryRow[] = [];
+      const dependentsByEmployee = new Map<string, typeof allDependents>();
+      for (const dep of allDependents) {
+        const list = dependentsByEmployee.get(dep.employeeId) ?? [];
+        list.push(dep);
+        dependentsByEmployee.set(dep.employeeId, list);
+      }
 
       for (const employee of employeesList) {
-        // Get this employee's CMU-eligible dependents
-        const employeeDeps = allDependents.filter(
-          (d) => d.employeeId === employee.id
-        );
+        const employeeDeps = dependentsByEmployee.get(employee.id) ?? [];
 
         // Employee base data (repeated on each row)
         const employeeData = {
@@ -3197,20 +3203,24 @@ export const payrollRouter = createTRPCRouter({
       const tenantId = ctx.user.tenantId;
       const result = await aggregateMonthlyPayrollData(tenantId, input.month);
 
-      // Get employee count for each run
-      const runsWithCounts = await Promise.all(
-        result.runs.map(async (run) => {
-          const count = await db
-            .select({ count: sql<number>`count(*)` })
+      // Single query to get employee counts for all runs (avoids N+1)
+      const runIds = result.runs.map(r => r.id);
+      const counts = runIds.length > 0
+        ? await db
+            .select({
+              payrollRunId: payrollLineItems.payrollRunId,
+              count: sql<number>`count(*)::int`,
+            })
             .from(payrollLineItems)
-            .where(eq(payrollLineItems.payrollRunId, run.id));
+            .where(inArray(payrollLineItems.payrollRunId, runIds))
+            .groupBy(payrollLineItems.payrollRunId)
+        : [];
 
-          return {
-            ...run,
-            employeeCount: count[0]?.count ?? 0,
-          };
-        })
-      );
+      const countMap = new Map(counts.map(c => [c.payrollRunId, c.count]));
+      const runsWithCounts = result.runs.map(run => ({
+        ...run,
+        employeeCount: countMap.get(run.id) ?? 0,
+      }));
 
       return {
         month: input.month,
@@ -3334,11 +3344,17 @@ export const payrollRouter = createTRPCRouter({
           ),
       });
 
-      // Create rows (one per beneficiary)
+      // Create rows (one per beneficiary) — pre-index dependents by employeeId (avoids O(N²) filter)
       const beneficiaryRows: CMUBeneficiaryRow[] = [];
+      const dependentsByEmployee = new Map<string, typeof dependents>();
+      for (const dep of dependents) {
+        const list = dependentsByEmployee.get(dep.employeeId) ?? [];
+        list.push(dep);
+        dependentsByEmployee.set(dep.employeeId, list);
+      }
 
       for (const emp of result.employees) {
-        const employeeDependents = dependents.filter(d => d.employeeId === emp.employeeId);
+        const employeeDependents = dependentsByEmployee.get(emp.employeeId) ?? [];
 
         if (employeeDependents.length === 0) {
           // Employee without beneficiaries - one row with empty beneficiary columns

@@ -564,21 +564,69 @@ export const timeTrackingRouter = createTRPCRouter({
         limit: 100,
       });
 
-      // Fetch overtime for each employee in parallel
-      const overtimeData = await Promise.all(
-        activeEmployees.map(async (employee: any) => {
-          const summary = await overtimeService.getOvertimeSummary(
-            employee.id as string,
-            input.periodStart,
-            input.periodEnd
-          );
-          return { employee, summary };
-        })
-      );
+      // Single query to get all approved time entries for all employees in the period (avoids N+1)
+      const employeeIds = activeEmployees.map((e: any) => e.id as string);
+      const allEntries = employeeIds.length > 0
+        ? await db.query.timeEntries.findMany({
+            where: and(
+              inArray(timeEntries.employeeId, employeeIds),
+              gte(timeEntries.clockIn, input.periodStart.toISOString()),
+              lte(timeEntries.clockIn, input.periodEnd.toISOString()),
+              eq(timeEntries.status, 'approved')
+            ),
+          })
+        : [];
+
+      // Group entries by employeeId and compute overtime in-memory
+      const entriesByEmployee = new Map<string, typeof allEntries>();
+      for (const entry of allEntries) {
+        const list = entriesByEmployee.get(entry.employeeId) ?? [];
+        list.push(entry);
+        entriesByEmployee.set(entry.employeeId, list);
+      }
+
+      type OvertimeBreakdown = {
+        regular: number;
+        hours_41_to_46: number;
+        hours_above_46: number;
+        night_work: number;
+        sunday: number;
+        public_holiday: number;
+        night_sunday_holiday: number;
+      };
+
+      const overtimeData = activeEmployees.map((employee: any) => {
+        const entries = entriesByEmployee.get(employee.id) ?? [];
+        const breakdown: OvertimeBreakdown = {
+          regular: 0, hours_41_to_46: 0, hours_above_46: 0,
+          night_work: 0, sunday: 0, public_holiday: 0, night_sunday_holiday: 0,
+        };
+
+        for (const entry of entries) {
+          const eb = entry.overtimeBreakdown as OvertimeBreakdown | null;
+          if (eb) {
+            breakdown.regular += eb.regular || 0;
+            breakdown.hours_41_to_46 += eb.hours_41_to_46 || 0;
+            breakdown.hours_above_46 += eb.hours_above_46 || 0;
+            breakdown.night_work += eb.night_work || 0;
+            breakdown.sunday += eb.sunday || 0;
+            breakdown.public_holiday += eb.public_holiday || 0;
+            breakdown.night_sunday_holiday += eb.night_sunday_holiday || 0;
+          }
+        }
+
+        const totalOvertimeHours = breakdown.hours_41_to_46 + breakdown.hours_above_46 +
+          breakdown.night_work + breakdown.sunday + breakdown.public_holiday + breakdown.night_sunday_holiday;
+
+        return {
+          employee,
+          summary: { totalOvertimeHours, breakdown, periodStart: input.periodStart, periodEnd: input.periodEnd },
+        };
+      });
 
       // Calculate totals
       const totals = overtimeData.reduce(
-        (acc, { summary }) => {
+        (acc: { totalHours: number; totalPay: number; employeesWithOvertime: number }, { summary }: any) => {
           if (summary && summary.totalOvertimeHours > 0) {
             acc.totalHours += summary.totalOvertimeHours;
             acc.totalPay += summary.overtimePay || 0;
@@ -590,7 +638,7 @@ export const timeTrackingRouter = createTRPCRouter({
       );
 
       return {
-        overtimeData: overtimeData.filter(d => d.summary && d.summary.totalOvertimeHours > 0),
+        overtimeData: overtimeData.filter((d: any) => d.summary && d.summary.totalOvertimeHours > 0),
         totals,
         totalEmployees: activeEmployees.length,
       };

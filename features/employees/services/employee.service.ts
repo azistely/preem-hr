@@ -553,23 +553,23 @@ export async function getEmployeeById(employeeId: string, tenantId: string): Pro
     bankAccount: decryptedBankAccount,
   };
 
-  // Get salary history
-  const salaryHistory = await db
-    .select()
-    .from(employeeSalaries)
-    .where(eq(employeeSalaries.employeeId, employeeId))
-    .orderBy(desc(employeeSalaries.effectiveFrom));
-
-  // Get assignment history with position details
-  const assignmentHistory = await db
-    .select({
-      assignment: assignments,
-      position: positions,
-    })
-    .from(assignments)
-    .leftJoin(positions, eq(assignments.positionId, positions.id))
-    .where(eq(assignments.employeeId, employeeId))
-    .orderBy(desc(assignments.effectiveFrom));
+  // Fetch salary history and assignment history in parallel (avoids sequential DB round-trips)
+  const [salaryHistory, assignmentHistory] = await Promise.all([
+    db
+      .select()
+      .from(employeeSalaries)
+      .where(eq(employeeSalaries.employeeId, employeeId))
+      .orderBy(desc(employeeSalaries.effectiveFrom)),
+    db
+      .select({
+        assignment: assignments,
+        position: positions,
+      })
+      .from(assignments)
+      .leftJoin(positions, eq(assignments.positionId, positions.id))
+      .where(eq(assignments.employeeId, employeeId))
+      .orderBy(desc(assignments.effectiveFrom)),
+  ]);
 
   // Get current salary (most recent active salary)
   const currentSalary = salaryHistory.find(s => !s.effectiveTo) || salaryHistory[0] || null;
