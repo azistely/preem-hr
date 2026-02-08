@@ -402,9 +402,10 @@ export async function listEmployees(input: ListEmployeesInput) {
   }
   // If status is undefined, show all statuses (no filter)
 
-  // Filter by contract type if provided
+  // Filter by contract type from employment_contracts (source of truth)
+  // Note: employees.contractType is often null; the real value is on the active contract
   if (input.contractType) {
-    conditions.push(eq(employees.contractType, input.contractType));
+    conditions.push(eq(employmentContracts.contractType, input.contractType));
   }
 
   if (input.search) {

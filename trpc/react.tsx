@@ -17,7 +17,7 @@
 
 'use client';
 
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { defaultShouldDehydrateQuery, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { httpBatchLink, loggerLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { useState, createContext, useContext } from 'react';
@@ -63,6 +63,14 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
             refetchOnMount: true, // Refetch stale data when component mounts (critical for page navigation)
             networkMode: 'online', // Only run queries when online
             structuralSharing: true, // Enable structural sharing for better performance
+          },
+          dehydrate: {
+            serializeData: superjson.serialize,
+            shouldDehydrateQuery: (query) =>
+              defaultShouldDehydrateQuery(query) || query.state.status === 'pending',
+          },
+          hydrate: {
+            deserializeData: superjson.deserialize,
           },
         },
       })
