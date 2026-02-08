@@ -111,9 +111,13 @@ export class BulletinDePaieService {
     tenantId: string,
     userId: string
   ): Promise<{ jobId: string; totalDocuments: number }> {
-    // 1. Get all line items for payroll run
+    // 1. Get all line items for payroll run (narrow columns — bulk gen only needs IDs)
     const lineItems = await db
-      .select()
+      .select({
+        id: payrollLineItems.id,
+        tenantId: payrollLineItems.tenantId,
+        employeeNumber: payrollLineItems.employeeNumber,
+      })
       .from(payrollLineItems)
       .where(eq(payrollLineItems.payrollRunId, payrollRunId));
 

@@ -41,8 +41,15 @@ export async function exportCMU(payrollRunId: string, tenantId: string): Promise
     throw new Error('Paie non trouvée');
   }
 
-  // 3. Load payroll line items
-  const lineItems = await db.select().from(payrollLineItems).where(eq(payrollLineItems.payrollRunId, payrollRunId));
+  // 3. Load payroll line items (narrow columns — CMU only needs pay summary)
+  const lineItems = await db
+    .select({
+      employeeNumber: payrollLineItems.employeeNumber,
+      employeeName: payrollLineItems.employeeName,
+      grossSalary: payrollLineItems.grossSalary,
+    })
+    .from(payrollLineItems)
+    .where(eq(payrollLineItems.payrollRunId, payrollRunId));
 
   if (lineItems.length === 0) {
     throw new Error('Aucune ligne de paie trouvée');

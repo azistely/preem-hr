@@ -85,12 +85,26 @@ export const dashboardRouter = router({
       };
     }
 
-    // Get latest payslip
+    // Get latest payslip (narrow columns — skip heavy JSONB fields)
     const latestPayslip = await db.query.payrollLineItems.findFirst({
       where: eq(payrollLineItems.employeeId, employee.id),
       orderBy: [desc(payrollLineItems.createdAt)],
+      columns: {
+        id: true,
+        netSalary: true,
+        grossSalary: true,
+        payrollRunId: true,
+        createdAt: true,
+      },
       with: {
-        payrollRun: true,
+        payrollRun: {
+          columns: {
+            id: true,
+            periodStart: true,
+            periodEnd: true,
+            status: true,
+          },
+        },
       },
     });
 
@@ -492,8 +506,22 @@ export const dashboardRouter = router({
         where: eq(payrollLineItems.employeeId, employee.id),
         orderBy: [desc(payrollLineItems.createdAt)],
         limit: input.limit,
+        columns: {
+          id: true,
+          netSalary: true,
+          grossSalary: true,
+          payrollRunId: true,
+          createdAt: true,
+        },
         with: {
-          payrollRun: true,
+          payrollRun: {
+            columns: {
+              id: true,
+              periodStart: true,
+              periodEnd: true,
+              status: true,
+            },
+          },
         },
       });
     }),

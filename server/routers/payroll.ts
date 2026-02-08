@@ -2783,9 +2783,16 @@ export const payrollRouter = createTRPCRouter({
         throw new Error('Seules les paies approuvées peuvent être exportées');
       }
 
-      // Get line items
+      // Get line items (narrow columns — CNPS only needs pay/hours data)
       const lineItems = await db.query.payrollLineItems.findMany({
         where: eq(payrollLineItems.payrollRunId, input.runId),
+        columns: {
+          id: true,
+          employeeId: true,
+          daysWorked: true,
+          hoursWorked: true,
+          grossSalary: true,
+        },
       });
 
       // Get tenant info
@@ -2903,10 +2910,15 @@ export const payrollRouter = createTRPCRouter({
         throw new Error('Seules les paies approuvées peuvent être exportées');
       }
 
-      // 2. Get line items
+      // 2. Get line items (narrow columns — CMU only needs employee linkage)
       const lineItems = await db.query.payrollLineItems.findMany({
         where: eq(payrollLineItems.payrollRunId, input.runId),
         orderBy: [asc(payrollLineItems.employeeName)],
+        columns: {
+          id: true,
+          employeeId: true,
+          employeeName: true,
+        },
       });
 
       if (lineItems.length === 0) {
@@ -3045,9 +3057,17 @@ export const payrollRouter = createTRPCRouter({
         throw new Error('Seules les paies approuvées peuvent être exportées');
       }
 
-      // Get line items
+      // Get line items (narrow columns — État 301 only needs pay summary fields)
       const lineItems = await db.query.payrollLineItems.findMany({
         where: eq(payrollLineItems.payrollRunId, input.runId),
+        columns: {
+          employeeName: true,
+          employeeNumber: true,
+          grossSalary: true,
+          cnpsEmployee: true,
+          cmuEmployee: true,
+          its: true,
+        },
       });
 
       // Get tenant info
@@ -3118,9 +3138,17 @@ export const payrollRouter = createTRPCRouter({
         throw new Error('Seules les paies approuvées peuvent être exportées');
       }
 
-      // Get line items
+      // Get line items (narrow columns — bank transfer only needs pay/account fields)
       const lineItems = await db.query.payrollLineItems.findMany({
         where: eq(payrollLineItems.payrollRunId, input.runId),
+        columns: {
+          employeeId: true,
+          employeeName: true,
+          employeeNumber: true,
+          netSalary: true,
+          bankAccount: true,
+          paymentReference: true,
+        },
       });
 
       // Get tenant info

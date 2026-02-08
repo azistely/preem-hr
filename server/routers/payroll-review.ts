@@ -116,9 +116,20 @@ export const payrollReviewRouter = createTRPCRouter({
         });
       }
 
-      // Get all line items for this run
+      // Get all line items for this run (narrow columns — validation only needs pay/attendance fields)
       const lineItems = await db
-        .select()
+        .select({
+          employeeId: payrollLineItems.employeeId,
+          employeeName: payrollLineItems.employeeName,
+          baseSalary: payrollLineItems.baseSalary,
+          grossSalary: payrollLineItems.grossSalary,
+          netSalary: payrollLineItems.netSalary,
+          overtimeHours: payrollLineItems.overtimeHours,
+          overtimePay: payrollLineItems.overtimePay,
+          bonuses: payrollLineItems.bonuses,
+          daysWorked: payrollLineItems.daysWorked,
+          daysAbsent: payrollLineItems.daysAbsent,
+        })
         .from(payrollLineItems)
         .where(eq(payrollLineItems.payrollRunId, runId));
 
@@ -136,10 +147,14 @@ export const payrollReviewRouter = createTRPCRouter({
         .orderBy(desc(payrollRuns.periodStart))
         .limit(1);
 
-      // Get previous line items if available
+      // Get previous line items if available (narrow — only need pay amounts for comparison)
       const previousLineItems = previousRun
         ? await db
-            .select()
+            .select({
+              employeeId: payrollLineItems.employeeId,
+              netSalary: payrollLineItems.netSalary,
+              grossSalary: payrollLineItems.grossSalary,
+            })
             .from(payrollLineItems)
             .where(eq(payrollLineItems.payrollRunId, previousRun.id))
         : [];
@@ -473,9 +488,13 @@ export const payrollReviewRouter = createTRPCRouter({
         )
         .orderBy(timeEntries.clockIn);
 
-      // Get line item for hourly rate
+      // Get line item for hourly rate (narrow — only need salary and overtime data)
       const [lineItem] = await db
-        .select()
+        .select({
+          baseSalary: payrollLineItems.baseSalary,
+          overtimeHours: payrollLineItems.overtimeHours,
+          overtimePay: payrollLineItems.overtimePay,
+        })
         .from(payrollLineItems)
         .where(
           and(

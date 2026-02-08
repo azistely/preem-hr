@@ -6,7 +6,7 @@
  * PDF generation can be added later using a client-side library or server-side PDF generator.
  */
 
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { etat301Config, payrollRuns, payrollLineItems } from '@/lib/db/schema';
 import { format } from 'date-fns';
@@ -87,12 +87,17 @@ async function aggregateITSByEmployee(runIds: string[]): Promise<ITSData[]> {
     return [];
   }
 
-  // Load all line items for the runs
-  const allLineItems: any[] = [];
-  for (const runId of runIds) {
-    const items = await db.select().from(payrollLineItems).where(eq(payrollLineItems.payrollRunId, runId));
-    allLineItems.push(...items);
-  }
+  // Load all line items for the runs in a single query (narrow columns, avoids N+1)
+  const allLineItems = await db
+    .select({
+      employeeId: payrollLineItems.employeeId,
+      employeeNumber: payrollLineItems.employeeNumber,
+      employeeName: payrollLineItems.employeeName,
+      grossSalary: payrollLineItems.grossSalary,
+      its: payrollLineItems.its,
+    })
+    .from(payrollLineItems)
+    .where(inArray(payrollLineItems.payrollRunId, runIds));
 
   // Group by employee
   const employeeMap = new Map<string, ITSData>();
@@ -102,7 +107,7 @@ async function aggregateITSByEmployee(runIds: string[]): Promise<ITSData[]> {
     const existing = employeeMap.get(employeeId);
 
     const grossSalary = parseFloat(item.grossSalary);
-    const itsAmount = parseFloat(item.its || 0);
+    const itsAmount = parseFloat(item.its || '0');
 
     if (existing) {
       existing.grossSalary += grossSalary;
