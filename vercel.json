@@ -1,4 +1,5 @@
 {
+  "regions": ["cdg1"],
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 60
