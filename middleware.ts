@@ -206,6 +206,7 @@ const PUBLIC_ROUTES = [
   '/auth/reset-password',    // Reset password page
   '/auth/auth-code-error',   // Auth error page
   '/auth/resend-verification', // Resend verification (future)
+  '/real-estate-agent',      // Public AI voice agent demo
 ];
 
 /**
