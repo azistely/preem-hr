@@ -28,6 +28,35 @@ import type {
   TranscriptEntry,
 } from '@/lib/real-estate-agent/types';
 
+// --- Network helpers ---
+
+/** Fetch with a timeout — prevents hanging on slow 3G */
+async function fetchWithTimeout(
+  url: string,
+  opts: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Screen wake lock — keeps the phone awake during calls */
+async function requestWakeLock(): Promise<WakeLockSentinel | null> {
+  try {
+    if ('wakeLock' in navigator) {
+      return await navigator.wakeLock.request('screen');
+    }
+  } catch {
+    // Not supported or denied — non-critical
+  }
+  return null;
+}
+
 // --- Audio utilities ---
 
 function float32ToInt16(float32: Float32Array): Int16Array {
@@ -316,6 +345,10 @@ export default function VoiceAgent() {
   const nextPlayTimeRef = useRef(0);
   const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const resumptionHandleRef = useRef<string | null>(null);
+  const isUserDisconnectRef = useRef(false);
+  const reconnectRef = useRef<() => void>(() => {});
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -508,9 +541,148 @@ export default function VoiceAgent() {
       if (message.toolCall?.functionCalls) {
         handleToolCall(message.toolCall.functionCalls);
       }
+
+      // Store session resumption handle for reconnection
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const msg = message as any;
+      if (msg.sessionResumptionUpdate?.resumable && msg.sessionResumptionUpdate?.newHandle) {
+        resumptionHandleRef.current = msg.sessionResumptionUpdate.newHandle;
+      }
+
+      // GoAway warning — server will disconnect soon, reconnect proactively
+      if (msg.goAway) {
+        console.log('[VoiceAgent] GoAway received, reconnecting proactively...');
+        reconnectRef.current();
+      }
     },
     [addTranscript, clearPlaybackQueue, handleToolCall, playAudioQueue]
   );
+
+  const cleanup = useCallback(() => {
+    // Stop media tracks
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+
+    // Disconnect worklet
+    workletNodeRef.current?.disconnect();
+    workletNodeRef.current = null;
+
+    // Close audio contexts
+    captureContextRef.current?.close().catch(() => {});
+    captureContextRef.current = null;
+    playbackContextRef.current?.close().catch(() => {});
+    playbackContextRef.current = null;
+
+    // Release wake lock
+    wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+
+    // Clear playback
+    clearPlaybackQueue();
+  }, [clearPlaybackQueue]);
+
+  /** Connect (or reconnect) the Gemini Live session */
+  const connectSession = useCallback(
+    async (token: string, isReconnect: boolean) => {
+      const ai = new GoogleGenAI({
+        apiKey: token,
+        httpOptions: { apiVersion: 'v1alpha' },
+      });
+
+      const session = await ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        config: {
+          responseModalities: [Modality.AUDIO],
+          systemInstruction: SYSTEM_INSTRUCTION,
+          tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+          outputAudioTranscription: {},
+          inputAudioTranscription: {},
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+          // Prevent 15-min session limit from killing long calls
+          contextWindowCompression: { slidingWindow: {} },
+          // Resume previous session on reconnect
+          sessionResumption: {
+            handle: isReconnect ? resumptionHandleRef.current ?? undefined : undefined,
+          },
+        },
+        callbacks: {
+          onopen: () => {
+            setStatus('connected');
+            if (!isReconnect) {
+              addTranscript('system', 'Connecté - Sophie vous appelle...');
+            }
+          },
+          onmessage: handleMessage,
+          onerror: (e: ErrorEvent) => {
+            console.error('[VoiceAgent] WebSocket error:', e);
+          },
+          onclose: () => {
+            // Only reconnect if user didn't hang up intentionally
+            if (!isUserDisconnectRef.current) {
+              console.log('[VoiceAgent] Unexpected disconnect, attempting reconnect...');
+              reconnectRef.current();
+            }
+          },
+        },
+      });
+
+      sessionRef.current = session;
+      return session;
+    },
+    [addTranscript, handleMessage]
+  );
+
+  /** Reconnect after network drop or GoAway */
+  const reconnect = useCallback(async () => {
+    // Don't reconnect if user hung up
+    if (isUserDisconnectRef.current) return;
+
+    // Close old session silently
+    try { sessionRef.current?.close(); } catch { /* ignore */ }
+    sessionRef.current = null;
+
+    setStatus('connecting');
+    addTranscript('system', 'Reconnexion en cours...');
+
+    try {
+      // Get a fresh token (old one may have expired)
+      const tokenRes = await fetchWithTimeout(
+        '/api/gemini-live-token',
+        { method: 'POST' },
+        15_000
+      );
+      if (!tokenRes.ok) throw new Error('Token refresh failed');
+      const { token } = await tokenRes.json();
+
+      const session = await connectSession(token, true);
+
+      // Re-wire audio capture to new session
+      const worklet = workletNodeRef.current;
+      if (worklet) {
+        worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
+          if (sessionRef.current) {
+            const int16 = float32ToInt16(event.data);
+            const base64 = int16ToBase64(int16);
+            session.sendRealtimeInput({
+              audio: { data: base64, mimeType: 'audio/pcm;rate=16000' },
+            });
+          }
+        };
+      }
+    } catch (error) {
+      console.error('[VoiceAgent] Reconnect failed:', error);
+      setErrorMessage('Connexion perdue. Vérifiez votre réseau et réessayez.');
+      setStatus('error');
+      cleanup();
+    }
+  }, [addTranscript, connectSession, cleanup]);
+
+  // Keep ref in sync so callbacks can call reconnect without circular deps
+  reconnectRef.current = reconnect;
 
   const startCall = useCallback(async () => {
     setStatus('requesting_token');
@@ -518,10 +690,21 @@ export default function VoiceAgent() {
     setTranscript([]);
     setLeadData(null);
     setBooking(null);
+    isUserDisconnectRef.current = false;
+    resumptionHandleRef.current = null;
 
     try {
-      // 1. Get ephemeral token
-      const tokenRes = await fetch('/api/gemini-live-token', { method: 'POST' });
+      // 0. Check basic connectivity
+      if (!navigator.onLine) {
+        throw new Error('offline');
+      }
+
+      // 1. Get ephemeral token (15s timeout for slow 3G)
+      const tokenRes = await fetchWithTimeout(
+        '/api/gemini-live-token',
+        { method: 'POST' },
+        15_000
+      );
       if (!tokenRes.ok) {
         const err = await tokenRes.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to get session token');
@@ -556,51 +739,18 @@ export default function VoiceAgent() {
       const playbackCtx = new AudioContext({ sampleRate: 24000 });
       playbackContextRef.current = playbackCtx;
 
-      // 5. Connect to Gemini Live
-      const ai = new GoogleGenAI({
-        apiKey: token,
-        httpOptions: { apiVersion: 'v1alpha' },
-      });
+      // 5. Acquire wake lock (prevent screen sleep killing WebSocket)
+      wakeLockRef.current = await requestWakeLock();
 
-      const session = await ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          systemInstruction: SYSTEM_INSTRUCTION,
-          tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
-          outputAudioTranscription: {},
-          inputAudioTranscription: {},
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-          },
-        },
-        callbacks: {
-          onopen: () => {
-            setStatus('connected');
-            addTranscript('system', 'Connecté - Sophie vous appelle...');
-          },
-          onmessage: handleMessage,
-          onerror: (e: ErrorEvent) => {
-            console.error('[VoiceAgent] WebSocket error:', e);
-            setErrorMessage('Erreur de connexion');
-            setStatus('error');
-          },
-          onclose: () => {
-            setStatus('idle');
-          },
-        },
-      });
+      // 6. Connect to Gemini Live
+      const session = await connectSession(token, false);
 
-      sessionRef.current = session;
-
-      // 6. Wire up audio capture → Gemini
+      // 7. Wire up audio capture → Gemini
       workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
-        if (sessionRef.current && status !== 'disconnecting') {
+        if (sessionRef.current) {
           const int16 = float32ToInt16(event.data);
           const base64 = int16ToBase64(int16);
-          sessionRef.current.sendRealtimeInput({
+          session.sendRealtimeInput({
             audio: {
               data: base64,
               mimeType: 'audio/pcm;rate=16000',
@@ -613,7 +763,15 @@ export default function VoiceAgent() {
       const msg =
         error instanceof Error ? error.message : 'Failed to start conversation';
 
-      if (msg.includes('Permission denied') || msg.includes('NotAllowedError')) {
+      if (msg === 'offline') {
+        setErrorMessage(
+          'Pas de connexion internet. Vérifiez votre réseau et réessayez.'
+        );
+      } else if (msg.includes('AbortError') || msg.includes('aborted')) {
+        setErrorMessage(
+          'La connexion est trop lente. Rapprochez-vous du Wi-Fi ou réessayez.'
+        );
+      } else if (msg.includes('Permission denied') || msg.includes('NotAllowedError')) {
         setErrorMessage(
           'Accès au microphone refusé. Veuillez autoriser le micro et réessayer.'
         );
@@ -625,28 +783,10 @@ export default function VoiceAgent() {
       setStatus('error');
       cleanup();
     }
-  }, [addTranscript, handleMessage, status]);
-
-  const cleanup = useCallback(() => {
-    // Stop media tracks
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-    mediaStreamRef.current = null;
-
-    // Disconnect worklet
-    workletNodeRef.current?.disconnect();
-    workletNodeRef.current = null;
-
-    // Close audio contexts
-    captureContextRef.current?.close().catch(() => {});
-    captureContextRef.current = null;
-    playbackContextRef.current?.close().catch(() => {});
-    playbackContextRef.current = null;
-
-    // Clear playback
-    clearPlaybackQueue();
-  }, [clearPlaybackQueue]);
+  }, [addTranscript, connectSession, cleanup]);
 
   const stopCall = useCallback(() => {
+    isUserDisconnectRef.current = true;
     setStatus('disconnecting');
 
     try {
@@ -661,9 +801,31 @@ export default function VoiceAgent() {
     addTranscript('system', 'Appel terminé');
   }, [addTranscript, cleanup]);
 
+  // Resume AudioContext when tab becomes visible again (mobile browser suspends it)
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState === 'visible' && status === 'connected') {
+        // Re-acquire wake lock (released when screen locks)
+        if (!wakeLockRef.current) {
+          wakeLockRef.current = await requestWakeLock();
+        }
+        // Resume suspended audio contexts
+        if (captureContextRef.current?.state === 'suspended') {
+          captureContextRef.current.resume().catch(() => {});
+        }
+        if (playbackContextRef.current?.state === 'suspended') {
+          playbackContextRef.current.resume().catch(() => {});
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [status]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      isUserDisconnectRef.current = true;
       try {
         sessionRef.current?.close();
       } catch {
